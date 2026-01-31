@@ -71,11 +71,7 @@ class PathConfig:
         return self.output_dir / "logs"
     
     @property
-    def panel_data_file(self) -> Path:
-        return self.data_dir / "panel_data.csv"
-    
-    @property
-    def cross_section_file(self) -> Path:
+    def data_file(self) -> Path:
         return self.data_dir / "data.csv"
     
     def ensure_directories(self) -> None:

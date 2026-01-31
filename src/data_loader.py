@@ -79,7 +79,7 @@ class PanelDataLoader:
     
     def load(self, filepath: Optional[Path] = None) -> PanelData:
         """Load panel data from file or generate if not exists."""
-        filepath = filepath or self.config.paths.panel_data_file
+        filepath = filepath or self.config.paths.data_file
         
         # Convert to Path if string
         if isinstance(filepath, str):

@@ -7,8 +7,8 @@ ML-MCDM Panel Data Analysis
 Run this file to execute the complete analysis pipeline.
 
 Usage:
-    python main.py                              # Run with synthetic data
-    python main.py data/panel_data.csv          # Run with custom data file
+    python main.py                      # Run with data/data.csv (default)
+    python main.py path/to/other.csv   # Run with custom data file
 """
 
 import sys
@@ -16,7 +16,7 @@ from pathlib import Path
 
 # Configuration - modify these as needed
 CONFIG = {
-    'data_path': None,           # Set to CSV path or None for synthetic data
+    'data_path': 'data/data.csv',  # Path to data file
     'n_provinces': 64,           # Number of entities
     'n_years': 5,                # Number of time periods  
     'n_components': 20,          # Number of criteria
