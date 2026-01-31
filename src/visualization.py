@@ -1939,6 +1939,649 @@ class PanelVisualizer:
         
         plt.tight_layout()
         return self._save_figure(fig, save_name)
+    
+    def plot_future_predictions(self,
+                                entities: List[str],
+                                current_scores: np.ndarray,
+                                predicted_scores: np.ndarray,
+                                prediction_year: int,
+                                title: str = 'Future Predictions Comparison',
+                                save_name: str = '15_future_predictions.png') -> Optional[str]:
+        """
+        Plot comparison of current vs predicted future rankings.
+        
+        Parameters
+        ----------
+        entities : List[str]
+            Entity names
+        current_scores : np.ndarray
+            Current year TOPSIS scores
+        predicted_scores : np.ndarray
+            Predicted future year TOPSIS scores
+        prediction_year : int
+            The year being predicted
+        """
+        if not HAS_MATPLOTLIB:
+            return None
+        
+        fig, axes = plt.subplots(1, 2, figsize=(16, 10))
+        
+        # 1. Current vs Predicted Scatter
+        ax = axes[0]
+        ax.scatter(current_scores, predicted_scores, alpha=0.7, 
+                   c=self.colors['primary'], s=80, edgecolor='white', linewidth=0.5)
+        
+        # Perfect correlation line
+        min_val = min(current_scores.min(), predicted_scores.min())
+        max_val = max(current_scores.max(), predicted_scores.max())
+        ax.plot([min_val, max_val], [min_val, max_val], 'r--', linewidth=2, 
+                label='Perfect Correlation', alpha=0.7)
+        
+        # Correlation
+        corr = np.corrcoef(current_scores, predicted_scores)[0, 1]
+        ax.text(0.05, 0.95, f'Correlation: {corr:.4f}', transform=ax.transAxes,
+                fontsize=11, verticalalignment='top', 
+                bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+        
+        ax.set_xlabel('Current TOPSIS Score (2024)', fontsize=11, fontweight='bold')
+        ax.set_ylabel(f'Predicted TOPSIS Score ({prediction_year})', fontsize=11, fontweight='bold')
+        ax.set_title('Score Stability Analysis', fontsize=12, fontweight='bold')
+        ax.legend(loc='lower right', fontsize=10)
+        ax.grid(True, alpha=0.3)
+        
+        # 2. Top 20 Predicted Rankings
+        ax = axes[1]
+        sorted_idx = np.argsort(predicted_scores)[::-1][:20]
+        
+        y_pos = np.arange(20)
+        pred_vals = predicted_scores[sorted_idx]
+        curr_vals = current_scores[sorted_idx]
+        names = [entities[i] for i in sorted_idx]
+        
+        width = 0.35
+        ax.barh(y_pos - width/2, pred_vals, width, label=f'Predicted ({prediction_year})',
+                color=self.colors['primary'], edgecolor='black', linewidth=0.5)
+        ax.barh(y_pos + width/2, curr_vals, width, label='Current (2024)',
+                color=self.colors['secondary'], alpha=0.7, edgecolor='black', linewidth=0.5)
+        
+        ax.set_yticks(y_pos)
+        ax.set_yticklabels([f'{i+1}. {n}' for i, n in enumerate(names)], fontsize=10)
+        ax.set_xlabel('TOPSIS Score', fontsize=11, fontweight='bold')
+        ax.set_title(f'Top 20 Predicted Rankings for {prediction_year}', fontsize=12, fontweight='bold')
+        ax.legend(loc='lower right', fontsize=10)
+        ax.invert_yaxis()
+        ax.grid(True, alpha=0.3, axis='x')
+        
+        plt.suptitle(title, fontsize=14, fontweight='bold', y=1.02)
+        plt.tight_layout()
+        return self._save_figure(fig, save_name)
+    
+    # =========================================================================
+    # SINGLE-CHART ML PROGRESS VISUALIZATIONS
+    # =========================================================================
+    
+    def plot_lstm_training_curve(self,
+                                 train_loss: List[float],
+                                 val_loss: Optional[List[float]] = None,
+                                 title: str = 'LSTM Training Loss Progression',
+                                 save_name: str = 'ml_lstm_training_curve.png') -> Optional[str]:
+        """
+        Single chart showing LSTM training and validation loss over epochs.
+        Includes early stopping point, best epoch marker, and convergence analysis.
+        """
+        if not HAS_MATPLOTLIB:
+            return None
+        
+        fig, ax = plt.subplots(figsize=(14, 10))
+        
+        epochs = np.arange(1, len(train_loss) + 1)
+        
+        # Plot training loss with gradient fill
+        ax.plot(epochs, train_loss, 'b-', linewidth=2.5, label='Training Loss', 
+                marker='o', markersize=4, markerfacecolor='white', markeredgewidth=1.5)
+        ax.fill_between(epochs, train_loss, alpha=0.2, color='blue')
+        
+        if val_loss:
+            ax.plot(epochs, val_loss, 'r-', linewidth=2.5, label='Validation Loss',
+                    marker='s', markersize=4, markerfacecolor='white', markeredgewidth=1.5)
+            ax.fill_between(epochs, val_loss, alpha=0.2, color='red')
+            
+            # Find best epoch (lowest validation loss)
+            best_epoch = np.argmin(val_loss) + 1
+            best_val = min(val_loss)
+            ax.axvline(x=best_epoch, color='green', linestyle='--', linewidth=2, alpha=0.7,
+                       label=f'Best Epoch: {best_epoch}')
+            ax.scatter([best_epoch], [best_val], s=200, c='green', marker='*', 
+                       zorder=5, edgecolors='black', linewidths=1)
+            ax.annotate(f'Best: {best_val:.6f}', xy=(best_epoch, best_val),
+                        xytext=(15, 15), textcoords='offset points',
+                        fontsize=11, fontweight='bold',
+                        arrowprops=dict(arrowstyle='->', color='green'),
+                        bbox=dict(boxstyle='round,pad=0.3', facecolor='lightgreen', alpha=0.7))
+            
+            # Calculate overfitting indicator
+            if len(val_loss) > 10:
+                recent_val = np.mean(val_loss[-5:])
+                early_val = np.mean(val_loss[5:10])
+                if recent_val > early_val * 1.1:
+                    ax.text(0.98, 0.98, '⚠️ Potential Overfitting Detected', 
+                            transform=ax.transAxes, fontsize=11, 
+                            verticalalignment='top', horizontalalignment='right',
+                            bbox=dict(boxstyle='round', facecolor='yellow', alpha=0.8))
+        
+        # Training statistics box
+        stats_text = f"Training Statistics:\n"
+        stats_text += f"  Initial Loss: {train_loss[0]:.6f}\n"
+        stats_text += f"  Final Loss: {train_loss[-1]:.6f}\n"
+        stats_text += f"  Reduction: {((train_loss[0] - train_loss[-1]) / train_loss[0] * 100):.1f}%\n"
+        stats_text += f"  Total Epochs: {len(train_loss)}"
+        
+        ax.text(0.02, 0.98, stats_text, transform=ax.transAxes, fontsize=10,
+                verticalalignment='top', fontfamily='monospace',
+                bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.8))
+        
+        ax.set_xlabel('Epoch', fontsize=12, fontweight='bold')
+        ax.set_ylabel('Loss (MSE)', fontsize=12, fontweight='bold')
+        ax.set_title(title, fontsize=14, fontweight='bold', pad=15)
+        ax.legend(loc='upper right', fontsize=11, framealpha=0.9)
+        ax.grid(True, alpha=0.3, linestyle='--')
+        ax.set_xlim(0, len(train_loss) + 1)
+        
+        # Add minor gridlines
+        ax.minorticks_on()
+        ax.grid(which='minor', alpha=0.1)
+        
+        plt.tight_layout()
+        return self._save_figure(fig, save_name)
+    
+    def plot_rf_cv_progression(self,
+                               cv_scores: Dict[str, List[float]],
+                               title: str = 'Random Forest Cross-Validation Progression',
+                               save_name: str = 'ml_rf_cv_progression.png') -> Optional[str]:
+        """
+        Single chart showing CV scores across folds with detailed statistics.
+        """
+        if not HAS_MATPLOTLIB:
+            return None
+        
+        fig, ax = plt.subplots(figsize=(14, 10))
+        
+        metrics = list(cv_scores.keys())
+        n_folds = len(list(cv_scores.values())[0])
+        folds = np.arange(1, n_folds + 1)
+        
+        colors = plt.cm.Set1(np.linspace(0, 1, len(metrics)))
+        markers = ['o', 's', '^', 'D', 'v', 'p', '*', 'h']
+        
+        for i, (metric, values) in enumerate(cv_scores.items()):
+            marker = markers[i % len(markers)]
+            ax.plot(folds, values, '-', linewidth=2.5, label=f'{metric}',
+                    marker=marker, markersize=12, markerfacecolor='white',
+                    markeredgewidth=2, color=colors[i])
+            
+            # Add mean line
+            mean_val = np.mean(values)
+            ax.axhline(y=mean_val, color=colors[i], linestyle='--', alpha=0.5, linewidth=1.5)
+            
+            # Annotate each point
+            for fold, val in zip(folds, values):
+                ax.annotate(f'{val:.4f}', xy=(fold, val),
+                            xytext=(0, 8), textcoords='offset points',
+                            fontsize=9, ha='center', fontweight='bold')
+        
+        # Statistics table
+        stats_lines = ["Performance Statistics:"]
+        for metric, values in cv_scores.items():
+            mean_v = np.mean(values)
+            std_v = np.std(values)
+            stats_lines.append(f"  {metric}: {mean_v:.4f} ± {std_v:.4f}")
+        
+        ax.text(0.02, 0.02, '\n'.join(stats_lines), transform=ax.transAxes,
+                fontsize=10, verticalalignment='bottom', fontfamily='monospace',
+                bbox=dict(boxstyle='round', facecolor='lightyellow', alpha=0.9))
+        
+        ax.set_xlabel('Cross-Validation Fold', fontsize=12, fontweight='bold')
+        ax.set_ylabel('Score', fontsize=12, fontweight='bold')
+        ax.set_title(title, fontsize=14, fontweight='bold', pad=15)
+        ax.set_xticks(folds)
+        ax.set_xticklabels([f'Fold {i}' for i in folds], fontsize=11)
+        ax.legend(loc='upper right', fontsize=11, framealpha=0.9)
+        ax.grid(True, alpha=0.3, linestyle='--')
+        
+        plt.tight_layout()
+        return self._save_figure(fig, save_name)
+    
+    def plot_rf_feature_importance_detailed(self,
+                                            feature_importance: Dict[str, float],
+                                            title: str = 'Random Forest Feature Importance Analysis',
+                                            save_name: str = 'ml_rf_feature_importance.png') -> Optional[str]:
+        """
+        Single detailed chart showing feature importance with cumulative contribution.
+        """
+        if not HAS_MATPLOTLIB:
+            return None
+        
+        fig, ax = plt.subplots(figsize=(14, 12))
+        
+        # Sort features by importance
+        sorted_items = sorted(feature_importance.items(), key=lambda x: x[1], reverse=True)
+        features = [item[0] for item in sorted_items]
+        importances = [item[1] for item in sorted_items]
+        
+        # Color gradient based on importance
+        norm_imp = np.array(importances) / max(importances)
+        colors = plt.cm.Blues(0.3 + norm_imp * 0.6)
+        
+        y_pos = np.arange(len(features))
+        bars = ax.barh(y_pos, importances, color=colors, edgecolor='navy', linewidth=0.8)
+        
+        # Add value labels
+        for bar, val in zip(bars, importances):
+            ax.text(val + 0.002, bar.get_y() + bar.get_height()/2,
+                    f'{val:.4f}', va='center', fontsize=10, fontweight='bold')
+        
+        # Cumulative importance line on secondary axis
+        ax2 = ax.twiny()
+        cumulative = np.cumsum(importances)
+        cumulative_pct = cumulative / cumulative[-1] * 100
+        ax2.plot(cumulative_pct, y_pos, 'r-', linewidth=2.5, marker='D', 
+                 markersize=6, label='Cumulative %')
+        ax2.set_xlabel('Cumulative Importance (%)', fontsize=11, color='red')
+        ax2.tick_params(axis='x', colors='red')
+        ax2.set_xlim(0, 105)
+        
+        # Mark 80% threshold
+        idx_80 = np.argmax(cumulative_pct >= 80)
+        ax.axhline(y=idx_80, color='green', linestyle='--', linewidth=2, alpha=0.7)
+        ax.text(max(importances) * 0.5, idx_80 - 0.5, 
+                f'80% explained by top {idx_80 + 1} features',
+                fontsize=10, color='green', fontweight='bold')
+        
+        ax.set_yticks(y_pos)
+        ax.set_yticklabels(features, fontsize=10)
+        ax.set_xlabel('Feature Importance Score', fontsize=12, fontweight='bold')
+        ax.set_title(title, fontsize=14, fontweight='bold', pad=15)
+        ax.invert_yaxis()
+        ax.grid(True, alpha=0.3, axis='x', linestyle='--')
+        
+        # Statistics box
+        stats_text = f"Total Features: {len(features)}\n"
+        stats_text += f"Top Feature: {features[0]} ({importances[0]:.4f})\n"
+        stats_text += f"Mean Importance: {np.mean(importances):.4f}\n"
+        stats_text += f"Std Importance: {np.std(importances):.4f}"
+        ax.text(0.98, 0.02, stats_text, transform=ax.transAxes, fontsize=10,
+                verticalalignment='bottom', horizontalalignment='right',
+                fontfamily='monospace',
+                bbox=dict(boxstyle='round', facecolor='lightcyan', alpha=0.9))
+        
+        plt.tight_layout()
+        return self._save_figure(fig, save_name)
+    
+    def plot_actual_vs_predicted(self,
+                                 actual: np.ndarray,
+                                 predicted: np.ndarray,
+                                 model_name: str = 'Model',
+                                 entity_names: Optional[List[str]] = None,
+                                 title: str = 'Actual vs Predicted Analysis',
+                                 save_name: str = 'ml_actual_vs_predicted.png') -> Optional[str]:
+        """
+        Single detailed scatter plot with regression analysis.
+        """
+        if not HAS_MATPLOTLIB:
+            return None
+        
+        fig, ax = plt.subplots(figsize=(14, 12))
+        
+        # Calculate metrics
+        residuals = actual - predicted
+        ss_res = np.sum(residuals ** 2)
+        ss_tot = np.sum((actual - np.mean(actual)) ** 2)
+        r2 = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
+        mae = np.mean(np.abs(residuals))
+        rmse = np.sqrt(np.mean(residuals ** 2))
+        
+        # Color by residual magnitude
+        residual_mag = np.abs(residuals)
+        colors = plt.cm.RdYlGn_r(residual_mag / (residual_mag.max() + 1e-10))
+        
+        scatter = ax.scatter(actual, predicted, c=residual_mag, cmap='RdYlGn_r',
+                             s=120, alpha=0.7, edgecolors='black', linewidths=0.5)
+        
+        # Perfect prediction line
+        min_val, max_val = min(actual.min(), predicted.min()), max(actual.max(), predicted.max())
+        margin = (max_val - min_val) * 0.05
+        ax.plot([min_val - margin, max_val + margin], [min_val - margin, max_val + margin],
+                'k--', linewidth=2.5, label='Perfect Prediction', alpha=0.8)
+        
+        # Regression line
+        z = np.polyfit(actual, predicted, 1)
+        p = np.poly1d(z)
+        x_line = np.linspace(min_val - margin, max_val + margin, 100)
+        ax.plot(x_line, p(x_line), 'b-', linewidth=2, 
+                label=f'Fit: y = {z[0]:.3f}x + {z[1]:.3f}', alpha=0.8)
+        
+        # Confidence interval (95%)
+        y_pred_line = p(x_line)
+        ci = 1.96 * np.std(residuals)
+        ax.fill_between(x_line, y_pred_line - ci, y_pred_line + ci, 
+                        alpha=0.15, color='blue', label='95% CI')
+        
+        # Colorbar
+        cbar = plt.colorbar(scatter, ax=ax, shrink=0.8)
+        cbar.set_label('|Residual|', fontsize=11)
+        
+        # Annotate worst predictions
+        worst_idx = np.argsort(residual_mag)[-5:]
+        for idx in worst_idx:
+            label = entity_names[idx] if entity_names else f'#{idx}'
+            ax.annotate(label, xy=(actual[idx], predicted[idx]),
+                        xytext=(10, 10), textcoords='offset points',
+                        fontsize=9, alpha=0.8,
+                        arrowprops=dict(arrowstyle='->', alpha=0.5))
+        
+        # Statistics box
+        stats_text = f"{model_name} Performance Metrics:\n"
+        stats_text += f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        stats_text += f"  R² Score:     {r2:.6f}\n"
+        stats_text += f"  MAE:          {mae:.6f}\n"
+        stats_text += f"  RMSE:         {rmse:.6f}\n"
+        stats_text += f"  Slope:        {z[0]:.6f}\n"
+        stats_text += f"  Intercept:    {z[1]:.6f}\n"
+        stats_text += f"  N Samples:    {len(actual)}"
+        
+        ax.text(0.02, 0.98, stats_text, transform=ax.transAxes, fontsize=10,
+                verticalalignment='top', fontfamily='monospace',
+                bbox=dict(boxstyle='round', facecolor='white', alpha=0.9, edgecolor='gray'))
+        
+        ax.set_xlabel('Actual Values', fontsize=12, fontweight='bold')
+        ax.set_ylabel('Predicted Values', fontsize=12, fontweight='bold')
+        ax.set_title(title, fontsize=14, fontweight='bold', pad=15)
+        ax.legend(loc='lower right', fontsize=10, framealpha=0.9)
+        ax.grid(True, alpha=0.3, linestyle='--')
+        ax.set_xlim(min_val - margin, max_val + margin)
+        ax.set_ylim(min_val - margin, max_val + margin)
+        
+        plt.tight_layout()
+        return self._save_figure(fig, save_name)
+    
+    def plot_residual_analysis(self,
+                               actual: np.ndarray,
+                               predicted: np.ndarray,
+                               model_name: str = 'Model',
+                               title: str = 'Residual Analysis',
+                               save_name: str = 'ml_residual_analysis.png') -> Optional[str]:
+        """
+        Single detailed residual analysis chart.
+        """
+        if not HAS_MATPLOTLIB:
+            return None
+        
+        fig, ax = plt.subplots(figsize=(14, 10))
+        
+        residuals = actual - predicted
+        
+        # Color by sign
+        colors = ['green' if r >= 0 else 'red' for r in residuals]
+        
+        scatter = ax.scatter(predicted, residuals, c=colors, s=100, alpha=0.6,
+                             edgecolors='black', linewidths=0.5)
+        
+        # Zero line
+        ax.axhline(y=0, color='black', linestyle='-', linewidth=2)
+        
+        # ±1 std lines
+        std_res = np.std(residuals)
+        ax.axhline(y=std_res, color='orange', linestyle='--', linewidth=1.5, 
+                   label=f'+1σ ({std_res:.4f})')
+        ax.axhline(y=-std_res, color='orange', linestyle='--', linewidth=1.5,
+                   label=f'-1σ ({-std_res:.4f})')
+        ax.axhline(y=2*std_res, color='red', linestyle=':', linewidth=1.5,
+                   label=f'+2σ ({2*std_res:.4f})')
+        ax.axhline(y=-2*std_res, color='red', linestyle=':', linewidth=1.5,
+                   label=f'-2σ ({-2*std_res:.4f})')
+        
+        # Fill bands
+        ax.fill_between(ax.get_xlim(), -std_res, std_res, alpha=0.1, color='green')
+        ax.fill_between(ax.get_xlim(), -2*std_res, 2*std_res, alpha=0.05, color='yellow')
+        
+        # LOESS smoothing trend
+        try:
+            from scipy.ndimage import uniform_filter1d
+            sorted_idx = np.argsort(predicted)
+            smoothed = uniform_filter1d(residuals[sorted_idx], size=max(5, len(residuals)//10))
+            ax.plot(predicted[sorted_idx], smoothed, 'b-', linewidth=2.5, 
+                    label='Trend (smoothed)', alpha=0.8)
+        except:
+            pass
+        
+        # Statistics
+        n_outliers = np.sum(np.abs(residuals) > 2 * std_res)
+        stats_text = f"Residual Statistics:\n"
+        stats_text += f"  Mean:       {np.mean(residuals):.6f}\n"
+        stats_text += f"  Std:        {std_res:.6f}\n"
+        stats_text += f"  Min:        {np.min(residuals):.6f}\n"
+        stats_text += f"  Max:        {np.max(residuals):.6f}\n"
+        stats_text += f"  Outliers:   {n_outliers} ({n_outliers/len(residuals)*100:.1f}%)"
+        
+        ax.text(0.02, 0.98, stats_text, transform=ax.transAxes, fontsize=10,
+                verticalalignment='top', fontfamily='monospace',
+                bbox=dict(boxstyle='round', facecolor='white', alpha=0.9))
+        
+        ax.set_xlabel('Predicted Values', fontsize=12, fontweight='bold')
+        ax.set_ylabel('Residuals (Actual - Predicted)', fontsize=12, fontweight='bold')
+        ax.set_title(title, fontsize=14, fontweight='bold', pad=15)
+        ax.legend(loc='upper right', fontsize=10, framealpha=0.9)
+        ax.grid(True, alpha=0.3, linestyle='--')
+        
+        plt.tight_layout()
+        return self._save_figure(fig, save_name)
+    
+    def plot_rank_correlation_analysis(self,
+                                       actual: np.ndarray,
+                                       predicted: np.ndarray,
+                                       entity_names: List[str],
+                                       model_name: str = 'Model',
+                                       title: str = 'Rank Prediction Analysis',
+                                       save_name: str = 'ml_rank_correlation.png') -> Optional[str]:
+        """
+        Single chart analyzing ranking prediction accuracy.
+        """
+        if not HAS_MATPLOTLIB:
+            return None
+        
+        fig, ax = plt.subplots(figsize=(14, 12))
+        
+        # Calculate ranks
+        actual_ranks = np.argsort(np.argsort(-actual)) + 1
+        predicted_ranks = np.argsort(np.argsort(-predicted)) + 1
+        rank_diff = actual_ranks - predicted_ranks
+        
+        # Spearman correlation
+        from scipy.stats import spearmanr
+        corr, pvalue = spearmanr(actual_ranks, predicted_ranks)
+        
+        # Color by rank difference
+        abs_diff = np.abs(rank_diff)
+        colors = plt.cm.RdYlGn_r(abs_diff / (abs_diff.max() + 1))
+        
+        scatter = ax.scatter(actual_ranks, predicted_ranks, c=abs_diff, cmap='RdYlGn_r',
+                             s=100, alpha=0.7, edgecolors='black', linewidths=0.5)
+        
+        # Perfect prediction line
+        max_rank = len(actual)
+        ax.plot([1, max_rank], [1, max_rank], 'k--', linewidth=2.5, 
+                label='Perfect Ranking', alpha=0.8)
+        
+        # ±5 rank tolerance bands
+        ax.fill_between([1, max_rank], [1-5, max_rank-5], [1+5, max_rank+5],
+                        alpha=0.1, color='green', label='±5 Rank Tolerance')
+        
+        # Colorbar
+        cbar = plt.colorbar(scatter, ax=ax, shrink=0.8)
+        cbar.set_label('|Rank Difference|', fontsize=11)
+        
+        # Annotate biggest rank changes
+        worst_idx = np.argsort(abs_diff)[-5:]
+        for idx in worst_idx:
+            ax.annotate(f'{entity_names[idx]}\nΔ={rank_diff[idx]:+d}',
+                        xy=(actual_ranks[idx], predicted_ranks[idx]),
+                        xytext=(15, 15), textcoords='offset points',
+                        fontsize=9, alpha=0.9,
+                        arrowprops=dict(arrowstyle='->', alpha=0.6),
+                        bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.8))
+        
+        # Statistics
+        exact_match = np.sum(rank_diff == 0)
+        within_3 = np.sum(abs_diff <= 3)
+        within_5 = np.sum(abs_diff <= 5)
+        
+        stats_text = f"Ranking Performance ({model_name}):\n"
+        stats_text += f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        stats_text += f"  Spearman ρ:    {corr:.4f}\n"
+        stats_text += f"  P-value:       {pvalue:.2e}\n"
+        stats_text += f"  Exact Match:   {exact_match}/{len(actual)} ({exact_match/len(actual)*100:.1f}%)\n"
+        stats_text += f"  Within ±3:     {within_3}/{len(actual)} ({within_3/len(actual)*100:.1f}%)\n"
+        stats_text += f"  Within ±5:     {within_5}/{len(actual)} ({within_5/len(actual)*100:.1f}%)\n"
+        stats_text += f"  Max |Δ Rank|:  {abs_diff.max()}"
+        
+        ax.text(0.02, 0.98, stats_text, transform=ax.transAxes, fontsize=10,
+                verticalalignment='top', fontfamily='monospace',
+                bbox=dict(boxstyle='round', facecolor='white', alpha=0.9, edgecolor='gray'))
+        
+        ax.set_xlabel('Actual Rank', fontsize=12, fontweight='bold')
+        ax.set_ylabel('Predicted Rank', fontsize=12, fontweight='bold')
+        ax.set_title(title, fontsize=14, fontweight='bold', pad=15)
+        ax.legend(loc='lower right', fontsize=10, framealpha=0.9)
+        ax.grid(True, alpha=0.3, linestyle='--')
+        ax.set_xlim(0, max_rank + 1)
+        ax.set_ylim(0, max_rank + 1)
+        
+        plt.tight_layout()
+        return self._save_figure(fig, save_name)
+    
+    def plot_model_convergence_analysis(self,
+                                        train_history: Dict[str, List[float]],
+                                        title: str = 'Model Convergence Analysis',
+                                        save_name: str = 'ml_convergence_analysis.png') -> Optional[str]:
+        """
+        Single chart showing detailed convergence behavior with multiple metrics.
+        """
+        if not HAS_MATPLOTLIB:
+            return None
+        
+        fig, ax = plt.subplots(figsize=(14, 10))
+        
+        colors = plt.cm.tab10(np.linspace(0, 1, len(train_history)))
+        
+        for i, (metric_name, values) in enumerate(train_history.items()):
+            epochs = np.arange(1, len(values) + 1)
+            
+            # Normalize for comparison
+            norm_values = (np.array(values) - min(values)) / (max(values) - min(values) + 1e-10)
+            
+            ax.plot(epochs, norm_values, '-', linewidth=2.5, label=metric_name,
+                    color=colors[i], marker='o', markersize=4, markerfacecolor='white')
+            
+            # Convergence point detection
+            if len(values) > 10:
+                recent_std = np.std(values[-5:])
+                overall_std = np.std(values)
+                if recent_std < overall_std * 0.1:
+                    conv_epoch = len(values) - 5
+                    ax.axvline(x=conv_epoch, color=colors[i], linestyle=':', alpha=0.5)
+        
+        ax.set_xlabel('Epoch', fontsize=12, fontweight='bold')
+        ax.set_ylabel('Normalized Metric Value', fontsize=12, fontweight='bold')
+        ax.set_title(title, fontsize=14, fontweight='bold', pad=15)
+        ax.legend(loc='upper right', fontsize=10, framealpha=0.9)
+        ax.grid(True, alpha=0.3, linestyle='--')
+        
+        # Add epoch markers
+        ax.axvspan(0, len(list(train_history.values())[0]) * 0.1, alpha=0.1, color='yellow',
+                   label='Warm-up Phase')
+        
+        plt.tight_layout()
+        return self._save_figure(fig, save_name)
+    
+    def plot_ensemble_contribution_analysis(self,
+                                            base_predictions: Dict[str, np.ndarray],
+                                            weights: Dict[str, float],
+                                            actual: np.ndarray,
+                                            title: str = 'Ensemble Model Contribution Analysis',
+                                            save_name: str = 'ml_ensemble_contribution.png') -> Optional[str]:
+        """
+        Single chart showing contribution of each base model to the ensemble.
+        """
+        if not HAS_MATPLOTLIB:
+            return None
+        
+        fig, ax = plt.subplots(figsize=(14, 10))
+        
+        models = list(base_predictions.keys())
+        n_models = len(models)
+        
+        # Calculate R² for each model
+        r2_scores = []
+        for model_name, preds in base_predictions.items():
+            ss_res = np.sum((actual - preds) ** 2)
+            ss_tot = np.sum((actual - np.mean(actual)) ** 2)
+            r2 = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
+            r2_scores.append(r2)
+        
+        # Weighted ensemble
+        weighted_preds = np.zeros_like(actual)
+        for model_name, preds in base_predictions.items():
+            weighted_preds += weights[model_name] * preds
+        
+        ss_res = np.sum((actual - weighted_preds) ** 2)
+        ss_tot = np.sum((actual - np.mean(actual)) ** 2)
+        ensemble_r2 = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
+        
+        models_with_ensemble = models + ['Ensemble']
+        r2_with_ensemble = r2_scores + [ensemble_r2]
+        weights_with_ensemble = [weights.get(m, 0) for m in models] + [1.0]
+        
+        x_pos = np.arange(len(models_with_ensemble))
+        
+        # Create bars with color based on R²
+        colors = plt.cm.RdYlGn(np.array(r2_with_ensemble))
+        bars = ax.bar(x_pos, r2_with_ensemble, color=colors, edgecolor='black', linewidth=1.5)
+        
+        # Highlight ensemble bar
+        bars[-1].set_edgecolor('gold')
+        bars[-1].set_linewidth(3)
+        
+        # Add weight annotations
+        for i, (bar, weight, r2) in enumerate(zip(bars, weights_with_ensemble, r2_with_ensemble)):
+            # R² value
+            ax.annotate(f'R²={r2:.4f}', xy=(bar.get_x() + bar.get_width()/2, r2),
+                        xytext=(0, 5), textcoords='offset points',
+                        ha='center', fontsize=10, fontweight='bold')
+            # Weight value
+            if i < len(models):
+                ax.annotate(f'w={weight:.3f}', xy=(bar.get_x() + bar.get_width()/2, 0),
+                            xytext=(0, 5), textcoords='offset points',
+                            ha='center', fontsize=9, color='gray')
+        
+        ax.set_xticks(x_pos)
+        ax.set_xticklabels(models_with_ensemble, rotation=45, ha='right', fontsize=11)
+        ax.set_ylabel('R² Score', fontsize=12, fontweight='bold')
+        ax.set_title(title, fontsize=14, fontweight='bold', pad=15)
+        ax.grid(True, alpha=0.3, axis='y', linestyle='--')
+        ax.set_ylim(0, max(r2_with_ensemble) * 1.15)
+        
+        # Improvement indicator
+        best_base_r2 = max(r2_scores)
+        if ensemble_r2 > best_base_r2:
+            improvement = (ensemble_r2 - best_base_r2) / best_base_r2 * 100
+            ax.annotate(f'↑ {improvement:.1f}% vs best base',
+                        xy=(len(models), ensemble_r2),
+                        xytext=(20, 20), textcoords='offset points',
+                        fontsize=11, color='green', fontweight='bold',
+                        arrowprops=dict(arrowstyle='->', color='green'))
+        
+        plt.tight_layout()
+        return self._save_figure(fig, save_name)
 
 
 def create_visualizer(output_dir: str = 'outputs/figures') -> PanelVisualizer:

@@ -16,7 +16,7 @@ warnings.filterwarnings('ignore')
 from .config import Config, get_default_config
 from .logger import setup_logger, ProgressLogger
 from .data_loader import PanelDataLoader, PanelData, TemporalFeatureEngineer
-from .output_manager import OutputManager
+from .output_manager import OutputManager, to_array
 
 from .mcdm import (
     EntropyWeightCalculator, CRITICWeightCalculator, EnsembleWeightCalculator,
@@ -138,8 +138,10 @@ class MLTOPSISPipeline:
         # Setup clean output directory structure
         self._setup_output_directory()
         
+        # Setup logging with file rotation and clean formatting
         log_file = Path(self.config.output_dir) / 'logs' / 'pipeline.log'
-        self.logger = setup_logger('ml_topsis', log_file=log_file)
+        self.logger = setup_logger('ml_mcdm', log_file=log_file)
+        
         self.visualizer = PanelVisualizer(
             output_dir=str(Path(self.config.output_dir) / 'figures'),
             dpi=300  # High resolution
@@ -228,17 +230,23 @@ class MLTOPSISPipeline:
             try:
                 self._generate_all_visualizations(panel_data, weights, mcdm_results, 
                                                   ensemble_results, analysis_results,
-                                                  ml_results=ml_results)
+                                                  ml_results=ml_results,
+                                                  future_predictions=future_predictions)
             except Exception as e:
                 self.logger.warning(f"Visualization generation failed: {e}")
                 self.logger.info("Continuing with result saving...")
+        
+        # Get list of generated figures
+        figure_paths = self.visualizer.get_generated_figures() if hasattr(self.visualizer, 'get_generated_figures') else []
         
         # Phase 8: Save All Results (comprehensive CSV/JSON outputs)
         with ProgressLogger(self.logger, "Phase 8: Saving All Results"):
             saved_files = self.output_manager.save_all_results(
                 panel_data, weights, mcdm_results, ml_results,
                 ensemble_results, analysis_results, execution_time,
-                future_predictions=future_predictions
+                future_predictions=future_predictions,
+                config=self.config,
+                figure_paths=figure_paths
             )
             self.logger.info(f"Saved {len(saved_files['files'])} result categories")
         
@@ -644,31 +652,32 @@ class MLTOPSISPipeline:
         Dict[str, Any]
             Predicted components, MCDM scores, and rankings for 2025
         """
-        from .ml import UnifiedForecaster, ForecastMode
+        from .ml.advanced_forecasting import AdvancedMLForecaster
         
         current_year = max(panel_data.years)
         prediction_year = current_year + 1
         
         self.logger.info(f"Forecasting year {prediction_year} using data from {min(panel_data.years)}-{current_year}")
         
-        # Step 1: Forecast all components for 2025 using UnifiedForecaster
+        # Step 1: Forecast all components for 2025 using AdvancedMLForecaster
+        # This uses an ensemble of: Gradient Boosting, Random Forest, Extra Trees,
+        # Bayesian Ridge, and Huber regression with optimal weighting
         self.logger.info("Training ML models on all historical data...")
         
-        forecaster = UnifiedForecaster(
-            mode=ForecastMode.BALANCED,
-            include_neural=True,
-            include_tree_ensemble=True,
-            include_linear=True,
-            cv_folds=min(3, len(panel_data.years) - 1),
-            random_state=42,
-            verbose=False
+        forecaster = AdvancedMLForecaster(
+            include_gb=True,
+            include_rf=True,
+            include_et=True,
+            include_bayesian=True,
+            include_huber=True,
+            cv_splits=min(3, len(panel_data.years) - 1),
+            random_state=42
         )
         
         # Forecast all components
-        forecast_result = forecaster.forecast(
+        forecast_result = forecaster.fit_predict(
             panel_data,
-            target_components=panel_data.components,
-            holdout_validation=False  # Use ALL data for training
+            target_components=panel_data.components
         )
         
         # Get predicted component values for 2025
@@ -720,18 +729,25 @@ class MLTOPSISPipeline:
         self.logger.info(f"Predicted VIKOR: Best alternative Q = {vikor_result.Q.min():.4f}")
         
         # Step 3: Compile future prediction results
+        # Build prediction intervals DataFrame if available
+        uncertainty_df = None
+        if 'lower' in forecast_result.prediction_intervals:
+            lower = forecast_result.prediction_intervals['lower']
+            upper = forecast_result.prediction_intervals['upper']
+            uncertainty_df = (upper - lower) / (2 * 1.96)  # Convert back to std
+        
         future_results = {
             'prediction_year': prediction_year,
             'training_years': list(panel_data.years),
             'predicted_components': predicted_df,
-            'prediction_uncertainty': forecast_result.uncertainty,
+            'prediction_uncertainty': uncertainty_df,
             'topsis_scores': predicted_topsis_scores,
             'topsis_rankings': predicted_topsis_rankings,
             'topsis_result': topsis_result,
             'vikor': predicted_vikor,
             'vikor_result': vikor_result,
-            'model_contributions': forecast_result.model_contributions,
-            'forecast_summary': forecast_result.data_summary
+            'model_contributions': forecast_result.ensemble_weights,
+            'forecast_summary': forecast_result.metadata
         }
         
         # Log top 5 predicted rankings
@@ -812,68 +828,153 @@ class MLTOPSISPipeline:
                                     mcdm_results: Dict[str, Any],
                                     ml_results: Dict[str, Any],
                                     ensemble_results: Dict[str, Any]) -> None:
-        """Generate ML-specific visualizations."""
+        """Generate ML-specific visualizations as individual single charts."""
         try:
-            # 1. Random Forest Analysis
-            if ml_results.get('rf_result'):
-                rf_result = ml_results['rf_result']
-                self.visualizer.plot_rf_analysis(
-                    feature_importance=rf_result.feature_importance.to_dict(),
-                    cv_scores=rf_result.cv_scores,
-                    test_actual=rf_result.test_actual.values,
-                    test_predicted=rf_result.test_predictions.values,
-                    entity_names=list(rf_result.test_actual.index),
-                    title='Random Forest Time-Series CV Analysis'
-                )
-                self.logger.info("Generated: rf_analysis.png")
-                
-                # CV Results detailed
-                self.visualizer.plot_cv_results(
-                    cv_scores=rf_result.cv_scores,
-                    title='Random Forest Cross-Validation Performance'
-                )
-                self.logger.info("Generated: cv_results.png")
-                
-                # Prediction Analysis
-                self.visualizer.plot_prediction_analysis(
-                    y_actual=rf_result.test_actual.values,
-                    y_predicted=rf_result.test_predictions.values,
-                    entity_names=list(rf_result.test_actual.index),
-                    title='Random Forest Prediction Analysis',
-                    save_name='rf_prediction_analysis.png'
-                )
-                self.logger.info("Generated: rf_prediction_analysis.png")
-            
-            # 2. LSTM Forecasting Results
+            # ===== 1. LSTM Training Curve (Single Chart) =====
             if ml_results.get('lstm_result'):
                 lstm_result = ml_results['lstm_result']
                 
-                # Get actual and predicted values
+                self.visualizer.plot_lstm_training_curve(
+                    train_loss=lstm_result.train_loss,
+                    val_loss=lstm_result.val_loss,
+                    title='LSTM Neural Network Training Progress',
+                    save_name='16_lstm_training_curve.png'
+                )
+                self.logger.info("Generated: 16_lstm_training_curve.png")
+                
+                # ===== 2. LSTM Actual vs Predicted (Single Chart) =====
                 if hasattr(lstm_result, 'actual') and hasattr(lstm_result, 'predictions'):
                     actual_vals = lstm_result.actual.values.flatten() if hasattr(lstm_result.actual, 'values') else lstm_result.actual.flatten()
                     pred_vals = lstm_result.predictions.values.flatten() if hasattr(lstm_result.predictions, 'values') else lstm_result.predictions.flatten()
-                    entity_names = list(lstm_result.actual.index) if hasattr(lstm_result.actual, 'index') else [f'Entity_{i}' for i in range(len(actual_vals))]
+                    entity_names = list(lstm_result.actual.index) if hasattr(lstm_result.actual, 'index') else panel_data.entities
                     
-                    self.visualizer.plot_lstm_forecast(
+                    self.visualizer.plot_actual_vs_predicted(
+                        actual=actual_vals,
+                        predicted=pred_vals,
+                        model_name='LSTM',
+                        entity_names=entity_names,
+                        title='LSTM Model: Actual vs Predicted Values',
+                        save_name='17_lstm_actual_vs_predicted.png'
+                    )
+                    self.logger.info("Generated: 17_lstm_actual_vs_predicted.png")
+                    
+                    # ===== 3. LSTM Residual Analysis (Single Chart) =====
+                    self.visualizer.plot_residual_analysis(
+                        actual=actual_vals,
+                        predicted=pred_vals,
+                        model_name='LSTM',
+                        title='LSTM Model: Residual Distribution Analysis',
+                        save_name='18_lstm_residual_analysis.png'
+                    )
+                    self.logger.info("Generated: 18_lstm_residual_analysis.png")
+            
+            # ===== 4. Random Forest Feature Importance Detailed (Single Chart) =====
+            if ml_results.get('rf_result'):
+                rf_result = ml_results['rf_result']
+                
+                self.visualizer.plot_rf_feature_importance_detailed(
+                    feature_importance=rf_result.feature_importance.to_dict(),
+                    title='Random Forest Feature Importance with Cumulative Contribution',
+                    save_name='19_rf_feature_importance_detailed.png'
+                )
+                self.logger.info("Generated: 19_rf_feature_importance_detailed.png")
+                
+                # ===== 5. Random Forest CV Progression (Single Chart) =====
+                self.visualizer.plot_rf_cv_progression(
+                    cv_scores=rf_result.cv_scores,
+                    title='Random Forest Cross-Validation Score Progression',
+                    save_name='20_rf_cv_progression.png'
+                )
+                self.logger.info("Generated: 20_rf_cv_progression.png")
+                
+                # ===== 6. RF Actual vs Predicted (Single Chart) =====
+                self.visualizer.plot_actual_vs_predicted(
+                    actual=rf_result.test_actual.values,
+                    predicted=rf_result.test_predictions.values,
+                    model_name='Random Forest',
+                    entity_names=list(rf_result.test_actual.index),
+                    title='Random Forest Model: Actual vs Predicted Values',
+                    save_name='21_rf_actual_vs_predicted.png'
+                )
+                self.logger.info("Generated: 21_rf_actual_vs_predicted.png")
+                
+                # ===== 7. RF Residual Analysis (Single Chart) =====
+                self.visualizer.plot_residual_analysis(
+                    actual=rf_result.test_actual.values,
+                    predicted=rf_result.test_predictions.values,
+                    model_name='Random Forest',
+                    title='Random Forest Model: Residual Distribution Analysis',
+                    save_name='22_rf_residual_analysis.png'
+                )
+                self.logger.info("Generated: 22_rf_residual_analysis.png")
+                
+                # ===== 8. RF Rank Correlation Analysis (Single Chart) =====
+                self.visualizer.plot_rank_correlation_analysis(
+                    actual=rf_result.test_actual.values,
+                    predicted=rf_result.test_predictions.values,
+                    entity_names=list(rf_result.test_actual.index),
+                    model_name='Random Forest',
+                    title='Random Forest Model: Rank Prediction Accuracy',
+                    save_name='23_rf_rank_correlation.png'
+                )
+                self.logger.info("Generated: 23_rf_rank_correlation.png")
+            
+            # ===== 9. Model Convergence Analysis (Single Chart) =====
+            if ml_results.get('lstm_result'):
+                lstm = ml_results['lstm_result']
+                train_history = {
+                    'Training Loss': lstm.train_loss,
+                    'Validation Loss': lstm.val_loss
+                }
+                self.visualizer.plot_model_convergence_analysis(
+                    train_history=train_history,
+                    title='LSTM Model Convergence Behavior',
+                    save_name='24_model_convergence.png'
+                )
+                self.logger.info("Generated: 24_model_convergence.png")
+            
+            # ===== 10. Ensemble Model Contribution (Single Chart) =====
+            if ensemble_results.get('stacking'):
+                stacking = ensemble_results['stacking']
+                base_preds = stacking.base_model_predictions
+                actual = mcdm_results['topsis_scores']
+                
+                weights_dict = dict(zip(
+                    base_preds.keys(),
+                    stacking.meta_model_weights
+                ))
+                
+                # Convert base_preds values to numpy arrays
+                base_preds_np = {k: np.array(v) for k, v in base_preds.items()}
+                
+                self.visualizer.plot_ensemble_contribution_analysis(
+                    base_predictions=base_preds_np,
+                    weights=weights_dict,
+                    actual=to_array(actual),
+                    title='Ensemble Model: Base Model Contribution Analysis',
+                    save_name='25_ensemble_contribution.png'
+                )
+                self.logger.info("Generated: 25_ensemble_contribution.png")
+            
+            # ===== 11. LSTM Rank Correlation (if available) =====
+            if ml_results.get('lstm_result'):
+                lstm_result = ml_results['lstm_result']
+                if hasattr(lstm_result, 'actual') and hasattr(lstm_result, 'predictions'):
+                    actual_vals = lstm_result.actual.values.flatten() if hasattr(lstm_result.actual, 'values') else lstm_result.actual.flatten()
+                    pred_vals = lstm_result.predictions.values.flatten() if hasattr(lstm_result.predictions, 'values') else lstm_result.predictions.flatten()
+                    entity_names = list(lstm_result.actual.index) if hasattr(lstm_result.actual, 'index') else panel_data.entities
+                    
+                    self.visualizer.plot_rank_correlation_analysis(
                         actual=actual_vals,
                         predicted=pred_vals,
                         entity_names=entity_names,
-                        train_loss=lstm_result.train_loss,
-                        val_loss=lstm_result.val_loss,
-                        title='LSTM Time-Series Forecast Results'
+                        model_name='LSTM',
+                        title='LSTM Model: Rank Prediction Accuracy',
+                        save_name='26_lstm_rank_correlation.png'
                     )
-                    self.logger.info("Generated: lstm_forecast.png")
-                
-                # Training progress
-                self.visualizer.plot_ml_training_progress(
-                    train_losses=lstm_result.train_loss,
-                    val_losses=lstm_result.val_loss,
-                    title='LSTM Training Progress',
-                    save_name='lstm_training_progress.png'
-                )
-                self.logger.info("Generated: lstm_training_progress.png")
+                    self.logger.info("Generated: 26_lstm_rank_correlation.png")
             
-            # 3. Model Comparison Summary
+            # ===== 12. Model Performance Comparison Bar Chart (Single Chart) =====
             model_metrics = {}
             
             if ml_results.get('rf_result'):
@@ -888,7 +989,7 @@ class MLTOPSISPipeline:
             if ml_results.get('lstm_result'):
                 lstm = ml_results['lstm_result']
                 model_metrics['LSTM'] = {
-                    'R²': 1 - lstm.test_metrics.get('mse', 1),  # Approximate R²
+                    'R²': 1 - lstm.test_metrics.get('mse', 1),
                     'MAE': lstm.test_metrics.get('mae', 0),
                     'RMSE': lstm.test_metrics.get('rmse', 0),
                     'Rank Corr': lstm.rank_correlation
@@ -907,67 +1008,11 @@ class MLTOPSISPipeline:
                 self.visualizer.plot_model_comparison(
                     model_results=model_metrics,
                     metrics=['R²', 'MAE', 'Rank Corr'],
-                    title='ML Model Performance Comparison'
+                    title='Machine Learning Model Performance Comparison',
+                    save_name='27_ml_model_comparison.png'
                 )
-                self.logger.info("Generated: model_comparison.png")
-            
-            # 4. Ensemble Model Analysis
-            if ensemble_results.get('stacking'):
-                stacking = ensemble_results['stacking']
-                base_preds = stacking.base_model_predictions
-                meta_preds = stacking.final_predictions  # Correct attribute name
+                self.logger.info("Generated: 27_ml_model_comparison.png")
                 
-                # Use TOPSIS scores as actual target
-                actual = mcdm_results['topsis_scores']
-                
-                weights_dict = dict(zip(
-                    base_preds.keys(),
-                    stacking.meta_model_weights
-                ))
-                
-                self.visualizer.plot_ensemble_model_analysis(
-                    base_predictions=base_preds,
-                    meta_predictions=meta_preds,
-                    actual=actual,
-                    weights=weights_dict,
-                    entity_names=panel_data.entities,
-                    title='Stacking Ensemble Analysis'
-                )
-                self.logger.info("Generated: ensemble_model_analysis.png")
-            
-            # 5. Comprehensive ML Dashboard
-            dashboard_data = {
-                'rf_importance': ml_results.get('rf_importance', {}),
-                'rf_cv_scores': ml_results['rf_result'].cv_scores if ml_results.get('rf_result') else {},
-                'lstm_train_loss': ml_results['lstm_result'].train_loss if ml_results.get('lstm_result') else [],
-                'lstm_val_loss': ml_results['lstm_result'].val_loss if ml_results.get('lstm_result') else [],
-                'model_metrics': model_metrics,
-                'predictions': {}
-            }
-            
-            # Add predictions for dashboard
-            if ml_results.get('rf_result'):
-                rf = ml_results['rf_result']
-                dashboard_data['predictions']['RF'] = (rf.test_actual.values, rf.test_predictions.values)
-            
-            if ml_results.get('lstm_result'):
-                lstm = ml_results['lstm_result']
-                if hasattr(lstm, 'actual') and hasattr(lstm, 'predictions'):
-                    actual_v = lstm.actual.values.flatten() if hasattr(lstm.actual, 'values') else lstm.actual.flatten()
-                    pred_v = lstm.predictions.values.flatten() if hasattr(lstm.predictions, 'values') else lstm.predictions.flatten()
-                    dashboard_data['predictions']['LSTM'] = (actual_v, pred_v)
-            
-            if ensemble_results.get('stacking'):
-                stacking = ensemble_results['stacking']
-                dashboard_data['predictions']['Ensemble'] = (mcdm_results['topsis_scores'], 
-                                                            stacking.final_predictions)
-            
-            self.visualizer.plot_ml_summary_dashboard(
-                results=dashboard_data,
-                title='ML-MCDM Analysis Dashboard'
-            )
-            self.logger.info("Generated: ml_dashboard.png")
-            
         except Exception as e:
             self.logger.warning(f"ML visualization generation failed: {e}")
             import traceback
@@ -978,11 +1023,13 @@ class MLTOPSISPipeline:
                                      mcdm_results: Dict[str, Any],
                                      ensemble_results: Dict[str, Any],
                                      analysis_results: Dict[str, Any],
-                                     ml_results: Optional[Dict[str, Any]] = None) -> None:
+                                     ml_results: Optional[Dict[str, Any]] = None,
+                                     future_predictions: Optional[Dict[str, Any]] = None) -> None:
         """
         Generate all visualizations as individual high-resolution charts.
         
         This produces a complete set of professional-quality figures.
+        Each PNG contains ONLY a single high-resolution chart.
         """
         figure_count = 0
         
@@ -1011,12 +1058,6 @@ class MLTOPSISPipeline:
             )
             figure_count += 1
             self.logger.info("Generated: 02_score_evolution_bottom.png")
-            
-            # Helper function to convert to numpy array
-            def to_array(x):
-                if hasattr(x, 'values'):
-                    return x.values
-                return np.asarray(x)
             
             # ===== WEIGHTS ANALYSIS =====
             self.visualizer.plot_weights_comparison(
@@ -1128,11 +1169,11 @@ class MLTOPSISPipeline:
                 figure_count += 1
                 self.logger.info("Generated: 12_final_ranking.png")
             
-            # ===== ML MODEL VISUALIZATIONS =====
+            # ===== ML MODEL VISUALIZATIONS (Single Charts 16-27) =====
             if ml_results:
                 self._generate_ml_visualizations(panel_data, mcdm_results, 
                                                  ml_results, ensemble_results)
-                figure_count += 5  # Approximate additional figures from ML
+                figure_count += 12  # Up to 12 additional ML figures (16-27)
             
             # ===== METHOD COMPARISON (Parallel Coordinates) =====
             self.visualizer.plot_method_comparison(
@@ -1156,6 +1197,20 @@ class MLTOPSISPipeline:
                 )
                 figure_count += 1
                 self.logger.info("Generated: 14_ensemble_weights.png")
+            
+            # ===== FUTURE PREDICTIONS =====
+            if future_predictions:
+                prediction_year = future_predictions.get('prediction_year', 2025)
+                self.visualizer.plot_future_predictions(
+                    panel_data.entities,
+                    to_array(mcdm_results['topsis_scores']),
+                    to_array(future_predictions['topsis_scores']),
+                    prediction_year,
+                    title=f'Future Predictions Comparison ({prediction_year})',
+                    save_name='15_future_predictions.png'
+                )
+                figure_count += 1
+                self.logger.info("Generated: 15_future_predictions.png")
             
             self.logger.info(f"Total figures generated: {figure_count}")
             self.logger.info(f"All figures saved to: {self.visualizer.output_dir}")

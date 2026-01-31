@@ -4,9 +4,30 @@
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any, Tuple, Union
 from datetime import datetime
 import json
+
+
+def to_array(x: Any) -> np.ndarray:
+    """
+    Convert various data types to numpy array.
+    
+    Parameters
+    ----------
+    x : Any
+        Input data (pandas Series/DataFrame, list, or numpy array)
+    
+    Returns
+    -------
+    np.ndarray
+        Converted numpy array
+    """
+    if x is None:
+        return np.array([])
+    if hasattr(x, 'values'):
+        return x.values
+    return np.array(x) if not isinstance(x, np.ndarray) else x
 
 
 class OutputManager:
@@ -106,12 +127,6 @@ class OutputManager:
         """
         entities = panel_data.entities
         
-        # Helper function to convert to numpy array
-        def to_array(x):
-            if hasattr(x, 'values'):
-                return x.values
-            return np.array(x) if not isinstance(x, np.ndarray) else x
-        
         # Build comprehensive ranking DataFrame
         df = pd.DataFrame({
             'Rank': range(1, len(entities) + 1),
@@ -131,7 +146,6 @@ class OutputManager:
             agg = ensemble_results['aggregated']
             df['Final_Score'] = to_array(agg.final_scores)
             df['Final_Rank'] = to_array(agg.final_ranking)
-            df['Kendall_W'] = agg.kendall_w
         
         # Sort by final rank or TOPSIS rank
         sort_col = 'Final_Rank' if 'Final_Rank' in df.columns else 'TOPSIS_Rank'
@@ -162,20 +176,17 @@ class OutputManager:
         """
         entities = panel_data.entities
         
-        # Helper function to convert to numpy array
-        def to_array(x):
-            if hasattr(x, 'values'):
-                return x.values
-            return np.array(x) if not isinstance(x, np.ndarray) else x
+        # Get TOPSIS distances from result object (correct attribute names: d_positive, d_negative)
+        topsis_result = mcdm_results.get('topsis_result')
+        d_positive = to_array(topsis_result.d_positive) if topsis_result and hasattr(topsis_result, 'd_positive') else np.full(len(entities), np.nan)
+        d_negative = to_array(topsis_result.d_negative) if topsis_result and hasattr(topsis_result, 'd_negative') else np.full(len(entities), np.nan)
         
         df = pd.DataFrame({
             'Entity': entities,
             'TOPSIS_Score': to_array(mcdm_results['topsis_scores']),
             'TOPSIS_Rank': to_array(mcdm_results['topsis_rankings']),
-            'TOPSIS_Distance_Positive': to_array(mcdm_results['topsis_result'].distances_positive) 
-                if hasattr(mcdm_results.get('topsis_result'), 'distances_positive') else np.nan,
-            'TOPSIS_Distance_Negative': to_array(mcdm_results['topsis_result'].distances_negative)
-                if hasattr(mcdm_results.get('topsis_result'), 'distances_negative') else np.nan,
+            'TOPSIS_Distance_Positive': d_positive,
+            'TOPSIS_Distance_Negative': d_negative,
             'Dynamic_TOPSIS_Score': to_array(mcdm_results['dynamic_topsis_scores']),
             'Fuzzy_TOPSIS_Score': to_array(mcdm_results['fuzzy_scores']),
             'VIKOR_Q': to_array(mcdm_results['vikor']['Q']),
@@ -349,23 +360,25 @@ class OutputManager:
             metrics_df.to_csv(path, index=False, float_format='%.6f')
             saved_files['stacking_performance'] = str(path)
         
-        # 2. Rank Aggregation Results
+        # 2. Rank Aggregation Metadata (save as JSON to avoid redundancy with final_rankings.csv)
         if ensemble_results.get('aggregated'):
             agg = ensemble_results['aggregated']
             
-            agg_df = pd.DataFrame({
-                'Entity': panel_data.entities,
-                'Final_Score': agg.final_scores,
-                'Final_Rank': agg.final_ranking,
-            })
-            agg_df = agg_df.sort_values('Final_Rank')
+            # Save aggregation metadata as JSON (Kendall's W and method info)
+            agg_metadata = {
+                'kendall_w': float(agg.kendall_w),
+                'interpretation': 'Strong agreement' if agg.kendall_w > 0.7 else 
+                                 'Moderate agreement' if agg.kendall_w > 0.5 else 'Weak agreement',
+                'n_entities': len(panel_data.entities),
+                'aggregation_method': agg.method if hasattr(agg, 'method') else 'borda',
+                'top_entity': panel_data.entities[int(np.argmin(to_array(agg.final_ranking)))],
+                'top_score': float(np.max(to_array(agg.final_scores)))
+            }
             
-            # Add Kendall's W as metadata
-            agg_df['Kendall_W'] = agg.kendall_w
-            
-            path = self.results_dir / 'rank_aggregation.csv'
-            agg_df.to_csv(path, index=False, float_format='%.6f')
-            saved_files['rank_aggregation'] = str(path)
+            path = self.results_dir / 'aggregation_metadata.json'
+            with open(path, 'w') as f:
+                json.dump(agg_metadata, f, indent=2)
+            saved_files['aggregation_metadata'] = str(path)
         
         return saved_files
     
@@ -697,12 +710,6 @@ class OutputManager:
             report_lines.append(f"\n  Prediction Year: {pred_year}")
             report_lines.append(f"  Training Data: {min(training_years)}-{max(training_years)} ({len(training_years)} years)")
             
-            # Helper to convert to numpy
-            def to_array(x):
-                if hasattr(x, 'values'):
-                    return x.values
-                return np.array(x) if not isinstance(x, np.ndarray) else x
-            
             pred_scores = to_array(future_predictions['topsis_scores'])
             pred_ranks = to_array(future_predictions['topsis_rankings'])
             
@@ -785,6 +792,13 @@ class OutputManager:
                 if rf_r2 > best_r2:
                     best_r2 = rf_r2
                     best_model = "Random Forest"
+            if ml_results.get('lstm_result'):
+                lstm = ml_results['lstm_result']
+                # Calculate approximate R² for LSTM from MSE
+                lstm_r2 = 1 - lstm.test_metrics.get('mse', 1) if lstm.test_metrics.get('mse', 1) < 1 else 0
+                if lstm_r2 > best_r2:
+                    best_r2 = lstm_r2
+                    best_model = "LSTM"
             report_lines.append(f"\n  • Best ML Model: {best_model} (R² = {best_r2:.4f})")
         
         report_lines.append("\n" + "=" * 80)
@@ -818,12 +832,6 @@ class OutputManager:
         """
         saved_files = {}
         prediction_year = future_predictions.get('prediction_year', 2025)
-        
-        # Helper to convert to numpy
-        def to_array(x):
-            if hasattr(x, 'values'):
-                return x.values
-            return np.array(x) if not isinstance(x, np.ndarray) else x
         
         # 1. Save predicted rankings for future year
         entities = panel_data.entities
@@ -921,6 +929,176 @@ class OutputManager:
         
         return saved_files
     
+    def save_config_snapshot(self, config: Any) -> str:
+        """
+        Save configuration snapshot used for the analysis run.
+        
+        Parameters
+        ----------
+        config : Config
+            Configuration object used for the analysis
+        
+        Returns
+        -------
+        str
+            Path to saved config file
+        """
+        config_data = {
+            'timestamp': datetime.now().isoformat(),
+            'config': {}
+        }
+        
+        # Extract config as dictionary if possible
+        if hasattr(config, 'to_dict'):
+            config_data['config'] = config.to_dict()
+        elif hasattr(config, '__dict__'):
+            # Convert dataclass-like objects
+            def serialize(obj):
+                if hasattr(obj, '__dict__'):
+                    return {k: serialize(v) for k, v in obj.__dict__.items() 
+                            if not k.startswith('_')}
+                elif hasattr(obj, 'value'):  # Enum
+                    return obj.value
+                elif isinstance(obj, Path):
+                    return str(obj)
+                elif isinstance(obj, (list, tuple)):
+                    return [serialize(i) for i in obj]
+                elif isinstance(obj, dict):
+                    return {k: serialize(v) for k, v in obj.items()}
+                return obj
+            config_data['config'] = serialize(config)
+        
+        path = self.results_dir / 'config_snapshot.json'
+        with open(path, 'w') as f:
+            json.dump(config_data, f, indent=2, default=str)
+        
+        return str(path)
+    
+    def save_figure_manifest(self, figure_paths: List[str]) -> str:
+        """
+        Save manifest of all generated figures with descriptions.
+        
+        Parameters
+        ----------
+        figure_paths : List[str]
+            List of paths to generated figures
+        
+        Returns
+        -------
+        str
+            Path to saved manifest
+        """
+        # Figure descriptions based on naming convention
+        figure_descriptions = {
+            # Core MCDM Analysis (01-15)
+            '01_score_evolution_top': 'Score evolution over time for top 10 performers',
+            '02_score_evolution_bottom': 'Score evolution over time for bottom 10 performers',
+            '03_weights_comparison': 'Comparison of criteria weights (Entropy vs CRITIC vs Ensemble)',
+            '04_topsis_scores': 'TOPSIS scores bar chart - complete ranking',
+            '05_vikor_analysis': 'VIKOR analysis showing Q, S, R values',
+            '06_method_agreement': 'MCDM methods ranking agreement (Spearman correlation matrix)',
+            '07_score_distribution': 'TOPSIS score distribution histogram',
+            '08_sigma_convergence': 'Sigma convergence analysis over time',
+            '09_beta_convergence': 'Beta convergence analysis information',
+            '10_feature_importance': 'Random Forest feature importance',
+            '11_sensitivity_analysis': 'Criteria weight sensitivity analysis',
+            '12_final_ranking': 'Final aggregated ranking summary',
+            '13_method_comparison': 'MCDM methods ranking comparison (parallel coordinates)',
+            '14_ensemble_weights': 'Stacking ensemble model weights',
+            '15_future_predictions': 'Future predictions comparison (current vs predicted rankings)',
+            
+            # ML Process & Progress Visualizations (16-27) - Single Charts
+            '16_lstm_training_curve': 'LSTM neural network training progress with loss curves and convergence analysis',
+            '17_lstm_actual_vs_predicted': 'LSTM model actual vs predicted values scatter plot with regression analysis',
+            '18_lstm_residual_analysis': 'LSTM model residual distribution with statistical bands',
+            '19_rf_feature_importance_detailed': 'Random Forest feature importance with cumulative contribution analysis',
+            '20_rf_cv_progression': 'Random Forest cross-validation score progression across folds',
+            '21_rf_actual_vs_predicted': 'Random Forest model actual vs predicted values with confidence intervals',
+            '22_rf_residual_analysis': 'Random Forest model residual analysis with trend detection',
+            '23_rf_rank_correlation': 'Random Forest rank prediction accuracy with Spearman correlation',
+            '24_model_convergence': 'Multi-metric model convergence behavior analysis',
+            '25_ensemble_contribution': 'Ensemble model base model contribution with R² comparison',
+            '26_lstm_rank_correlation': 'LSTM model rank prediction accuracy analysis',
+            '27_ml_model_comparison': 'Machine learning model performance comparison across metrics',
+            
+            # Legacy figure names (for backwards compatibility)
+            'rf_analysis': 'Random Forest analysis (feature importance, predictions)',
+            'cv_results': 'Cross-validation performance results',
+            'rf_prediction_analysis': 'Random Forest prediction vs actual analysis',
+            'lstm_forecast': 'LSTM time-series forecast results',
+            'lstm_training_progress': 'LSTM training loss progression',
+            'model_comparison': 'ML model performance comparison',
+            'ensemble_model_analysis': 'Stacking ensemble analysis',
+            'ml_dashboard': 'Comprehensive ML-MCDM analysis dashboard'
+        }
+        
+        manifest = {
+            'timestamp': datetime.now().isoformat(),
+            'total_figures': len(figure_paths),
+            'output_directory': str(self.figures_dir),
+            'figures': []
+        }
+        
+        for path in figure_paths:
+            path_obj = Path(path)
+            filename = path_obj.stem
+            
+            # Find matching description
+            description = 'No description available'
+            for key, desc in figure_descriptions.items():
+                if key in filename:
+                    description = desc
+                    break
+            
+            manifest['figures'].append({
+                'filename': path_obj.name,
+                'path': str(path),
+                'description': description,
+                'format': path_obj.suffix.lstrip('.').upper()
+            })
+        
+        path = self.figures_dir / 'figure_manifest.json'
+        with open(path, 'w') as f:
+            json.dump(manifest, f, indent=2)
+        
+        return str(path)
+    
+    def save_execution_summary(self, 
+                               execution_time: float,
+                               phase_timings: Optional[Dict[str, float]] = None) -> str:
+        """
+        Save machine-readable execution summary.
+        
+        Parameters
+        ----------
+        execution_time : float
+            Total execution time in seconds
+        phase_timings : Dict[str, float], optional
+            Timing for each pipeline phase
+        
+        Returns
+        -------
+        str
+            Path to saved summary
+        """
+        summary = {
+            'timestamp': datetime.now().isoformat(),
+            'total_execution_time_seconds': execution_time,
+            'total_execution_time_formatted': f"{execution_time:.2f}s ({execution_time/60:.2f}min)",
+            'phase_timings': phase_timings or {},
+            'output_directories': {
+                'results': str(self.results_dir),
+                'figures': str(self.figures_dir),
+                'reports': str(self.reports_dir)
+            }
+        }
+        
+        path = self.results_dir / 'execution_summary.json'
+        with open(path, 'w') as f:
+            json.dump(summary, f, indent=2)
+        
+        return str(path)
+    
     def save_all_results(self,
                          panel_data: Any,
                          weights: Dict[str, np.ndarray],
@@ -929,7 +1107,9 @@ class OutputManager:
                          ensemble_results: Dict[str, Any],
                          analysis_results: Dict[str, Any],
                          execution_time: float,
-                         future_predictions: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+                         future_predictions: Optional[Dict[str, Any]] = None,
+                         config: Optional[Any] = None,
+                         figure_paths: Optional[List[str]] = None) -> Dict[str, Any]:
         """
         Save all analysis results in organized structure with robust error handling.
         
@@ -992,6 +1172,17 @@ class OutputManager:
                   panel_data, weights, mcdm_results, ml_results,
                   ensemble_results, analysis_results, execution_time,
                   future_predictions)
+        
+        # Save config snapshot if provided
+        if config is not None:
+            safe_save('config_snapshot', self.save_config_snapshot, config)
+        
+        # Save figure manifest if figure paths provided
+        if figure_paths:
+            safe_save('figure_manifest', self.save_figure_manifest, figure_paths)
+        
+        # Save execution summary
+        safe_save('execution_summary', self.save_execution_summary, execution_time)
         
         # Save manifest
         try:
