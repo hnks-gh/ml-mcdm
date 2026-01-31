@@ -63,8 +63,12 @@ class PathConfig:
         return self.output_dir / "reports"
     
     @property
-    def models_dir(self) -> Path:
-        return self.output_dir / "models"
+    def results_dir(self) -> Path:
+        return self.output_dir / "results"
+    
+    @property
+    def logs_dir(self) -> Path:
+        return self.output_dir / "logs"
     
     @property
     def panel_data_file(self) -> Path:
@@ -77,7 +81,7 @@ class PathConfig:
     def ensure_directories(self) -> None:
         """Create all necessary directories."""
         for d in [self.data_dir, self.output_dir, self.figures_dir, 
-                  self.reports_dir, self.models_dir]:
+                  self.reports_dir, self.results_dir, self.logs_dir]:
             d.mkdir(parents=True, exist_ok=True)
 
 

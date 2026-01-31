@@ -110,11 +110,14 @@ class RoughSetReducer:
         if condition_cols is None:
             condition_cols = [c for c in df.columns if c != decision_col]
         
+        # Reset index to ensure integer indexing works consistently
+        df = df.reset_index(drop=True)
+        
         # Discretize continuous attributes
         df_discrete = self._discretize(df, condition_cols)
         
         # Calculate indiscernibility relations and approximations
-        objects = df.index.tolist()
+        objects = df.index.tolist()  # Now always 0, 1, 2, ...
         
         # Find core (indispensable attributes)
         core = self._find_core(df_discrete, condition_cols, decision_col, objects)

@@ -48,53 +48,91 @@ class LSTMResult:
 class SimpleLSTM:
     """
     Simple LSTM implementation using numpy for environments without PyTorch/TensorFlow.
-    Uses a basic recurrent approach for forecasting.
+    Uses a basic recurrent approach for forecasting with gradient descent training.
     """
     
     def __init__(self, hidden_size: int = 32, learning_rate: float = 0.01):
         self.hidden_size = hidden_size
         self.learning_rate = learning_rate
         self.weights = None
+        self.training_history = {'train_loss': [], 'val_loss': []}
     
-    def fit(self, X: np.ndarray, y: np.ndarray, epochs: int = 100) -> List[float]:
-        """Fit using simple linear mapping with temporal features."""
-        # Flatten temporal features
+    def fit(self, X: np.ndarray, y: np.ndarray, epochs: int = 100, 
+            X_val: Optional[np.ndarray] = None, y_val: Optional[np.ndarray] = None) -> List[float]:
+        """Fit using iterative gradient descent for better training visualization."""
+        n_samples, seq_len, n_features = X.shape
+        
+        # Prepare features
+        X_full = self._prepare_features(X)
+        n_features_full = X_full.shape[1]
+        
+        # Prepare validation features if provided
+        X_val_full = self._prepare_features(X_val) if X_val is not None else None
+        
+        # Initialize weights randomly
+        np.random.seed(42)
+        self.weights = np.random.randn(n_features_full, y.shape[1] if len(y.shape) > 1 else 1) * 0.01
+        if len(y.shape) == 1:
+            y = y.reshape(-1, 1)
+        if y_val is not None and len(y_val.shape) == 1:
+            y_val = y_val.reshape(-1, 1)
+        
+        # Training with gradient descent
+        train_losses = []
+        val_losses = []
+        lambda_reg = 0.01
+        
+        for epoch in range(epochs):
+            # Forward pass
+            y_pred = X_full @ self.weights
+            
+            # Calculate training loss (MSE + L2 regularization)
+            train_mse = np.mean((y - y_pred) ** 2)
+            reg_loss = lambda_reg * np.sum(self.weights ** 2)
+            train_loss = train_mse + reg_loss
+            train_losses.append(train_loss)
+            
+            # Validation loss
+            if X_val_full is not None and y_val is not None:
+                val_pred = X_val_full @ self.weights
+                val_loss = np.mean((y_val - val_pred) ** 2)
+                val_losses.append(val_loss)
+            
+            # Gradient descent step
+            gradient = (2 / n_samples) * X_full.T @ (y_pred - y) + 2 * lambda_reg * self.weights
+            self.weights -= self.learning_rate * gradient
+            
+            # Adaptive learning rate decay
+            if epoch > 0 and epoch % 20 == 0:
+                self.learning_rate *= 0.9
+        
+        self.training_history['train_loss'] = train_losses
+        self.training_history['val_loss'] = val_losses if val_losses else train_losses
+        
+        return train_losses
+    
+    def _prepare_features(self, X: np.ndarray) -> np.ndarray:
+        """Prepare temporal features from input sequences."""
+        if X is None or len(X) == 0:
+            return None
         n_samples, seq_len, n_features = X.shape
         X_flat = X.reshape(n_samples, -1)
         
-        # Add temporal aggregates
+        # Add temporal aggregates for richer features
         X_mean = X.mean(axis=1)
         X_last = X[:, -1, :]
         X_trend = X[:, -1, :] - X[:, 0, :]
-        X_full = np.hstack([X_flat, X_mean, X_last, X_trend])
+        X_std = X.std(axis=1)
+        X_max = X.max(axis=1)
+        X_min = X.min(axis=1)
         
-        # Ridge regression
-        lambda_reg = 0.1
-        XtX = X_full.T @ X_full + lambda_reg * np.eye(X_full.shape[1])
-        Xty = X_full.T @ y
-        
-        try:
-            self.weights = np.linalg.solve(XtX, Xty)
-        except:
-            self.weights = np.linalg.lstsq(X_full, y, rcond=None)[0]
-        
-        # Calculate training loss
-        y_pred = X_full @ self.weights
-        mse = np.mean((y - y_pred) ** 2)
-        
-        return [mse] * epochs  # Simplified - single fit
+        return np.hstack([X_flat, X_mean, X_last, X_trend, X_std, X_max, X_min])
     
     def predict(self, X: np.ndarray) -> np.ndarray:
         """Predict using fitted weights."""
-        n_samples, seq_len, n_features = X.shape
-        X_flat = X.reshape(n_samples, -1)
-        
-        X_mean = X.mean(axis=1)
-        X_last = X[:, -1, :]
-        X_trend = X[:, -1, :] - X[:, 0, :]
-        X_full = np.hstack([X_flat, X_mean, X_last, X_trend])
-        
-        return X_full @ self.weights
+        X_full = self._prepare_features(X)
+        predictions = X_full @ self.weights
+        return predictions.flatten() if predictions.shape[1] == 1 else predictions
 
 
 class LSTMForecaster:
@@ -209,9 +247,13 @@ class LSTMForecaster:
     
     def _prepare_sequences(self, panel_data, target_cols: List[str], 
                           aggregate: bool) -> Tuple:
-        """Prepare sequences for LSTM training."""
+        """Prepare sequences for LSTM training with adaptive sequence length."""
         provinces = panel_data.provinces
         years = sorted(panel_data.years)
+        n_years = len(years)
+        
+        # Adapt sequence length to available data
+        seq_len = min(self.sequence_length, max(1, n_years - 2))
         
         X_sequences = []
         y_values = []
@@ -220,40 +262,56 @@ class LSTMForecaster:
         test_provinces = []
         
         for province in provinces:
-            province_data = panel_data.get_province(province)
-            
-            # Get values in temporal order
-            values = province_data.loc[years, target_cols].values
-            
-            if aggregate:
-                # Use mean across components as target
-                values = values.mean(axis=1, keepdims=True)
-            
-            n_years = len(years)
-            seq_len = self.sequence_length
-            
-            # Create sequences for training (all but last year)
-            for i in range(n_years - seq_len - 1):
-                X_seq = values[i:i + seq_len]
-                y_val = values[i + seq_len]
-                X_sequences.append(X_seq)
-                y_values.append(y_val)
-            
-            # Test sequence (predict last year)
-            if n_years >= seq_len + 1:
-                test_X.append(values[-(seq_len + 1):-1])
-                test_y.append(values[-1])
-                test_provinces.append(province)
+            try:
+                province_data = panel_data.get_province(province)
+                
+                # Get values in temporal order - handle missing years
+                available_years = [y for y in years if y in province_data.index]
+                if len(available_years) < seq_len + 1:
+                    continue
+                
+                values = province_data.loc[available_years, target_cols].values
+                
+                if aggregate:
+                    # Use mean across components as target
+                    values = values.mean(axis=1, keepdims=True)
+                
+                n_available = len(available_years)
+                
+                # Create sequences for training (all but last year)
+                for i in range(n_available - seq_len - 1):
+                    X_seq = values[i:i + seq_len]
+                    y_val = values[i + seq_len]
+                    if not np.any(np.isnan(X_seq)) and not np.any(np.isnan(y_val)):
+                        X_sequences.append(X_seq)
+                        y_values.append(y_val)
+                
+                # Test sequence (predict last year)
+                if n_available >= seq_len + 1:
+                    test_seq = values[-(seq_len + 1):-1]
+                    test_target = values[-1]
+                    if not np.any(np.isnan(test_seq)) and not np.any(np.isnan(test_target)):
+                        test_X.append(test_seq)
+                        test_y.append(test_target)
+                        test_provinces.append(province)
+            except Exception:
+                continue  # Skip problematic provinces
         
-        X_train = np.array(X_sequences) if X_sequences else np.array([]).reshape(0, seq_len, 1)
+        # Determine final sequence length based on actual data
+        if X_sequences:
+            actual_seq_len = X_sequences[0].shape[0]
+        else:
+            actual_seq_len = seq_len
+        
+        X_train = np.array(X_sequences) if X_sequences else np.array([]).reshape(0, actual_seq_len, 1)
         y_train = np.array(y_values) if y_values else np.array([])
-        X_test = np.array(test_X) if test_X else np.array([]).reshape(0, seq_len, 1)
+        X_test = np.array(test_X) if test_X else np.array([]).reshape(0, actual_seq_len, 1)
         y_test = np.array(test_y) if test_y else np.array([])
         
         return X_train, y_train, X_test, y_test, test_provinces
     
     def _train(self, X: np.ndarray, y: np.ndarray) -> Tuple[List[float], List[float]]:
-        """Train the LSTM model."""
+        """Train the LSTM model with proper train/validation split."""
         # Use simple model
         self.model = SimpleLSTM(
             hidden_size=self.hidden_units,
@@ -267,12 +325,12 @@ class LSTMForecaster:
         X_train, X_val = X[:-val_size], X[-val_size:]
         y_train, y_val = y[:-val_size], y[-val_size:]
         
-        train_losses = self.model.fit(X_train, y_train, epochs=self.epochs)
+        # Train with validation data for proper loss tracking
+        train_losses = self.model.fit(X_train, y_train, epochs=self.epochs,
+                                       X_val=X_val, y_val=y_val)
         
-        # Validation loss
-        val_pred = self.model.predict(X_val)
-        val_loss = np.mean((y_val - val_pred) ** 2)
-        val_losses = [val_loss] * len(train_losses)
+        # Get validation losses from training history
+        val_losses = self.model.training_history.get('val_loss', train_losses)
         
         return train_losses, val_losses
     

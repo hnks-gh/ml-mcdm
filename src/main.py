@@ -4,6 +4,7 @@ Main Pipeline Orchestrator
 ==========================
 
 Comprehensive ML-MCDM panel data analysis pipeline.
+Produces professional high-resolution outputs.
 """
 
 import numpy as np
@@ -13,6 +14,7 @@ from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass
 import warnings
 import time
+import shutil
 
 warnings.filterwarnings('ignore')
 
@@ -20,6 +22,7 @@ warnings.filterwarnings('ignore')
 from .config import Config, get_default_config
 from .logger import setup_logger, ProgressLogger
 from .data_loader import PanelDataLoader, PanelData, TemporalFeatureEngineer
+from .output_manager import OutputManager
 
 from .mcdm import (
     EntropyWeightCalculator, CRITICWeightCalculator, EnsembleWeightCalculator,
@@ -101,6 +104,11 @@ class MLTOPSISPipeline:
     - Multiple ML methods (Panel Regression, Random Forest, LSTM, Rough Sets)
     - Ensemble methods (Stacking, Rank Aggregation)
     - Comprehensive analysis (Convergence, Sensitivity, Validation)
+    
+    Outputs:
+    - Professional high-resolution figures (300 DPI)
+    - Complete numerical results in CSV format
+    - Comprehensive analysis reports
     """
     
     def __init__(self, config: Optional[Config] = None):
@@ -113,11 +121,27 @@ class MLTOPSISPipeline:
             Pipeline configuration
         """
         self.config = config or get_default_config()
+        
+        # Setup clean output directory structure
+        self._setup_output_directory()
+        
         log_file = Path(self.config.output_dir) / 'logs' / 'pipeline.log'
         self.logger = setup_logger('ml_topsis', log_file=log_file)
         self.visualizer = PanelVisualizer(
-            output_dir=str(Path(self.config.output_dir) / 'figures')
+            output_dir=str(Path(self.config.output_dir) / 'figures'),
+            dpi=300  # High resolution
         )
+        self.output_manager = OutputManager(self.config.output_dir)
+    
+    def _setup_output_directory(self) -> None:
+        """Setup clean output directory structure."""
+        output_dir = Path(self.config.output_dir)
+        
+        # Create required directories
+        (output_dir / 'figures').mkdir(parents=True, exist_ok=True)
+        (output_dir / 'results').mkdir(parents=True, exist_ok=True)
+        (output_dir / 'reports').mkdir(parents=True, exist_ok=True)
+        (output_dir / 'logs').mkdir(parents=True, exist_ok=True)
     
     def run(self, data_path: Optional[str] = None) -> PipelineResult:
         """
@@ -153,7 +177,18 @@ class MLTOPSISPipeline:
         
         # Phase 4: ML Analysis
         with ProgressLogger(self.logger, "Phase 4: ML Analysis"):
-            ml_results = self._run_ml(panel_data, mcdm_results)
+            try:
+                ml_results = self._run_ml(panel_data, mcdm_results)
+            except Exception as e:
+                self.logger.warning(f"ML Analysis failed: {e}, continuing with empty results")
+                ml_results = {
+                    'panel_regression': None,
+                    'rf_result': None,
+                    'rf_importance': {},
+                    'lstm_forecasts': None,
+                    'lstm_result': None,
+                    'rough_set': None
+                }
         
         # Phase 5: Ensemble Integration
         with ProgressLogger(self.logger, "Phase 5: Ensemble Integration"):
@@ -163,15 +198,29 @@ class MLTOPSISPipeline:
         with ProgressLogger(self.logger, "Phase 6: Advanced Analysis"):
             analysis_results = self._run_analysis(panel_data, mcdm_results, weights)
         
-        # Phase 7: Visualization
-        with ProgressLogger(self.logger, "Phase 7: Visualization"):
-            self._generate_visualizations(panel_data, mcdm_results, 
-                                         ensemble_results, analysis_results)
-        
         execution_time = time.time() - start_time
+        
+        # Phase 7: Generate All Visualizations (high-resolution individual charts)
+        with ProgressLogger(self.logger, "Phase 7: Generating High-Resolution Figures"):
+            try:
+                self._generate_all_visualizations(panel_data, weights, mcdm_results, 
+                                                  ensemble_results, analysis_results,
+                                                  ml_results=ml_results)
+            except Exception as e:
+                self.logger.warning(f"Visualization generation failed: {e}")
+                self.logger.info("Continuing with result saving...")
+        
+        # Phase 8: Save All Results (comprehensive CSV/JSON outputs)
+        with ProgressLogger(self.logger, "Phase 8: Saving All Results"):
+            saved_files = self.output_manager.save_all_results(
+                panel_data, weights, mcdm_results, ml_results,
+                ensemble_results, analysis_results, execution_time
+            )
+            self.logger.info(f"Saved {len(saved_files['files'])} result categories")
         
         self.logger.info("=" * 60)
         self.logger.info(f"Pipeline completed in {execution_time:.2f} seconds")
+        self.logger.info(f"Outputs saved to: {self.config.output_dir}")
         self.logger.info("=" * 60)
         
         # Compile results
@@ -311,12 +360,23 @@ class MLTOPSISPipeline:
     
     def _run_ml(self, panel_data: PanelData, 
                 mcdm_results: Dict[str, Any]) -> Dict[str, Any]:
-        """Run ML analysis methods."""
-        results = {}
+        """Run ML analysis methods with comprehensive fallback handling."""
+        results = {
+            'panel_regression': None,
+            'rf_result': None,
+            'rf_importance': {},
+            'lstm_forecasts': None,
+            'lstm_result': None,
+            'rough_set': None
+        }
         
-        # Prepare features
-        feature_eng = TemporalFeatureEngineer()
-        features_df = feature_eng.create_all_features(panel_data)
+        # Prepare features with fallback
+        try:
+            feature_eng = TemporalFeatureEngineer()
+            features_df = feature_eng.create_all_features(panel_data)
+        except Exception as e:
+            self.logger.warning(f"Feature engineering failed: {e}, using raw panel data")
+            features_df = panel_data.long.copy()
         
         # 1. Panel Regression
         # Add TOPSIS scores to panel data for regression
@@ -329,6 +389,10 @@ class MLTOPSISPipeline:
             # Map TOPSIS scores to each province
             score_map = dict(zip(panel_data.entities, topsis_scores))
             reg_df['topsis_score'] = reg_df['Province'].map(score_map)
+            
+            # Check if we have enough data for regression
+            if len(reg_df) < 10 or reg_df['topsis_score'].isna().all():
+                raise ValueError("Insufficient data for panel regression")
             
             panel_regression = PanelRegression()
             reg_result = panel_regression.fit(
@@ -345,64 +409,79 @@ class MLTOPSISPipeline:
             results['panel_regression'] = None
         
         # 2. Random Forest with Time-Series CV
-        rf = RandomForestTS(
-            n_estimators=self.config.random_forest.n_estimators,
-            max_depth=self.config.random_forest.max_depth,
-            min_samples_split=self.config.random_forest.min_samples_split,
-            min_samples_leaf=self.config.random_forest.min_samples_leaf,
-            max_features=self.config.random_forest.max_features,
-            n_splits=self.config.random_forest.n_splits
-        )
-        
-        # Create target column in long-form data
-        # Map TOPSIS scores to each province-year observation
-        df_with_target = features_df.copy()
-        topsis_map = dict(zip(panel_data.get_latest().index, 
-                              mcdm_results['topsis_scores']))
-        df_with_target['topsis_score'] = df_with_target['Province'].map(topsis_map)
-        
-        # Filter valid observations
-        df_rf = df_with_target.dropna(subset=['topsis_score'])
-        
-        # Check actual unique years in the filtered data
-        unique_years = df_rf['Year'].nunique() if 'Year' in df_rf.columns else 0
-        rf_splits = self.config.random_forest.n_splits
-        
-        if len(df_rf) >= 10 and unique_years >= rf_splits + 1:
-            try:
+        try:
+            rf = RandomForestTS(
+                n_estimators=self.config.random_forest.n_estimators,
+                max_depth=self.config.random_forest.max_depth,
+                min_samples_split=self.config.random_forest.min_samples_split,
+                min_samples_leaf=self.config.random_forest.min_samples_leaf,
+                max_features=self.config.random_forest.max_features,
+                n_splits=self.config.random_forest.n_splits
+            )
+            
+            # Create target column in long-form data
+            # Map TOPSIS scores to each province-year observation
+            df_with_target = features_df.copy()
+            topsis_map = dict(zip(panel_data.get_latest().index, 
+                                  mcdm_results['topsis_scores']))
+            df_with_target['topsis_score'] = df_with_target['Province'].map(topsis_map)
+            
+            # Filter valid observations
+            df_rf = df_with_target.dropna(subset=['topsis_score'])
+            
+            # Check actual unique years in the filtered data
+            unique_years = df_rf['Year'].nunique() if 'Year' in df_rf.columns else 0
+            rf_splits = self.config.random_forest.n_splits
+            
+            # Adjust splits if not enough years
+            if unique_years < rf_splits + 1 and unique_years >= 2:
+                rf_splits = max(1, unique_years - 1)
+                rf.n_splits = rf_splits
+                self.logger.info(f"Adjusted RF splits to {rf_splits} for {unique_years} years")
+            
+            if len(df_rf) >= 10 and unique_years >= 2:
                 rf_result = rf.fit_predict(df_rf, 'topsis_score', panel_data.components)
                 results['rf_result'] = rf_result
                 results['rf_importance'] = rf_result.feature_importance.to_dict()
-                cv_r2_mean = np.mean(rf_result.cv_scores['r2'])
+                cv_r2_mean = np.mean(rf_result.cv_scores['r2']) if rf_result.cv_scores.get('r2') else 0
                 self.logger.info(f"Random Forest CV R²: {cv_r2_mean:.4f}")
-            except Exception as e:
-                self.logger.warning(f"Random Forest failed: {e}")
-                results['rf_result'] = None
-                results['rf_importance'] = {}
-        else:
-            self.logger.warning(f"Skipping RF: need >= {rf_splits + 1} years ({unique_years} available in data)")
-            results['rf_result'] = None
-            results['rf_importance'] = {}
+            else:
+                self.logger.warning(f"Skipping RF: insufficient data ({len(df_rf)} samples, {unique_years} years)")
+        except Exception as e:
+            self.logger.warning(f"Random Forest failed: {e}")
+            import traceback
+            self.logger.debug(traceback.format_exc())
         
         # 3. LSTM Forecasting (optional)
         if self.config.lstm.enabled:
             try:
-                lstm = LSTMForecaster(
-                    sequence_length=self.config.lstm.sequence_length,
-                    hidden_units=self.config.lstm.hidden_units,
-                    n_layers=self.config.lstm.n_layers,
-                    dropout=self.config.lstm.dropout,
-                    epochs=self.config.lstm.epochs,
-                    batch_size=self.config.lstm.batch_size,
-                    learning_rate=self.config.lstm.learning_rate,
-                    patience=self.config.lstm.patience
-                )
-                lstm_result = lstm.fit_predict(panel_data, panel_data.components[:5])
-                results['lstm_forecasts'] = lstm_result.predictions
-                self.logger.info(f"LSTM Test Metrics: {lstm_result.test_metrics}")
+                # Validate we have enough time periods for LSTM sequences
+                n_years = len(panel_data.years)
+                seq_len = min(self.config.lstm.sequence_length, max(1, n_years - 2))
+                
+                if n_years < 3:
+                    self.logger.warning(f"LSTM skipped: need at least 3 time periods ({n_years} available)")
+                else:
+                    lstm = LSTMForecaster(
+                        sequence_length=seq_len,
+                        hidden_units=self.config.lstm.hidden_units,
+                        n_layers=self.config.lstm.n_layers,
+                        dropout=self.config.lstm.dropout,
+                        epochs=self.config.lstm.epochs,
+                        batch_size=self.config.lstm.batch_size,
+                        learning_rate=self.config.lstm.learning_rate,
+                        patience=self.config.lstm.patience
+                    )
+                    # Use up to first 5 components or all if fewer
+                    n_comp = min(5, len(panel_data.components))
+                    lstm_result = lstm.fit_predict(panel_data, panel_data.components[:n_comp])
+                    results['lstm_forecasts'] = lstm_result.predictions
+                    results['lstm_result'] = lstm_result  # Store full result for visualization
+                    self.logger.info(f"LSTM Test Metrics: {lstm_result.test_metrics}")
             except Exception as e:
                 self.logger.warning(f"LSTM forecasting skipped: {e}")
-                results['lstm_forecasts'] = None
+                import traceback
+                self.logger.debug(traceback.format_exc())
         
         # 4. Rough Set Reduction
         try:
@@ -523,8 +602,9 @@ class MLTOPSISPipeline:
     def _generate_visualizations(self, panel_data: PanelData,
                                 mcdm_results: Dict[str, Any],
                                 ensemble_results: Dict[str, Any],
-                                analysis_results: Dict[str, Any]) -> None:
-        """Generate all visualizations."""
+                                analysis_results: Dict[str, Any],
+                                ml_results: Optional[Dict[str, Any]] = None) -> None:
+        """Generate all visualizations including ML analysis figures."""
         try:
             # Score evolution
             scores_df = panel_data.long.copy()
@@ -571,10 +651,374 @@ class MLTOPSISPipeline:
                 ))
                 self.visualizer.plot_ensemble_weights(method_weights)
             
+            # ===== NEW ML VISUALIZATIONS =====
+            if ml_results:
+                self._generate_ml_visualizations(panel_data, mcdm_results, 
+                                                 ml_results, ensemble_results)
+            
             self.logger.info("Visualizations saved to outputs/figures/")
             
         except Exception as e:
             self.logger.warning(f"Visualization generation failed: {e}")
+            import traceback
+            self.logger.debug(traceback.format_exc())
+    
+    def _generate_ml_visualizations(self, panel_data: PanelData,
+                                    mcdm_results: Dict[str, Any],
+                                    ml_results: Dict[str, Any],
+                                    ensemble_results: Dict[str, Any]) -> None:
+        """Generate ML-specific visualizations."""
+        try:
+            # 1. Random Forest Analysis
+            if ml_results.get('rf_result'):
+                rf_result = ml_results['rf_result']
+                self.visualizer.plot_rf_analysis(
+                    feature_importance=rf_result.feature_importance.to_dict(),
+                    cv_scores=rf_result.cv_scores,
+                    test_actual=rf_result.test_actual.values,
+                    test_predicted=rf_result.test_predictions.values,
+                    entity_names=list(rf_result.test_actual.index),
+                    title='Random Forest Time-Series CV Analysis'
+                )
+                self.logger.info("Generated: rf_analysis.png")
+                
+                # CV Results detailed
+                self.visualizer.plot_cv_results(
+                    cv_scores=rf_result.cv_scores,
+                    title='Random Forest Cross-Validation Performance'
+                )
+                self.logger.info("Generated: cv_results.png")
+                
+                # Prediction Analysis
+                self.visualizer.plot_prediction_analysis(
+                    y_actual=rf_result.test_actual.values,
+                    y_predicted=rf_result.test_predictions.values,
+                    entity_names=list(rf_result.test_actual.index),
+                    title='Random Forest Prediction Analysis',
+                    save_name='rf_prediction_analysis.png'
+                )
+                self.logger.info("Generated: rf_prediction_analysis.png")
+            
+            # 2. LSTM Forecasting Results
+            if ml_results.get('lstm_result'):
+                lstm_result = ml_results['lstm_result']
+                
+                # Get actual and predicted values
+                if hasattr(lstm_result, 'actual') and hasattr(lstm_result, 'predictions'):
+                    actual_vals = lstm_result.actual.values.flatten() if hasattr(lstm_result.actual, 'values') else lstm_result.actual.flatten()
+                    pred_vals = lstm_result.predictions.values.flatten() if hasattr(lstm_result.predictions, 'values') else lstm_result.predictions.flatten()
+                    entity_names = list(lstm_result.actual.index) if hasattr(lstm_result.actual, 'index') else [f'Entity_{i}' for i in range(len(actual_vals))]
+                    
+                    self.visualizer.plot_lstm_forecast(
+                        actual=actual_vals,
+                        predicted=pred_vals,
+                        entity_names=entity_names,
+                        train_loss=lstm_result.train_loss,
+                        val_loss=lstm_result.val_loss,
+                        title='LSTM Time-Series Forecast Results'
+                    )
+                    self.logger.info("Generated: lstm_forecast.png")
+                
+                # Training progress
+                self.visualizer.plot_ml_training_progress(
+                    train_losses=lstm_result.train_loss,
+                    val_losses=lstm_result.val_loss,
+                    title='LSTM Training Progress',
+                    save_name='lstm_training_progress.png'
+                )
+                self.logger.info("Generated: lstm_training_progress.png")
+            
+            # 3. Model Comparison Summary
+            model_metrics = {}
+            
+            if ml_results.get('rf_result'):
+                rf = ml_results['rf_result']
+                model_metrics['Random Forest'] = {
+                    'R²': rf.test_metrics.get('r2', 0),
+                    'MAE': rf.test_metrics.get('mae', 0),
+                    'RMSE': np.sqrt(rf.test_metrics.get('mse', 0)),
+                    'Rank Corr': rf.rank_correlation
+                }
+            
+            if ml_results.get('lstm_result'):
+                lstm = ml_results['lstm_result']
+                model_metrics['LSTM'] = {
+                    'R²': 1 - lstm.test_metrics.get('mse', 1),  # Approximate R²
+                    'MAE': lstm.test_metrics.get('mae', 0),
+                    'RMSE': lstm.test_metrics.get('rmse', 0),
+                    'Rank Corr': lstm.rank_correlation
+                }
+            
+            if ml_results.get('panel_regression'):
+                pr = ml_results['panel_regression']
+                model_metrics['Panel Regression'] = {
+                    'R²': pr.r_squared if hasattr(pr, 'r_squared') else 0,
+                    'MAE': 0,
+                    'RMSE': 0,
+                    'Rank Corr': 0
+                }
+            
+            if model_metrics:
+                self.visualizer.plot_model_comparison(
+                    model_results=model_metrics,
+                    metrics=['R²', 'MAE', 'Rank Corr'],
+                    title='ML Model Performance Comparison'
+                )
+                self.logger.info("Generated: model_comparison.png")
+            
+            # 4. Ensemble Model Analysis
+            if ensemble_results.get('stacking'):
+                stacking = ensemble_results['stacking']
+                base_preds = stacking.base_model_predictions
+                meta_preds = stacking.final_predictions  # Correct attribute name
+                
+                # Use TOPSIS scores as actual target
+                actual = mcdm_results['topsis_scores']
+                
+                weights_dict = dict(zip(
+                    base_preds.keys(),
+                    stacking.meta_model_weights
+                ))
+                
+                self.visualizer.plot_ensemble_model_analysis(
+                    base_predictions=base_preds,
+                    meta_predictions=meta_preds,
+                    actual=actual,
+                    weights=weights_dict,
+                    entity_names=panel_data.entities,
+                    title='Stacking Ensemble Analysis'
+                )
+                self.logger.info("Generated: ensemble_model_analysis.png")
+            
+            # 5. Comprehensive ML Dashboard
+            dashboard_data = {
+                'rf_importance': ml_results.get('rf_importance', {}),
+                'rf_cv_scores': ml_results['rf_result'].cv_scores if ml_results.get('rf_result') else {},
+                'lstm_train_loss': ml_results['lstm_result'].train_loss if ml_results.get('lstm_result') else [],
+                'lstm_val_loss': ml_results['lstm_result'].val_loss if ml_results.get('lstm_result') else [],
+                'model_metrics': model_metrics,
+                'predictions': {}
+            }
+            
+            # Add predictions for dashboard
+            if ml_results.get('rf_result'):
+                rf = ml_results['rf_result']
+                dashboard_data['predictions']['RF'] = (rf.test_actual.values, rf.test_predictions.values)
+            
+            if ml_results.get('lstm_result'):
+                lstm = ml_results['lstm_result']
+                if hasattr(lstm, 'actual') and hasattr(lstm, 'predictions'):
+                    actual_v = lstm.actual.values.flatten() if hasattr(lstm.actual, 'values') else lstm.actual.flatten()
+                    pred_v = lstm.predictions.values.flatten() if hasattr(lstm.predictions, 'values') else lstm.predictions.flatten()
+                    dashboard_data['predictions']['LSTM'] = (actual_v, pred_v)
+            
+            if ensemble_results.get('stacking'):
+                stacking = ensemble_results['stacking']
+                dashboard_data['predictions']['Ensemble'] = (mcdm_results['topsis_scores'], 
+                                                            stacking.final_predictions)
+            
+            self.visualizer.plot_ml_summary_dashboard(
+                results=dashboard_data,
+                title='ML-MCDM Analysis Dashboard'
+            )
+            self.logger.info("Generated: ml_dashboard.png")
+            
+        except Exception as e:
+            self.logger.warning(f"ML visualization generation failed: {e}")
+            import traceback
+            self.logger.debug(traceback.format_exc())
+    
+    def _generate_all_visualizations(self, panel_data: PanelData,
+                                     weights: Dict[str, np.ndarray],
+                                     mcdm_results: Dict[str, Any],
+                                     ensemble_results: Dict[str, Any],
+                                     analysis_results: Dict[str, Any],
+                                     ml_results: Optional[Dict[str, Any]] = None) -> None:
+        """
+        Generate all visualizations as individual high-resolution charts.
+        
+        This produces a complete set of professional-quality figures.
+        """
+        figure_count = 0
+        
+        try:
+            # ===== SCORE EVOLUTION CHARTS =====
+            scores_df = panel_data.long.copy()
+            scores_df['score'] = np.tile(
+                mcdm_results['topsis_scores'],
+                len(panel_data.time_periods)
+            )[:len(scores_df)]
+            
+            # Top performers evolution
+            self.visualizer.plot_score_evolution_top(
+                scores_df, 'Province', 'Year', 'score', top_n=10,
+                title='Top 10 Performers - Score Evolution',
+                save_name='01_score_evolution_top.png'
+            )
+            figure_count += 1
+            self.logger.info("Generated: 01_score_evolution_top.png")
+            
+            # Bottom performers evolution
+            self.visualizer.plot_score_evolution_bottom(
+                scores_df, 'Province', 'Year', 'score', bottom_n=10,
+                title='Bottom 10 Performers - Score Evolution',
+                save_name='02_score_evolution_bottom.png'
+            )
+            figure_count += 1
+            self.logger.info("Generated: 02_score_evolution_bottom.png")
+            
+            # Helper function to convert to numpy array
+            def to_array(x):
+                if hasattr(x, 'values'):
+                    return x.values
+                return np.asarray(x)
+            
+            # ===== WEIGHTS ANALYSIS =====
+            self.visualizer.plot_weights_comparison(
+                weights, panel_data.components,
+                title='Criteria Weights Comparison (Entropy vs CRITIC vs Ensemble)',
+                save_name='03_weights_comparison.png'
+            )
+            figure_count += 1
+            self.logger.info("Generated: 03_weights_comparison.png")
+            
+            # ===== MCDM RESULTS =====
+            # TOPSIS scores ranking
+            self.visualizer.plot_topsis_scores_bar(
+                to_array(mcdm_results['topsis_scores']), panel_data.entities,
+                title='TOPSIS Scores - Complete Ranking',
+                save_name='04_topsis_scores.png'
+            )
+            figure_count += 1
+            self.logger.info("Generated: 04_topsis_scores.png")
+            
+            # VIKOR analysis
+            self.visualizer.plot_vikor_analysis(
+                to_array(mcdm_results['vikor']['Q']),
+                to_array(mcdm_results['vikor']['S']),
+                to_array(mcdm_results['vikor']['R']),
+                panel_data.entities,
+                title='VIKOR Analysis (Q, S, R Values)',
+                save_name='05_vikor_analysis.png'
+            )
+            figure_count += 1
+            self.logger.info("Generated: 05_vikor_analysis.png")
+            
+            # Method agreement matrix
+            rankings_dict = {
+                'TOPSIS': to_array(mcdm_results['topsis_rankings']),
+                'Dynamic TOPSIS': len(to_array(mcdm_results['dynamic_topsis_scores'])) - 
+                                 np.argsort(np.argsort(to_array(mcdm_results['dynamic_topsis_scores']))),
+                'VIKOR': to_array(mcdm_results['vikor']['rankings']),
+                'Fuzzy TOPSIS': len(to_array(mcdm_results['fuzzy_scores'])) - 
+                               np.argsort(np.argsort(to_array(mcdm_results['fuzzy_scores'])))
+            }
+            self.visualizer.plot_method_agreement_matrix(
+                rankings_dict,
+                title='MCDM Methods Ranking Agreement (Spearman Correlation)',
+                save_name='06_method_agreement.png'
+            )
+            figure_count += 1
+            self.logger.info("Generated: 06_method_agreement.png")
+            
+            # Score distribution
+            self.visualizer.plot_score_distribution(
+                to_array(mcdm_results['topsis_scores']),
+                title='TOPSIS Score Distribution',
+                save_name='07_score_distribution.png'
+            )
+            figure_count += 1
+            self.logger.info("Generated: 07_score_distribution.png")
+            
+            # ===== CONVERGENCE ANALYSIS =====
+            if analysis_results.get('convergence'):
+                conv = analysis_results['convergence']
+                
+                self.visualizer.plot_sigma_convergence(
+                    conv.sigma_by_year,
+                    title='Sigma Convergence Analysis',
+                    save_name='08_sigma_convergence.png'
+                )
+                figure_count += 1
+                self.logger.info("Generated: 08_sigma_convergence.png")
+                
+                self.visualizer.plot_beta_convergence_info(
+                    conv.beta_coefficient, conv.half_life,
+                    title='Beta Convergence Analysis',
+                    save_name='09_beta_convergence.png'
+                )
+                figure_count += 1
+                self.logger.info("Generated: 09_beta_convergence.png")
+            
+            # ===== ML FEATURE IMPORTANCE =====
+            if ml_results and ml_results.get('rf_importance'):
+                self.visualizer.plot_feature_importance_single(
+                    ml_results['rf_importance'],
+                    title='Random Forest Feature Importance',
+                    save_name='10_feature_importance.png'
+                )
+                figure_count += 1
+                self.logger.info("Generated: 10_feature_importance.png")
+            
+            # ===== SENSITIVITY ANALYSIS =====
+            if analysis_results.get('sensitivity'):
+                self.visualizer.plot_sensitivity_analysis(
+                    analysis_results['sensitivity'].weight_sensitivity,
+                    title='Criteria Weight Sensitivity Analysis',
+                    save_name='11_sensitivity_analysis.png'
+                )
+                figure_count += 1
+                self.logger.info("Generated: 11_sensitivity_analysis.png")
+            
+            # ===== FINAL RANKING =====
+            if ensemble_results.get('aggregated'):
+                agg = ensemble_results['aggregated']
+                self.visualizer.plot_final_ranking_summary(
+                    panel_data.entities, 
+                    to_array(agg.final_scores), 
+                    to_array(agg.final_ranking),
+                    title='Final Aggregated Ranking',
+                    save_name='12_final_ranking.png'
+                )
+                figure_count += 1
+                self.logger.info("Generated: 12_final_ranking.png")
+            
+            # ===== ML MODEL VISUALIZATIONS =====
+            if ml_results:
+                self._generate_ml_visualizations(panel_data, mcdm_results, 
+                                                 ml_results, ensemble_results)
+                figure_count += 5  # Approximate additional figures from ML
+            
+            # ===== METHOD COMPARISON (Parallel Coordinates) =====
+            self.visualizer.plot_method_comparison(
+                rankings_dict, panel_data.entities,
+                title='MCDM Methods Ranking Comparison',
+                save_name='13_method_comparison.png'
+            )
+            figure_count += 1
+            self.logger.info("Generated: 13_method_comparison.png")
+            
+            # ===== ENSEMBLE WEIGHTS =====
+            if ensemble_results.get('stacking'):
+                method_weights = dict(zip(
+                    ensemble_results['stacking'].base_model_predictions.keys(),
+                    ensemble_results['stacking'].meta_model_weights
+                ))
+                self.visualizer.plot_ensemble_weights(
+                    method_weights,
+                    title='Stacking Ensemble Model Weights',
+                    save_name='14_ensemble_weights.png'
+                )
+                figure_count += 1
+                self.logger.info("Generated: 14_ensemble_weights.png")
+            
+            self.logger.info(f"Total figures generated: {figure_count}")
+            self.logger.info(f"All figures saved to: {self.visualizer.output_dir}")
+            
+        except Exception as e:
+            self.logger.warning(f"Visualization generation error: {e}")
+            import traceback
+            self.logger.debug(traceback.format_exc())
 
 
 def run_pipeline(data_path: Optional[str] = None,

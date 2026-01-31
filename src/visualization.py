@@ -3,7 +3,8 @@
 Visualization Module
 ====================
 
-Comprehensive panel data and MCDM visualization.
+Professional high-resolution visualization for panel data MCDM analysis.
+All figures are saved as individual high-resolution PNG files.
 """
 
 import numpy as np
@@ -26,7 +27,10 @@ except ImportError:
 
 class PanelVisualizer:
     """
-    Professional visualization for panel data MCDM analysis.
+    Professional high-resolution visualization for panel data MCDM analysis.
+    
+    All visualizations are saved as individual high-resolution PNG files.
+    Each figure is a single, focused chart for maximum clarity.
     """
     
     def __init__(self,
@@ -35,7 +39,7 @@ class PanelVisualizer:
                  figsize: Tuple[int, int] = (12, 8),
                  dpi: int = 300):
         """
-        Initialize visualizer.
+        Initialize visualizer with high-resolution settings.
         
         Parameters
         ----------
@@ -44,22 +48,33 @@ class PanelVisualizer:
         style : str
             Matplotlib style
         figsize : Tuple[int, int]
-            Default figure size
+            Default figure size (width, height) in inches
         dpi : int
-            Figure resolution
+            Figure resolution (300 DPI for publication quality)
         """
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.figsize = figsize
-        self.dpi = dpi
+        self.dpi = dpi  # High resolution: 300 DPI
         
         if HAS_MATPLOTLIB:
             try:
                 plt.style.use(style)
             except:
                 plt.style.use('default')
+            
+            # Set global parameters for high-quality output
+            plt.rcParams['figure.dpi'] = dpi
+            plt.rcParams['savefig.dpi'] = dpi
+            plt.rcParams['font.size'] = 11
+            plt.rcParams['axes.titlesize'] = 13
+            plt.rcParams['axes.labelsize'] = 11
+            plt.rcParams['xtick.labelsize'] = 10
+            plt.rcParams['ytick.labelsize'] = 10
+            plt.rcParams['legend.fontsize'] = 10
+            plt.rcParams['figure.titlesize'] = 14
         
-        # Color palette
+        # Professional color palette
         self.colors = {
             'primary': '#2E86AB',
             'secondary': '#A23B72',
@@ -73,7 +88,114 @@ class PanelVisualizer:
         }
         
         self.cmap = 'viridis'
+        
+        # Track generated figures
+        self.generated_figures = []
     
+    def _save_figure(self, fig, save_name: str) -> str:
+        """Save figure with high resolution settings and error handling."""
+        try:
+            save_path = self.output_dir / save_name
+            fig.savefig(save_path, dpi=self.dpi, bbox_inches='tight',
+                       facecolor='white', edgecolor='none',
+                       format='png', transparent=False)
+            plt.close(fig)
+            self.generated_figures.append(str(save_path))
+            return str(save_path)
+        except Exception as e:
+            # Try saving with lower DPI as fallback
+            try:
+                save_path = self.output_dir / save_name
+                fig.savefig(save_path, dpi=100, bbox_inches='tight')
+                plt.close(fig)
+                self.generated_figures.append(str(save_path))
+                return str(save_path)
+            except Exception:
+                plt.close(fig)
+                return None
+    
+    def get_generated_figures(self) -> List[str]:
+        """Return list of all generated figure paths."""
+        return self.generated_figures
+    
+    # =========================================================================
+    # INDIVIDUAL CHART METHODS - Each produces a single high-resolution figure
+    # =========================================================================
+    
+    def plot_score_evolution_top(self,
+                                 scores: pd.DataFrame,
+                                 entity_col: str = 'Province',
+                                 time_col: str = 'Year',
+                                 score_col: str = 'score',
+                                 top_n: int = 10,
+                                 title: str = 'Top Performers Score Evolution',
+                                 save_name: str = '01_score_evolution_top.png') -> Optional[str]:
+        """Plot score evolution for top performers as single chart."""
+        if not HAS_MATPLOTLIB:
+            return None
+        
+        fig, ax = plt.subplots(figsize=self.figsize)
+        
+        # Pivot data
+        wide = scores.pivot(index=time_col, columns=entity_col, values=score_col)
+        
+        # Get top performers (by mean score)
+        mean_scores = wide.mean().sort_values(ascending=False)
+        top_entities = mean_scores.head(top_n).index
+        
+        colors = plt.cm.viridis(np.linspace(0.2, 0.9, top_n))
+        
+        for i, entity in enumerate(top_entities):
+            ax.plot(wide.index, wide[entity], marker='o', linewidth=2.5, 
+                   label=f'{entity}', markersize=8, color=colors[i])
+        
+        ax.set_xlabel('Year', fontsize=12, fontweight='bold')
+        ax.set_ylabel('Score', fontsize=12, fontweight='bold')
+        ax.set_title(title, fontsize=14, fontweight='bold', pad=15)
+        ax.legend(loc='center left', bbox_to_anchor=(1.02, 0.5), fontsize=10)
+        ax.grid(True, alpha=0.3, linestyle='--')
+        ax.set_xticks(wide.index)
+        
+        plt.tight_layout()
+        return self._save_figure(fig, save_name)
+    
+    def plot_score_evolution_bottom(self,
+                                    scores: pd.DataFrame,
+                                    entity_col: str = 'Province',
+                                    time_col: str = 'Year',
+                                    score_col: str = 'score',
+                                    bottom_n: int = 10,
+                                    title: str = 'Bottom Performers Score Evolution',
+                                    save_name: str = '02_score_evolution_bottom.png') -> Optional[str]:
+        """Plot score evolution for bottom performers as single chart."""
+        if not HAS_MATPLOTLIB:
+            return None
+        
+        fig, ax = plt.subplots(figsize=self.figsize)
+        
+        # Pivot data
+        wide = scores.pivot(index=time_col, columns=entity_col, values=score_col)
+        
+        # Get bottom performers
+        mean_scores = wide.mean().sort_values(ascending=False)
+        bottom_entities = mean_scores.tail(bottom_n).index
+        
+        colors = plt.cm.Reds(np.linspace(0.3, 0.9, bottom_n))
+        
+        for i, entity in enumerate(bottom_entities):
+            ax.plot(wide.index, wide[entity], marker='s', linewidth=2.5, 
+                   label=f'{entity}', markersize=8, linestyle='--', color=colors[i])
+        
+        ax.set_xlabel('Year', fontsize=12, fontweight='bold')
+        ax.set_ylabel('Score', fontsize=12, fontweight='bold')
+        ax.set_title(title, fontsize=14, fontweight='bold', pad=15)
+        ax.legend(loc='center left', bbox_to_anchor=(1.02, 0.5), fontsize=10)
+        ax.grid(True, alpha=0.3, linestyle='--')
+        ax.set_xticks(wide.index)
+        
+        plt.tight_layout()
+        return self._save_figure(fig, save_name)
+
     def plot_score_evolution(self,
                             scores: pd.DataFrame,
                             entity_col: str = 'province',
@@ -573,6 +695,1256 @@ class PanelVisualizer:
         plt.close(fig)
         
         return str(save_path)
+
+
+    def plot_ml_training_progress(self,
+                                  train_losses: List[float],
+                                  val_losses: Optional[List[float]] = None,
+                                  metrics_history: Optional[Dict[str, List[float]]] = None,
+                                  title: str = 'ML Training Progress',
+                                  save_name: str = 'ml_training_progress.png') -> Optional[str]:
+        """
+        Plot machine learning training progress with loss curves and metrics.
+        
+        Parameters
+        ----------
+        train_losses : List[float]
+            Training loss values per epoch
+        val_losses : List[float], optional
+            Validation loss values per epoch
+        metrics_history : Dict[str, List[float]], optional
+            Additional metrics to plot (e.g., {'R²': [...], 'MAE': [...]})
+        """
+        if not HAS_MATPLOTLIB:
+            return None
+        
+        n_plots = 1 + (1 if metrics_history else 0)
+        fig, axes = plt.subplots(1, n_plots, figsize=(6 * n_plots, 5))
+        
+        if n_plots == 1:
+            axes = [axes]
+        
+        epochs = range(1, len(train_losses) + 1)
+        
+        # Loss curves
+        ax = axes[0]
+        ax.plot(epochs, train_losses, 'b-', linewidth=2, label='Training Loss', marker='o', markersize=4)
+        if val_losses:
+            ax.plot(epochs, val_losses, 'r--', linewidth=2, label='Validation Loss', marker='s', markersize=4)
+        
+        ax.set_xlabel('Epoch', fontsize=11)
+        ax.set_ylabel('Loss', fontsize=11)
+        ax.set_title('Training & Validation Loss', fontsize=12, fontweight='bold')
+        ax.legend(loc='upper right', fontsize=10)
+        ax.grid(True, alpha=0.3)
+        
+        # Highlight minimum loss
+        min_train_idx = np.argmin(train_losses)
+        ax.axvline(x=min_train_idx + 1, color='blue', linestyle=':', alpha=0.5)
+        ax.annotate(f'Best: {train_losses[min_train_idx]:.4f}', 
+                   xy=(min_train_idx + 1, train_losses[min_train_idx]),
+                   xytext=(10, 10), textcoords='offset points', fontsize=9)
+        
+        if val_losses:
+            min_val_idx = np.argmin(val_losses)
+            ax.axvline(x=min_val_idx + 1, color='red', linestyle=':', alpha=0.5)
+        
+        # Additional metrics
+        if metrics_history and len(axes) > 1:
+            ax = axes[1]
+            colors = plt.cm.Set2(np.linspace(0, 1, len(metrics_history)))
+            for (metric_name, values), color in zip(metrics_history.items(), colors):
+                ax.plot(range(1, len(values) + 1), values, '-o', linewidth=2, 
+                       label=metric_name, color=color, markersize=4)
+            ax.set_xlabel('Epoch', fontsize=11)
+            ax.set_ylabel('Metric Value', fontsize=11)
+            ax.set_title('Training Metrics', fontsize=12, fontweight='bold')
+            ax.legend(loc='best', fontsize=10)
+            ax.grid(True, alpha=0.3)
+        
+        fig.suptitle(title, fontsize=14, fontweight='bold', y=1.02)
+        plt.tight_layout()
+        
+        save_path = self.output_dir / save_name
+        fig.savefig(save_path, dpi=self.dpi, bbox_inches='tight',
+                   facecolor='white', edgecolor='none')
+        plt.close(fig)
+        
+        return str(save_path)
+    
+    def plot_model_comparison(self,
+                             model_results: Dict[str, Dict[str, float]],
+                             metrics: List[str] = ['R²', 'MAE', 'RMSE'],
+                             title: str = 'Model Performance Comparison',
+                             save_name: str = 'model_comparison.png') -> Optional[str]:
+        """
+        Compare multiple ML models across different metrics.
+        
+        Parameters
+        ----------
+        model_results : Dict[str, Dict[str, float]]
+            Model name -> {metric: value}
+        metrics : List[str]
+            Metrics to compare
+        """
+        if not HAS_MATPLOTLIB:
+            return None
+        
+        models = list(model_results.keys())
+        n_metrics = len(metrics)
+        n_models = len(models)
+        
+        fig, axes = plt.subplots(1, n_metrics, figsize=(5 * n_metrics, 6))
+        if n_metrics == 1:
+            axes = [axes]
+        
+        colors = plt.cm.viridis(np.linspace(0.2, 0.8, n_models))
+        
+        for i, metric in enumerate(metrics):
+            ax = axes[i]
+            values = [model_results[m].get(metric, 0) for m in models]
+            bars = ax.bar(range(n_models), values, color=colors, edgecolor='black', linewidth=0.5)
+            
+            ax.set_xticks(range(n_models))
+            ax.set_xticklabels(models, rotation=45, ha='right', fontsize=10)
+            ax.set_ylabel(metric, fontsize=11)
+            ax.set_title(f'{metric}', fontsize=12, fontweight='bold')
+            ax.grid(True, alpha=0.3, axis='y')
+            
+            # Add value labels on bars
+            for bar, val in zip(bars, values):
+                height = bar.get_height()
+                ax.annotate(f'{val:.3f}',
+                           xy=(bar.get_x() + bar.get_width() / 2, height),
+                           xytext=(0, 3), textcoords='offset points',
+                           ha='center', va='bottom', fontsize=9, fontweight='bold')
+        
+        fig.suptitle(title, fontsize=14, fontweight='bold', y=1.02)
+        plt.tight_layout()
+        
+        save_path = self.output_dir / save_name
+        fig.savefig(save_path, dpi=self.dpi, bbox_inches='tight',
+                   facecolor='white', edgecolor='none')
+        plt.close(fig)
+        
+        return str(save_path)
+    
+    def plot_prediction_analysis(self,
+                                 y_actual: np.ndarray,
+                                 y_predicted: np.ndarray,
+                                 entity_names: Optional[List[str]] = None,
+                                 title: str = 'Prediction Analysis',
+                                 save_name: str = 'prediction_analysis.png') -> Optional[str]:
+        """
+        Plot actual vs predicted values with residual analysis.
+        
+        Parameters
+        ----------
+        y_actual : np.ndarray
+            Actual values
+        y_predicted : np.ndarray
+            Predicted values
+        entity_names : List[str], optional
+            Names of entities for labeling
+        """
+        if not HAS_MATPLOTLIB:
+            return None
+        
+        fig, axes = plt.subplots(2, 2, figsize=(14, 12))
+        
+        # 1. Actual vs Predicted scatter plot
+        ax = axes[0, 0]
+        ax.scatter(y_actual, y_predicted, alpha=0.6, c=self.colors['primary'], 
+                  edgecolors='white', s=80)
+        
+        # Perfect prediction line
+        min_val = min(y_actual.min(), y_predicted.min())
+        max_val = max(y_actual.max(), y_predicted.max())
+        ax.plot([min_val, max_val], [min_val, max_val], 'r--', linewidth=2, label='Perfect Prediction')
+        
+        # Regression line
+        z = np.polyfit(y_actual, y_predicted, 1)
+        p = np.poly1d(z)
+        ax.plot(np.sort(y_actual), p(np.sort(y_actual)), 'g-', linewidth=2, 
+               label=f'Fit: y={z[0]:.2f}x+{z[1]:.2f}')
+        
+        ax.set_xlabel('Actual Values', fontsize=11)
+        ax.set_ylabel('Predicted Values', fontsize=11)
+        ax.set_title('Actual vs Predicted', fontsize=12, fontweight='bold')
+        ax.legend(loc='lower right', fontsize=10)
+        ax.grid(True, alpha=0.3)
+        
+        # Calculate R²
+        ss_res = np.sum((y_actual - y_predicted) ** 2)
+        ss_tot = np.sum((y_actual - np.mean(y_actual)) ** 2)
+        r2 = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
+        ax.text(0.05, 0.95, f'R² = {r2:.4f}', transform=ax.transAxes, fontsize=12,
+               verticalalignment='top', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+        
+        # 2. Residual plot
+        ax = axes[0, 1]
+        residuals = y_actual - y_predicted
+        ax.scatter(y_predicted, residuals, alpha=0.6, c=self.colors['secondary'], 
+                  edgecolors='white', s=80)
+        ax.axhline(y=0, color='r', linestyle='--', linewidth=2)
+        ax.set_xlabel('Predicted Values', fontsize=11)
+        ax.set_ylabel('Residuals', fontsize=11)
+        ax.set_title('Residual Plot', fontsize=12, fontweight='bold')
+        ax.grid(True, alpha=0.3)
+        
+        # Add residual statistics
+        ax.text(0.05, 0.95, f'Mean: {residuals.mean():.4f}\nStd: {residuals.std():.4f}', 
+               transform=ax.transAxes, fontsize=10, verticalalignment='top',
+               bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+        
+        # 3. Residual histogram
+        ax = axes[1, 0]
+        ax.hist(residuals, bins=30, color=self.colors['tertiary'], edgecolor='white', alpha=0.7)
+        ax.axvline(x=0, color='r', linestyle='--', linewidth=2)
+        ax.axvline(x=residuals.mean(), color='blue', linestyle='-', linewidth=2, 
+                  label=f'Mean: {residuals.mean():.4f}')
+        ax.set_xlabel('Residual', fontsize=11)
+        ax.set_ylabel('Frequency', fontsize=11)
+        ax.set_title('Residual Distribution', fontsize=12, fontweight='bold')
+        ax.legend(loc='upper right', fontsize=10)
+        ax.grid(True, alpha=0.3)
+        
+        # 4. Prediction errors by entity (top/bottom)
+        ax = axes[1, 1]
+        abs_errors = np.abs(residuals)
+        sorted_idx = np.argsort(abs_errors)[::-1]
+        
+        # Show top 15 largest errors
+        n_show = min(15, len(abs_errors))
+        top_errors = abs_errors[sorted_idx[:n_show]]
+        
+        if entity_names:
+            labels = [entity_names[i][:15] for i in sorted_idx[:n_show]]
+        else:
+            labels = [f'Entity {sorted_idx[i]}' for i in range(n_show)]
+        
+        colors = plt.cm.Reds(np.linspace(0.3, 0.9, n_show))
+        bars = ax.barh(range(n_show), top_errors, color=colors)
+        ax.set_yticks(range(n_show))
+        ax.set_yticklabels(labels, fontsize=9)
+        ax.set_xlabel('Absolute Error', fontsize=11)
+        ax.set_title('Top Prediction Errors', fontsize=12, fontweight='bold')
+        ax.invert_yaxis()
+        ax.grid(True, alpha=0.3, axis='x')
+        
+        fig.suptitle(title, fontsize=14, fontweight='bold', y=1.02)
+        plt.tight_layout()
+        
+        save_path = self.output_dir / save_name
+        fig.savefig(save_path, dpi=self.dpi, bbox_inches='tight',
+                   facecolor='white', edgecolor='none')
+        plt.close(fig)
+        
+        return str(save_path)
+    
+    def plot_cv_results(self,
+                       cv_scores: Dict[str, List[float]],
+                       fold_names: Optional[List[str]] = None,
+                       title: str = 'Cross-Validation Results',
+                       save_name: str = 'cv_results.png') -> Optional[str]:
+        """
+        Plot cross-validation results across folds.
+        
+        Parameters
+        ----------
+        cv_scores : Dict[str, List[float]]
+            Metric name -> scores per fold
+        fold_names : List[str], optional
+            Names for folds (e.g., ['2020', '2021', '2022'])
+        """
+        if not HAS_MATPLOTLIB:
+            return None
+        
+        metrics = list(cv_scores.keys())
+        n_folds = len(list(cv_scores.values())[0])
+        n_metrics = len(metrics)
+        
+        if fold_names is None:
+            fold_names = [f'Fold {i+1}' for i in range(n_folds)]
+        
+        fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+        
+        # 1. Bar chart per fold
+        ax = axes[0]
+        x = np.arange(n_folds)
+        width = 0.8 / n_metrics
+        colors = plt.cm.Set2(np.linspace(0, 1, n_metrics))
+        
+        for i, (metric, scores) in enumerate(cv_scores.items()):
+            offset = (i - n_metrics/2 + 0.5) * width
+            bars = ax.bar(x + offset, scores, width, label=metric, color=colors[i], 
+                         edgecolor='black', linewidth=0.5)
+        
+        ax.set_xlabel('Fold', fontsize=11)
+        ax.set_ylabel('Score', fontsize=11)
+        ax.set_title('Scores by Fold', fontsize=12, fontweight='bold')
+        ax.set_xticks(x)
+        ax.set_xticklabels(fold_names, fontsize=10)
+        ax.legend(loc='lower right', fontsize=10)
+        ax.grid(True, alpha=0.3, axis='y')
+        
+        # 2. Box plot summary
+        ax = axes[1]
+        data = [cv_scores[m] for m in metrics]
+        bp = ax.boxplot(data, labels=metrics, patch_artist=True)
+        
+        for patch, color in zip(bp['boxes'], colors):
+            patch.set_facecolor(color)
+            patch.set_alpha(0.7)
+        
+        # Add individual points
+        for i, (metric, scores) in enumerate(cv_scores.items()):
+            x_jitter = np.random.normal(i + 1, 0.05, len(scores))
+            ax.scatter(x_jitter, scores, color='black', alpha=0.6, s=50, zorder=3)
+        
+        ax.set_ylabel('Score', fontsize=11)
+        ax.set_title('Score Distribution', fontsize=12, fontweight='bold')
+        ax.grid(True, alpha=0.3, axis='y')
+        
+        # Add mean ± std annotations
+        for i, (metric, scores) in enumerate(cv_scores.items()):
+            mean_val = np.mean(scores)
+            std_val = np.std(scores)
+            ax.annotate(f'{mean_val:.3f}±{std_val:.3f}', 
+                       xy=(i + 1, max(scores) + 0.02 * (ax.get_ylim()[1] - ax.get_ylim()[0])),
+                       ha='center', fontsize=9, fontweight='bold')
+        
+        fig.suptitle(title, fontsize=14, fontweight='bold', y=1.02)
+        plt.tight_layout()
+        
+        save_path = self.output_dir / save_name
+        fig.savefig(save_path, dpi=self.dpi, bbox_inches='tight',
+                   facecolor='white', edgecolor='none')
+        plt.close(fig)
+        
+        return str(save_path)
+    
+    def plot_lstm_forecast(self,
+                          actual: np.ndarray,
+                          predicted: np.ndarray,
+                          entity_names: List[str],
+                          train_loss: List[float],
+                          val_loss: Optional[List[float]] = None,
+                          title: str = 'LSTM Forecast Results',
+                          save_name: str = 'lstm_forecast.png') -> Optional[str]:
+        """
+        Plot LSTM forecasting results with training curves and predictions.
+        
+        Parameters
+        ----------
+        actual : np.ndarray
+            Actual values
+        predicted : np.ndarray  
+            Predicted values
+        entity_names : List[str]
+            Names of entities
+        train_loss : List[float]
+            Training loss history
+        val_loss : List[float], optional
+            Validation loss history
+        """
+        if not HAS_MATPLOTLIB:
+            return None
+        
+        fig, axes = plt.subplots(2, 2, figsize=(14, 12))
+        
+        # 1. Training curves
+        ax = axes[0, 0]
+        epochs = range(1, len(train_loss) + 1)
+        ax.plot(epochs, train_loss, 'b-', linewidth=2, label='Train Loss', marker='o', markersize=3)
+        if val_loss:
+            ax.plot(epochs, val_loss, 'r--', linewidth=2, label='Val Loss', marker='s', markersize=3)
+        ax.set_xlabel('Epoch', fontsize=11)
+        ax.set_ylabel('Loss (MSE)', fontsize=11)
+        ax.set_title('LSTM Training Progress', fontsize=12, fontweight='bold')
+        ax.legend(loc='upper right', fontsize=10)
+        ax.grid(True, alpha=0.3)
+        ax.set_yscale('log')
+        
+        # 2. Actual vs Predicted
+        ax = axes[0, 1]
+        ax.scatter(actual, predicted, alpha=0.6, c=self.colors['primary'], 
+                  edgecolors='white', s=80)
+        min_val, max_val = min(actual.min(), predicted.min()), max(actual.max(), predicted.max())
+        ax.plot([min_val, max_val], [min_val, max_val], 'r--', linewidth=2, label='Perfect')
+        ax.set_xlabel('Actual', fontsize=11)
+        ax.set_ylabel('Predicted', fontsize=11)
+        ax.set_title('Actual vs Predicted', fontsize=12, fontweight='bold')
+        ax.legend(loc='lower right', fontsize=10)
+        ax.grid(True, alpha=0.3)
+        
+        # Calculate metrics
+        mse = np.mean((actual - predicted) ** 2)
+        mae = np.mean(np.abs(actual - predicted))
+        ax.text(0.05, 0.95, f'MSE: {mse:.4f}\nMAE: {mae:.4f}', 
+               transform=ax.transAxes, fontsize=10, verticalalignment='top',
+               bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+        
+        # 3. Prediction comparison bars
+        ax = axes[1, 0]
+        n_show = min(20, len(entity_names))
+        sorted_idx = np.argsort(actual)[::-1][:n_show]
+        
+        x = np.arange(n_show)
+        width = 0.35
+        
+        ax.barh(x - width/2, actual[sorted_idx], width, label='Actual', 
+               color=self.colors['primary'], alpha=0.8)
+        ax.barh(x + width/2, predicted[sorted_idx], width, label='Predicted',
+               color=self.colors['tertiary'], alpha=0.8)
+        
+        ax.set_yticks(x)
+        ax.set_yticklabels([entity_names[i][:12] for i in sorted_idx], fontsize=9)
+        ax.set_xlabel('Score', fontsize=11)
+        ax.set_title('Top Predictions Comparison', fontsize=12, fontweight='bold')
+        ax.legend(loc='lower right', fontsize=10)
+        ax.invert_yaxis()
+        ax.grid(True, alpha=0.3, axis='x')
+        
+        # 4. Rank comparison
+        ax = axes[1, 1]
+        actual_ranks = np.argsort(np.argsort(-actual)) + 1
+        predicted_ranks = np.argsort(np.argsort(-predicted)) + 1
+        
+        ax.scatter(actual_ranks, predicted_ranks, alpha=0.6, c=self.colors['secondary'],
+                  edgecolors='white', s=80)
+        ax.plot([1, len(actual)], [1, len(actual)], 'r--', linewidth=2, label='Perfect')
+        ax.set_xlabel('Actual Rank', fontsize=11)
+        ax.set_ylabel('Predicted Rank', fontsize=11)
+        ax.set_title('Rank Agreement', fontsize=12, fontweight='bold')
+        ax.legend(loc='lower right', fontsize=10)
+        ax.grid(True, alpha=0.3)
+        
+        # Calculate rank correlation
+        from scipy.stats import spearmanr
+        corr, _ = spearmanr(actual_ranks, predicted_ranks)
+        ax.text(0.05, 0.95, f'Spearman ρ: {corr:.4f}', 
+               transform=ax.transAxes, fontsize=10, verticalalignment='top',
+               bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+        
+        fig.suptitle(title, fontsize=14, fontweight='bold', y=1.02)
+        plt.tight_layout()
+        
+        save_path = self.output_dir / save_name
+        fig.savefig(save_path, dpi=self.dpi, bbox_inches='tight',
+                   facecolor='white', edgecolor='none')
+        plt.close(fig)
+        
+        return str(save_path)
+    
+    def plot_rf_analysis(self,
+                        feature_importance: Dict[str, float],
+                        cv_scores: Dict[str, List[float]],
+                        test_actual: np.ndarray,
+                        test_predicted: np.ndarray,
+                        entity_names: List[str],
+                        title: str = 'Random Forest Analysis',
+                        save_name: str = 'rf_analysis.png') -> Optional[str]:
+        """
+        Comprehensive Random Forest analysis visualization.
+        
+        Parameters
+        ----------
+        feature_importance : Dict[str, float]
+            Feature importance scores
+        cv_scores : Dict[str, List[float]]
+            Cross-validation scores
+        test_actual : np.ndarray
+            Test set actual values
+        test_predicted : np.ndarray
+            Test set predictions
+        entity_names : List[str]
+            Entity names
+        """
+        if not HAS_MATPLOTLIB:
+            return None
+        
+        fig, axes = plt.subplots(2, 2, figsize=(14, 12))
+        
+        # 1. Feature importance
+        ax = axes[0, 0]
+        sorted_items = sorted(feature_importance.items(), key=lambda x: x[1], reverse=True)[:15]
+        features = [item[0][:20] for item in sorted_items]
+        importances = [item[1] for item in sorted_items]
+        
+        colors = plt.cm.Blues(np.linspace(0.3, 0.9, len(features)))[::-1]
+        bars = ax.barh(range(len(features)), importances, color=colors)
+        ax.set_yticks(range(len(features)))
+        ax.set_yticklabels(features, fontsize=9)
+        ax.set_xlabel('Importance', fontsize=11)
+        ax.set_title('Feature Importance (Top 15)', fontsize=12, fontweight='bold')
+        ax.invert_yaxis()
+        ax.grid(True, alpha=0.3, axis='x')
+        
+        for bar, val in zip(bars, importances):
+            ax.text(val + 0.002, bar.get_y() + bar.get_height()/2,
+                   f'{val:.3f}', va='center', fontsize=8)
+        
+        # 2. CV Scores boxplot
+        ax = axes[0, 1]
+        cv_metrics = list(cv_scores.keys())
+        data = [cv_scores[m] for m in cv_metrics]
+        bp = ax.boxplot(data, labels=cv_metrics, patch_artist=True)
+        
+        colors = plt.cm.Set2(np.linspace(0, 1, len(cv_metrics)))
+        for patch, color in zip(bp['boxes'], colors):
+            patch.set_facecolor(color)
+            patch.set_alpha(0.7)
+        
+        ax.set_ylabel('Score', fontsize=11)
+        ax.set_title('Cross-Validation Performance', fontsize=12, fontweight='bold')
+        ax.grid(True, alpha=0.3, axis='y')
+        
+        # Add mean labels
+        for i, metric in enumerate(cv_metrics):
+            mean_val = np.mean(cv_scores[metric])
+            ax.annotate(f'{mean_val:.3f}', xy=(i + 1, mean_val),
+                       xytext=(5, 0), textcoords='offset points', fontsize=9)
+        
+        # 3. Actual vs Predicted
+        ax = axes[1, 0]
+        ax.scatter(test_actual, test_predicted, alpha=0.6, c=self.colors['primary'],
+                  edgecolors='white', s=80)
+        
+        min_val, max_val = min(test_actual.min(), test_predicted.min()), max(test_actual.max(), test_predicted.max())
+        ax.plot([min_val, max_val], [min_val, max_val], 'r--', linewidth=2, label='Perfect')
+        
+        # Regression line
+        z = np.polyfit(test_actual, test_predicted, 1)
+        p = np.poly1d(z)
+        ax.plot(np.sort(test_actual), p(np.sort(test_actual)), 'g-', linewidth=2, label='Fit')
+        
+        ax.set_xlabel('Actual', fontsize=11)
+        ax.set_ylabel('Predicted', fontsize=11)
+        ax.set_title('Test Set: Actual vs Predicted', fontsize=12, fontweight='bold')
+        ax.legend(loc='lower right', fontsize=10)
+        ax.grid(True, alpha=0.3)
+        
+        # R² and metrics
+        ss_res = np.sum((test_actual - test_predicted) ** 2)
+        ss_tot = np.sum((test_actual - np.mean(test_actual)) ** 2)
+        r2 = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
+        mae = np.mean(np.abs(test_actual - test_predicted))
+        ax.text(0.05, 0.95, f'R² = {r2:.4f}\nMAE = {mae:.4f}', 
+               transform=ax.transAxes, fontsize=10, verticalalignment='top',
+               bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+        
+        # 4. Residual analysis
+        ax = axes[1, 1]
+        residuals = test_actual - test_predicted
+        ax.scatter(test_predicted, residuals, alpha=0.6, c=self.colors['tertiary'],
+                  edgecolors='white', s=80)
+        ax.axhline(y=0, color='r', linestyle='--', linewidth=2)
+        ax.set_xlabel('Predicted', fontsize=11)
+        ax.set_ylabel('Residuals', fontsize=11)
+        ax.set_title('Residual Analysis', fontsize=12, fontweight='bold')
+        ax.grid(True, alpha=0.3)
+        
+        ax.text(0.05, 0.95, f'Mean: {residuals.mean():.4f}\nStd: {residuals.std():.4f}',
+               transform=ax.transAxes, fontsize=10, verticalalignment='top',
+               bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+        
+        fig.suptitle(title, fontsize=14, fontweight='bold', y=1.02)
+        plt.tight_layout()
+        
+        save_path = self.output_dir / save_name
+        fig.savefig(save_path, dpi=self.dpi, bbox_inches='tight',
+                   facecolor='white', edgecolor='none')
+        plt.close(fig)
+        
+        return str(save_path)
+    
+    def plot_ensemble_model_analysis(self,
+                                     base_predictions: Dict[str, np.ndarray],
+                                     meta_predictions: np.ndarray,
+                                     actual: np.ndarray,
+                                     weights: Dict[str, float],
+                                     entity_names: List[str],
+                                     title: str = 'Ensemble Model Analysis',
+                                     save_name: str = 'ensemble_model_analysis.png') -> Optional[str]:
+        """
+        Visualize ensemble model performance and contributions.
+        
+        Parameters
+        ----------
+        base_predictions : Dict[str, np.ndarray]
+            Predictions from base models
+        meta_predictions : np.ndarray
+            Final ensemble predictions
+        actual : np.ndarray
+            Actual values
+        weights : Dict[str, float]
+            Model weights in ensemble
+        entity_names : List[str]
+            Entity names
+        """
+        if not HAS_MATPLOTLIB:
+            return None
+        
+        fig, axes = plt.subplots(2, 2, figsize=(14, 12))
+        
+        # 1. Model weights pie chart
+        ax = axes[0, 0]
+        labels = list(weights.keys())
+        sizes = list(weights.values())
+        colors = plt.cm.Set3(np.linspace(0, 1, len(labels)))
+        
+        wedges, texts, autotexts = ax.pie(sizes, labels=labels, autopct='%1.1f%%',
+                                          colors=colors, startangle=90,
+                                          explode=[0.02] * len(labels))
+        for autotext in autotexts:
+            autotext.set_fontsize(10)
+            autotext.set_fontweight('bold')
+        ax.set_title('Base Model Weights', fontsize=12, fontweight='bold')
+        
+        # 2. Base models vs Ensemble performance
+        ax = axes[0, 1]
+        models = list(base_predictions.keys()) + ['Ensemble']
+        r2_scores = []
+        
+        for model, preds in base_predictions.items():
+            ss_res = np.sum((actual - preds) ** 2)
+            ss_tot = np.sum((actual - np.mean(actual)) ** 2)
+            r2_scores.append(1 - (ss_res / ss_tot) if ss_tot > 0 else 0)
+        
+        ss_res = np.sum((actual - meta_predictions) ** 2)
+        ss_tot = np.sum((actual - np.mean(actual)) ** 2)
+        r2_scores.append(1 - (ss_res / ss_tot) if ss_tot > 0 else 0)
+        
+        colors = plt.cm.viridis(np.linspace(0.2, 0.8, len(models)))
+        bars = ax.bar(range(len(models)), r2_scores, color=colors, edgecolor='black')
+        
+        # Highlight ensemble
+        bars[-1].set_edgecolor('red')
+        bars[-1].set_linewidth(2)
+        
+        ax.set_xticks(range(len(models)))
+        ax.set_xticklabels(models, rotation=45, ha='right', fontsize=10)
+        ax.set_ylabel('R² Score', fontsize=11)
+        ax.set_title('Model Performance Comparison', fontsize=12, fontweight='bold')
+        ax.grid(True, alpha=0.3, axis='y')
+        
+        for bar, val in zip(bars, r2_scores):
+            ax.annotate(f'{val:.3f}', xy=(bar.get_x() + bar.get_width()/2, val),
+                       xytext=(0, 3), textcoords='offset points',
+                       ha='center', fontsize=9, fontweight='bold')
+        
+        # 3. Predictions correlation heatmap
+        ax = axes[1, 0]
+        all_preds = {**base_predictions, 'Ensemble': meta_predictions, 'Actual': actual}
+        pred_df = pd.DataFrame(all_preds)
+        corr = pred_df.corr()
+        
+        im = ax.imshow(corr.values, cmap='RdYlGn', vmin=-1, vmax=1)
+        ax.set_xticks(range(len(corr.columns)))
+        ax.set_yticks(range(len(corr.columns)))
+        ax.set_xticklabels(corr.columns, rotation=45, ha='right', fontsize=10)
+        ax.set_yticklabels(corr.columns, fontsize=10)
+        
+        # Add correlation values
+        for i in range(len(corr.columns)):
+            for j in range(len(corr.columns)):
+                text_color = 'white' if abs(corr.iloc[i, j]) > 0.5 else 'black'
+                ax.text(j, i, f'{corr.iloc[i, j]:.2f}', ha='center', va='center',
+                       color=text_color, fontsize=9)
+        
+        cbar = plt.colorbar(im, ax=ax, shrink=0.8)
+        cbar.set_label('Correlation', fontsize=10)
+        ax.set_title('Predictions Correlation', fontsize=12, fontweight='bold')
+        
+        # 4. Ensemble vs Actual scatter
+        ax = axes[1, 1]
+        ax.scatter(actual, meta_predictions, alpha=0.6, c=self.colors['primary'],
+                  edgecolors='white', s=80)
+        
+        min_val, max_val = min(actual.min(), meta_predictions.min()), max(actual.max(), meta_predictions.max())
+        ax.plot([min_val, max_val], [min_val, max_val], 'r--', linewidth=2, label='Perfect')
+        
+        ax.set_xlabel('Actual', fontsize=11)
+        ax.set_ylabel('Ensemble Prediction', fontsize=11)
+        ax.set_title('Ensemble: Actual vs Predicted', fontsize=12, fontweight='bold')
+        ax.legend(loc='lower right', fontsize=10)
+        ax.grid(True, alpha=0.3)
+        
+        ss_res = np.sum((actual - meta_predictions) ** 2)
+        ss_tot = np.sum((actual - np.mean(actual)) ** 2)
+        r2 = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
+        ax.text(0.05, 0.95, f'Ensemble R² = {r2:.4f}', 
+               transform=ax.transAxes, fontsize=11, verticalalignment='top',
+               bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+        
+        fig.suptitle(title, fontsize=14, fontweight='bold', y=1.02)
+        plt.tight_layout()
+        
+        save_path = self.output_dir / save_name
+        fig.savefig(save_path, dpi=self.dpi, bbox_inches='tight',
+                   facecolor='white', edgecolor='none')
+        plt.close(fig)
+        
+        return str(save_path)
+    
+    def plot_ml_summary_dashboard(self,
+                                  results: Dict[str, Any],
+                                  title: str = 'ML Analysis Dashboard',
+                                  save_name: str = 'ml_dashboard.png') -> Optional[str]:
+        """
+        Create comprehensive ML analysis dashboard.
+        
+        Parameters
+        ----------
+        results : Dict[str, Any]
+            Dictionary containing:
+            - 'rf_importance': feature importance dict
+            - 'rf_cv_scores': CV scores dict
+            - 'lstm_train_loss': training loss list
+            - 'lstm_val_loss': validation loss list
+            - 'model_metrics': Dict[model_name, Dict[metric, value]]
+            - 'predictions': Dict[model_name, (actual, predicted)]
+        """
+        if not HAS_MATPLOTLIB:
+            return None
+        
+        fig = plt.figure(figsize=(20, 16))
+        gs = fig.add_gridspec(3, 3, hspace=0.35, wspace=0.3)
+        
+        fig.suptitle(title, fontsize=16, fontweight='bold', y=0.98)
+        
+        # 1. Feature importance (top-left)
+        ax1 = fig.add_subplot(gs[0, 0])
+        if 'rf_importance' in results and results['rf_importance']:
+            sorted_items = sorted(results['rf_importance'].items(), 
+                                 key=lambda x: x[1], reverse=True)[:10]
+            features = [item[0][:15] for item in sorted_items]
+            importances = [item[1] for item in sorted_items]
+            
+            colors = plt.cm.Blues(np.linspace(0.3, 0.9, len(features)))[::-1]
+            ax1.barh(range(len(features)), importances, color=colors)
+            ax1.set_yticks(range(len(features)))
+            ax1.set_yticklabels(features, fontsize=9)
+            ax1.set_xlabel('Importance', fontsize=10)
+            ax1.set_title('Top 10 Features', fontsize=11, fontweight='bold')
+            ax1.invert_yaxis()
+            ax1.grid(True, alpha=0.3, axis='x')
+        else:
+            ax1.text(0.5, 0.5, 'No RF Data', ha='center', va='center', fontsize=12)
+            ax1.axis('off')
+        
+        # 2. Training curves (top-middle)
+        ax2 = fig.add_subplot(gs[0, 1])
+        if 'lstm_train_loss' in results and results['lstm_train_loss']:
+            epochs = range(1, len(results['lstm_train_loss']) + 1)
+            ax2.plot(epochs, results['lstm_train_loss'], 'b-', linewidth=2, 
+                    label='Train', marker='o', markersize=3)
+            if 'lstm_val_loss' in results and results['lstm_val_loss']:
+                ax2.plot(epochs, results['lstm_val_loss'], 'r--', linewidth=2,
+                        label='Val', marker='s', markersize=3)
+            ax2.set_xlabel('Epoch', fontsize=10)
+            ax2.set_ylabel('Loss', fontsize=10)
+            ax2.set_title('LSTM Training', fontsize=11, fontweight='bold')
+            ax2.legend(fontsize=9)
+            ax2.grid(True, alpha=0.3)
+        else:
+            ax2.text(0.5, 0.5, 'No LSTM Data', ha='center', va='center', fontsize=12)
+            ax2.axis('off')
+        
+        # 3. Model comparison (top-right)
+        ax3 = fig.add_subplot(gs[0, 2])
+        if 'model_metrics' in results and results['model_metrics']:
+            models = list(results['model_metrics'].keys())
+            r2_scores = [results['model_metrics'][m].get('R²', 0) for m in models]
+            
+            colors = plt.cm.viridis(np.linspace(0.2, 0.8, len(models)))
+            bars = ax3.bar(range(len(models)), r2_scores, color=colors, edgecolor='black')
+            ax3.set_xticks(range(len(models)))
+            ax3.set_xticklabels(models, rotation=45, ha='right', fontsize=9)
+            ax3.set_ylabel('R² Score', fontsize=10)
+            ax3.set_title('Model Comparison', fontsize=11, fontweight='bold')
+            ax3.grid(True, alpha=0.3, axis='y')
+            
+            for bar, val in zip(bars, r2_scores):
+                ax3.annotate(f'{val:.3f}', xy=(bar.get_x() + bar.get_width()/2, val),
+                           xytext=(0, 3), textcoords='offset points',
+                           ha='center', fontsize=8, fontweight='bold')
+        else:
+            ax3.text(0.5, 0.5, 'No Metrics', ha='center', va='center', fontsize=12)
+            ax3.axis('off')
+        
+        # 4-6. Prediction scatter plots (middle row)
+        if 'predictions' in results:
+            for i, (model_name, (actual, predicted)) in enumerate(list(results['predictions'].items())[:3]):
+                ax = fig.add_subplot(gs[1, i])
+                ax.scatter(actual, predicted, alpha=0.5, c=self.colors['primary'], s=40)
+                min_val, max_val = min(actual.min(), predicted.min()), max(actual.max(), predicted.max())
+                ax.plot([min_val, max_val], [min_val, max_val], 'r--', linewidth=2)
+                ax.set_xlabel('Actual', fontsize=10)
+                ax.set_ylabel('Predicted', fontsize=10)
+                ax.set_title(f'{model_name}', fontsize=11, fontweight='bold')
+                ax.grid(True, alpha=0.3)
+                
+                ss_res = np.sum((actual - predicted) ** 2)
+                ss_tot = np.sum((actual - np.mean(actual)) ** 2)
+                r2 = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
+                ax.text(0.05, 0.95, f'R²={r2:.3f}', transform=ax.transAxes, fontsize=9,
+                       verticalalignment='top', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+        
+        # 7. CV Scores (bottom-left)
+        ax7 = fig.add_subplot(gs[2, 0])
+        if 'rf_cv_scores' in results and results['rf_cv_scores']:
+            metrics = list(results['rf_cv_scores'].keys())
+            data = [results['rf_cv_scores'][m] for m in metrics]
+            bp = ax7.boxplot(data, labels=metrics, patch_artist=True)
+            colors = plt.cm.Set2(np.linspace(0, 1, len(metrics)))
+            for patch, color in zip(bp['boxes'], colors):
+                patch.set_facecolor(color)
+                patch.set_alpha(0.7)
+            ax7.set_ylabel('Score', fontsize=10)
+            ax7.set_title('RF Cross-Validation', fontsize=11, fontweight='bold')
+            ax7.grid(True, alpha=0.3, axis='y')
+        else:
+            ax7.text(0.5, 0.5, 'No CV Data', ha='center', va='center', fontsize=12)
+            ax7.axis('off')
+        
+        # 8-9. Summary statistics (bottom-middle and right)
+        ax8 = fig.add_subplot(gs[2, 1:])
+        ax8.axis('off')
+        
+        summary_text = "ML ANALYSIS SUMMARY\n" + "=" * 50 + "\n\n"
+        
+        if 'model_metrics' in results:
+            for model, metrics in results['model_metrics'].items():
+                summary_text += f"{model}:\n"
+                for metric, value in metrics.items():
+                    summary_text += f"  {metric}: {value:.4f}\n"
+                summary_text += "\n"
+        
+        ax8.text(0.1, 0.9, summary_text, transform=ax8.transAxes, fontsize=11,
+                verticalalignment='top', fontfamily='monospace',
+                bbox=dict(boxstyle='round', facecolor='lightgray', alpha=0.3))
+        
+        save_path = self.output_dir / save_name
+        fig.savefig(save_path, dpi=self.dpi, bbox_inches='tight',
+                   facecolor='white', edgecolor='none')
+        plt.close(fig)
+        
+        return str(save_path)
+
+    # =========================================================================
+    # ADDITIONAL INDIVIDUAL HIGH-RESOLUTION CHARTS
+    # =========================================================================
+    
+    def plot_weights_comparison(self,
+                                weights: Dict[str, np.ndarray],
+                                component_names: List[str],
+                                title: str = 'Criteria Weights Comparison',
+                                save_name: str = '03_weights_comparison.png') -> Optional[str]:
+        """Plot comparison of weights from different methods."""
+        if not HAS_MATPLOTLIB:
+            return None
+        
+        fig, ax = plt.subplots(figsize=(14, 8))
+        
+        n_components = len(component_names)
+        n_methods = len(weights)
+        x = np.arange(n_components)
+        width = 0.8 / n_methods
+        
+        colors = plt.cm.Set2(np.linspace(0, 1, n_methods))
+        
+        for i, (method, w) in enumerate(weights.items()):
+            offset = (i - n_methods/2 + 0.5) * width
+            bars = ax.bar(x + offset, w, width, label=method.title(), 
+                         color=colors[i], edgecolor='black', linewidth=0.5)
+        
+        ax.set_xlabel('Component', fontsize=12, fontweight='bold')
+        ax.set_ylabel('Weight', fontsize=12, fontweight='bold')
+        ax.set_title(title, fontsize=14, fontweight='bold', pad=15)
+        ax.set_xticks(x)
+        ax.set_xticklabels([c[:10] for c in component_names], rotation=45, ha='right', fontsize=9)
+        ax.legend(loc='upper right', fontsize=10)
+        ax.grid(True, alpha=0.3, axis='y')
+        
+        plt.tight_layout()
+        return self._save_figure(fig, save_name)
+    
+    def plot_topsis_scores_bar(self,
+                               scores: np.ndarray,
+                               entity_names: List[str],
+                               title: str = 'TOPSIS Scores Ranking',
+                               save_name: str = '04_topsis_scores.png') -> Optional[str]:
+        """Plot TOPSIS scores as horizontal bar chart."""
+        if not HAS_MATPLOTLIB:
+            return None
+        
+        fig, ax = plt.subplots(figsize=(12, max(10, len(entity_names) * 0.3)))
+        
+        # Sort by score
+        sorted_idx = np.argsort(scores)[::-1]
+        sorted_scores = scores[sorted_idx]
+        sorted_names = [entity_names[i] for i in sorted_idx]
+        
+        # Show top 30
+        n_show = min(30, len(sorted_scores))
+        colors = plt.cm.viridis(np.linspace(0.9, 0.2, n_show))
+        
+        bars = ax.barh(range(n_show), sorted_scores[:n_show], color=colors, 
+                      edgecolor='black', linewidth=0.5)
+        
+        ax.set_yticks(range(n_show))
+        ax.set_yticklabels(sorted_names[:n_show], fontsize=10)
+        ax.set_xlabel('TOPSIS Score', fontsize=12, fontweight='bold')
+        ax.set_title(title, fontsize=14, fontweight='bold', pad=15)
+        ax.invert_yaxis()
+        ax.grid(True, alpha=0.3, axis='x')
+        
+        # Add value labels
+        for bar, val in zip(bars, sorted_scores[:n_show]):
+            ax.text(val + 0.01, bar.get_y() + bar.get_height()/2,
+                   f'{val:.4f}', va='center', fontsize=9)
+        
+        plt.tight_layout()
+        return self._save_figure(fig, save_name)
+    
+    def plot_vikor_analysis(self,
+                            Q: np.ndarray,
+                            S: np.ndarray,
+                            R: np.ndarray,
+                            entity_names: List[str],
+                            title: str = 'VIKOR Analysis Results',
+                            save_name: str = '05_vikor_analysis.png') -> Optional[str]:
+        """Plot VIKOR Q, S, R values."""
+        if not HAS_MATPLOTLIB:
+            return None
+        
+        # Convert to numpy arrays if needed
+        Q = np.array(Q) if hasattr(Q, 'values') else np.asarray(Q)
+        S = np.array(S) if hasattr(S, 'values') else np.asarray(S)
+        R = np.array(R) if hasattr(R, 'values') else np.asarray(R)
+        
+        fig, ax = plt.subplots(figsize=(14, 8))
+        
+        # Sort by Q value
+        sorted_idx = np.argsort(Q)
+        n_show = min(20, len(Q))
+        
+        x = np.arange(n_show)
+        width = 0.25
+        
+        ax.bar(x - width, Q[sorted_idx][:n_show], width, label='Q', color=self.colors['primary'])
+        ax.bar(x, S[sorted_idx][:n_show], width, label='S', color=self.colors['secondary'])
+        ax.bar(x + width, R[sorted_idx][:n_show], width, label='R', color=self.colors['tertiary'])
+        
+        ax.set_xlabel('Entity', fontsize=12, fontweight='bold')
+        ax.set_ylabel('Value', fontsize=12, fontweight='bold')
+        ax.set_title(title, fontsize=14, fontweight='bold', pad=15)
+        ax.set_xticks(x)
+        ax.set_xticklabels([entity_names[i][:10] for i in sorted_idx[:n_show]], 
+                          rotation=45, ha='right', fontsize=9)
+        ax.legend(loc='upper right', fontsize=11)
+        ax.grid(True, alpha=0.3, axis='y')
+        
+        plt.tight_layout()
+        return self._save_figure(fig, save_name)
+    
+    def plot_method_agreement_matrix(self,
+                                     rankings_dict: Dict[str, np.ndarray],
+                                     title: str = 'MCDM Methods Agreement Matrix',
+                                     save_name: str = '06_method_agreement.png') -> Optional[str]:
+        """Plot correlation matrix between different MCDM methods."""
+        if not HAS_MATPLOTLIB:
+            return None
+        
+        from scipy.stats import spearmanr
+        
+        fig, ax = plt.subplots(figsize=(10, 8))
+        
+        # Convert to numpy arrays if needed
+        rankings_np = {}
+        for k, v in rankings_dict.items():
+            rankings_np[k] = np.array(v) if hasattr(v, 'values') else np.asarray(v)
+        
+        methods = list(rankings_np.keys())
+        n = len(methods)
+        corr_matrix = np.zeros((n, n))
+        
+        for i, m1 in enumerate(methods):
+            for j, m2 in enumerate(methods):
+                corr, _ = spearmanr(rankings_np[m1], rankings_np[m2])
+                corr_matrix[i, j] = corr
+        
+        im = ax.imshow(corr_matrix, cmap='RdYlGn', vmin=-1, vmax=1)
+        
+        ax.set_xticks(range(n))
+        ax.set_yticks(range(n))
+        ax.set_xticklabels(methods, rotation=45, ha='right', fontsize=11)
+        ax.set_yticklabels(methods, fontsize=11)
+        
+        # Add correlation values
+        for i in range(n):
+            for j in range(n):
+                text_color = 'white' if abs(corr_matrix[i, j]) > 0.5 else 'black'
+                ax.text(j, i, f'{corr_matrix[i, j]:.3f}', ha='center', va='center',
+                       color=text_color, fontsize=11, fontweight='bold')
+        
+        cbar = plt.colorbar(im, ax=ax, shrink=0.8)
+        cbar.set_label('Spearman Correlation', fontsize=11)
+        ax.set_title(title, fontsize=14, fontweight='bold', pad=15)
+        
+        plt.tight_layout()
+        return self._save_figure(fig, save_name)
+    
+    def plot_score_distribution(self,
+                                scores: np.ndarray,
+                                title: str = 'Score Distribution',
+                                save_name: str = '07_score_distribution.png') -> Optional[str]:
+        """Plot histogram of score distribution."""
+        if not HAS_MATPLOTLIB:
+            return None
+        
+        fig, ax = plt.subplots(figsize=self.figsize)
+        
+        n, bins, patches = ax.hist(scores, bins=30, color=self.colors['primary'],
+                                   edgecolor='white', alpha=0.8)
+        
+        # Color gradient
+        cm = plt.cm.get_cmap('viridis')
+        bin_centers = 0.5 * (bins[:-1] + bins[1:])
+        col = (bin_centers - bin_centers.min()) / (bin_centers.max() - bin_centers.min())
+        for c, p in zip(col, patches):
+            plt.setp(p, 'facecolor', cm(c))
+        
+        # Add statistics
+        ax.axvline(scores.mean(), color='red', linestyle='--', linewidth=2, 
+                  label=f'Mean: {scores.mean():.4f}')
+        ax.axvline(np.median(scores), color='orange', linestyle='--', linewidth=2,
+                  label=f'Median: {np.median(scores):.4f}')
+        
+        ax.set_xlabel('Score', fontsize=12, fontweight='bold')
+        ax.set_ylabel('Frequency', fontsize=12, fontweight='bold')
+        ax.set_title(title, fontsize=14, fontweight='bold', pad=15)
+        ax.legend(loc='upper right', fontsize=11)
+        ax.grid(True, alpha=0.3, axis='y')
+        
+        # Add statistics box
+        stats_text = f'N = {len(scores)}\nStd = {scores.std():.4f}\nMin = {scores.min():.4f}\nMax = {scores.max():.4f}'
+        ax.text(0.95, 0.95, stats_text, transform=ax.transAxes, fontsize=10,
+               verticalalignment='top', horizontalalignment='right',
+               bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+        
+        plt.tight_layout()
+        return self._save_figure(fig, save_name)
+    
+    def plot_sigma_convergence(self,
+                               sigma_by_year: Dict[int, float],
+                               title: str = 'Sigma Convergence Analysis',
+                               save_name: str = '08_sigma_convergence.png') -> Optional[str]:
+        """Plot sigma convergence over time."""
+        if not HAS_MATPLOTLIB:
+            return None
+        
+        fig, ax = plt.subplots(figsize=self.figsize)
+        
+        years = list(sigma_by_year.keys())
+        sigmas = list(sigma_by_year.values())
+        
+        ax.plot(years, sigmas, 'o-', linewidth=2.5, markersize=10,
+               color=self.colors['primary'], markeredgecolor='white', markeredgewidth=2)
+        
+        # Trend line
+        z = np.polyfit(range(len(years)), sigmas, 1)
+        p = np.poly1d(z)
+        ax.plot(years, p(range(len(years))), '--', 
+               color=self.colors['secondary'], linewidth=2, label=f'Trend (slope={z[0]:.4f})')
+        
+        ax.set_xlabel('Year', fontsize=12, fontweight='bold')
+        ax.set_ylabel('Coefficient of Variation (σ)', fontsize=12, fontweight='bold')
+        ax.set_title(title, fontsize=14, fontweight='bold', pad=15)
+        ax.legend(loc='best', fontsize=11)
+        ax.grid(True, alpha=0.3, linestyle='--')
+        ax.set_xticks(years)
+        
+        # Interpretation
+        trend = "Converging" if z[0] < 0 else "Diverging"
+        ax.text(0.95, 0.95, f'Trend: {trend}', transform=ax.transAxes, fontsize=11,
+               verticalalignment='top', horizontalalignment='right',
+               bbox=dict(boxstyle='round', facecolor='lightgreen' if z[0] < 0 else 'lightyellow', alpha=0.7))
+        
+        plt.tight_layout()
+        return self._save_figure(fig, save_name)
+    
+    def plot_beta_convergence_info(self,
+                                   beta_coefficient: float,
+                                   half_life: float,
+                                   title: str = 'Beta Convergence Analysis',
+                                   save_name: str = '09_beta_convergence.png') -> Optional[str]:
+        """Plot beta convergence information panel."""
+        if not HAS_MATPLOTLIB:
+            return None
+        
+        fig, ax = plt.subplots(figsize=self.figsize)
+        ax.axis('off')
+        
+        convergence_type = 'CONVERGING' if beta_coefficient < 0 else 'DIVERGING'
+        color = self.colors['success'] if beta_coefficient < 0 else self.colors['quaternary']
+        
+        info_text = f"""
+╔══════════════════════════════════════════════════════════════╗
+║                    BETA CONVERGENCE ANALYSIS                  ║
+╠══════════════════════════════════════════════════════════════╣
+║                                                              ║
+║   β Coefficient:     {beta_coefficient:>12.6f}                         ║
+║                                                              ║
+║   Interpretation:                                            ║
+║   {"Provinces are converging (catching up)    " if beta_coefficient < 0 else "Provinces are diverging (gap widening)   "}     ║
+║                                                              ║
+║   Convergence Speed: {abs(beta_coefficient):>12.6f}                         ║
+║                                                              ║
+║   Half-Life:         {half_life:>12.1f} years                       ║
+║   {"(time to halve development gap)           " if half_life < 100 else "(very slow convergence rate)              "}     ║
+║                                                              ║
+║   Status:            {convergence_type:>12s}                         ║
+║                                                              ║
+╚══════════════════════════════════════════════════════════════╝
+        """
+        
+        ax.text(0.5, 0.5, info_text, transform=ax.transAxes, fontsize=12,
+               verticalalignment='center', horizontalalignment='center',
+               fontfamily='monospace',
+               bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+        
+        ax.set_title(title, fontsize=14, fontweight='bold', pad=15)
+        
+        plt.tight_layout()
+        return self._save_figure(fig, save_name)
+    
+    def plot_feature_importance_single(self,
+                                       importance_dict: Dict[str, float],
+                                       title: str = 'Feature Importance Analysis',
+                                       save_name: str = '10_feature_importance.png',
+                                       top_n: int = 20) -> Optional[str]:
+        """Plot feature importance as single chart."""
+        if not HAS_MATPLOTLIB:
+            return None
+        
+        fig, ax = plt.subplots(figsize=(12, max(8, top_n * 0.4)))
+        
+        # Sort and take top N
+        sorted_items = sorted(importance_dict.items(), 
+                             key=lambda x: x[1], reverse=True)[:top_n]
+        features = [item[0] for item in sorted_items]
+        importances = [item[1] for item in sorted_items]
+        
+        # Color gradient
+        colors = plt.cm.Blues(np.linspace(0.3, 0.9, len(features)))[::-1]
+        
+        bars = ax.barh(range(len(features)), importances, color=colors,
+                      edgecolor='black', linewidth=0.5)
+        
+        ax.set_yticks(range(len(features)))
+        ax.set_yticklabels(features, fontsize=10)
+        ax.set_xlabel('Importance Score', fontsize=12, fontweight='bold')
+        ax.set_title(title, fontsize=14, fontweight='bold', pad=15)
+        ax.invert_yaxis()
+        ax.grid(True, alpha=0.3, axis='x')
+        
+        # Add value labels
+        for bar, val in zip(bars, importances):
+            ax.text(val + 0.005, bar.get_y() + bar.get_height()/2,
+                   f'{val:.4f}', va='center', fontsize=9)
+        
+        plt.tight_layout()
+        return self._save_figure(fig, save_name)
+    
+    def plot_sensitivity_analysis(self,
+                                  weight_sensitivity: Dict[str, float],
+                                  title: str = 'Criteria Sensitivity Analysis',
+                                  save_name: str = '11_sensitivity_analysis.png') -> Optional[str]:
+        """Plot weight sensitivity analysis."""
+        if not HAS_MATPLOTLIB:
+            return None
+        
+        fig, ax = plt.subplots(figsize=self.figsize)
+        
+        criteria = list(weight_sensitivity.keys())
+        sensitivities = list(weight_sensitivity.values())
+        
+        # Sort by sensitivity
+        sorted_idx = np.argsort(sensitivities)[::-1]
+        criteria = [criteria[i] for i in sorted_idx]
+        sensitivities = [sensitivities[i] for i in sorted_idx]
+        
+        # Color gradient based on sensitivity
+        norm = plt.Normalize(min(sensitivities), max(sensitivities))
+        colors = plt.cm.RdYlGn_r(norm(sensitivities))
+        
+        bars = ax.barh(range(len(criteria)), sensitivities, color=colors,
+                      edgecolor='black', linewidth=0.5)
+        
+        ax.set_yticks(range(len(criteria)))
+        ax.set_yticklabels([c[:25] for c in criteria], fontsize=10)
+        ax.set_xlabel('Sensitivity Index', fontsize=12, fontweight='bold')
+        ax.set_title(title, fontsize=14, fontweight='bold', pad=15)
+        ax.invert_yaxis()
+        ax.grid(True, alpha=0.3, axis='x')
+        
+        # Add value labels
+        for bar, val in zip(bars, sensitivities):
+            ax.text(val + 0.01, bar.get_y() + bar.get_height()/2,
+                   f'{val:.4f}', va='center', fontsize=9)
+        
+        # Add interpretation
+        high_sens = sum(1 for s in sensitivities if s > 0.5)
+        ax.text(0.95, 0.05, f'High sensitivity criteria: {high_sens}/{len(criteria)}',
+               transform=ax.transAxes, fontsize=10, verticalalignment='bottom',
+               horizontalalignment='right',
+               bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+        
+        plt.tight_layout()
+        return self._save_figure(fig, save_name)
+    
+    def plot_final_ranking_summary(self,
+                                   entities: List[str],
+                                   final_scores: np.ndarray,
+                                   final_ranking: np.ndarray,
+                                   title: str = 'Final Ranking Summary',
+                                   save_name: str = '12_final_ranking.png') -> Optional[str]:
+        """Plot final ranking summary."""
+        if not HAS_MATPLOTLIB:
+            return None
+        
+        fig, ax = plt.subplots(figsize=(14, max(10, len(entities) * 0.25)))
+        
+        # Sort by ranking
+        sorted_idx = np.argsort(final_ranking)
+        n_show = min(40, len(entities))
+        
+        sorted_scores = final_scores[sorted_idx][:n_show]
+        sorted_names = [entities[i] for i in sorted_idx[:n_show]]
+        
+        # Color gradient
+        colors = plt.cm.RdYlGn(np.linspace(0.9, 0.2, n_show))
+        
+        bars = ax.barh(range(n_show), sorted_scores, color=colors,
+                      edgecolor='black', linewidth=0.5)
+        
+        ax.set_yticks(range(n_show))
+        ax.set_yticklabels([f'{i+1}. {name}' for i, name in enumerate(sorted_names)], fontsize=10)
+        ax.set_xlabel('Final Score', fontsize=12, fontweight='bold')
+        ax.set_title(title, fontsize=14, fontweight='bold', pad=15)
+        ax.invert_yaxis()
+        ax.grid(True, alpha=0.3, axis='x')
+        
+        # Add value labels
+        for i, (bar, val) in enumerate(zip(bars, sorted_scores)):
+            ax.text(val + 0.01, bar.get_y() + bar.get_height()/2,
+                   f'{val:.4f}', va='center', fontsize=9)
+        
+        plt.tight_layout()
+        return self._save_figure(fig, save_name)
 
 
 def create_visualizer(output_dir: str = 'outputs/figures') -> PanelVisualizer:

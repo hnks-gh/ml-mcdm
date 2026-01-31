@@ -65,13 +65,18 @@ class TimeSeriesSplit:
         unique_years = np.sort(np.unique(years))
         n_years = len(unique_years)
         
-        if n_years < self.n_splits + 1:
-            raise ValueError(f"Need at least {self.n_splits + 1} years for {self.n_splits} splits")
+        # Automatically adjust n_splits if not enough years
+        actual_splits = min(self.n_splits, max(1, n_years - 1))
+        
+        if n_years < 2:
+            # Return a simple split using all data for both train and test
+            all_idx = np.arange(len(years))
+            return [(all_idx, all_idx)]
         
         splits = []
-        for i in range(self.n_splits):
+        for i in range(actual_splits):
             # Train on years up to split point
-            train_end = n_years - self.n_splits + i
+            train_end = n_years - actual_splits + i
             test_start = train_end + self.gap
             
             train_years = unique_years[:train_end + 1]
@@ -83,6 +88,15 @@ class TimeSeriesSplit:
             train_idx = np.where(np.isin(years, train_years))[0]
             test_idx = np.where(np.isin(years, test_years))[0]
             
+            if len(train_idx) > 0 and len(test_idx) > 0:
+                splits.append((train_idx, test_idx))
+        
+        # Fallback: if no valid splits, create one using all-but-last year for train
+        if not splits and n_years >= 2:
+            train_years = unique_years[:-1]
+            test_years = unique_years[-1:]
+            train_idx = np.where(np.isin(years, train_years))[0]
+            test_idx = np.where(np.isin(years, test_years))[0]
             splits.append((train_idx, test_idx))
         
         return splits

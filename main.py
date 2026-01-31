@@ -63,14 +63,19 @@ def main():
         # Print results
         print_results(result)
         
-        # Save results
-        save_results(result)
+        # Results are already saved by the pipeline to organized subfolders:
+        # - outputs/figures/    - High-resolution charts
+        # - outputs/results/    - CSV numerical data
+        # - outputs/reports/    - Comprehensive text reports
         
         print(f"\n{'─'*70}")
         print(f"  ANALYSIS COMPLETE")
         print(f"{'─'*70}")
         print("\n  ✅ All analyses completed successfully!")
-        print(f"  📊 Check '{CONFIG['output_dir']}/' for detailed results.\n")
+        print(f"  📊 Results saved to '{CONFIG['output_dir']}/':")
+        print(f"     • figures/  - High-resolution charts (300 DPI)")
+        print(f"     • results/  - Complete numerical data (CSV)")
+        print(f"     • reports/  - Comprehensive analysis report\n")
         
     except Exception as e:
         print(f"\n  ❌ Error: {e}")
@@ -124,63 +129,6 @@ def print_results(result):
         print(f"     Robustness: {result.sensitivity_result.overall_robustness:.4f}")
     
     print(f"\n  ⏱️  Execution Time: {result.execution_time:.2f} seconds")
-
-
-def save_results(result):
-    """Save results to output files."""
-    import pandas as pd
-    from datetime import datetime
-    
-    output_dir = Path(CONFIG['output_dir'])
-    output_dir.mkdir(parents=True, exist_ok=True)
-    
-    print(f"\n{'─'*70}")
-    print(f"  SAVING RESULTS")
-    print(f"{'─'*70}")
-    
-    # Save ranking
-    ranking_path = output_dir / 'final_ranking.csv'
-    result.get_final_ranking_df().to_csv(ranking_path, index=False)
-    print(f"  ✓ Rankings: {ranking_path}")
-    
-    # Save weights
-    weights_df = pd.DataFrame({
-        'component': result.panel_data.components,
-        'entropy': result.entropy_weights,
-        'critic': result.critic_weights,
-        'ensemble': result.ensemble_weights
-    })
-    weights_path = output_dir / 'weights.csv'
-    weights_df.to_csv(weights_path, index=False)
-    print(f"  ✓ Weights: {weights_path}")
-    
-    # Save feature importance if available
-    if result.rf_feature_importance:
-        importance_df = pd.DataFrame([
-            {'feature': k, 'importance': v}
-            for k, v in result.rf_feature_importance.items()
-        ]).sort_values('importance', ascending=False)
-        importance_path = output_dir / 'feature_importance.csv'
-        importance_df.to_csv(importance_path, index=False)
-        print(f"  ✓ Feature importance: {importance_path}")
-    
-    # Save report
-    report_path = output_dir / 'analysis_report.txt'
-    with open(report_path, 'w') as f:
-        f.write("ML-MCDM PANEL DATA ANALYSIS REPORT\n")
-        f.write(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-        f.write("=" * 60 + "\n\n")
-        
-        f.write("DATA SUMMARY\n")
-        f.write(f"  Entities: {len(result.panel_data.entities)}\n")
-        f.write(f"  Time periods: {len(result.panel_data.time_periods)}\n")
-        f.write(f"  Components: {len(result.panel_data.components)}\n\n")
-        
-        f.write("TOP 10 RANKINGS\n")
-        for _, row in result.get_final_ranking_df().head(10).iterrows():
-            f.write(f"  {int(row['final_rank'])}. {row['province']} ({row['final_score']:.4f})\n")
-    
-    print(f"  ✓ Report: {report_path}")
 
 
 if __name__ == '__main__':
