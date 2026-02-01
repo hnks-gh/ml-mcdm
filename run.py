@@ -118,7 +118,7 @@ def print_results(result):
     print(f"     Rank Agreement (Kendall's W): {result.aggregated_ranking.kendall_w:.4f}")
     print(f"     Stacking Meta-Model R²: {result.stacking_result.meta_model_r2:.4f}")
     
-    if result.convergence_result:
+    if hasattr(result, 'convergence_result') and result.convergence_result:
         status = "CONVERGING ✓" if result.convergence_result.beta_converging else "DIVERGING ✗"
         print(f"     Convergence: {status} (β={result.convergence_result.beta_coefficient:.4f})")
     

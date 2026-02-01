@@ -1,74 +1,99 @@
 # -*- coding: utf-8 -*-
-"""Machine learning methods for panel data analysis and forecasting."""
+"""
+Machine Learning Module
+=======================
 
-# Legacy modules
-from .panel_regression import PanelRegression, PanelRegressionResult
-from .random_forest_ts import RandomForestTS, RandomForestTSResult
-from .lstm_forecast import LSTMForecaster, LSTMResult
-from .rough_sets import RoughSetReducer, RoughSetResult
+ML methods for panel data analysis and time series forecasting.
 
-# Advanced forecasting
-from .advanced_forecasting import (
-    AdvancedMLForecaster,
+Submodules
+----------
+forecasting
+    Comprehensive forecasting system with tree-based, linear, and neural models
+    Feature engineering for temporal data
+    Unified forecasting interface
+
+Usage
+-----
+>>> from src.ml.forecasting import UnifiedForecaster, ForecastMode
+>>> from src.ml.forecasting import GradientBoostingForecaster, NeuralForecaster
+"""
+
+# Import from forecasting submodule
+from .forecasting import (
+    # Base classes
+    BaseForecaster, ForecastResult,
+    
+    # Feature engineering
     TemporalFeatureEngineer,
-    ForecastResult,
+    
+    # Tree ensemble forecasters
     GradientBoostingForecaster,
     RandomForestForecaster,
     ExtraTreesForecaster,
-    BayesianRidgeForecaster,
+    
+    # Linear forecasters
+    BayesianForecaster,
     HuberForecaster,
-    ComponentForecaster
-)
-
-# Neural network forecasting
-from .neural_forecasting import (
+    RidgeForecaster,
+    
+    # Neural forecasters
     NeuralForecaster,
-    AttentionTemporalForecaster,
-    NeuralEnsembleForecaster,
+    AttentionForecaster,
     DenseLayer,
     AttentionLayer,
-    ResidualBlock
-)
-
-# Unified forecasting system
-from .unified_forecasting import (
+    
+    # Unified forecaster
     UnifiedForecaster,
     UnifiedForecastResult,
     ForecastMode,
-    forecast_next_year
+    
+    # Time-series RF for panel data (used by pipeline)
+    RandomForestTS,
+    RandomForestTSResult,
+    TimeSeriesSplit,
+    calculate_shap_importance,
 )
 
+# Backward compatibility aliases
+BayesianRidgeForecaster = BayesianForecaster
+AttentionTemporalForecaster = AttentionForecaster
+
 __all__ = [
-    # Legacy
-    'PanelRegression', 'PanelRegressionResult',
-    'RandomForestTS', 'RandomForestTSResult',
-    'LSTMForecaster', 'LSTMResult',
-    'RoughSetReducer', 'RoughSetResult',
-    
-    # Advanced Forecasting
-    'AdvancedMLForecaster',
+    # Feature engineering
     'TemporalFeatureEngineer',
-    'ForecastResult',
-    'GradientBoostingForecaster',
-    'RandomForestForecaster',
-    'ExtraTreesForecaster',
-    'BayesianRidgeForecaster',
-    'HuberForecaster',
-    'ComponentForecaster',
     
-    # Neural Forecasting
+    # Base classes  
+    'BaseForecaster',
+    'ForecastResult',
+    
+    # Tree ensemble forecasters
+    'GradientBoostingForecaster',
+    'RandomForestForecaster', 
+    'ExtraTreesForecaster',
+    
+    # Linear forecasters
+    'BayesianForecaster',
+    'BayesianRidgeForecaster',  # Alias
+    'HuberForecaster',
+    'RidgeForecaster',
+    
+    # Neural forecasters
     'NeuralForecaster',
-    'AttentionTemporalForecaster',
-    'NeuralEnsembleForecaster',
+    'AttentionForecaster',
+    'AttentionTemporalForecaster',  # Alias
     'DenseLayer',
     'AttentionLayer',
-    'ResidualBlock',
     
-    # Unified System
+    # Unified system
     'UnifiedForecaster',
     'UnifiedForecastResult',
     'ForecastMode',
-    'forecast_next_year'
+    
+    # Time-series RF (panel data)
+    'RandomForestTS',
+    'RandomForestTSResult',
+    'TimeSeriesSplit',
+    'calculate_shap_importance',
 ]
 
 
@@ -76,10 +101,19 @@ def get_forecaster(mode: str = 'balanced'):
     """
     Get a configured forecaster instance.
     
-    Args:
-        mode: 'fast', 'balanced', 'accurate', 'neural', or 'ensemble'
+    Parameters
+    ----------
+    mode : str, default='balanced'
+        Forecasting mode: 'fast', 'balanced', 'accurate', 'neural', or 'ensemble'
     
-    Returns:
-        Configured UnifiedForecaster instance
+    Returns
+    -------
+    UnifiedForecaster
+        Configured forecaster instance
+        
+    Example
+    -------
+    >>> forecaster = get_forecaster('accurate')
+    >>> result = forecaster.fit_predict(X, y, entity_ids, time_ids)
     """
     return UnifiedForecaster(mode=ForecastMode(mode.lower()))

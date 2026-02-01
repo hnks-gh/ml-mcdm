@@ -25,7 +25,7 @@ from .mcdm import (
 )
 
 from .ml import (
-    PanelRegression, RandomForestTS, LSTMForecaster, RoughSetReducer
+    RandomForestTS  # For feature importance and time-series validation
 )
 
 from .ensemble import (
@@ -33,7 +33,7 @@ from .ensemble import (
 )
 
 from .analysis import (
-    ConvergenceAnalysis, SensitivityAnalysis, CrossValidator, BootstrapValidator
+    SensitivityAnalysis, CrossValidator, BootstrapValidator
 )
 
 from .visualization import PanelVisualizer
@@ -59,17 +59,13 @@ class PipelineResult:
     fuzzy_topsis_scores: np.ndarray
     
     # ML Results
-    panel_regression_result: Any
     rf_feature_importance: Dict[str, float]
-    lstm_forecasts: Optional[np.ndarray]
-    rough_set_reduction: Any
     
     # Ensemble
     stacking_result: Any
     aggregated_ranking: Any
     
     # Analysis
-    convergence_result: Any
     sensitivity_result: Any
     
     # Future Predictions (Next Year - 2025)
@@ -267,13 +263,9 @@ class MLTOPSISPipeline:
             dynamic_topsis_scores=mcdm_results['dynamic_topsis_scores'],
             vikor_results=mcdm_results['vikor'],
             fuzzy_topsis_scores=mcdm_results['fuzzy_scores'],
-            panel_regression_result=ml_results['panel_regression'],
             rf_feature_importance=ml_results['rf_importance'],
-            lstm_forecasts=ml_results.get('lstm_forecasts'),
-            rough_set_reduction=ml_results.get('rough_set'),
             stacking_result=ensemble_results['stacking'],
             aggregated_ranking=ensemble_results['aggregated'],
-            convergence_result=analysis_results['convergence'],
             sensitivity_result=analysis_results['sensitivity'],
             future_predictions=future_predictions,
             execution_time=execution_time,
@@ -393,14 +385,18 @@ class MLTOPSISPipeline:
     
     def _run_ml(self, panel_data: PanelData, 
                 mcdm_results: Dict[str, Any]) -> Dict[str, Any]:
-        """Run ML analysis methods with comprehensive fallback handling."""
+        """
+        Run appropriate ML analysis methods.
+        
+        For Objective 1 (Current Year Index): Random Forest provides feature importance
+        to understand which components drive sustainability rankings.
+        
+        For Objective 2 (Forecasting): The forecasting is handled separately in
+        _run_future_prediction using AdvancedMLForecaster.
+        """
         results = {
-            'panel_regression': None,
             'rf_result': None,
-            'rf_importance': {},
-            'lstm_forecasts': None,
-            'lstm_result': None,
-            'rough_set': None
+            'rf_importance': {}
         }
         
         # Prepare features with fallback
@@ -411,37 +407,9 @@ class MLTOPSISPipeline:
             self.logger.warning(f"Feature engineering failed: {e}, using raw panel data")
             features_df = panel_data.long.copy()
         
-        # 1. Panel Regression
-        # Add TOPSIS scores to panel data for regression
-        topsis_scores = mcdm_results['topsis_scores']
-        
-        # Create a DataFrame with scores for panel regression
-        try:
-            # Create panel format data with target column
-            reg_df = panel_data.long.copy()
-            # Map TOPSIS scores to each province
-            score_map = dict(zip(panel_data.entities, topsis_scores))
-            reg_df['topsis_score'] = reg_df['Province'].map(score_map)
-            
-            # Check if we have enough data for regression
-            if len(reg_df) < 10 or reg_df['topsis_score'].isna().all():
-                raise ValueError("Insufficient data for panel regression")
-            
-            panel_regression = PanelRegression()
-            reg_result = panel_regression.fit(
-                reg_df, 
-                y_col='topsis_score',
-                X_cols=panel_data.components,
-                province_col='Province',
-                year_col='Year'
-            )
-            results['panel_regression'] = reg_result
-            self.logger.info(f"Panel Regression R²: {reg_result.r_squared:.4f}")
-        except Exception as e:
-            self.logger.warning(f"Panel regression failed: {e}")
-            results['panel_regression'] = None
-        
-        # 2. Random Forest with Time-Series CV
+        # Random Forest with Time-Series CV
+        # Purpose: Feature importance analysis to identify which components
+        # most strongly influence sustainability rankings
         try:
             rf = RandomForestTS(
                 n_estimators=self.config.random_forest.n_estimators,
@@ -484,53 +452,6 @@ class MLTOPSISPipeline:
             self.logger.warning(f"Random Forest failed: {e}")
             import traceback
             self.logger.debug(traceback.format_exc())
-        
-        # 3. LSTM Forecasting (optional)
-        if self.config.lstm.enabled:
-            try:
-                # Validate we have enough time periods for LSTM sequences
-                n_years = len(panel_data.years)
-                seq_len = min(self.config.lstm.sequence_length, max(1, n_years - 2))
-                
-                if n_years < 3:
-                    self.logger.warning(f"LSTM skipped: need at least 3 time periods ({n_years} available)")
-                else:
-                    lstm = LSTMForecaster(
-                        sequence_length=seq_len,
-                        hidden_units=self.config.lstm.hidden_units,
-                        n_layers=self.config.lstm.n_layers,
-                        dropout=self.config.lstm.dropout,
-                        epochs=self.config.lstm.epochs,
-                        batch_size=self.config.lstm.batch_size,
-                        learning_rate=self.config.lstm.learning_rate,
-                        patience=self.config.lstm.patience
-                    )
-                    # Use up to first 5 components or all if fewer
-                    n_comp = min(5, len(panel_data.components))
-                    lstm_result = lstm.fit_predict(panel_data, panel_data.components[:n_comp])
-                    results['lstm_forecasts'] = lstm_result.predictions
-                    results['lstm_result'] = lstm_result  # Store full result for visualization
-                    self.logger.info(f"LSTM Test Metrics: {lstm_result.test_metrics}")
-            except Exception as e:
-                self.logger.warning(f"LSTM forecasting skipped: {e}")
-                import traceback
-                self.logger.debug(traceback.format_exc())
-        
-        # 4. Rough Set Reduction
-        try:
-            rough_set = RoughSetReducer(
-                quality_threshold=self.config.rough_sets.quality_threshold,
-                n_bins=self.config.rough_sets.n_bins
-            )
-            # Use latest cross-section DataFrame
-            rs_result = rough_set.reduce(panel_data.get_latest()[panel_data.components])
-            results['rough_set'] = rs_result
-            
-            self.logger.info(f"Rough Set: Reduced from {rs_result.original_n_attributes} "
-                           f"to {rs_result.reduced_n_attributes} attributes")
-        except Exception as e:
-            self.logger.warning(f"Rough set reduction failed: {e}")
-            results['rough_set'] = None
         
         return results
     
@@ -579,34 +500,15 @@ class MLTOPSISPipeline:
     def _run_analysis(self, panel_data: PanelData,
                       mcdm_results: Dict[str, Any],
                       weights: Dict[str, np.ndarray]) -> Dict[str, Any]:
-        """Run advanced analysis."""
+        """
+        Run validation analysis.
+        
+        Sensitivity Analysis tests robustness of rankings to weight perturbations,
+        which is critical for validating MCDM results (Objective 1).
+        """
         results = {}
         
-        # 1. Convergence Analysis
-        # Create scores DataFrame
-        scores_df = panel_data.long.copy()
-        scores_df['score'] = np.tile(
-            mcdm_results['topsis_scores'], 
-            len(panel_data.time_periods)
-        )[:len(scores_df)]
-        
-        try:
-            convergence = ConvergenceAnalysis()
-            conv_result = convergence.analyze(
-                scores_df, 
-                entity_col='Province',
-                time_col='Year',
-                score_col='score'
-            )
-            results['convergence'] = conv_result
-            
-            self.logger.info(f"Convergence: β = {conv_result.beta_coefficient:.4f}, "
-                           f"Half-life = {conv_result.half_life:.1f} years")
-        except Exception as e:
-            self.logger.warning(f"Convergence analysis failed: {e}")
-            results['convergence'] = None
-        
-        # 2. Sensitivity Analysis
+        # Sensitivity Analysis - validates ranking robustness
         def topsis_ranking_func(matrix, w):
             # Convert numpy arrays back to DataFrame for TOPSIS
             df = pd.DataFrame(matrix, columns=panel_data.components)
@@ -652,32 +554,32 @@ class MLTOPSISPipeline:
         Dict[str, Any]
             Predicted components, MCDM scores, and rankings for 2025
         """
-        from .ml.advanced_forecasting import AdvancedMLForecaster
+        from .ml.forecasting import UnifiedForecaster, ForecastMode
         
         current_year = max(panel_data.years)
         prediction_year = current_year + 1
         
         self.logger.info(f"Forecasting year {prediction_year} using data from {min(panel_data.years)}-{current_year}")
         
-        # Step 1: Forecast all components for 2025 using AdvancedMLForecaster
+        # Step 1: Forecast all components for 2025 using UnifiedForecaster
         # This uses an ensemble of: Gradient Boosting, Random Forest, Extra Trees,
         # Bayesian Ridge, and Huber regression with optimal weighting
         self.logger.info("Training ML models on all historical data...")
         
-        forecaster = AdvancedMLForecaster(
-            include_gb=True,
-            include_rf=True,
-            include_et=True,
-            include_bayesian=True,
-            include_huber=True,
-            cv_splits=min(3, len(panel_data.years) - 1),
-            random_state=42
+        forecaster = UnifiedForecaster(
+            mode=ForecastMode.BALANCED,
+            include_neural=False,  # Skip neural for speed
+            include_tree_ensemble=True,
+            include_linear=True,
+            cv_folds=min(3, len(panel_data.years) - 1),
+            random_state=42,
+            verbose=False
         )
         
         # Forecast all components
         forecast_result = forecaster.fit_predict(
             panel_data,
-            target_components=panel_data.components
+            target_year=prediction_year
         )
         
         # Get predicted component values for 2025
@@ -730,11 +632,7 @@ class MLTOPSISPipeline:
         
         # Step 3: Compile future prediction results
         # Build prediction intervals DataFrame if available
-        uncertainty_df = None
-        if 'lower' in forecast_result.prediction_intervals:
-            lower = forecast_result.prediction_intervals['lower']
-            upper = forecast_result.prediction_intervals['upper']
-            uncertainty_df = (upper - lower) / (2 * 1.96)  # Convert back to std
+        uncertainty_df = forecast_result.uncertainty
         
         future_results = {
             'prediction_year': prediction_year,
@@ -746,8 +644,8 @@ class MLTOPSISPipeline:
             'topsis_result': topsis_result,
             'vikor': predicted_vikor,
             'vikor_result': vikor_result,
-            'model_contributions': forecast_result.ensemble_weights,
-            'forecast_summary': forecast_result.metadata
+            'model_contributions': forecast_result.model_contributions,
+            'forecast_summary': forecast_result.training_info
         }
         
         # Log top 5 predicted rankings
@@ -765,7 +663,7 @@ class MLTOPSISPipeline:
                                 ensemble_results: Dict[str, Any],
                                 analysis_results: Dict[str, Any],
                                 ml_results: Optional[Dict[str, Any]] = None) -> None:
-        """Generate all visualizations including ML analysis figures."""
+        """Generate all visualizations."""
         try:
             # Score evolution
             scores_df = panel_data.long.copy()
@@ -789,30 +687,21 @@ class MLTOPSISPipeline:
                 title='MCDM Method Comparison'
             )
             
-            # Convergence
-            if analysis_results['convergence']:
-                conv = analysis_results['convergence']
-                self.visualizer.plot_convergence(
-                    conv.sigma_by_year,
-                    conv.beta_coefficient,
-                    conv.half_life
-                )
-            
             # Weight sensitivity
-            if analysis_results['sensitivity']:
+            if analysis_results.get('sensitivity'):
                 self.visualizer.plot_weight_sensitivity(
                     analysis_results['sensitivity'].weight_sensitivity
                 )
             
             # Ensemble weights
-            if ensemble_results['stacking']:
+            if ensemble_results.get('stacking'):
                 method_weights = dict(zip(
                     ensemble_results['stacking'].base_model_predictions.keys(),
                     ensemble_results['stacking'].meta_model_weights
                 ))
                 self.visualizer.plot_ensemble_weights(method_weights)
             
-            # ===== NEW ML VISUALIZATIONS =====
+            # ML VISUALIZATIONS (Random Forest only)
             if ml_results:
                 self._generate_ml_visualizations(panel_data, mcdm_results, 
                                                  ml_results, ensemble_results)
@@ -828,112 +717,60 @@ class MLTOPSISPipeline:
                                     mcdm_results: Dict[str, Any],
                                     ml_results: Dict[str, Any],
                                     ensemble_results: Dict[str, Any]) -> None:
-        """Generate ML-specific visualizations as individual single charts."""
+        """Generate ML-specific visualizations (Random Forest only)."""
         try:
-            # ===== 1. LSTM Training Curve (Single Chart) =====
-            if ml_results.get('lstm_result'):
-                lstm_result = ml_results['lstm_result']
-                
-                self.visualizer.plot_lstm_training_curve(
-                    train_loss=lstm_result.train_loss,
-                    val_loss=lstm_result.val_loss,
-                    title='LSTM Neural Network Training Progress',
-                    save_name='16_lstm_training_curve.png'
-                )
-                self.logger.info("Generated: 16_lstm_training_curve.png")
-                
-                # ===== 2. LSTM Actual vs Predicted (Single Chart) =====
-                if hasattr(lstm_result, 'actual') and hasattr(lstm_result, 'predictions'):
-                    actual_vals = lstm_result.actual.values.flatten() if hasattr(lstm_result.actual, 'values') else lstm_result.actual.flatten()
-                    pred_vals = lstm_result.predictions.values.flatten() if hasattr(lstm_result.predictions, 'values') else lstm_result.predictions.flatten()
-                    entity_names = list(lstm_result.actual.index) if hasattr(lstm_result.actual, 'index') else panel_data.entities
-                    
-                    self.visualizer.plot_actual_vs_predicted(
-                        actual=actual_vals,
-                        predicted=pred_vals,
-                        model_name='LSTM',
-                        entity_names=entity_names,
-                        title='LSTM Model: Actual vs Predicted Values',
-                        save_name='17_lstm_actual_vs_predicted.png'
-                    )
-                    self.logger.info("Generated: 17_lstm_actual_vs_predicted.png")
-                    
-                    # ===== 3. LSTM Residual Analysis (Single Chart) =====
-                    self.visualizer.plot_residual_analysis(
-                        actual=actual_vals,
-                        predicted=pred_vals,
-                        model_name='LSTM',
-                        title='LSTM Model: Residual Distribution Analysis',
-                        save_name='18_lstm_residual_analysis.png'
-                    )
-                    self.logger.info("Generated: 18_lstm_residual_analysis.png")
-            
-            # ===== 4. Random Forest Feature Importance Detailed (Single Chart) =====
+            # ===== Random Forest Feature Importance Detailed =====
             if ml_results.get('rf_result'):
                 rf_result = ml_results['rf_result']
                 
                 self.visualizer.plot_rf_feature_importance_detailed(
                     feature_importance=rf_result.feature_importance.to_dict(),
                     title='Random Forest Feature Importance with Cumulative Contribution',
-                    save_name='19_rf_feature_importance_detailed.png'
+                    save_name='16_rf_feature_importance_detailed.png'
                 )
-                self.logger.info("Generated: 19_rf_feature_importance_detailed.png")
+                self.logger.info("Generated: 16_rf_feature_importance_detailed.png")
                 
-                # ===== 5. Random Forest CV Progression (Single Chart) =====
+                # Random Forest CV Progression
                 self.visualizer.plot_rf_cv_progression(
                     cv_scores=rf_result.cv_scores,
                     title='Random Forest Cross-Validation Score Progression',
-                    save_name='20_rf_cv_progression.png'
+                    save_name='17_rf_cv_progression.png'
                 )
-                self.logger.info("Generated: 20_rf_cv_progression.png")
+                self.logger.info("Generated: 17_rf_cv_progression.png")
                 
-                # ===== 6. RF Actual vs Predicted (Single Chart) =====
+                # RF Actual vs Predicted
                 self.visualizer.plot_actual_vs_predicted(
                     actual=rf_result.test_actual.values,
                     predicted=rf_result.test_predictions.values,
                     model_name='Random Forest',
                     entity_names=list(rf_result.test_actual.index),
                     title='Random Forest Model: Actual vs Predicted Values',
-                    save_name='21_rf_actual_vs_predicted.png'
+                    save_name='18_rf_actual_vs_predicted.png'
                 )
-                self.logger.info("Generated: 21_rf_actual_vs_predicted.png")
+                self.logger.info("Generated: 18_rf_actual_vs_predicted.png")
                 
-                # ===== 7. RF Residual Analysis (Single Chart) =====
+                # RF Residual Analysis
                 self.visualizer.plot_residual_analysis(
                     actual=rf_result.test_actual.values,
                     predicted=rf_result.test_predictions.values,
                     model_name='Random Forest',
                     title='Random Forest Model: Residual Distribution Analysis',
-                    save_name='22_rf_residual_analysis.png'
+                    save_name='19_rf_residual_analysis.png'
                 )
-                self.logger.info("Generated: 22_rf_residual_analysis.png")
+                self.logger.info("Generated: 19_rf_residual_analysis.png")
                 
-                # ===== 8. RF Rank Correlation Analysis (Single Chart) =====
+                # RF Rank Correlation Analysis
                 self.visualizer.plot_rank_correlation_analysis(
                     actual=rf_result.test_actual.values,
                     predicted=rf_result.test_predictions.values,
                     entity_names=list(rf_result.test_actual.index),
                     model_name='Random Forest',
                     title='Random Forest Model: Rank Prediction Accuracy',
-                    save_name='23_rf_rank_correlation.png'
+                    save_name='20_rf_rank_correlation.png'
                 )
-                self.logger.info("Generated: 23_rf_rank_correlation.png")
+                self.logger.info("Generated: 20_rf_rank_correlation.png")
             
-            # ===== 9. Model Convergence Analysis (Single Chart) =====
-            if ml_results.get('lstm_result'):
-                lstm = ml_results['lstm_result']
-                train_history = {
-                    'Training Loss': lstm.train_loss,
-                    'Validation Loss': lstm.val_loss
-                }
-                self.visualizer.plot_model_convergence_analysis(
-                    train_history=train_history,
-                    title='LSTM Model Convergence Behavior',
-                    save_name='24_model_convergence.png'
-                )
-                self.logger.info("Generated: 24_model_convergence.png")
-            
-            # ===== 10. Ensemble Model Contribution (Single Chart) =====
+            # Ensemble Model Contribution
             if ensemble_results.get('stacking'):
                 stacking = ensemble_results['stacking']
                 base_preds = stacking.base_model_predictions
@@ -952,29 +789,11 @@ class MLTOPSISPipeline:
                     weights=weights_dict,
                     actual=to_array(actual),
                     title='Ensemble Model: Base Model Contribution Analysis',
-                    save_name='25_ensemble_contribution.png'
+                    save_name='21_ensemble_contribution.png'
                 )
-                self.logger.info("Generated: 25_ensemble_contribution.png")
+                self.logger.info("Generated: 21_ensemble_contribution.png")
             
-            # ===== 11. LSTM Rank Correlation (if available) =====
-            if ml_results.get('lstm_result'):
-                lstm_result = ml_results['lstm_result']
-                if hasattr(lstm_result, 'actual') and hasattr(lstm_result, 'predictions'):
-                    actual_vals = lstm_result.actual.values.flatten() if hasattr(lstm_result.actual, 'values') else lstm_result.actual.flatten()
-                    pred_vals = lstm_result.predictions.values.flatten() if hasattr(lstm_result.predictions, 'values') else lstm_result.predictions.flatten()
-                    entity_names = list(lstm_result.actual.index) if hasattr(lstm_result.actual, 'index') else panel_data.entities
-                    
-                    self.visualizer.plot_rank_correlation_analysis(
-                        actual=actual_vals,
-                        predicted=pred_vals,
-                        entity_names=entity_names,
-                        model_name='LSTM',
-                        title='LSTM Model: Rank Prediction Accuracy',
-                        save_name='26_lstm_rank_correlation.png'
-                    )
-                    self.logger.info("Generated: 26_lstm_rank_correlation.png")
-            
-            # ===== 12. Model Performance Comparison Bar Chart (Single Chart) =====
+            # Model Performance Comparison (Random Forest)
             model_metrics = {}
             
             if ml_results.get('rf_result'):
@@ -986,32 +805,14 @@ class MLTOPSISPipeline:
                     'Rank Corr': rf.rank_correlation
                 }
             
-            if ml_results.get('lstm_result'):
-                lstm = ml_results['lstm_result']
-                model_metrics['LSTM'] = {
-                    'R²': 1 - lstm.test_metrics.get('mse', 1),
-                    'MAE': lstm.test_metrics.get('mae', 0),
-                    'RMSE': lstm.test_metrics.get('rmse', 0),
-                    'Rank Corr': lstm.rank_correlation
-                }
-            
-            if ml_results.get('panel_regression'):
-                pr = ml_results['panel_regression']
-                model_metrics['Panel Regression'] = {
-                    'R²': pr.r_squared if hasattr(pr, 'r_squared') else 0,
-                    'MAE': 0,
-                    'RMSE': 0,
-                    'Rank Corr': 0
-                }
-            
             if model_metrics:
                 self.visualizer.plot_model_comparison(
                     model_results=model_metrics,
                     metrics=['R²', 'MAE', 'Rank Corr'],
-                    title='Machine Learning Model Performance Comparison',
-                    save_name='27_ml_model_comparison.png'
+                    title='Random Forest Model Performance',
+                    save_name='22_rf_model_performance.png'
                 )
-                self.logger.info("Generated: 27_ml_model_comparison.png")
+                self.logger.info("Generated: 22_rf_model_performance.png")
                 
         except Exception as e:
             self.logger.warning(f"ML visualization generation failed: {e}")
@@ -1116,45 +917,25 @@ class MLTOPSISPipeline:
             figure_count += 1
             self.logger.info("Generated: 07_score_distribution.png")
             
-            # ===== CONVERGENCE ANALYSIS =====
-            if analysis_results.get('convergence'):
-                conv = analysis_results['convergence']
-                
-                self.visualizer.plot_sigma_convergence(
-                    conv.sigma_by_year,
-                    title='Sigma Convergence Analysis',
-                    save_name='08_sigma_convergence.png'
-                )
-                figure_count += 1
-                self.logger.info("Generated: 08_sigma_convergence.png")
-                
-                self.visualizer.plot_beta_convergence_info(
-                    conv.beta_coefficient, conv.half_life,
-                    title='Beta Convergence Analysis',
-                    save_name='09_beta_convergence.png'
-                )
-                figure_count += 1
-                self.logger.info("Generated: 09_beta_convergence.png")
-            
             # ===== ML FEATURE IMPORTANCE =====
             if ml_results and ml_results.get('rf_importance'):
                 self.visualizer.plot_feature_importance_single(
                     ml_results['rf_importance'],
                     title='Random Forest Feature Importance',
-                    save_name='10_feature_importance.png'
+                    save_name='08_feature_importance.png'
                 )
                 figure_count += 1
-                self.logger.info("Generated: 10_feature_importance.png")
+                self.logger.info("Generated: 08_feature_importance.png")
             
             # ===== SENSITIVITY ANALYSIS =====
             if analysis_results.get('sensitivity'):
                 self.visualizer.plot_sensitivity_analysis(
                     analysis_results['sensitivity'].weight_sensitivity,
                     title='Criteria Weight Sensitivity Analysis',
-                    save_name='11_sensitivity_analysis.png'
+                    save_name='09_sensitivity_analysis.png'
                 )
                 figure_count += 1
-                self.logger.info("Generated: 11_sensitivity_analysis.png")
+                self.logger.info("Generated: 09_sensitivity_analysis.png")
             
             # ===== FINAL RANKING =====
             if ensemble_results.get('aggregated'):
@@ -1164,25 +945,25 @@ class MLTOPSISPipeline:
                     to_array(agg.final_scores), 
                     to_array(agg.final_ranking),
                     title='Final Aggregated Ranking',
-                    save_name='12_final_ranking.png'
+                    save_name='10_final_ranking.png'
                 )
                 figure_count += 1
-                self.logger.info("Generated: 12_final_ranking.png")
+                self.logger.info("Generated: 10_final_ranking.png")
             
-            # ===== ML MODEL VISUALIZATIONS (Single Charts 16-27) =====
+            # ===== ML MODEL VISUALIZATIONS =====
             if ml_results:
                 self._generate_ml_visualizations(panel_data, mcdm_results, 
                                                  ml_results, ensemble_results)
-                figure_count += 12  # Up to 12 additional ML figures (16-27)
+                figure_count += 7  # RF visualizations (16-22)
             
             # ===== METHOD COMPARISON (Parallel Coordinates) =====
             self.visualizer.plot_method_comparison(
                 rankings_dict, panel_data.entities,
                 title='MCDM Methods Ranking Comparison',
-                save_name='13_method_comparison.png'
+                save_name='11_method_comparison.png'
             )
             figure_count += 1
-            self.logger.info("Generated: 13_method_comparison.png")
+            self.logger.info("Generated: 11_method_comparison.png")
             
             # ===== ENSEMBLE WEIGHTS =====
             if ensemble_results.get('stacking'):
@@ -1193,10 +974,10 @@ class MLTOPSISPipeline:
                 self.visualizer.plot_ensemble_weights(
                     method_weights,
                     title='Stacking Ensemble Model Weights',
-                    save_name='14_ensemble_weights.png'
+                    save_name='12_ensemble_weights.png'
                 )
                 figure_count += 1
-                self.logger.info("Generated: 14_ensemble_weights.png")
+                self.logger.info("Generated: 12_ensemble_weights.png")
             
             # ===== FUTURE PREDICTIONS =====
             if future_predictions:
@@ -1207,10 +988,10 @@ class MLTOPSISPipeline:
                     to_array(future_predictions['topsis_scores']),
                     prediction_year,
                     title=f'Future Predictions Comparison ({prediction_year})',
-                    save_name='15_future_predictions.png'
+                    save_name='13_future_predictions.png'
                 )
                 figure_count += 1
-                self.logger.info("Generated: 15_future_predictions.png")
+                self.logger.info("Generated: 13_future_predictions.png")
             
             self.logger.info(f"Total figures generated: {figure_count}")
             self.logger.info(f"All figures saved to: {self.visualizer.output_dir}")

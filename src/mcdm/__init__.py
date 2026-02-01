@@ -1,42 +1,54 @@
 # -*- coding: utf-8 -*-
-"""Multi-Criteria Decision Making methods (traditional and fuzzy variants)."""
+"""
+Multi-Criteria Decision Making Module
+=====================================
 
-# Fuzzy base classes
-from .fuzzy_base import (
-    TriangularFuzzyNumber,
-    FuzzyDecisionMatrix,
-    LINGUISTIC_SCALE_5,
-    LINGUISTIC_SCALE_7,
-    IMPORTANCE_SCALE
+Comprehensive MCDM methods including traditional and fuzzy variants.
+
+Submodules
+----------
+traditional
+    Traditional MCDM methods: TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS
+fuzzy
+    Fuzzy MCDM methods using Triangular Fuzzy Numbers
+
+Usage
+-----
+>>> from src.mcdm.traditional import TOPSISCalculator, VIKORCalculator
+>>> from src.mcdm.fuzzy import FuzzyTOPSIS, FuzzyVIKOR
+>>> from src.weighting import EntropyWeightCalculator, CRITICWeightCalculator
+"""
+
+# Import from traditional submodule
+from .traditional import (
+    TOPSISCalculator, TOPSISResult, DynamicTOPSIS, DynamicTOPSISResult,
+    VIKORCalculator, VIKORResult, MultiPeriodVIKOR,
+    PROMETHEECalculator, PROMETHEEResult,
+    COPRASCalculator, COPRASResult,
+    EDASCalculator, EDASResult,
 )
 
-# Weight calculation methods
-from .weights import (
+# Import from fuzzy submodule
+from .fuzzy import (
+    TriangularFuzzyNumber, FuzzyDecisionMatrix,
+    LINGUISTIC_SCALE_5, LINGUISTIC_SCALE_7, IMPORTANCE_SCALE,
+    FuzzyTOPSIS, FuzzyTOPSISResult,
+    FuzzyVIKOR, FuzzyVIKORResult,
+    FuzzyPROMETHEE, FuzzyPROMETHEEResult,
+    FuzzyCOPRAS, FuzzyCOPRASResult,
+    FuzzyEDAS, FuzzyEDASResult,
+)
+
+# Import weighting methods from weighting module
+from ..weighting import (
     EntropyWeightCalculator,
     CRITICWeightCalculator,
     EnsembleWeightCalculator,
     WeightResult
 )
 
-# TOPSIS - Traditional, Dynamic (legacy), and Fuzzy
-from .topsis import TOPSISCalculator, TOPSISResult, DynamicTOPSIS, DynamicTOPSISResult
-from .fuzzy_topsis import FuzzyTOPSIS, FuzzyTOPSISResult
-
-# VIKOR - Traditional, MultiPeriod (legacy), and Fuzzy
-from .vikor import VIKORCalculator, VIKORResult, MultiPeriodVIKOR
-from .fuzzy_vikor import FuzzyVIKOR, FuzzyVIKORResult
-
-# PROMETHEE - Traditional and Fuzzy
-from .promethee import PROMETHEECalculator, PROMETHEEResult
-from .fuzzy_promethee import FuzzyPROMETHEE, FuzzyPROMETHEEResult
-
-# COPRAS - Traditional and Fuzzy
-from .copras import COPRASCalculator, COPRASResult
-from .fuzzy_copras import FuzzyCOPRAS, FuzzyCOPRASResult
-
-# EDAS - Traditional and Fuzzy
-from .edas import EDASCalculator, EDASResult
-from .fuzzy_edas import FuzzyEDAS, FuzzyEDASResult
+# Legacy alias
+DynamicTOPSISResult = TOPSISResult
 
 
 __all__ = [
@@ -53,26 +65,19 @@ __all__ = [
     'EnsembleWeightCalculator',
     'WeightResult',
     
-    # TOPSIS (including legacy Dynamic)
+    # Traditional MCDM
     'TOPSISCalculator', 'TOPSISResult',
     'DynamicTOPSIS', 'DynamicTOPSISResult',
-    'FuzzyTOPSIS', 'FuzzyTOPSISResult',
-    
-    # VIKOR (including legacy MultiPeriod)
-    'VIKORCalculator', 'VIKORResult',
-    'MultiPeriodVIKOR',
-    'FuzzyVIKOR', 'FuzzyVIKORResult',
-    
-    # PROMETHEE
+    'VIKORCalculator', 'VIKORResult', 'MultiPeriodVIKOR',
     'PROMETHEECalculator', 'PROMETHEEResult',
-    'FuzzyPROMETHEE', 'FuzzyPROMETHEEResult',
-    
-    # COPRAS
     'COPRASCalculator', 'COPRASResult',
-    'FuzzyCOPRAS', 'FuzzyCOPRASResult',
-    
-    # EDAS
     'EDASCalculator', 'EDASResult',
+    
+    # Fuzzy MCDM
+    'FuzzyTOPSIS', 'FuzzyTOPSISResult',
+    'FuzzyVIKOR', 'FuzzyVIKORResult',
+    'FuzzyPROMETHEE', 'FuzzyPROMETHEEResult',
+    'FuzzyCOPRAS', 'FuzzyCOPRASResult',
     'FuzzyEDAS', 'FuzzyEDASResult',
 ]
 
@@ -82,11 +87,15 @@ def get_all_calculators(fuzzy: bool = False):
     """
     Get dictionary of all MCDM calculators.
     
-    Parameters:
-        fuzzy: If True, returns fuzzy versions; if False, returns traditional
+    Parameters
+    ----------
+    fuzzy : bool, default=False
+        If True, returns fuzzy versions; if False, returns traditional
     
-    Returns:
-        Dict[str, class]: Dictionary of calculator classes
+    Returns
+    -------
+    Dict[str, class]
+        Dictionary of calculator classes
     """
     if fuzzy:
         return {
