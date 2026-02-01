@@ -1,0 +1,109 @@
+{
+  "timestamp": "2026-02-02T01:00:05.687330",
+  "total_figures": 17,
+  "output_directory": "C:\\Users\\hoang\\Documents\\ml-mcdm\\outputs\\figures",
+  "figures": [
+    {
+      "filename": "01_score_evolution_top.png",
+      "path": "C:\\Users\\hoang\\Documents\\ml-mcdm\\outputs\\figures\\01_score_evolution_top.png",
+      "description": "Score evolution over time for top 10 performers",
+      "format": "PNG"
+    },
+    {
+      "filename": "02_score_evolution_bottom.png",
+      "path": "C:\\Users\\hoang\\Documents\\ml-mcdm\\outputs\\figures\\02_score_evolution_bottom.png",
+      "description": "Score evolution over time for bottom 10 performers",
+      "format": "PNG"
+    },
+    {
+      "filename": "03_weights_comparison.png",
+      "path": "C:\\Users\\hoang\\Documents\\ml-mcdm\\outputs\\figures\\03_weights_comparison.png",
+      "description": "Comparison of criteria weights (Entropy vs CRITIC vs Ensemble)",
+      "format": "PNG"
+    },
+    {
+      "filename": "04_topsis_scores.png",
+      "path": "C:\\Users\\hoang\\Documents\\ml-mcdm\\outputs\\figures\\04_topsis_scores.png",
+      "description": "TOPSIS scores bar chart - complete ranking",
+      "format": "PNG"
+    },
+    {
+      "filename": "05_vikor_analysis.png",
+      "path": "C:\\Users\\hoang\\Documents\\ml-mcdm\\outputs\\figures\\05_vikor_analysis.png",
+      "description": "VIKOR analysis showing Q, S, R values",
+      "format": "PNG"
+    },
+    {
+      "filename": "06_method_agreement.png",
+      "path": "C:\\Users\\hoang\\Documents\\ml-mcdm\\outputs\\figures\\06_method_agreement.png",
+      "description": "MCDM methods ranking agreement (Spearman correlation matrix)",
+      "format": "PNG"
+    },
+    {
+      "filename": "07_score_distribution.png",
+      "path": "C:\\Users\\hoang\\Documents\\ml-mcdm\\outputs\\figures\\07_score_distribution.png",
+      "description": "TOPSIS score distribution histogram",
+      "format": "PNG"
+    },
+    {
+      "filename": "08_feature_importance.png",
+      "path": "C:\\Users\\hoang\\Documents\\ml-mcdm\\outputs\\figures\\08_feature_importance.png",
+      "description": "Random Forest feature importance for MCDM score prediction",
+      "format": "PNG"
+    },
+    {
+      "filename": "09_sensitivity_analysis.png",
+      "path": "C:\\Users\\hoang\\Documents\\ml-mcdm\\outputs\\figures\\09_sensitivity_analysis.png",
+      "description": "Criteria weight sensitivity analysis",
+      "format": "PNG"
+    },
+    {
+      "filename": "10_final_ranking.png",
+      "path": "C:\\Users\\hoang\\Documents\\ml-mcdm\\outputs\\figures\\10_final_ranking.png",
+      "description": "Final aggregated ranking summary",
+      "format": "PNG"
+    },
+    {
+      "filename": "16_rf_feature_importance_detailed.png",
+      "path": "C:\\Users\\hoang\\Documents\\ml-mcdm\\outputs\\figures\\16_rf_feature_importance_detailed.png",
+      "description": "Random Forest feature importance with cumulative contribution analysis",
+      "format": "PNG"
+    },
+    {
+      "filename": "17_rf_cv_progression.png",
+      "path": "C:\\Users\\hoang\\Documents\\ml-mcdm\\outputs\\figures\\17_rf_cv_progression.png",
+      "description": "Random Forest cross-validation score progression across folds",
+      "format": "PNG"
+    },
+    {
+      "filename": "18_rf_actual_vs_predicted.png",
+      "path": "C:\\Users\\hoang\\Documents\\ml-mcdm\\outputs\\figures\\18_rf_actual_vs_predicted.png",
+      "description": "Random Forest model actual vs predicted values with regression analysis",
+      "format": "PNG"
+    },
+    {
+      "filename": "19_rf_residual_analysis.png",
+      "path": "C:\\Users\\hoang\\Documents\\ml-mcdm\\outputs\\figures\\19_rf_residual_analysis.png",
+      "description": "Random Forest model residual distribution with statistical bands",
+      "format": "PNG"
+    },
+    {
+      "filename": "20_rf_rank_correlation.png",
+      "path": "C:\\Users\\hoang\\Documents\\ml-mcdm\\outputs\\figures\\20_rf_rank_correlation.png",
+      "description": "Random Forest rank prediction accuracy with Spearman correlation",
+      "format": "PNG"
+    },
+    {
+      "filename": "21_ensemble_contribution.png",
+      "path": "C:\\Users\\hoang\\Documents\\ml-mcdm\\outputs\\figures\\21_ensemble_contribution.png",
+      "description": "Ensemble model base model contribution with R\u00b2 comparison",
+      "format": "PNG"
+    },
+    {
+      "filename": "13_future_predictions.png",
+      "path": "C:\\Users\\hoang\\Documents\\ml-mcdm\\outputs\\figures\\13_future_predictions.png",
+      "description": "Future predictions comparison (current vs predicted rankings)",
+      "format": "PNG"
+    }
+  ]
+}

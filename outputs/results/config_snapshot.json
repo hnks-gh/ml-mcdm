@@ -1,0 +1,167 @@
+{
+  "timestamp": "2026-02-02T01:00:05.686071",
+  "config": {
+    "paths": {
+      "base_dir": "C:\\Users\\hoang\\Documents\\ml-mcdm"
+    },
+    "panel": {
+      "n_provinces": 64,
+      "n_components": 20,
+      "years": [
+        2020,
+        2021,
+        2022,
+        2023,
+        2024
+      ],
+      "province_col": "Province",
+      "year_col": "Year",
+      "component_prefix": "C"
+    },
+    "random": {
+      "seed": 42,
+      "n_bootstrap": 1000,
+      "cv_folds": 5
+    },
+    "topsis": {
+      "normalization": "vector",
+      "weight_method": "ensemble",
+      "benefit_criteria": null,
+      "cost_criteria": null,
+      "temporal_discount": 0.9,
+      "trajectory_weight": 0.3,
+      "stability_weight": 0.2
+    },
+    "vikor": {
+      "v": 0.5,
+      "v_sensitivity": [
+        0.25,
+        0.5,
+        0.75
+      ],
+      "acceptance_threshold": 0.25
+    },
+    "fuzzy": {
+      "use_temporal_variance": true,
+      "alpha_cut": 0.0,
+      "spread_factor": 1.0,
+      "linguistic_scales": {
+        "VL": [
+          0.0,
+          0.0,
+          0.2
+        ],
+        "L": [
+          0.0,
+          0.2,
+          0.4
+        ],
+        "M": [
+          0.2,
+          0.5,
+          0.8
+        ],
+        "H": [
+          0.6,
+          0.8,
+          1.0
+        ],
+        "VH": [
+          0.8,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    "panel_regression": {
+      "model_type": "fe",
+      "robust_se": true,
+      "time_effects": true,
+      "hausman_test": true
+    },
+    "random_forest": {
+      "n_estimators": 200,
+      "max_depth": 10,
+      "min_samples_split": 5,
+      "min_samples_leaf": 2,
+      "max_features": "sqrt",
+      "n_splits": 2,
+      "gap": 0,
+      "use_lags": true,
+      "n_lags": 2,
+      "use_rolling_features": true,
+      "rolling_window": 2
+    },
+    "lstm": {
+      "enabled": true,
+      "sequence_length": 3,
+      "hidden_units": 64,
+      "n_layers": 2,
+      "dropout": 0.2,
+      "epochs": 100,
+      "batch_size": 16,
+      "learning_rate": 0.001,
+      "patience": 15,
+      "bidirectional": false,
+      "attention": false
+    },
+    "rough_sets": {
+      "quality_threshold": 0.95,
+      "discretization_bins": 5,
+      "n_bins": 5,
+      "reduction_method": "heuristic",
+      "max_reducts": 5
+    },
+    "ensemble": {
+      "base_methods": [
+        "topsis_static",
+        "topsis_dynamic",
+        "vikor",
+        "fuzzy_topsis",
+        "random_forest",
+        "panel_fe"
+      ],
+      "meta_learner": "ridge",
+      "alpha": 1.0,
+      "meta_cv_folds": 5,
+      "aggregation_method": "borda",
+      "method_weights": null
+    },
+    "convergence": {
+      "beta_convergence": true,
+      "conditional_vars": null,
+      "sigma_convergence": true,
+      "club_convergence": true,
+      "n_clubs": 4,
+      "markov_chains": true,
+      "n_quantiles": 4
+    },
+    "validation": {
+      "n_bootstrap": 1000,
+      "n_simulations": 1000,
+      "bootstrap_ci": 0.95,
+      "weight_perturbation": 0.1,
+      "n_sensitivity_scenarios": 100,
+      "drop_one_year": true,
+      "drop_one_component": true,
+      "alternative_weights": true,
+      "rank_correlation_threshold": 0.85
+    },
+    "visualization": {
+      "figsize": [
+        12,
+        8
+      ],
+      "dpi": 300,
+      "style": "seaborn-v0_8-whitegrid",
+      "palette": "viridis",
+      "heatmap_cmap": "RdYlGn",
+      "diverging_cmap": "RdBu_r",
+      "save_formats": [
+        "png"
+      ],
+      "animate_temporal": true,
+      "animation_fps": 2
+    }
+  }
+}

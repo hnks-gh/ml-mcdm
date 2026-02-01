@@ -1,0 +1,21 @@
+{
+  "prediction_year": 2025,
+  "training_years": [
+    2020,
+    2021,
+    2022,
+    2023,
+    2024
+  ],
+  "n_entities": 64,
+  "n_components": 20,
+  "top_predicted_entity": "P14",
+  "top_predicted_score": 0.8519322685945623,
+  "mean_predicted_score": 0.5095357245354061,
+  "model_contributions": {
+    "GradientBoosting": 0.35579495484406376,
+    "RandomForest": 5.89758910701273e-06,
+    "BayesianRidge": 0.41001755764217157,
+    "Huber": 0.23418158992465768
+  }
+}

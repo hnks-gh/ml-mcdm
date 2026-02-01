@@ -70,8 +70,6 @@ venv.bak/
 .ipynb_checkpoints
 
 # Project specific
-outputs/
-data/*.csv
 !data/.gitkeep
 *.log
 *.tmp
