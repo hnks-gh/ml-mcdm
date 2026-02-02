@@ -2,226 +2,136 @@
 ML-MCDM PANEL DATA ANALYSIS - COMPREHENSIVE REPORT
 ================================================================================
 
-Generated: 2026-02-02 01:00:05
-Execution Time: 139.06 seconds
+Generated: 2026-02-02 13:36:44
+Execution Time: 3.93 seconds
 
 ================================================================================
 1. DATA OVERVIEW
 ================================================================================
-  Entities (Provinces): 64
-  Time Periods: 5 (2020-2024)
-  Components/Criteria: 20
-  Total Observations: 320
+  Entities (Provinces): 6
+  Time Periods: 3 (2020-2022)
+  Components/Criteria: 4
+  Total Observations: 18
 
 ================================================================================
 2. WEIGHT ANALYSIS
 ================================================================================
 
   ENTROPY Weights:
-    Range: [0.030827, 0.065690]
-    Mean: 0.050000
-    Std: 0.009253
+    Range: [0.131979, 0.305545]
+    Mean: 0.250000
+    Std: 0.070723
     Top 5 Components:
-      1. C02: 0.065690
-      2. C01: 0.064433
-      3. C17: 0.060178
-      4. C05: 0.059405
-      5. C14: 0.055295
+      1. C02: 0.305545
+      2. C03: 0.304053
+      3. C04: 0.258423
+      4. C01: 0.131979
 
   CRITIC Weights:
-    Range: [0.040515, 0.079180]
-    Mean: 0.050000
-    Std: 0.008284
+    Range: [0.152727, 0.454849]
+    Mean: 0.250000
+    Std: 0.120248
     Top 5 Components:
-      1. C01: 0.079180
-      2. C02: 0.059612
-      3. C04: 0.058190
-      4. C03: 0.055283
-      5. C05: 0.052789
+      1. C04: 0.454849
+      2. C03: 0.213920
+      3. C01: 0.178504
+      4. C02: 0.152727
 
   ENSEMBLE Weights:
-    Range: [0.035627, 0.071680]
-    Mean: 0.050000
-    Std: 0.007767
+    Range: [0.158663, 0.354403]
+    Mean: 0.250000
+    Std: 0.070960
     Top 5 Components:
-      1. C01: 0.071680
-      2. C02: 0.062799
-      3. C05: 0.056198
-      4. C03: 0.054993
-      5. C17: 0.053820
+      1. C04: 0.354403
+      2. C03: 0.263632
+      3. C02: 0.223302
+      4. C01: 0.158663
 
 ================================================================================
 3. MCDM ANALYSIS RESULTS
 ================================================================================
 
   3.1 TOPSIS Analysis
-    Score Range: [0.223868, 0.807694]
-    Score Mean: 0.493281
-    Score Std: 0.168983
+    Score Range: [0.050397, 0.822041]
+    Score Mean: 0.382900
+    Score Std: 0.261968
 
     Top 10 Rankings:
-      1. P14: Score=0.807694
-      2. P13: Score=0.785500
-      3. P08: Score=0.775587
-      4. P06: Score=0.774092
-      5. P01: Score=0.773849
-      6. P04: Score=0.768841
-      7. P05: Score=0.767957
-      8. P07: Score=0.761043
-      9. P03: Score=0.755675
-      10. P15: Score=0.751458
+      1. P01: Score=0.822041
+      2. P03: Score=0.573900
+      3. P02: Score=0.419219
+      4. P04: Score=0.301932
+      5. P06: Score=0.129910
+      6. P05: Score=0.050397
 
   3.2 Dynamic TOPSIS (Panel-aware)
-    Score Range: [0.161113, 0.815158]
-    Score Mean: 0.562521
+    Score Range: [0.321193, 0.728434]
+    Score Mean: 0.536646
 
   3.3 VIKOR Analysis
-    Q Value Range: [0.000000, 0.918898]
-    S Value Range: [0.161997, 0.804521]
-    R Value Range: [0.018431, 0.071680]
+    Q Value Range: [0.000000, 0.952685]
+    S Value Range: [0.113112, 0.969978]
+    R Value Range: [0.113112, 0.354403]
 
     Top 10 VIKOR Rankings (lowest Q is best):
-      1. P14: Q=0.000000, S=0.161997, R=0.018431
-      2. P01: Q=0.063321, S=0.208622, R=0.021311
-      3. P07: Q=0.074699, S=0.209256, R=0.022470
-      4. P13: Q=0.081603, S=0.177193, R=0.025862
-      5. P08: Q=0.084664, S=0.210655, R=0.023415
-      6. P04: Q=0.085782, S=0.211778, R=0.023441
-      7. P05: Q=0.099973, S=0.215775, R=0.024621
-      8. P15: Q=0.104651, S=0.240429, R=0.023076
-      9. P12: Q=0.112481, S=0.248919, R=0.023206
-      10. P06: Q=0.117583, S=0.182388, R=0.029264
+      1. P01: Q=0.000000, S=0.113112, R=0.113112
+      2. P03: Q=0.355427, S=0.404339, R=0.202626
+      3. P02: Q=0.570487, S=0.625215, R=0.244212
+      4. P04: Q=0.748799, S=0.696479, R=0.310194
+      5. P05: Q=0.937788, S=0.969978, R=0.324381
+      6. P06: Q=0.952685, S=0.888892, R=0.354403
 
   3.4 Fuzzy TOPSIS Analysis
-    Score Range: [0.194771, 0.832827]
+    Score Range: [0.030367, 0.890330]
 
 ================================================================================
 4. MACHINE LEARNING RESULTS
 ================================================================================
-
-  4.1 Random Forest Time-Series CV
-    Test R²: 0.964513
-    Test MAE: 0.025275
-    Test RMSE: 0.031833
-    Rank Correlation: 0.973031
-
-    Cross-Validation Summary:
-      r2: 0.962668 ± 0.001845
-      mse: 0.001066 ± 0.000053
-      mae: 0.026191 ± 0.000915
-      rank_corr: 0.967674 ± 0.005357
-
-    Top 10 Feature Importances:
-      1. C17: 0.149054
-      2. C14: 0.127776
-      3. C15: 0.117482
-      4. C16: 0.093918
-      5. C19: 0.058650
-      6. C08: 0.056653
-      7. C03: 0.054574
-      8. C20: 0.049997
-      9. C13: 0.042394
-      10. C06: 0.038170
 
 ================================================================================
 5. ENSEMBLE INTEGRATION RESULTS
 ================================================================================
 
   5.1 Stacking Ensemble
-    Meta-Model R²: 0.318850
+    Meta-Model R²: 0.395992
 
     Base Model Weights:
-      TOPSIS: 0.364188
-      VIKOR_Q: 0.451925
-      Dynamic_TOPSIS: 0.183887
+      TOPSIS: 0.362877
+      VIKOR_Q: 0.457409
+      Dynamic_TOPSIS: 0.179713
 
   5.2 Rank Aggregation
-    Kendall's W (Agreement): 0.969221
+    Kendall's W (Agreement): 0.974603
 
     Final Top 10 Rankings:
-      1. P14: Score=63.000000
-      2. P13: Score=61.333333
-      3. P01: Score=59.333333
-      4. P08: Score=59.333333
-      5. P06: Score=58.333333
-      6. P07: Score=57.333333
-      7. P04: Score=57.333333
-      8. P05: Score=56.000000
-      9. P03: Score=55.333333
-      10. P10: Score=54.666667
+      1. P01: Score=5.000000
+      2. P03: Score=4.000000
+      3. P02: Score=3.000000
+      4. P04: Score=2.000000
+      5. P06: Score=0.666667
+      6. P05: Score=0.333333
 
 ================================================================================
 6. ADVANCED ANALYSIS RESULTS
 ================================================================================
 
   6.2 Sensitivity Analysis
-    Overall Robustness: 0.955300
+    Overall Robustness: 1.000000
 
     Criteria Sensitivity (Top 10):
-      1. C01: 1.000000
-      2. C05: 0.637681
-      3. C02: 0.628019
-      4. C04: 0.589372
-      5. C03: 0.579710
-      6. C17: 0.512077
-      7. C19: 0.381643
-      8. C18: 0.376812
-      9. C20: 0.371981
-      10. C08: 0.362319
+      1. C01: nan
+      2. C02: nan
+      3. C03: nan
+      4. C04: nan
 
 ================================================================================
-7. FUTURE YEAR PREDICTIONS
+7. KEY FINDINGS AND CONCLUSIONS
 ================================================================================
 
-  Prediction Year: 2025
-  Training Data: 2020-2024 (5 years)
+  • Current Top Performer (2022): P01
+    Final Score: 5.000000
 
-  7.1 Predicted TOPSIS Scores
-    Score Range: [0.220506, 0.851932]
-    Score Mean: 0.509536
-    Score Std: 0.179577
-
-    Predicted Top 10 Rankings for 2025:
-      1. P14: Score=0.851932
-      2. P13: Score=0.813755
-      3. P01: Score=0.809293
-      4. P08: Score=0.807237
-      5. P06: Score=0.800239
-      6. P03: Score=0.796239
-      7. P05: Score=0.793023
-      8. P15: Score=0.788910
-      9. P04: Score=0.787241
-      10. P07: Score=0.784269
-
-  7.2 Predicted VIKOR Analysis
-    Q Value Range: [0.000000, 0.956715]
-
-    Predicted VIKOR Top 5 for 2025:
-      1. P14: Q=0.000000
-      2. P01: Q=0.064530
-      3. P08: Q=0.081916
-      4. P07: Q=0.082172
-      5. P13: Q=0.089352
-
-  7.3 Forecast Model Contributions
-    BayesianRidge: 0.4100
-    GradientBoosting: 0.3558
-    Huber: 0.2342
-    RandomForest: 0.0000
-
-================================================================================
-8. KEY FINDINGS AND CONCLUSIONS
-================================================================================
-
-  • Current Top Performer (2024): P14
-    Final Score: 63.000000
-
-  • Predicted Top Performer (2025): P14
-    Predicted Score: 0.851932
-
-  • Method Agreement: Strong (Kendall's W = 0.9692)
-
-  • Best ML Model: Random Forest (R² = 0.9645)
+  • Method Agreement: Strong (Kendall's W = 0.9746)
 
 ================================================================================
 END OF REPORT
