@@ -33,7 +33,7 @@ Panel Data (Entities × Years × Criteria)
     │
     ├──► Ensemble Integration
     │       ├── Stacking (Meta-learner)
-    │       └── Rank Aggregation (Borda, Copeland)
+    │       └── Rank Aggregation (Borda, Copeland, Kemeny-Young)
     │
     └──► Advanced Analysis
             ├── Convergence (σ/β analysis)
@@ -84,28 +84,29 @@ All traditional methods have fuzzy variants using **Triangular Fuzzy Numbers (TF
 
 **Module:** `src/ml/forecasting/` | **Details:** [forecasting/docs/README.md](../src/ml/forecasting/docs/README.md)
 
-### Primary Model: Random Forest Time-Series
+### Unified Forecasting with 7 Models
 
-The project uses **Random Forest with temporal cross-validation** as the primary forecasting method:
+The project uses a **UnifiedForecaster** that combines 7 different ML models with weighted averaging based on cross-validation performance:
+
+| Model | Type | Purpose |
+|-------|------|----------|
+| **Gradient Boosting** | Tree Ensemble | Primary predictor with high accuracy |
+| **Random Forest** | Tree Ensemble | Robust predictions with feature importance |
+| **Extra Trees** | Tree Ensemble | Reduced overfitting via random splits |
+| **Bayesian Ridge** | Linear | Uncertainty quantification |
+| **Huber Regressor** | Linear | Robust to outliers |
+| **Neural MLP** | Neural Network | Non-linear pattern capture |
+| **Attention Network** | Neural Network | Temporal dependencies via self-attention |
 
 | Component | Description |
 |-----------|-------------|
-| **Model** | `RandomForestRegressor` with optimized hyperparameters |
 | **Validation** | Time-series aware cross-validation (no future data leakage) |
 | **Features** | Component values, temporal features, lag variables |
-| **Outputs** | Feature importance, CV scores, predictions, rank correlation |
+| **Outputs** | Feature importance, CV scores, predictions, model weights |
 
-### Supporting Models
+### Model Selection
 
-| Model | Purpose |
-|-------|---------|
-| **Linear Models** | Bayesian Ridge for uncertainty quantification |
-| **Tree Ensemble** | Gradient boosting for ensemble diversity |
-| **Neural** | MLP for non-linear pattern capture |
-
-### Unified Forecasting Pipeline
-
-The `UnifiedForecaster` orchestrates multiple models and combines predictions using weighted averaging based on cross-validation performance.
+The `UnifiedForecaster` automatically selects and weights models based on cross-validation R² scores. Models with poor performance are excluded, and remaining models contribute proportionally to their validation accuracy.
 
 ---
 

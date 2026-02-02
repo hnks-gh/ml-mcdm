@@ -21,7 +21,8 @@ from .output_manager import OutputManager, to_array
 from .mcdm import (
     EntropyWeightCalculator, CRITICWeightCalculator, EnsembleWeightCalculator,
     TOPSISCalculator, DynamicTOPSIS, VIKORCalculator, MultiPeriodVIKOR,
-    FuzzyTOPSIS
+    PROMETHEECalculator, COPRASCalculator, EDASCalculator,
+    FuzzyTOPSIS, FuzzyVIKOR, FuzzyPROMETHEE, FuzzyCOPRAS, FuzzyEDAS
 )
 
 from .ml import (
@@ -29,7 +30,7 @@ from .ml import (
 )
 
 from .ensemble import (
-    StackingEnsemble, BordaCount, CopelandMethod, aggregate_rankings
+    StackingEnsemble, BordaCount, CopelandMethod, KemenyYoung, aggregate_rankings
 )
 
 from .analysis import (
@@ -335,7 +336,21 @@ class MLTOPSISPipeline:
     
     def _run_mcdm(self, panel_data: PanelData, 
                   weights: Dict[str, np.ndarray]) -> Dict[str, Any]:
-        """Run MCDM analysis methods."""
+        """
+        Run ALL 10 MCDM analysis methods.
+        
+        Traditional Methods (5):
+            - TOPSIS: Distance to ideal solution
+            - Dynamic TOPSIS: Panel-aware temporal TOPSIS
+            - VIKOR: Compromise ranking
+            - PROMETHEE: Outranking with preference flows
+            - COPRAS: Complex proportional assessment
+            - EDAS: Distance from average solution
+        
+        Fuzzy Methods (5):
+            - Fuzzy TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS
+            All use Triangular Fuzzy Numbers with temporal variance
+        """
         results = {}
         
         # Use ensemble weights for main analysis
@@ -344,8 +359,11 @@ class MLTOPSISPipeline:
         latest_year = max(panel_data.years)
         df = panel_data.cross_section[latest_year][panel_data.components]
         
-        # Convert numpy weights to dict format for TOPSIS
+        # Convert numpy weights to dict format
         weights_dict = {c: w[i] for i, c in enumerate(panel_data.components)}
+        
+        # ========== TRADITIONAL MCDM METHODS ==========
+        self.logger.info("Running Traditional MCDM Methods...")
         
         # 1. Static TOPSIS
         topsis = TOPSISCalculator(normalization=self.config.topsis.normalization.value)
@@ -353,8 +371,7 @@ class MLTOPSISPipeline:
         results['topsis_scores'] = topsis_result.scores.values
         results['topsis_rankings'] = topsis_result.ranks.values
         results['topsis_result'] = topsis_result
-        
-        self.logger.info(f"TOPSIS: Top performer score = {topsis_result.scores.max():.4f}")
+        self.logger.info(f"  TOPSIS: Top performer score = {topsis_result.scores.max():.4f}")
         
         # 2. Dynamic TOPSIS (panel)
         dynamic_topsis = DynamicTOPSIS(
@@ -366,6 +383,7 @@ class MLTOPSISPipeline:
         dynamic_result = dynamic_topsis.calculate(panel_data, weights_dict)
         results['dynamic_topsis_scores'] = dynamic_result.scores.values
         results['dynamic_topsis'] = dynamic_result
+        self.logger.info(f"  Dynamic TOPSIS: Top performer = {dynamic_result.scores.max():.4f}")
         
         # 3. VIKOR
         vikor = VIKORCalculator(v=self.config.vikor.v)
@@ -376,15 +394,114 @@ class MLTOPSISPipeline:
             'R': vikor_result.R,
             'rankings': vikor_result.final_ranks
         }
+        results['vikor_result'] = vikor_result
+        self.logger.info(f"  VIKOR: Best alternative Q = {vikor_result.Q.min():.4f}")
         
-        self.logger.info(f"VIKOR: Best alternative Q = {vikor_result.Q.min():.4f}")
+        # 4. PROMETHEE
+        promethee = PROMETHEECalculator(
+            preference_function="vshape",
+            preference_threshold=0.3,
+            indifference_threshold=0.1
+        )
+        promethee_result = promethee.calculate(df, weights_dict)
+        results['promethee'] = {
+            'phi_positive': promethee_result.phi_positive,
+            'phi_negative': promethee_result.phi_negative,
+            'phi_net': promethee_result.phi_net,
+            'rankings': promethee_result.ranks_promethee_ii
+        }
+        results['promethee_result'] = promethee_result
+        self.logger.info(f"  PROMETHEE: Best phi_net = {promethee_result.phi_net.max():.4f}")
         
-        # 4. Fuzzy TOPSIS
-        fuzzy = FuzzyTOPSIS()
-        fuzzy_result = fuzzy.calculate_from_panel(panel_data, weights_dict)
-        results['fuzzy_scores'] = fuzzy_result.scores
-        results['fuzzy_result'] = fuzzy_result
-        self.logger.info(f"Fuzzy TOPSIS: Top performer = {fuzzy_result.scores.max():.4f}")
+        # 5. COPRAS
+        copras = COPRASCalculator()
+        copras_result = copras.calculate(df, weights_dict)
+        results['copras'] = {
+            'Q': copras_result.Q,
+            'S_plus': copras_result.S_plus,
+            'S_minus': copras_result.S_minus,
+            'utility_degree': copras_result.utility_degree,
+            'rankings': copras_result.ranks
+        }
+        results['copras_result'] = copras_result
+        self.logger.info(f"  COPRAS: Top utility = {copras_result.utility_degree.max():.1f}%")
+        
+        # 6. EDAS
+        edas = EDASCalculator()
+        edas_result = edas.calculate(df, weights_dict)
+        results['edas'] = {
+            'AS': edas_result.AS,
+            'SP': edas_result.SP,
+            'SN': edas_result.SN,
+            'rankings': edas_result.ranks
+        }
+        results['edas_result'] = edas_result
+        self.logger.info(f"  EDAS: Best AS = {edas_result.AS.max():.4f}")
+        
+        # ========== FUZZY MCDM METHODS ==========
+        self.logger.info("Running Fuzzy MCDM Methods (with temporal uncertainty)...")
+        
+        # 7. Fuzzy TOPSIS
+        fuzzy_topsis = FuzzyTOPSIS()
+        fuzzy_topsis_result = fuzzy_topsis.calculate_from_panel(panel_data, weights_dict)
+        results['fuzzy_topsis'] = {
+            'scores': fuzzy_topsis_result.scores,
+            'd_positive': fuzzy_topsis_result.d_positive,
+            'd_negative': fuzzy_topsis_result.d_negative,
+            'rankings': fuzzy_topsis_result.ranks
+        }
+        results['fuzzy_topsis_result'] = fuzzy_topsis_result
+        # Keep backward compatibility
+        results['fuzzy_scores'] = fuzzy_topsis_result.scores
+        results['fuzzy_result'] = fuzzy_topsis_result
+        self.logger.info(f"  Fuzzy TOPSIS: Top performer = {fuzzy_topsis_result.scores.max():.4f}")
+        
+        # 8. Fuzzy VIKOR
+        fuzzy_vikor = FuzzyVIKOR(v=self.config.vikor.v)
+        fuzzy_vikor_result = fuzzy_vikor.calculate_from_panel(panel_data, weights_dict)
+        results['fuzzy_vikor'] = {
+            'Q': fuzzy_vikor_result.Q,
+            'S': fuzzy_vikor_result.S,
+            'R': fuzzy_vikor_result.R,
+            'rankings': fuzzy_vikor_result.ranks_Q
+        }
+        results['fuzzy_vikor_result'] = fuzzy_vikor_result
+        self.logger.info(f"  Fuzzy VIKOR: Best Q = {fuzzy_vikor_result.Q.min():.4f}")
+        
+        # 9. Fuzzy PROMETHEE
+        fuzzy_promethee = FuzzyPROMETHEE(preference_function='vshape')
+        fuzzy_promethee_result = fuzzy_promethee.calculate_from_panel(panel_data, weights_dict)
+        results['fuzzy_promethee'] = {
+            'phi_positive': fuzzy_promethee_result.phi_positive,
+            'phi_negative': fuzzy_promethee_result.phi_negative,
+            'phi_net': fuzzy_promethee_result.phi_net,
+            'rankings': fuzzy_promethee_result.ranks
+        }
+        results['fuzzy_promethee_result'] = fuzzy_promethee_result
+        self.logger.info(f"  Fuzzy PROMETHEE: Best phi_net = {fuzzy_promethee_result.phi_net.max():.4f}")
+        
+        # 10. Fuzzy COPRAS
+        fuzzy_copras = FuzzyCOPRAS()
+        fuzzy_copras_result = fuzzy_copras.calculate_from_panel(panel_data, weights_dict)
+        results['fuzzy_copras'] = {
+            'Q': fuzzy_copras_result.Q,
+            'utility_degree': fuzzy_copras_result.utility_degree,
+            'rankings': fuzzy_copras_result.ranks
+        }
+        results['fuzzy_copras_result'] = fuzzy_copras_result
+        self.logger.info(f"  Fuzzy COPRAS: Top utility = {fuzzy_copras_result.utility_degree.max():.1f}%")
+        
+        # 11. Fuzzy EDAS
+        fuzzy_edas = FuzzyEDAS()
+        fuzzy_edas_result = fuzzy_edas.calculate_from_panel(panel_data, weights_dict)
+        results['fuzzy_edas'] = {
+            'AS': fuzzy_edas_result.AS,
+            'rankings': fuzzy_edas_result.ranks
+        }
+        results['fuzzy_edas_result'] = fuzzy_edas_result
+        self.logger.info(f"  Fuzzy EDAS: Best AS = {fuzzy_edas_result.AS.max():.4f}")
+        
+        self.logger.info("Completed all 10 MCDM methods (5 traditional + 5 fuzzy)")
         
         return results
     
@@ -463,18 +580,42 @@ class MLTOPSISPipeline:
     def _run_ensemble(self, mcdm_results: Dict[str, Any],
                       ml_results: Dict[str, Any],
                       panel_data: PanelData) -> Dict[str, Any]:
-        """Run ensemble methods."""
-        results = {}
+        """
+        Run ensemble methods using ALL 10 MCDM methods.
         
-        # 1. Stacking Ensemble for score prediction
+        Includes:
+        - Stacking Ensemble (meta-learner combining scores)
+        - Rank Aggregation with Borda, Copeland, and Kemeny-Young
+        """
+        results = {}
+        n_alternatives = len(panel_data.entities)
+        
+        # Helper to convert scores to rankings (handle both Series and arrays)
+        def scores_to_ranks(scores, higher_is_better=True):
+            arr = to_array(scores)
+            if higher_is_better:
+                return n_alternatives - np.argsort(np.argsort(arr))
+            else:
+                return np.argsort(np.argsort(arr)) + 1
+        
+        # ========== 1. Stacking Ensemble for score prediction ==========
+        # Use all available MCDM scores
         base_predictions = {
-            'TOPSIS': mcdm_results['topsis_scores'],
-            'VIKOR_Q': 1 - mcdm_results['vikor']['Q'],  # Invert so higher is better
-            'Dynamic_TOPSIS': mcdm_results['dynamic_topsis_scores']
+            'TOPSIS': to_array(mcdm_results['topsis_scores']),
+            'Dynamic_TOPSIS': to_array(mcdm_results['dynamic_topsis_scores']),
+            'VIKOR_Q': 1 - to_array(mcdm_results['vikor']['Q']),  # Invert so higher is better
+            'PROMETHEE': to_array(mcdm_results['promethee']['phi_net']),
+            'COPRAS': to_array(mcdm_results['copras']['Q']),
+            'EDAS': to_array(mcdm_results['edas']['AS']),
+            'Fuzzy_TOPSIS': to_array(mcdm_results['fuzzy_topsis']['scores']),
+            'Fuzzy_VIKOR': 1 - to_array(mcdm_results['fuzzy_vikor']['Q']),  # Invert
+            'Fuzzy_PROMETHEE': to_array(mcdm_results['fuzzy_promethee']['phi_net']),
+            'Fuzzy_COPRAS': to_array(mcdm_results['fuzzy_copras']['Q']),
+            'Fuzzy_EDAS': to_array(mcdm_results['fuzzy_edas']['AS'])
         }
         
         # Use TOPSIS as pseudo-target for meta-learning
-        target = mcdm_results['topsis_scores']
+        target = to_array(mcdm_results['topsis_scores'])
         
         stacking = StackingEnsemble(
             meta_learner=self.config.ensemble.meta_learner,
@@ -485,20 +626,46 @@ class MLTOPSISPipeline:
         
         self.logger.info(f"Stacking Meta-Model R²: {stacking_result.meta_model_r2:.4f}")
         
-        # 2. Rank Aggregation
+        # ========== 2. Rank Aggregation using ALL 10 MCDM methods ==========
+        # Collect rankings from all methods
         rankings = {
-            'TOPSIS': mcdm_results['topsis_rankings'],
-            'VIKOR': mcdm_results['vikor']['rankings'],
-            'Fuzzy_TOPSIS': len(mcdm_results['fuzzy_scores']) - 
-                           np.argsort(np.argsort(mcdm_results['fuzzy_scores']))
+            # Traditional methods
+            'TOPSIS': to_array(mcdm_results['topsis_rankings']),
+            'Dynamic_TOPSIS': scores_to_ranks(mcdm_results['dynamic_topsis_scores'], True),
+            'VIKOR': to_array(mcdm_results['vikor']['rankings']),
+            'PROMETHEE': to_array(mcdm_results['promethee']['rankings']),
+            'COPRAS': to_array(mcdm_results['copras']['rankings']),
+            'EDAS': to_array(mcdm_results['edas']['rankings']),
+            # Fuzzy methods
+            'Fuzzy_TOPSIS': to_array(mcdm_results['fuzzy_topsis']['rankings']),
+            'Fuzzy_VIKOR': to_array(mcdm_results['fuzzy_vikor']['rankings']),
+            'Fuzzy_PROMETHEE': to_array(mcdm_results['fuzzy_promethee']['rankings']),
+            'Fuzzy_COPRAS': to_array(mcdm_results['fuzzy_copras']['rankings']),
+            'Fuzzy_EDAS': to_array(mcdm_results['fuzzy_edas']['rankings'])
         }
         
-        # Borda count
-        borda = BordaCount()
-        aggregated = borda.aggregate(rankings)
-        results['aggregated'] = aggregated
+        self.logger.info(f"Aggregating rankings from {len(rankings)} MCDM methods")
         
-        self.logger.info(f"Rank Aggregation Kendall's W: {aggregated.kendall_w:.4f}")
+        # 2a. Borda Count aggregation
+        borda = BordaCount()
+        borda_result = borda.aggregate(rankings)
+        results['borda'] = borda_result
+        results['aggregated'] = borda_result  # Keep backward compatibility
+        self.logger.info(f"  Borda Count - Kendall's W: {borda_result.kendall_w:.4f}")
+        
+        # 2b. Copeland aggregation
+        copeland = CopelandMethod()
+        copeland_result = copeland.aggregate(rankings)
+        results['copeland'] = copeland_result
+        self.logger.info(f"  Copeland - Kendall's W: {copeland_result.kendall_w:.4f}")
+        
+        # 2c. Kemeny-Young aggregation (optimal consensus ranking)
+        # max_exact=6 means exact O(n!) solution for n<=6, approximation for larger
+        # This balances accuracy vs computation time
+        kemeny = KemenyYoung(max_exact=6)
+        kemeny_result = kemeny.aggregate(rankings)
+        results['kemeny'] = kemeny_result
+        self.logger.info(f"  Kemeny-Young - Kendall's W: {kemeny_result.kendall_w:.4f}")
         
         return results
     

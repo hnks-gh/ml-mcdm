@@ -170,8 +170,14 @@ class RandomForestConfig:
 
 @dataclass
 class LSTMConfig:
-    """LSTM forecasting configuration."""
-    enabled: bool = True
+    """
+    LSTM/Neural network configuration.
+    
+    Note: Full LSTM is NOT implemented. The neural forecasting uses MLP
+    with optional attention mechanism instead. This config is kept for
+    potential future implementation.
+    """
+    enabled: bool = False  # Disabled - no true LSTM implementation
     sequence_length: int = 3
     hidden_units: int = 64
     n_layers: int = 2
@@ -197,9 +203,12 @@ class RoughSetsConfig:
 @dataclass
 class EnsembleConfig:
     """Ensemble and meta-learning configuration."""
+    # All 10 MCDM methods (5 traditional + 5 fuzzy)
     base_methods: List[str] = field(default_factory=lambda: [
-        "topsis_static", "topsis_dynamic", "vikor", 
-        "fuzzy_topsis", "random_forest", "panel_fe"
+        # Traditional MCDM
+        "topsis", "dynamic_topsis", "vikor", "promethee", "copras", "edas",
+        # Fuzzy MCDM
+        "fuzzy_topsis", "fuzzy_vikor", "fuzzy_promethee", "fuzzy_copras", "fuzzy_edas"
     ])
     meta_learner: Literal["ridge", "bayesian", "xgboost"] = "ridge"
     alpha: float = 1.0  # Regularization strength for ridge

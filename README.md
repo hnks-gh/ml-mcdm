@@ -15,11 +15,11 @@ Panel Data (64 provinces × 5 years × 20 criteria)
          │     ├─ Traditional: TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS
          │     └─ Fuzzy: Handles uncertainty via triangular fuzzy numbers
          │
-         ├─► ML Analysis (Random Forest with Time-Series CV)
-         │     ├─ Feature Importance
-         │     └─ Future Predictions (2025)
+         ├─► ML Forecasting (7 Models: GB, RF, ET, Bayesian, Huber, MLP, Attention)
+         │     ├─ Unified weighted predictions
+         │     └─ Future Predictions with uncertainty
          │
-         ├─► Ensemble Integration (Stacking, Borda, Copeland)
+         ├─► Ensemble Integration (Stacking, Borda, Copeland, Kemeny-Young)
          │
          └─► Analysis (Convergence, Sensitivity, Validation)
 ```
@@ -53,11 +53,11 @@ ml-mcdm/
 │   │       └── docs/README.md
 │   │
 │   ├── ml/                 # Machine learning
-│   │   └── forecasting/    # Random Forest TS, unified forecaster
+│   │   └── forecasting/    # 7 models: GB, RF, ET, Bayesian, Huber, MLP, Attention
 │   │       └── docs/README.md
 │   │
 │   ├── ensemble/           # Aggregation
-│   │   └── aggregation/    # Stacking, Borda, Copeland
+│   │   └── aggregation/    # Stacking, Borda, Copeland, Kemeny-Young
 │   │       └── docs/README.md
 │   │
 │   └── analysis/           # Validation
