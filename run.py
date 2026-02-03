@@ -30,7 +30,7 @@ def main():
         data_path = sys.argv[1]
 
     # Import here to avoid slow startup for --help
-    from src import MLTOPSISPipeline, get_default_config
+    from src import MLMCDMPipeline, get_default_config
     
     # Configure
     config = get_default_config()
@@ -52,7 +52,7 @@ def main():
     print(f"{'─'*70}\n")
     
     # Run pipeline
-    pipeline = MLTOPSISPipeline(config)
+    pipeline = MLMCDMPipeline(config)
     
     try:
         result = pipeline.run(data_path)

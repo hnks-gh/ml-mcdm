@@ -68,7 +68,7 @@ from .logger import (
     timed_operation,
 )
 from .data_loader import PanelDataLoader, PanelData
-from .pipeline import MLTOPSISPipeline, run_pipeline, PipelineResult  # Note: Name kept for compatibility, supports 10 MCDM methods
+from .pipeline import MLMCDMPipeline, run_pipeline, PipelineResult
 from .output_manager import OutputManager, create_output_manager
 from .visualization import PanelVisualizer, create_visualizer
 
@@ -96,7 +96,7 @@ __all__ = [
     'PanelData',
     
     # Pipeline
-    'MLTOPSISPipeline',  # Main pipeline (name retained for compatibility, now supports 10 MCDM methods)
+    'MLMCDMPipeline',  # Main pipeline supporting 10 MCDM methods
     'run_pipeline', 
     'PipelineResult',
     

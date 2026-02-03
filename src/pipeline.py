@@ -104,12 +104,11 @@ class PipelineResult:
         }).sort_values('predicted_topsis_rank')
 
 
-class MLTOPSISPipeline:
+class MLMCDMPipeline:
     """
     Production-grade ML-MCDM pipeline for panel data analysis with multiple methods.
     
-    Note: Class name retained as 'MLTOPSISPipeline' for backward compatibility,
-    but now supports 10 MCDM methods (5 traditional + 5 fuzzy).
+    Supports 10 MCDM methods (5 traditional + 5 fuzzy).
     
     Integrates:
     - Multiple weighting methods (Entropy, CRITIC, Ensemble)
@@ -1189,5 +1188,5 @@ def run_pipeline(data_path: Optional[str] = None,
     PipelineResult
         Comprehensive results
     """
-    pipeline = MLTOPSISPipeline(config)
+    pipeline = MLMCDMPipeline(config)
     return pipeline.run(data_path)

@@ -254,17 +254,17 @@ outputs/
 ### Running the Pipeline
 
 ```python
-from src.pipeline import MLTOPSISPipeline
+from src.pipeline import MLMCDMPipeline
 from src.config import get_default_config
 
 # With default config
-pipeline = MLTOPSISPipeline()
+pipeline = MLMCDMPipeline()
 result = pipeline.run('data/data.csv')
 
 # With custom config
 config = get_default_config()
 config.output_dir = 'custom_outputs'
-pipeline = MLTOPSISPipeline(config)
+pipeline = MLMCDMPipeline(config)
 result = pipeline.run()
 ```
 

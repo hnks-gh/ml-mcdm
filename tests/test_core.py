@@ -740,7 +740,7 @@ class TestPipeline:
     
     def test_pipeline_initialization(self):
         """Test pipeline initialization with configuration."""
-        from src.pipeline import MLTOPSISPipeline
+        from src.pipeline import MLMCDMPipeline
         from src.config import get_default_config
         
         config = get_default_config()
@@ -748,7 +748,7 @@ class TestPipeline:
         config.panel.years = [2020, 2021, 2022]
         config.panel.n_components = 3
         
-        pipeline = MLTOPSISPipeline(config)
+        pipeline = MLMCDMPipeline(config)
         
         assert pipeline is not None
         assert pipeline.config is not None
@@ -756,7 +756,7 @@ class TestPipeline:
     
     def test_full_pipeline_small(self):
         """Test full pipeline execution with small data."""
-        from src.pipeline import MLTOPSISPipeline
+        from src.pipeline import MLMCDMPipeline
         from src.config import get_default_config
         
         config = get_default_config()
@@ -766,7 +766,7 @@ class TestPipeline:
         config.neural.enabled = False  # Neural networks disabled by default
         config.visualization.enabled = False  # Skip viz for speed
         
-        pipeline = MLTOPSISPipeline(config)
+        pipeline = MLMCDMPipeline(config)
         result = pipeline.run()
         
         assert result is not None
