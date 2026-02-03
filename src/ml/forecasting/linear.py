@@ -139,7 +139,7 @@ class HuberForecaster(BaseForecaster):
     
     def __init__(self,
                  epsilon: float = 1.35,
-                 max_iter: int = 100,
+                 max_iter: int = 500,
                  alpha: float = 0.0001):
         self.epsilon = epsilon
         self.max_iter = max_iter

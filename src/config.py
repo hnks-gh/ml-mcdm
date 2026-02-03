@@ -169,16 +169,22 @@ class RandomForestConfig:
 
 
 @dataclass
-class LSTMConfig:
+class NeuralConfig:
     """
-    LSTM/Neural network configuration.
+    Neural network configuration (MLP and Attention-based forecasters).
     
-    Note: Full LSTM is NOT implemented. The neural forecasting uses MLP
-    with optional attention mechanism instead. This config is kept for
-    potential future implementation.
+    Note: This configures the MLP/Attention neural network forecasters,
+    NOT true LSTM/RNN models. Neural networks are DISABLED by default
+    because the current panel data (5 years, 64 provinces) is insufficient
+    for effective neural network training.
+    
+    The neural forecasting uses:
+    - MLP (Multi-Layer Perceptron) with modern architecture
+    - Attention-based networks for temporal weighting
+    
+    Enable only if you have sufficient data (100+ samples recommended).
     """
-    enabled: bool = False  # Disabled - no true LSTM implementation
-    sequence_length: int = 3
+    enabled: bool = False  # Disabled - insufficient data for neural networks
     hidden_units: int = 64
     n_layers: int = 2
     dropout: float = 0.2
@@ -186,18 +192,7 @@ class LSTMConfig:
     batch_size: int = 16
     learning_rate: float = 0.001
     patience: int = 15
-    bidirectional: bool = False
     attention: bool = False
-
-
-@dataclass
-class RoughSetsConfig:
-    """Rough Sets attribute reduction configuration."""
-    quality_threshold: float = 0.95
-    discretization_bins: int = 5
-    n_bins: int = 5  # Alias for discretization_bins
-    reduction_method: Literal["genetic", "exhaustive", "heuristic"] = "heuristic"
-    max_reducts: int = 5
 
 
 @dataclass
@@ -268,8 +263,7 @@ class Config:
     fuzzy: FuzzyTOPSISConfig = field(default_factory=FuzzyTOPSISConfig)
     panel_regression: PanelRegressionConfig = field(default_factory=PanelRegressionConfig)
     random_forest: RandomForestConfig = field(default_factory=RandomForestConfig)
-    lstm: LSTMConfig = field(default_factory=LSTMConfig)
-    rough_sets: RoughSetsConfig = field(default_factory=RoughSetsConfig)
+    neural: NeuralConfig = field(default_factory=NeuralConfig)
     ensemble: EnsembleConfig = field(default_factory=EnsembleConfig)
     convergence: ConvergenceConfig = field(default_factory=ConvergenceConfig)
     validation: ValidationConfig = field(default_factory=ValidationConfig)
@@ -327,8 +321,8 @@ MCDM METHODS:
 
 ML METHODS:
   Random Forest estimators: {self.random_forest.n_estimators}
-  LSTM hidden units: {self.lstm.hidden_units}
-  LSTM epochs: {self.lstm.epochs}
+  Neural hidden units: {self.neural.hidden_units} (disabled by default)
+  Neural epochs: {self.neural.epochs}
 
 ENSEMBLE:
   Base methods: {len(self.ensemble.base_methods)}

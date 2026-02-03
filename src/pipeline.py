@@ -116,7 +116,7 @@ class MLTOPSISPipeline:
     - 10 MCDM methods:
       * Traditional: TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS
       * Fuzzy: Fuzzy TOPSIS, Fuzzy VIKOR, Fuzzy PROMETHEE, Fuzzy COPRAS, Fuzzy EDAS
-    - Advanced ML forecasting (Unified ensemble with RF, GB, Neural Networks, Bayesian)
+    - Advanced ML forecasting (Unified ensemble with RF, GB, Bayesian; Neural disabled by default)
     - Ensemble aggregation (Stacking, Borda Count, Copeland, Kemeny)
     - Comprehensive analysis (Convergence, Sensitivity, Validation)
     
@@ -201,10 +201,7 @@ class MLTOPSISPipeline:
                 ml_results = {
                     'panel_regression': None,
                     'rf_result': None,
-                    'rf_importance': {},
-                    'lstm_forecasts': None,
-                    'lstm_result': None,
-                    'rough_set': None
+                    'rf_importance': {}
                 }
         
         # Phase 5: Ensemble Integration
@@ -736,11 +733,12 @@ class MLTOPSISPipeline:
         # Step 1: Forecast all components for 2025 using UnifiedForecaster
         # This uses an ensemble of: Gradient Boosting, Random Forest, Extra Trees,
         # Bayesian Ridge, and Huber regression with optimal weighting
+        # Note: Neural networks disabled due to insufficient data for reliable training
         self.logger.info("Training ML models on all historical data...")
         
         forecaster = UnifiedForecaster(
             mode=ForecastMode.BALANCED,
-            include_neural=False,  # Skip neural for speed
+            include_neural=self.config.neural.enabled,  # Disabled by default - insufficient data
             include_tree_ensemble=True,
             include_linear=True,
             cv_folds=min(3, len(panel_data.years) - 1),

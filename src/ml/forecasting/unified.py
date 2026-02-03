@@ -169,7 +169,7 @@ class UnifiedForecaster:
     
     Parameters:
         mode: Forecasting mode (FAST, BALANCED, ACCURATE, NEURAL, ENSEMBLE)
-        include_neural: Whether to include neural models
+        include_neural: Whether to include neural models (default False - disabled due to data limitations)
         include_tree_ensemble: Whether to include tree-based models
         include_linear: Whether to include linear models
         cv_folds: Number of cross-validation folds
@@ -184,7 +184,7 @@ class UnifiedForecaster:
     
     def __init__(self,
                  mode: ForecastMode = ForecastMode.BALANCED,
-                 include_neural: bool = True,
+                 include_neural: bool = False,  # Disabled by default - insufficient data for neural networks
                  include_tree_ensemble: bool = True,
                  include_linear: bool = True,
                  cv_folds: int = 3,

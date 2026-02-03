@@ -1018,16 +1018,16 @@ class PanelVisualizer:
         
         return str(save_path)
     
-    def plot_lstm_forecast(self,
+    def plot_neural_forecast(self,
                           actual: np.ndarray,
                           predicted: np.ndarray,
                           entity_names: List[str],
                           train_loss: List[float],
                           val_loss: Optional[List[float]] = None,
-                          title: str = 'LSTM Forecast Results',
-                          save_name: str = 'lstm_forecast.png') -> Optional[str]:
+                          title: str = 'Neural Network Forecast Results',
+                          save_name: str = 'neural_forecast.png') -> Optional[str]:
         """
-        Plot LSTM forecasting results with training curves and predictions.
+        Plot neural network forecasting results with training curves and predictions.
         
         Parameters
         ----------
@@ -1055,7 +1055,7 @@ class PanelVisualizer:
             ax.plot(epochs, val_loss, 'r--', linewidth=2, label='Val Loss', marker='s', markersize=3)
         ax.set_xlabel('Epoch', fontsize=11)
         ax.set_ylabel('Loss (MSE)', fontsize=11)
-        ax.set_title('LSTM Training Progress', fontsize=12, fontweight='bold')
+        ax.set_title('Neural Network Training Progress', fontsize=12, fontweight='bold')
         ax.legend(loc='upper right', fontsize=10)
         ax.grid(True, alpha=0.3)
         ax.set_yscale('log')
@@ -1395,8 +1395,8 @@ class PanelVisualizer:
             Dictionary containing:
             - 'rf_importance': feature importance dict
             - 'rf_cv_scores': CV scores dict
-            - 'lstm_train_loss': training loss list
-            - 'lstm_val_loss': validation loss list
+            - 'neural_train_loss': training loss list (optional, neural networks disabled by default)
+            - 'neural_val_loss': validation loss list (optional)
             - 'model_metrics': Dict[model_name, Dict[metric, value]]
             - 'predictions': Dict[model_name, (actual, predicted)]
         """
@@ -1430,20 +1430,20 @@ class PanelVisualizer:
         
         # 2. Training curves (top-middle)
         ax2 = fig.add_subplot(gs[0, 1])
-        if 'lstm_train_loss' in results and results['lstm_train_loss']:
-            epochs = range(1, len(results['lstm_train_loss']) + 1)
-            ax2.plot(epochs, results['lstm_train_loss'], 'b-', linewidth=2, 
+        if 'neural_train_loss' in results and results['neural_train_loss']:
+            epochs = range(1, len(results['neural_train_loss']) + 1)
+            ax2.plot(epochs, results['neural_train_loss'], 'b-', linewidth=2, 
                     label='Train', marker='o', markersize=3)
-            if 'lstm_val_loss' in results and results['lstm_val_loss']:
-                ax2.plot(epochs, results['lstm_val_loss'], 'r--', linewidth=2,
+            if 'neural_val_loss' in results and results['neural_val_loss']:
+                ax2.plot(epochs, results['neural_val_loss'], 'r--', linewidth=2,
                         label='Val', marker='s', markersize=3)
             ax2.set_xlabel('Epoch', fontsize=10)
             ax2.set_ylabel('Loss', fontsize=10)
-            ax2.set_title('LSTM Training', fontsize=11, fontweight='bold')
+            ax2.set_title('Neural Network Training', fontsize=11, fontweight='bold')
             ax2.legend(fontsize=9)
             ax2.grid(True, alpha=0.3)
         else:
-            ax2.text(0.5, 0.5, 'No LSTM Data', ha='center', va='center', fontsize=12)
+            ax2.text(0.5, 0.5, 'No Neural Data', ha='center', va='center', fontsize=12)
             ax2.axis('off')
         
         # 3. Model comparison (top-right)
@@ -1710,7 +1710,7 @@ class PanelVisualizer:
                                    edgecolor='white', alpha=0.8)
         
         # Color gradient
-        cm = plt.cm.get_cmap('viridis')
+        cm = plt.colormaps['viridis']
         bin_centers = 0.5 * (bins[:-1] + bins[1:])
         col = (bin_centers - bin_centers.min()) / (bin_centers.max() - bin_centers.min())
         for c, p in zip(col, patches):
@@ -2025,13 +2025,13 @@ class PanelVisualizer:
     # SINGLE-CHART ML PROGRESS VISUALIZATIONS
     # =========================================================================
     
-    def plot_lstm_training_curve(self,
+    def plot_neural_training_curve(self,
                                  train_loss: List[float],
                                  val_loss: Optional[List[float]] = None,
-                                 title: str = 'LSTM Training Loss Progression',
-                                 save_name: str = 'ml_lstm_training_curve.png') -> Optional[str]:
+                                 title: str = 'Neural Network Training Loss Progression',
+                                 save_name: str = 'ml_neural_training_curve.png') -> Optional[str]:
         """
-        Single chart showing LSTM training and validation loss over epochs.
+        Single chart showing neural network training and validation loss over epochs.
         Includes early stopping point, best epoch marker, and convergence analysis.
         """
         if not HAS_MATPLOTLIB:

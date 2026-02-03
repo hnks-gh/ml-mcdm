@@ -1,16 +1,18 @@
 {
-  "timestamp": "2026-02-02T16:48:17.177867",
+  "timestamp": "2026-02-03T16:16:56.960294",
   "config": {
     "paths": {
       "base_dir": "C:\\Users\\hoang\\Documents\\ml-mcdm"
     },
     "panel": {
-      "n_provinces": 6,
-      "n_components": 4,
+      "n_provinces": 64,
+      "n_components": 20,
       "years": [
         2020,
         2021,
-        2022
+        2022,
+        2023,
+        2024
       ],
       "province_col": "Province",
       "year_col": "Year",
@@ -90,9 +92,8 @@
       "use_rolling_features": true,
       "rolling_window": 2
     },
-    "lstm": {
+    "neural": {
       "enabled": false,
-      "sequence_length": 3,
       "hidden_units": 64,
       "n_layers": 2,
       "dropout": 0.2,
@@ -100,24 +101,21 @@
       "batch_size": 16,
       "learning_rate": 0.001,
       "patience": 15,
-      "bidirectional": false,
       "attention": false
-    },
-    "rough_sets": {
-      "quality_threshold": 0.95,
-      "discretization_bins": 5,
-      "n_bins": 5,
-      "reduction_method": "heuristic",
-      "max_reducts": 5
     },
     "ensemble": {
       "base_methods": [
-        "topsis_static",
-        "topsis_dynamic",
+        "topsis",
+        "dynamic_topsis",
         "vikor",
+        "promethee",
+        "copras",
+        "edas",
         "fuzzy_topsis",
-        "random_forest",
-        "panel_fe"
+        "fuzzy_vikor",
+        "fuzzy_promethee",
+        "fuzzy_copras",
+        "fuzzy_edas"
       ],
       "meta_learner": "ridge",
       "alpha": 1.0,
@@ -159,8 +157,7 @@
         "png"
       ],
       "animate_temporal": true,
-      "animation_fps": 2,
-      "enabled": false
+      "animation_fps": 2
     }
   }
 }

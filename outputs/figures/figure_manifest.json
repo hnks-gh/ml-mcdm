@@ -1,6 +1,6 @@
 {
-  "timestamp": "2026-02-02T16:48:17.178902",
-  "total_figures": 10,
+  "timestamp": "2026-02-03T16:16:56.962533",
+  "total_figures": 17,
   "output_directory": "C:\\Users\\hoang\\Documents\\ml-mcdm\\outputs\\figures",
   "figures": [
     {
@@ -46,6 +46,12 @@
       "format": "PNG"
     },
     {
+      "filename": "08_feature_importance.png",
+      "path": "C:\\Users\\hoang\\Documents\\ml-mcdm\\outputs\\figures\\08_feature_importance.png",
+      "description": "Random Forest feature importance for MCDM score prediction",
+      "format": "PNG"
+    },
+    {
       "filename": "09_sensitivity_analysis.png",
       "path": "C:\\Users\\hoang\\Documents\\ml-mcdm\\outputs\\figures\\09_sensitivity_analysis.png",
       "description": "Criteria weight sensitivity analysis",
@@ -58,9 +64,45 @@
       "format": "PNG"
     },
     {
+      "filename": "16_rf_feature_importance_detailed.png",
+      "path": "C:\\Users\\hoang\\Documents\\ml-mcdm\\outputs\\figures\\16_rf_feature_importance_detailed.png",
+      "description": "Random Forest feature importance with cumulative contribution analysis",
+      "format": "PNG"
+    },
+    {
+      "filename": "17_rf_cv_progression.png",
+      "path": "C:\\Users\\hoang\\Documents\\ml-mcdm\\outputs\\figures\\17_rf_cv_progression.png",
+      "description": "Random Forest cross-validation score progression across folds",
+      "format": "PNG"
+    },
+    {
+      "filename": "18_rf_actual_vs_predicted.png",
+      "path": "C:\\Users\\hoang\\Documents\\ml-mcdm\\outputs\\figures\\18_rf_actual_vs_predicted.png",
+      "description": "Random Forest model actual vs predicted values with regression analysis",
+      "format": "PNG"
+    },
+    {
+      "filename": "19_rf_residual_analysis.png",
+      "path": "C:\\Users\\hoang\\Documents\\ml-mcdm\\outputs\\figures\\19_rf_residual_analysis.png",
+      "description": "Random Forest model residual distribution with statistical bands",
+      "format": "PNG"
+    },
+    {
+      "filename": "20_rf_rank_correlation.png",
+      "path": "C:\\Users\\hoang\\Documents\\ml-mcdm\\outputs\\figures\\20_rf_rank_correlation.png",
+      "description": "Random Forest rank prediction accuracy with Spearman correlation",
+      "format": "PNG"
+    },
+    {
       "filename": "21_ensemble_contribution.png",
       "path": "C:\\Users\\hoang\\Documents\\ml-mcdm\\outputs\\figures\\21_ensemble_contribution.png",
       "description": "Ensemble model base model contribution with R\u00b2 comparison",
+      "format": "PNG"
+    },
+    {
+      "filename": "13_future_predictions.png",
+      "path": "C:\\Users\\hoang\\Documents\\ml-mcdm\\outputs\\figures\\13_future_predictions.png",
+      "description": "Future predictions comparison (current vs predicted rankings)",
       "format": "PNG"
     }
   ]

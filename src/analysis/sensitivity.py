@@ -246,7 +246,10 @@ class SensitivityAnalysis:
         
         # Normalize to 0-1
         max_sens = max(sensitivity.values()) if sensitivity.values() else 1
-        sensitivity = {k: v / max_sens for k, v in sensitivity.items()}
+        if max_sens > 0:
+            sensitivity = {k: v / max_sens for k, v in sensitivity.items()}
+        else:
+            sensitivity = {k: 0.0 for k in sensitivity.keys()}
         
         return sensitivity
     

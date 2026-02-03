@@ -1,11 +1,15 @@
 {
-  "timestamp": "2026-02-02T16:48:17.139651",
-  "execution_time": 4.136659860610962,
+  "timestamp": "2026-02-03T16:16:56.792851",
+  "execution_time": 199.93394541740417,
   "files": {
     "weights": "C:\\Users\\hoang\\Documents\\ml-mcdm\\outputs\\results\\weights_analysis.csv",
     "rankings": "C:\\Users\\hoang\\Documents\\ml-mcdm\\outputs\\results\\final_rankings.csv",
     "mcdm_scores": "C:\\Users\\hoang\\Documents\\ml-mcdm\\outputs\\results\\mcdm_scores_detailed.csv",
-    "ml_results": {},
+    "ml_results": {
+      "feature_importance": "C:\\Users\\hoang\\Documents\\ml-mcdm\\outputs\\results\\feature_importance.csv",
+      "cv_scores": "C:\\Users\\hoang\\Documents\\ml-mcdm\\outputs\\results\\cv_scores.csv",
+      "rf_test_metrics": "C:\\Users\\hoang\\Documents\\ml-mcdm\\outputs\\results\\rf_test_metrics.csv"
+    },
     "ensemble_results": {
       "stacking_weights": "C:\\Users\\hoang\\Documents\\ml-mcdm\\outputs\\results\\stacking_weights.csv",
       "stacking_performance": "C:\\Users\\hoang\\Documents\\ml-mcdm\\outputs\\results\\stacking_performance.csv",
@@ -16,10 +20,14 @@
       "robustness": "C:\\Users\\hoang\\Documents\\ml-mcdm\\outputs\\results\\robustness_summary.csv"
     },
     "future_predictions": {
-      "status": "skipped - no future predictions"
+      "predicted_rankings": "C:\\Users\\hoang\\Documents\\ml-mcdm\\outputs\\results\\predicted_rankings_2025.csv",
+      "predicted_components": "C:\\Users\\hoang\\Documents\\ml-mcdm\\outputs\\results\\predicted_components_2025.csv",
+      "prediction_uncertainty": "C:\\Users\\hoang\\Documents\\ml-mcdm\\outputs\\results\\prediction_uncertainty_2025.csv",
+      "model_weights": "C:\\Users\\hoang\\Documents\\ml-mcdm\\outputs\\results\\forecast_model_weights_2025.csv",
+      "forecast_summary": "C:\\Users\\hoang\\Documents\\ml-mcdm\\outputs\\results\\forecast_summary_2025.json"
     },
     "data_summary": "C:\\Users\\hoang\\Documents\\ml-mcdm\\outputs\\results\\data_summary_statistics.csv",
-    "report": "C:\\Users\\hoang\\Documents\\ml-mcdm\\outputs\\reports\\analysis_report.txt",
+    "report": "C:\\Users\\hoang\\Documents\\ml-mcdm\\outputs\\reports\\report.txt",
     "config_snapshot": "C:\\Users\\hoang\\Documents\\ml-mcdm\\outputs\\results\\config_snapshot.json",
     "figure_manifest": "C:\\Users\\hoang\\Documents\\ml-mcdm\\outputs\\figures\\figure_manifest.json",
     "execution_summary": "C:\\Users\\hoang\\Documents\\ml-mcdm\\outputs\\results\\execution_summary.json"

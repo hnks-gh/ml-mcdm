@@ -48,7 +48,7 @@ class TestConfig:
     def test_config_ml_settings(self):
         from src.config import get_default_config
         config = get_default_config()
-        assert config.lstm.enabled == True
+        assert config.neural.enabled == False  # Disabled by default - insufficient data
         assert config.random_forest.n_estimators > 0
 
 
@@ -763,7 +763,7 @@ class TestPipeline:
         config.panel.n_provinces = 6
         config.panel.years = [2020, 2021, 2022]
         config.panel.n_components = 4
-        config.lstm.enabled = False  # Faster test
+        config.neural.enabled = False  # Neural networks disabled by default
         config.visualization.enabled = False  # Skip viz for speed
         
         pipeline = MLTOPSISPipeline(config)

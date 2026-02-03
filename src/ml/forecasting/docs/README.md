@@ -239,9 +239,10 @@ The main orchestrator that combines all methods:
 from src.ml.forecasting import UnifiedForecaster, ForecastMode
 
 # Initialize
+# Note: Neural networks are disabled by default due to insufficient panel data
 forecaster = UnifiedForecaster(
     mode=ForecastMode.BALANCED,
-    include_neural=True,
+    include_neural=False,  # Disabled by default - insufficient data for reliable neural training
     include_tree_ensemble=True,
     include_linear=True,
     cv_folds=3,
