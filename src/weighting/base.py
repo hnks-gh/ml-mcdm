@@ -41,12 +41,15 @@ def calculate_weights(data: pd.DataFrame, method: str = "ensemble") -> WeightRes
     """
     from .entropy import EntropyWeightCalculator
     from .critic import CRITICWeightCalculator
+    from .pca import PCAWeightCalculator
     from .ensemble import EnsembleWeightCalculator
     
     if method == "entropy":
         return EntropyWeightCalculator().calculate(data)
     elif method == "critic":
         return CRITICWeightCalculator().calculate(data)
+    elif method == "pca":
+        return PCAWeightCalculator().calculate(data)
     elif method == "ensemble":
         return EnsembleWeightCalculator().calculate(data)
     elif method == "equal":

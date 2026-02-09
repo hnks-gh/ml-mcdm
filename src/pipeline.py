@@ -20,6 +20,7 @@ from .output_manager import OutputManager, to_array
 
 from .mcdm import (
     EntropyWeightCalculator, CRITICWeightCalculator, EnsembleWeightCalculator,
+    PCAWeightCalculator,
     TOPSISCalculator, DynamicTOPSIS, VIKORCalculator, MultiPeriodVIKOR,
     PROMETHEECalculator, COPRASCalculator, EDASCalculator,
     FuzzyTOPSIS, FuzzyVIKOR, FuzzyPROMETHEE, FuzzyCOPRAS, FuzzyEDAS
@@ -50,6 +51,7 @@ class PipelineResult:
     # Weights
     entropy_weights: np.ndarray
     critic_weights: np.ndarray
+    pca_weights: np.ndarray
     ensemble_weights: np.ndarray
     
     # MCDM Results (Current Year - 2024)
@@ -259,6 +261,7 @@ class MLMCDMPipeline:
             decision_matrix=panel_data.cross_section.values,
             entropy_weights=weights['entropy'],
             critic_weights=weights['critic'],
+            pca_weights=weights['pca'],
             ensemble_weights=weights['ensemble'],
             topsis_scores=mcdm_results['topsis_scores'],
             topsis_rankings=mcdm_results['topsis_rankings'],
@@ -296,7 +299,7 @@ class MLMCDMPipeline:
         return panel_data
     
     def _calculate_weights(self, panel_data: PanelData) -> Dict[str, np.ndarray]:
-        """Calculate weights using multiple methods."""
+        """Calculate weights using multiple methods (Entropy, CRITIC, PCA + Ensemble)."""
         # Get latest cross-section as DataFrame
         latest_year = max(panel_data.years)
         df = panel_data.cross_section[latest_year][panel_data.components]
@@ -309,24 +312,46 @@ class MLMCDMPipeline:
         critic_calc = CRITICWeightCalculator()
         critic_result = critic_calc.calculate(df)
         
-        # Ensemble weights (this will calculate both again, but that's fine)
-        ensemble_calc = EnsembleWeightCalculator()
+        # PCA weights
+        pca_calc = PCAWeightCalculator(
+            variance_threshold=self.config.weighting.pca_variance_threshold
+        )
+        pca_result = pca_calc.calculate(df)
+        
+        # Ensemble weights (configurable strategy, defaults to integrated_hybrid)
+        ensemble_calc = EnsembleWeightCalculator(
+            methods=self.config.weighting.methods,
+            aggregation=self.config.weighting.ensemble_strategy,
+            pca_variance_threshold=self.config.weighting.pca_variance_threshold,
+            bootstrap_samples=self.config.weighting.bootstrap_samples
+        )
         ensemble_result = ensemble_calc.calculate(df)
         
         # Convert weight dicts to arrays
         components = panel_data.components
         entropy_weights = np.array([entropy_result.weights[c] for c in components])
         critic_weights = np.array([critic_result.weights[c] for c in components])
+        pca_weights = np.array([pca_result.weights[c] for c in components])
         ensemble_weights = np.array([ensemble_result.weights[c] for c in components])
         
         self.logger.info(f"Entropy weights range: [{entropy_weights.min():.4f}, "
                         f"{entropy_weights.max():.4f}]")
         self.logger.info(f"CRITIC weights range: [{critic_weights.min():.4f}, "
                         f"{critic_weights.max():.4f}]")
+        self.logger.info(f"PCA weights range: [{pca_weights.min():.4f}, "
+                        f"{pca_weights.max():.4f}]")
+        self.logger.info(f"Ensemble strategy: {self.config.weighting.ensemble_strategy}")
+        
+        # Log PCA details
+        n_retained = pca_result.details.get('n_components_retained', '?')
+        var_explained = pca_result.details.get('total_variance_explained', 0)
+        self.logger.info(f"PCA: {n_retained} components retained, "
+                        f"{var_explained:.1%} variance explained")
         
         return {
             'entropy': entropy_weights,
             'critic': critic_weights,
+            'pca': pca_weights,
             'ensemble': ensemble_weights
         }
     
@@ -1032,7 +1057,7 @@ class MLMCDMPipeline:
             # ===== WEIGHTS ANALYSIS =====
             self.visualizer.plot_weights_comparison(
                 weights, panel_data.components,
-                title='Criteria Weights Comparison (Entropy vs CRITIC vs Ensemble)',
+                title='Criteria Weights Comparison (Entropy vs CRITIC vs PCA vs Ensemble)',
                 save_name='03_weights_comparison.png'
             )
             figure_count += 1

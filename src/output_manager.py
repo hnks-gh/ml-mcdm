@@ -563,7 +563,8 @@ class OutputManager:
         report.append("  WEIGHTING METHODS:")
         report.append("    • Entropy Method: Derives weights from information content and variability")
         report.append("    • CRITIC Method: Incorporates both contrast intensity and inter-criteria correlation")
-        report.append("    • Ensemble Weights: Optimal combination of Entropy and CRITIC weights")
+        report.append("    • PCA Method: Extracts weights from principal component loadings and explained variance")
+        report.append("    • Ensemble Weights: Integrated hybrid of Entropy, CRITIC and PCA weights")
         report.append("")
         report.append("  MCDM METHODS (10 methods total):")
         report.append("    Traditional: TOPSIS, Dynamic TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS")
@@ -602,9 +603,13 @@ class OutputManager:
                 report.append("CRITIC (Criteria Importance Through Intercriteria Correlation) accounts for both")
                 report.append("the contrast intensity (standard deviation) and conflicting relationships between")
                 report.append("criteria to determine weights.")
+            elif method == 'pca':
+                report.append("PCA (Principal Component Analysis) derives weights from the variance structure of")
+                report.append("the data. Weights reflect each criterion's contribution to the principal components,")
+                report.append("weighted by explained variance ratios.")
             else:
-                report.append("Ensemble weights combine multiple weighting methods through optimization to leverage")
-                report.append("the strengths of each individual approach.")
+                report.append("Ensemble weights combine Entropy, CRITIC and PCA methods through the integrated")
+                report.append("hybrid strategy to leverage the strengths of each individual approach.")
             
             report.append("")
             report.append(f"  Statistical Summary:")
@@ -1349,7 +1354,7 @@ class OutputManager:
             # Core MCDM Analysis (01-15)
             '01_score_evolution_top': 'Score evolution over time for top 10 performers',
             '02_score_evolution_bottom': 'Score evolution over time for bottom 10 performers',
-            '03_weights_comparison': 'Comparison of criteria weights (Entropy vs CRITIC vs Ensemble)',
+            '03_weights_comparison': 'Comparison of criteria weights (Entropy vs CRITIC vs PCA vs Ensemble)',
             '04_topsis_scores': 'TOPSIS scores bar chart - complete ranking',
             '05_vikor_analysis': 'VIKOR analysis showing Q, S, R values',
             '06_method_agreement': 'MCDM methods ranking agreement (Spearman correlation matrix)',

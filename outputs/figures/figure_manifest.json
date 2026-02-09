@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-02-03T16:16:56.962533",
+  "timestamp": "2026-02-10T00:59:25.915664",
   "total_figures": 17,
   "output_directory": "C:\\Users\\hoang\\Documents\\ml-mcdm\\outputs\\figures",
   "figures": [
@@ -18,7 +18,7 @@
     {
       "filename": "03_weights_comparison.png",
       "path": "C:\\Users\\hoang\\Documents\\ml-mcdm\\outputs\\figures\\03_weights_comparison.png",
-      "description": "Comparison of criteria weights (Entropy vs CRITIC vs Ensemble)",
+      "description": "Comparison of criteria weights (Entropy vs CRITIC vs PCA vs Ensemble)",
       "format": "PNG"
     },
     {

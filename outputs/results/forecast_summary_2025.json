@@ -10,8 +10,8 @@
   "n_entities": 64,
   "n_components": 20,
   "top_predicted_entity": "P14",
-  "top_predicted_score": 0.8510133778086502,
-  "mean_predicted_score": 0.5125830511572536,
+  "top_predicted_score": 0.8568344993059318,
+  "mean_predicted_score": 0.5126817584944805,
   "model_contributions": {
     "GradientBoosting": 0.4096666528329313,
     "RandomForest": 6.790556067082974e-06,

@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-02-03T16:16:56.960294",
+  "timestamp": "2026-02-10T00:59:25.914474",
   "config": {
     "paths": {
       "base_dir": "C:\\Users\\hoang\\Documents\\ml-mcdm"
@@ -102,6 +102,16 @@
       "learning_rate": 0.001,
       "patience": 15,
       "attention": false
+    },
+    "weighting": {
+      "methods": [
+        "entropy",
+        "critic",
+        "pca"
+      ],
+      "ensemble_strategy": "integrated_hybrid",
+      "pca_variance_threshold": 0.85,
+      "bootstrap_samples": 500
     },
     "ensemble": {
       "base_methods": [

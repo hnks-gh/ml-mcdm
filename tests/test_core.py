@@ -152,6 +152,138 @@ class TestWeighting:
         
         assert len(result.weights) == 3
         assert abs(sum(result.weights.values()) - 1.0) < 0.001
+    
+    def test_pca_weights(self):
+        from src.weighting import PCAWeightCalculator
+        
+        data = pd.DataFrame({
+            'A': [0.1, 0.2, 0.3, 0.4, 0.5],
+            'B': [0.5, 0.4, 0.3, 0.2, 0.1],
+            'C': [0.4, 0.3, 0.4, 0.3, 0.4],
+            'D': [0.15, 0.25, 0.35, 0.45, 0.55]
+        })
+        
+        calc = PCAWeightCalculator(variance_threshold=0.85)
+        result = calc.calculate(data)
+        
+        assert len(result.weights) == 4
+        assert abs(sum(result.weights.values()) - 1.0) < 0.001
+        assert all(w > 0 for w in result.weights.values())
+        assert result.method == "pca"
+        assert "eigenvalues" in result.details
+        assert "n_components_retained" in result.details
+        assert result.details["n_components_retained"] >= 1
+    
+    def test_pca_residual_correlation(self):
+        from src.weighting import PCAWeightCalculator
+        
+        data = pd.DataFrame({
+            'A': [0.1, 0.2, 0.3, 0.4, 0.5],
+            'B': [0.12, 0.22, 0.28, 0.38, 0.52],  # Correlated with A
+            'C': [0.5, 0.3, 0.7, 0.1, 0.4],        # Less correlated
+        })
+        
+        calc = PCAWeightCalculator()
+        residual_corr = calc.get_residual_correlation(data, n_components_remove=1)
+        
+        assert residual_corr.shape == (3, 3)
+        # Diagonal should be 1.0
+        for col in data.columns:
+            assert abs(residual_corr.loc[col, col] - 1.0) < 0.01
+    
+    def test_ensemble_game_theory(self):
+        from src.weighting import EnsembleWeightCalculator
+        
+        data = pd.DataFrame({
+            'A': [0.1, 0.2, 0.3, 0.4, 0.5],
+            'B': [0.5, 0.4, 0.3, 0.2, 0.1],
+            'C': [0.4, 0.3, 0.4, 0.3, 0.4]
+        })
+        
+        calc = EnsembleWeightCalculator(aggregation='game_theory')
+        result = calc.calculate(data)
+        
+        assert len(result.weights) == 3
+        assert abs(sum(result.weights.values()) - 1.0) < 0.001
+        assert all(w > 0 for w in result.weights.values())
+        assert "game_theory_alpha" in result.details
+        assert "confidence_scores" in result.details
+    
+    def test_ensemble_bayesian_bootstrap(self):
+        from src.weighting import EnsembleWeightCalculator
+        
+        data = pd.DataFrame({
+            'A': [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8],
+            'B': [0.5, 0.4, 0.3, 0.2, 0.1, 0.6, 0.7, 0.3],
+            'C': [0.4, 0.3, 0.4, 0.3, 0.4, 0.2, 0.5, 0.6]
+        })
+        
+        calc = EnsembleWeightCalculator(
+            aggregation='bayesian_bootstrap', bootstrap_samples=50)
+        result = calc.calculate(data)
+        
+        assert len(result.weights) == 3
+        assert abs(sum(result.weights.values()) - 1.0) < 0.001
+        assert all(w > 0 for w in result.weights.values())
+        assert "stability_scores" in result.details
+        assert "effective_method_weights" in result.details
+    
+    def test_ensemble_integrated_hybrid(self):
+        from src.weighting import EnsembleWeightCalculator
+        
+        data = pd.DataFrame({
+            'A': [0.1, 0.2, 0.3, 0.4, 0.5, 0.6],
+            'B': [0.5, 0.4, 0.3, 0.2, 0.1, 0.6],
+            'C': [0.4, 0.3, 0.4, 0.3, 0.4, 0.2],
+            'D': [0.15, 0.25, 0.35, 0.45, 0.55, 0.3]
+        })
+        
+        calc = EnsembleWeightCalculator(aggregation='integrated_hybrid')
+        result = calc.calculate(data)
+        
+        assert len(result.weights) == 4
+        assert abs(sum(result.weights.values()) - 1.0) < 0.001
+        assert all(w > 0 for w in result.weights.values())
+        assert result.method == "ensemble_integrated_hybrid"
+        assert "stages" in result.details
+        assert "integration_coefficients" in result.details
+        assert "individual_weights" in result.details
+        # Should have PCA-hybrid CRITIC as well as standard CRITIC
+        indiv = result.details["individual_weights"]
+        assert "entropy" in indiv
+        assert "critic_pca_hybrid" in indiv
+        assert "pca" in indiv
+    
+    def test_ensemble_geometric_legacy(self):
+        """Test backward compatibility: geometric mean with entropy+critic only."""
+        from src.weighting import EnsembleWeightCalculator
+        
+        data = pd.DataFrame({
+            'A': [0.1, 0.2, 0.3, 0.4, 0.5],
+            'B': [0.5, 0.4, 0.3, 0.2, 0.1],
+            'C': [0.4, 0.3, 0.4, 0.3, 0.4]
+        })
+        
+        calc = EnsembleWeightCalculator(
+            methods=['entropy', 'critic'], aggregation='geometric')
+        result = calc.calculate(data)
+        
+        assert len(result.weights) == 3
+        assert abs(sum(result.weights.values()) - 1.0) < 0.001
+        assert result.details["aggregation"] == "geometric"
+    
+    def test_calculate_weights_pca(self):
+        from src.weighting import calculate_weights
+        
+        data = pd.DataFrame({
+            'A': [0.1, 0.2, 0.3, 0.4, 0.5],
+            'B': [0.5, 0.4, 0.3, 0.2, 0.1],
+            'C': [0.4, 0.3, 0.4, 0.3, 0.4]
+        })
+        
+        result = calculate_weights(data, method='pca')
+        assert result.method == "pca"
+        assert abs(sum(result.weights.values()) - 1.0) < 0.001
 
 
 class TestTraditionalMCDM:

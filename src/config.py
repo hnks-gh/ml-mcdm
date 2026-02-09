@@ -20,6 +20,7 @@ class WeightMethod(Enum):
     """Supported weighting methods."""
     ENTROPY = "entropy"
     CRITIC = "critic"
+    PCA = "pca"
     ENSEMBLE = "ensemble"
     EQUAL = "equal"
 
@@ -196,6 +197,42 @@ class NeuralConfig:
 
 
 @dataclass
+class WeightingConfig:
+    """Weight calculation configuration.
+    
+    Controls which individual weighting methods are used and how they
+    are combined into ensemble weights.
+    
+    Parameters
+    ----------
+    methods : List[str]
+        Individual weighting methods to compute.
+        Options: 'entropy', 'critic', 'pca'
+    ensemble_strategy : str
+        Strategy for combining individual weight vectors.
+        Options:
+        - 'geometric': Geometric mean (minimum KL-divergence solution)
+        - 'arithmetic': Weighted arithmetic mean
+        - 'harmonic': Harmonic mean
+        - 'game_theory': Min-deviation optimization with entropy-based
+          confidence weighting
+        - 'bayesian_bootstrap': Inverse-variance weighting via bootstrap
+          resampling to auto-downweight unstable methods
+        - 'integrated_hybrid': Three-stage hybrid where PCA factor structure
+          informs CRITIC correlation, and entropy-of-weights determines
+          integration coefficients (recommended)
+    pca_variance_threshold : float
+        Cumulative variance ratio threshold for PCA component retention.
+    bootstrap_samples : int
+        Number of bootstrap resamples for bayesian_bootstrap strategy.
+    """
+    methods: List[str] = field(default_factory=lambda: ["entropy", "critic", "pca"])
+    ensemble_strategy: str = "integrated_hybrid"
+    pca_variance_threshold: float = 0.85
+    bootstrap_samples: int = 500
+
+
+@dataclass
 class EnsembleConfig:
     """Ensemble and meta-learning configuration."""
     # All 10 MCDM methods (5 traditional + 5 fuzzy)
@@ -264,6 +301,7 @@ class Config:
     panel_regression: PanelRegressionConfig = field(default_factory=PanelRegressionConfig)
     random_forest: RandomForestConfig = field(default_factory=RandomForestConfig)
     neural: NeuralConfig = field(default_factory=NeuralConfig)
+    weighting: WeightingConfig = field(default_factory=WeightingConfig)
     ensemble: EnsembleConfig = field(default_factory=EnsembleConfig)
     convergence: ConvergenceConfig = field(default_factory=ConvergenceConfig)
     validation: ValidationConfig = field(default_factory=ValidationConfig)
@@ -318,6 +356,11 @@ MCDM METHODS:
   TOPSIS weights: {self.topsis.weight_method.value}
   VIKOR v parameter: {self.vikor.v}
   Fuzzy temporal variance: {self.fuzzy.use_temporal_variance}
+
+WEIGHTING:
+  Methods: {self.weighting.methods}
+  Ensemble strategy: {self.weighting.ensemble_strategy}
+  PCA variance threshold: {self.weighting.pca_variance_threshold}
 
 ML METHODS:
   Random Forest estimators: {self.random_forest.n_estimators}

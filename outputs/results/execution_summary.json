@@ -1,7 +1,7 @@
 {
-  "timestamp": "2026-02-03T16:16:56.964517",
-  "total_execution_time_seconds": 199.93394541740417,
-  "total_execution_time_formatted": "199.93s (3.33min)",
+  "timestamp": "2026-02-10T00:59:25.916707",
+  "total_execution_time_seconds": 202.70790123939514,
+  "total_execution_time_formatted": "202.71s (3.38min)",
   "phase_timings": {},
   "output_directories": {
     "results": "C:\\Users\\hoang\\Documents\\ml-mcdm\\outputs\\results",

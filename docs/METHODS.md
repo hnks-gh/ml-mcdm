@@ -22,7 +22,7 @@ The framework processes panel data through multiple analytical stages:
 ```
 Panel Data (Entities × Years × Criteria)
     │
-    ├──► Weight Calculation ──► Entropy, CRITIC, Ensemble
+    ├──► Weight Calculation ──► Entropy, CRITIC, PCA, Integrated Hybrid Ensemble
     │
     ├──► Current Year Analysis
     │       ├── Traditional MCDM (5 methods)
@@ -46,11 +46,26 @@ Panel Data (Entities × Years × Criteria)
 
 **Module:** `src/weighting/` | **Details:** [weighting/docs/README.md](../src/weighting/docs/README.md)
 
-| Method | Purpose |
-|--------|---------|
-| **Entropy** | Assigns weights based on information content (higher variation = higher weight) |
-| **CRITIC** | Considers both contrast intensity (std dev) and inter-criteria correlation |
-| **Ensemble** | Geometric mean of Entropy and CRITIC weights |
+### 2.1 Individual Methods
+
+| Method | Purpose | Information Level |
+|--------|---------|------------------|
+| **Entropy** | Assigns weights based on information content (higher variation = higher weight) | Univariate (order 1) |
+| **CRITIC** | Considers both contrast intensity (std dev) and inter-criteria correlation | Bivariate (order 2) |
+| **PCA** | Derives weights from full multivariate variance-covariance eigenstructure | Multivariate (order n) |
+
+The three methods form a **complementary triad** — each captures a different level of information from the decision matrix.
+
+### 2.2 Ensemble Strategies
+
+| Strategy | Approach |
+|----------|----------|
+| **Integrated Hybrid** (default) | Three-stage: PCA→Modified CRITIC→Entropy-weighted integration. PCA residual correlations inform CRITIC, entropy-of-weights determines integration coefficients |
+| **Game Theory** | Min-deviation optimization with entropy-based confidence. Methods with more differentiated weights get higher influence |
+| **Bayesian Bootstrap** | Bootstrap resampling to estimate method stability. Inverse-variance weighting auto-downweights unstable methods |
+| **Geometric Mean** | Product of weights (equivalent to minimum KL-divergence) |
+| **Arithmetic Mean** | Weighted sum with configurable method importance |
+| **Harmonic Mean** | Reciprocal average, conservative combination |
 
 ---
 

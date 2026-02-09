@@ -1,6 +1,6 @@
 {
-  "timestamp": "2026-02-03T16:16:56.792851",
-  "execution_time": 199.93394541740417,
+  "timestamp": "2026-02-10T00:59:25.782941",
+  "execution_time": 202.70790123939514,
   "files": {
     "weights": "C:\\Users\\hoang\\Documents\\ml-mcdm\\outputs\\results\\weights_analysis.csv",
     "rankings": "C:\\Users\\hoang\\Documents\\ml-mcdm\\outputs\\results\\final_rankings.csv",
