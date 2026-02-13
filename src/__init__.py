@@ -67,12 +67,12 @@ from .logger import (
     log_context,
     timed_operation,
 )
-from .data_loader import PanelDataLoader, PanelData
+from .data_loader import DataLoader, PanelData, HierarchyMapping, load_data
 from .pipeline import MLMCDMPipeline, run_pipeline, PipelineResult
 from .output_manager import OutputManager, create_output_manager
 from .visualization import PanelVisualizer, create_visualizer
 
-__version__ = '2.1.0'
+__version__ = '3.0.0'
 
 __all__ = [
     # Configuration
@@ -92,11 +92,13 @@ __all__ = [
     'timed_operation',
     
     # Data Loading
-    'PanelDataLoader', 
+    'DataLoader', 
     'PanelData',
+    'HierarchyMapping',
+    'load_data',
     
     # Pipeline
-    'MLMCDMPipeline',  # Main pipeline supporting 10 MCDM methods
+    'MLMCDMPipeline',
     'run_pipeline', 
     'PipelineResult',
     

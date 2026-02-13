@@ -1,35 +1,62 @@
 # -*- coding: utf-8 -*-
-"""Panel data loading, validation, and preprocessing."""
+"""Panel data loading with hierarchical structure and adaptive zero handling.
+
+This module handles:
+1. Loading multiple CSV files (one per year) from the data folder
+2. Hierarchical structure: Subcriteria → Criteria → Final Score
+3. Adaptive zero handling: Excludes provinces/subcriteria with 0 values from calculations
+4. Composite calculation at each hierarchy level
+"""
 
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 
-from .config import Config, get_config, PanelDataConfig
+from .config import Config, get_config
 from .logger import get_logger
 
 
 @dataclass
+class HierarchyMapping:
+    """Mapping between subcriteria and criteria."""
+    subcriteria_to_criteria: Dict[str, str]  # SC01 -> C01
+    criteria_to_subcriteria: Dict[str, List[str]]  # C01 -> [SC01, SC02, SC03, SC04]
+    criteria_names: Dict[str, str]  # C01 -> "Participation"
+    subcriteria_names: Dict[str, str]  # SC01 -> "Civic Knowledge"
+    
+    @property
+    def all_subcriteria(self) -> List[str]:
+        return sorted(self.subcriteria_to_criteria.keys())
+    
+    @property
+    def all_criteria(self) -> List[str]:
+        return sorted(self.criteria_to_subcriteria.keys())
+
+
+@dataclass
 class PanelData:
-    """Container for panel data with multiple views."""
-    long: pd.DataFrame          # Long format: (n*T) × (2 + K)
-    wide: pd.DataFrame          # Wide format: n × (K*T)
-    cross_section: Dict[int, pd.DataFrame]  # Year → cross-section
+    """Container for hierarchical panel data with multiple views."""
+    # Raw subcriteria data
+    subcriteria_long: pd.DataFrame  # Long format: (n*T) × (2 + K_sub)
+    subcriteria_cross_section: Dict[int, pd.DataFrame]  # Year → subcriteria data
+    
+    # Aggregated criteria data (calculated from subcriteria)
+    criteria_long: pd.DataFrame  # Long format: (n*T) × (2 + K_criteria)
+    criteria_cross_section: Dict[int, pd.DataFrame]  # Year → criteria data
+    
+    # Final scores (calculated from criteria)
+    final_long: pd.DataFrame  # Long format: (n*T) × 3 (Year, Province, FinalScore)
+    final_cross_section: Dict[int, pd.DataFrame]  # Year → final scores
+    
+    # Metadata
     provinces: List[str]
     years: List[int]
-    components: List[str]
+    hierarchy: HierarchyMapping
     
-    @property
-    def entities(self) -> List[str]:
-        """Alias for provinces."""
-        return self.provinces
-    
-    @property
-    def time_periods(self) -> List[int]:
-        """Alias for years."""
-        return self.years
+    # Data availability tracking (for adaptive calculations)
+    availability: Dict  # Tracks which provinces/criteria have data each year
     
     @property
     def n_provinces(self) -> int:
@@ -40,378 +67,269 @@ class PanelData:
         return len(self.years)
     
     @property
-    def n_components(self) -> int:
-        return len(self.components)
+    def n_subcriteria(self) -> int:
+        return len(self.hierarchy.all_subcriteria)
     
     @property
-    def n_observations(self) -> int:
-        return self.n_provinces * self.n_years
+    def n_criteria(self) -> int:
+        return len(self.hierarchy.all_criteria)
     
-    def get_year(self, year: int) -> pd.DataFrame:
-        """Get cross-sectional data for specific year."""
-        return self.cross_section[year]
+    def get_subcriteria_year(self, year: int) -> pd.DataFrame:
+        """Get subcriteria data for specific year."""
+        return self.subcriteria_cross_section[year]
     
-    def get_province(self, province: str) -> pd.DataFrame:
-        """Get time-series data for specific province."""
-        return self.long[self.long['Province'] == province].set_index('Year')[self.components]
+    def get_criteria_year(self, year: int) -> pd.DataFrame:
+        """Get criteria data for specific year."""
+        return self.criteria_cross_section[year]
     
-    def get_component(self, component: str) -> pd.DataFrame:
-        """Get panel data for specific component."""
-        return self.long.pivot(index='Province', columns='Year', values=component)
+    def get_final_year(self, year: int) -> pd.DataFrame:
+        """Get final scores for specific year."""
+        return self.final_cross_section[year]
     
-    def get_latest(self) -> pd.DataFrame:
-        """Get latest year cross-section."""
-        return self.cross_section[max(self.years)]
-    
-    def to_dataframe(self) -> pd.DataFrame:
-        """
-        Get panel data as a DataFrame in long format.
-        
-        Returns
-        -------
-        pd.DataFrame
-            Panel data in long format with columns: [Year, Province, C01, C02, ...]
-        """
-        return self.long.copy()
+    def get_latest(self) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+        """Get latest year data (subcriteria, criteria, final)."""
+        latest_year = max(self.years)
+        return (
+            self.subcriteria_cross_section[latest_year],
+            self.criteria_cross_section[latest_year],
+            self.final_cross_section[latest_year]
+        )
 
 
-class PanelDataLoader:
-    """Loads and validates panel data from various formats."""
+class DataLoader:
+    """Loads panel data from year-based CSV files with hierarchical structure."""
     
     def __init__(self, config: Optional[Config] = None):
         self.config = config or get_config()
         self.logger = get_logger()
-        self._panel_config = self.config.panel
     
-    def load(self, filepath: Optional[Path] = None) -> PanelData:
-        """Load panel data from file or generate if not exists."""
-        filepath = filepath or self.config.paths.data_file
+    def load(self) -> PanelData:
+        """Load panel data from data folder."""
+        data_dir = self.config.paths.data_dir
         
-        # Convert to Path if string
-        if isinstance(filepath, str):
-            filepath = Path(filepath)
+        self.logger.info(f"Loading data from {data_dir}")
         
-        if not filepath.exists():
-            self.logger.warning(f"Panel data not found at {filepath}")
-            self.logger.info("Generating new panel data...")
-            self._generate_panel_data(filepath)
+        # Load hierarchy mapping from codebook
+        hierarchy = self._load_hierarchy_mapping(data_dir)
         
-        self.logger.info(f"Loading panel data from {filepath}")
-        df = pd.read_csv(filepath)
+        # Load yearly data files
+        yearly_data = self._load_yearly_files(data_dir, hierarchy)
         
-        # Validate and process
-        df = self._validate_structure(df)
-        df = self._preprocess(df)
-        
-        # Create multiple views
-        panel_data = self._create_views(df)
+        # Create hierarchical views
+        panel_data = self._create_hierarchical_views(yearly_data, hierarchy)
         
         self.logger.info(f"✓ Loaded: {panel_data.n_provinces} provinces, "
-                        f"{panel_data.n_years} years, {panel_data.n_components} components")
+                        f"{panel_data.n_years} years, "
+                        f"{panel_data.n_subcriteria} subcriteria, "
+                        f"{panel_data.n_criteria} criteria")
         
         return panel_data
     
-    def load_from_dataframe(self, df: pd.DataFrame) -> PanelData:
-        """Load panel data from an existing DataFrame.
+    def _load_hierarchy_mapping(self, data_dir: Path) -> HierarchyMapping:
+        """Load hierarchy mapping from codebook files."""
+        codebook_dir = data_dir / "codebook"
         
-        Parameters:
-            df: DataFrame with Year, Province, and component columns
-            
-        Returns:
-            PanelData object
-        """
-        self.logger.info("Loading panel data from DataFrame")
+        # Load subcriteria codebook
+        subcriteria_file = codebook_dir / "codebook_subcriteria.csv"
+        if not subcriteria_file.exists():
+            raise FileNotFoundError(f"Subcriteria codebook not found: {subcriteria_file}")
         
-        # Validate and process
-        df = self._validate_structure(df.copy())
-        df = self._preprocess(df)
+        sub_df = pd.read_csv(subcriteria_file)
         
-        # Create multiple views
-        panel_data = self._create_views(df)
+        # Load criteria codebook
+        criteria_file = codebook_dir / "codebook_criteria.csv"
+        if not criteria_file.exists():
+            raise FileNotFoundError(f"Criteria codebook not found: {criteria_file}")
         
-        self.logger.info(f"✓ Loaded: {panel_data.n_provinces} provinces, "
-                        f"{panel_data.n_years} years, {panel_data.n_components} components")
+        crit_df = pd.read_csv(criteria_file)
         
-        return panel_data
-    
-    def _validate_structure(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Validate panel data structure."""
-        required_cols = [self._panel_config.year_col, self._panel_config.province_col]
-        required_cols += self._panel_config.component_cols
+        # Build mappings
+        subcriteria_to_criteria = dict(zip(sub_df['Variable_Code'], sub_df['Criteria_Code']))
+        subcriteria_names = dict(zip(sub_df['Variable_Code'], sub_df['Variable_Name']))
+        criteria_names = dict(zip(crit_df['Variable_Code'], crit_df['Variable_Name']))
         
-        missing = set(required_cols) - set(df.columns)
-        if missing:
-            raise ValueError(f"Missing required columns: {missing}")
+        # Build reverse mapping
+        criteria_to_subcriteria = {}
+        for sc, c in subcriteria_to_criteria.items():
+            if c not in criteria_to_subcriteria:
+                criteria_to_subcriteria[c] = []
+            criteria_to_subcriteria[c].append(sc)
         
-        # Check for duplicates
-        dups = df.duplicated(subset=[self._panel_config.year_col, 
-                                     self._panel_config.province_col])
-        if dups.any():
-            raise ValueError(f"Found {dups.sum()} duplicate province-year combinations")
+        # Sort subcriteria within each criterion
+        for c in criteria_to_subcriteria:
+            criteria_to_subcriteria[c] = sorted(criteria_to_subcriteria[c])
         
-        # Check balanced panel
-        provinces = df[self._panel_config.province_col].unique()
-        years = df[self._panel_config.year_col].unique()
-        expected_rows = len(provinces) * len(years)
+        self.logger.info(f"✓ Loaded hierarchy: {len(criteria_to_subcriteria)} criteria, "
+                        f"{len(subcriteria_to_criteria)} subcriteria")
         
-        if len(df) != expected_rows:
-            self.logger.warning(f"Unbalanced panel: {len(df)} rows, expected {expected_rows}")
-        
-        return df
-    
-    def _preprocess(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Preprocess panel data."""
-        # Sort by province and year
-        df = df.sort_values([self._panel_config.province_col, 
-                           self._panel_config.year_col]).reset_index(drop=True)
-        
-        # Handle missing values
-        component_cols = self._panel_config.component_cols
-        missing_before = df[component_cols].isna().sum().sum()
-        
-        if missing_before > 0:
-            self.logger.warning(f"Found {missing_before} missing values")
-            # Forward fill within each province, then backward fill
-            df[component_cols] = df.groupby(self._panel_config.province_col)[component_cols].transform(
-                lambda x: x.ffill().bfill()
-            )
-            # If still missing, fill with mean
-            df[component_cols] = df[component_cols].fillna(df[component_cols].mean())
-        
-        # Ensure numeric
-        df[component_cols] = df[component_cols].apply(pd.to_numeric, errors='coerce')
-        
-        # Clip to [0, 1] if normalized data
-        if df[component_cols].max().max() <= 1.0 and df[component_cols].min().min() >= 0.0:
-            df[component_cols] = df[component_cols].clip(0, 1)
-        
-        return df
-    
-    def _create_views(self, df: pd.DataFrame) -> PanelData:
-        """Create multiple data views for different analyses."""
-        province_col = self._panel_config.province_col
-        year_col = self._panel_config.year_col
-        component_cols = self._panel_config.component_cols
-        
-        provinces = sorted(df[province_col].unique().tolist())
-        years = sorted(df[year_col].unique().tolist())
-        
-        # Long format (already have it)
-        long = df.copy()
-        
-        # Wide format
-        wide_parts = []
-        for year in years:
-            year_df = df[df[year_col] == year].set_index(province_col)[component_cols]
-            year_df.columns = [f"{c}_{year}" for c in component_cols]
-            wide_parts.append(year_df)
-        wide = pd.concat(wide_parts, axis=1).reset_index()
-        
-        # Cross-sections by year
-        cross_section = {}
-        for year in years:
-            year_df = df[df[year_col] == year].set_index(province_col)[component_cols]
-            cross_section[year] = year_df
-        
-        return PanelData(
-            long=long,
-            wide=wide,
-            cross_section=cross_section,
-            provinces=provinces,
-            years=years,
-            components=component_cols
+        return HierarchyMapping(
+            subcriteria_to_criteria=subcriteria_to_criteria,
+            criteria_to_subcriteria=criteria_to_subcriteria,
+            criteria_names=criteria_names,
+            subcriteria_names=subcriteria_names
         )
     
-    def _generate_panel_data(self, filepath: Path) -> None:
-        """Generate synthetic panel data."""
-        np.random.seed(self.config.random.seed)
+    def _load_yearly_files(self, data_dir: Path, hierarchy: HierarchyMapping) -> Dict[int, pd.DataFrame]:
+        """Load all yearly CSV files from data directory."""
+        yearly_data = {}
         
-        n_provinces = self._panel_config.n_provinces
-        n_components = self._panel_config.n_components
-        years = self._panel_config.years
+        # Find all year CSV files
+        year_files = sorted(data_dir.glob("[0-9][0-9][0-9][0-9].csv"))
         
-        provinces = [f'P{i+1:02d}' for i in range(n_provinces)]
-        components = self._panel_config.component_cols
+        if not year_files:
+            raise FileNotFoundError(f"No yearly CSV files found in {data_dir}")
         
-        # Generate base scores with regional heterogeneity
-        base_scores = np.zeros((n_provinces, n_components))
-        
-        # Divide provinces into 3 regions proportionally
-        n_high = max(1, n_provinces // 4)      # ~25% high performers
-        n_mid = max(1, n_provinces // 2)       # ~50% medium performers
-        n_low = n_provinces - n_high - n_mid   # ~25% low performers
-        
-        # Region 1: High performers
-        base_scores[0:n_high, :] = np.random.uniform(0.6, 0.85, (n_high, n_components))
-        # Region 2: Medium performers
-        base_scores[n_high:n_high+n_mid, :] = np.random.uniform(0.4, 0.65, (n_mid, n_components))
-        # Region 3: Low performers
-        if n_low > 0:
-            base_scores[n_high+n_mid:, :] = np.random.uniform(0.25, 0.50, (n_low, n_components))
-        
-        # Add component-specific noise (only for available components)
-        n_comp = min(n_components, 20)
-        base_scores[:, :min(5, n_comp)] += np.random.normal(0, 0.08, (n_provinces, min(5, n_comp)))
-        if n_comp > 5:
-            base_scores[:, 5:min(10, n_comp)] += np.random.normal(0.02, 0.05, (n_provinces, min(5, n_comp-5)))
-        if n_comp > 10:
-            base_scores[:, 10:min(15, n_comp)] += np.random.normal(0, 0.03, (n_provinces, min(5, n_comp-10)))
-        if n_comp > 15:
-            base_scores[:, 15:min(20, n_comp)] += np.random.normal(0.01, 0.04, (n_provinces, min(5, n_comp-15)))
-        base_scores = np.clip(base_scores, 0, 1)
-        
-        all_data = []
-        for t, year in enumerate(years):
-            year_data = base_scores.copy()
+        for year_file in year_files:
+            # Extract year from filename
+            year = int(year_file.stem)
             
-            # Trend
-            trend = 0.005 * t
-            year_data += trend
+            # Load CSV
+            df = pd.read_csv(year_file)
             
-            # COVID shock (2020-2021) - apply only to available components
-            if year in [2020, 2021]:
-                covid_impact = -0.03 * (2021 - year + 1)
-                # Economic components (5:10) if they exist
-                eco_start, eco_end = 5, min(10, n_components)
-                if eco_end > eco_start:
-                    eco_cols = eco_end - eco_start
-                    year_data[:, eco_start:eco_end] += covid_impact * np.random.uniform(0.8, 1.2, (n_provinces, eco_cols))
-                # Social components (10:15) if they exist
-                soc_start, soc_end = 10, min(15, n_components)
-                if soc_end > soc_start:
-                    soc_cols = soc_end - soc_start
-                    year_data[:, soc_start:soc_end] += covid_impact * 0.5 * np.random.uniform(0.8, 1.2, (n_provinces, soc_cols))
+            # Validate structure
+            if 'Province' not in df.columns:
+                raise ValueError(f"'Province' column not found in {year_file}")
             
-            # Recovery (2022+) - apply only to available components
-            if year >= 2022:
-                recovery = 0.02 * (year - 2021)
-                rec_start, rec_end = 5, min(15, n_components)
-                if rec_end > rec_start:
-                    rec_cols = rec_end - rec_start
-                    year_data[:, rec_start:rec_end] += recovery * np.random.uniform(0.9, 1.1, (n_provinces, rec_cols))
+            # Check for subcriteria columns
+            expected_subcriteria = hierarchy.all_subcriteria
+            missing_cols = set(expected_subcriteria) - set(df.columns)
+            if missing_cols:
+                self.logger.warning(f"Year {year}: Missing subcriteria columns: {missing_cols}")
             
-            # Green transition - apply only to available components
-            green_trend = 0.008 * t
-            green_end = min(5, n_components)
-            if green_end > 0:
-                year_data[:, 0:green_end] += green_trend * np.random.uniform(0.8, 1.2, (n_provinces, green_end))
+            # Add Year column
+            df.insert(0, 'Year', year)
             
-            # Random shocks
-            shocks = np.random.normal(0, 0.02, (n_provinces, n_components))
-            year_data += shocks
-            year_data = np.clip(year_data, 0, 1)
-            
-            df_year = pd.DataFrame(year_data, columns=components)
-            df_year.insert(0, 'Year', year)
-            df_year.insert(1, 'Province', provinces)
-            all_data.append(df_year)
+            yearly_data[year] = df
+            self.logger.info(f"  Loaded {year}: {len(df)} provinces, {len(df.columns)-2} subcriteria")
         
-        df_panel = pd.concat(all_data, ignore_index=True)
-        
-        filepath.parent.mkdir(parents=True, exist_ok=True)
-        df_panel.to_csv(filepath, index=False)
-        self.logger.info(f"✓ Generated panel data: {filepath}")
+        return yearly_data
     
-    def generate_synthetic(self, 
-                          n_provinces: int = None, 
-                          n_years: int = None,
-                          n_components: int = None) -> PanelData:
-        """
-        Generate synthetic panel data and return as PanelData object.
+    def _create_hierarchical_views(
+        self, 
+        yearly_data: Dict[int, pd.DataFrame], 
+        hierarchy: HierarchyMapping
+    ) -> PanelData:
+        """Create hierarchical panel data with adaptive composite calculations."""
+        years = sorted(yearly_data.keys())
         
-        Parameters
-        ----------
-        n_provinces : int, optional
-            Number of provinces
-        n_years : int, optional
-            Number of years  
-        n_components : int, optional
-            Number of components
-        """
-        # Update config if parameters provided
-        if n_provinces is not None:
-            self._panel_config.n_provinces = n_provinces
-        if n_years is not None:
-            self._panel_config.years = list(range(2020, 2020 + n_years))
-        if n_components is not None:
-            self._panel_config.n_components = n_components
+        # Get all provinces across all years
+        all_provinces = set()
+        for df in yearly_data.values():
+            all_provinces.update(df['Province'].unique())
+        provinces = sorted(all_provinces)
         
-        # Generate to temp file and load
-        import tempfile
-        temp_file = Path(tempfile.gettempdir()) / 'ml_topsis_panel.csv'
-        self._generate_panel_data(temp_file)
-        return self.load(temp_file)
+        # Initialize containers
+        subcriteria_data = []
+        criteria_data = []
+        final_data = []
+        
+        subcriteria_cross = {}
+        criteria_cross = {}
+        final_cross = {}
+        
+        availability = {
+            'province_by_year': {},
+            'subcriteria_by_year': {},
+            'criteria_by_year': {}
+        }
+        
+        # Process each year
+        for year in years:
+            df_year = yearly_data[year]
+            
+            # Extract subcriteria data
+            subcriteria_cols = [c for c in hierarchy.all_subcriteria if c in df_year.columns]
+            df_sub = df_year[['Year', 'Province'] + subcriteria_cols].copy()
+            
+            # Track availability
+            provinces_with_data = df_sub[df_sub[subcriteria_cols].sum(axis=1) > 0]['Province'].tolist()
+            availability['province_by_year'][year] = provinces_with_data
+            
+            # Calculate criteria from subcriteria (adaptive - exclude zeros)
+            criteria_values = {}
+            criteria_availability = {}
+            
+            for criterion, subcrit_list in hierarchy.criteria_to_subcriteria.items():
+                available_subcrit = [sc for sc in subcrit_list if sc in subcriteria_cols]
+                
+                if not available_subcrit:
+                    criteria_values[criterion] = pd.Series(0.0, index=df_sub.index)
+                    criteria_availability[criterion] = []
+                    continue
+                
+                criterion_scores = []
+                provinces_with_criterion = []
+                
+                for idx, row in df_sub.iterrows():
+                    province = row['Province']
+                    sub_values = [row[sc] for sc in available_subcrit if sc in row.index]
+                    non_zero_values = [v for v in sub_values if v > 0]
+                    
+                    if non_zero_values:
+                        criterion_score = np.mean(non_zero_values)
+                        provinces_with_criterion.append(province)
+                    else:
+                        criterion_score = 0.0
+                    
+                    criterion_scores.append(criterion_score)
+                
+                criteria_values[criterion] = pd.Series(criterion_scores, index=df_sub.index)
+                criteria_availability[criterion] = provinces_with_criterion
+            
+            # Create criteria DataFrame
+            df_criteria = pd.DataFrame({
+                'Year': df_sub['Year'],
+                'Province': df_sub['Province'],
+                **criteria_values
+            })
+            
+            availability['criteria_by_year'][year] = criteria_availability
+            
+            # Calculate final score from criteria (adaptive - exclude zeros)
+            final_scores = []
+            
+            for idx, row in df_criteria.iterrows():
+                crit_values = [row[c] for c in hierarchy.all_criteria if c in df_criteria.columns]
+                non_zero_criteria = [v for v in crit_values if v > 0]
+                final_scores.append(np.mean(non_zero_criteria) if non_zero_criteria else 0.0)
+            
+            # Create final score DataFrame
+            df_final = pd.DataFrame({
+                'Year': df_criteria['Year'],
+                'Province': df_criteria['Province'],
+                'FinalScore': final_scores
+            })
+            
+            # Append to long format
+            subcriteria_data.append(df_sub)
+            criteria_data.append(df_criteria)
+            final_data.append(df_final)
+            
+            # Store cross-sections
+            subcriteria_cross[year] = df_sub.set_index('Province')[subcriteria_cols]
+            criteria_cross[year] = df_criteria.set_index('Province')[hierarchy.all_criteria]
+            final_cross[year] = df_final.set_index('Province')[['FinalScore']]
+        
+        # Concatenate long format data
+        subcriteria_long = pd.concat(subcriteria_data, ignore_index=True)
+        criteria_long = pd.concat(criteria_data, ignore_index=True)
+        final_long = pd.concat(final_data, ignore_index=True)
+        
+        return PanelData(
+            subcriteria_long=subcriteria_long,
+            subcriteria_cross_section=subcriteria_cross,
+            criteria_long=criteria_long,
+            criteria_cross_section=criteria_cross,
+            final_long=final_long,
+            final_cross_section=final_cross,
+            provinces=provinces,
+            years=years,
+            hierarchy=hierarchy,
+            availability=availability
+        )
 
 
-class TemporalFeatureEngineer:
-    """Creates temporal features for ML models."""
-    
-    def __init__(self, config: Optional[Config] = None):
-        self.config = config or get_config()
-    
-    def create_lag_features(self, data: PanelData, n_lags: int = 2) -> pd.DataFrame:
-        """Create lagged features for each component."""
-        df = data.long.copy()
-        component_cols = data.components
-        
-        for lag in range(1, n_lags + 1):
-            for col in component_cols:
-                df[f'{col}_lag{lag}'] = df.groupby('Province')[col].shift(lag)
-        
-        return df.dropna()
-    
-    def create_rolling_features(self, data: PanelData, window: int = 2) -> pd.DataFrame:
-        """Create rolling statistics features."""
-        df = data.long.copy()
-        component_cols = data.components
-        
-        for col in component_cols:
-            df[f'{col}_roll_mean'] = df.groupby('Province')[col].transform(
-                lambda x: x.rolling(window, min_periods=1).mean()
-            )
-            df[f'{col}_roll_std'] = df.groupby('Province')[col].transform(
-                lambda x: x.rolling(window, min_periods=1).std().fillna(0)
-            )
-        
-        return df
-    
-    def create_growth_features(self, data: PanelData) -> pd.DataFrame:
-        """Create year-over-year growth features."""
-        df = data.long.copy()
-        component_cols = data.components
-        
-        for col in component_cols:
-            df[f'{col}_growth'] = df.groupby('Province')[col].pct_change().fillna(0)
-        
-        return df
-    
-    def create_all_features(self, data: PanelData) -> pd.DataFrame:
-        """Create comprehensive feature set for ML."""
-        rf_config = self.config.random_forest
-        
-        df = data.long.copy()
-        
-        if rf_config.use_lags:
-            lag_df = self.create_lag_features(data, rf_config.n_lags)
-            lag_cols = [c for c in lag_df.columns if 'lag' in c]
-            df = df.merge(lag_df[['Province', 'Year'] + lag_cols], 
-                         on=['Province', 'Year'], how='left')
-        
-        if rf_config.use_rolling_features:
-            roll_df = self.create_rolling_features(data, rf_config.rolling_window)
-            roll_cols = [c for c in roll_df.columns if 'roll' in c]
-            df = df.merge(roll_df[['Province', 'Year'] + roll_cols],
-                         on=['Province', 'Year'], how='left')
-        
-        growth_df = self.create_growth_features(data)
-        growth_cols = [c for c in growth_df.columns if 'growth' in c]
-        df = df.merge(growth_df[['Province', 'Year'] + growth_cols],
-                     on=['Province', 'Year'], how='left')
-        
-        return df.dropna()
-
-
-def load_panel_data(filepath: Optional[Path] = None) -> PanelData:
+def load_data() -> PanelData:
     """Convenience function to load panel data."""
-    loader = PanelDataLoader()
-    return loader.load(filepath)
+    loader = DataLoader()
+    return loader.load()

@@ -76,12 +76,17 @@ class PathConfig:
 @dataclass
 class PanelDataConfig:
     """Panel data structure configuration."""
-    n_provinces: int = 64
-    n_components: int = 29
+    # Province and time configuration
+    n_provinces: int = 63
     years: List[int] = field(default_factory=lambda: list(range(2011, 2025)))
     province_col: str = "Province"
     year_col: str = "Year"
-    component_prefix: str = "C"
+    
+    # Hierarchical structure: Subcriteria → Criteria → Final Score
+    n_subcriteria: int = 28
+    n_criteria: int = 8
+    subcriteria_prefix: str = "SC"
+    criteria_prefix: str = "C"
     
     @property
     def n_years(self) -> int:
@@ -92,8 +97,14 @@ class PanelDataConfig:
         return self.n_provinces * self.n_years
     
     @property
-    def component_cols(self) -> List[str]:
-        return [f"{self.component_prefix}{i+1:02d}" for i in range(self.n_components)]
+    def subcriteria_cols(self) -> List[str]:
+        """List of subcriteria column names (SC01-SC28)."""
+        return [f"{self.subcriteria_prefix}{i+1:02d}" for i in range(self.n_subcriteria)]
+    
+    @property
+    def criteria_cols(self) -> List[str]:
+        """List of criteria column names (C01-C08)."""
+        return [f"{self.criteria_prefix}{i+1:02d}" for i in range(self.n_criteria)]
     
     @property
     def train_years(self) -> List[int]:
@@ -331,14 +342,16 @@ class Config:
     def summary(self) -> str:
         return f"""
 {'='*80}
-CONFIGURATION SUMMARY - Panel Data Econometric-ML Hybrid Framework
+ML-MCDM: Panel Data Econometric-ML Hybrid Framework
 {'='*80}
 
 PANEL DATA:
   Provinces: {self.panel.n_provinces}
-  Components: {self.panel.n_components}  
+  Subcriteria: {self.panel.n_subcriteria} (SC01-SC28)
+  Criteria: {self.panel.n_criteria} (C01-C08)
   Years: {self.panel.years}
   Total observations: {self.panel.n_observations}
+  Structure: Subcriteria → Criteria → Final Score
 
 MCDM METHODS:
   TOPSIS normalization: {self.topsis.normalization.value}

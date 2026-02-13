@@ -15,7 +15,7 @@ warnings.filterwarnings('ignore')
 # Internal imports
 from .config import Config, get_default_config
 from .logger import setup_logger, ProgressLogger
-from .data_loader import PanelDataLoader, PanelData, TemporalFeatureEngineer
+from .data_loader import DataLoader, PanelData
 from .output_manager import OutputManager, to_array
 
 from .mcdm import (
@@ -26,7 +26,8 @@ from .mcdm import (
 )
 
 from .ml import (
-    RandomForestTS  # For feature importance and time-series validation
+    RandomForestTS,
+    TemporalFeatureEngineer
 )
 
 from .ensemble import (
@@ -280,7 +281,7 @@ class MLMCDMPipeline:
     
     def _load_data(self, data_path: Optional[str]) -> PanelData:
         """Load and prepare panel data."""
-        loader = PanelDataLoader(self.config)
+        loader = DataLoader(self.config)
         
         if data_path:
             panel_data = loader.load(data_path)

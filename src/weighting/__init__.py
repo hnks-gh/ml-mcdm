@@ -8,6 +8,11 @@ Objective weight calculation methods for MCDM:
 - HybridWeightingPipeline: 4-method hybrid (Entropy + CRITIC + MEREC + SD)
   → Game Theory Weight Combination (GTWC) + Bayesian Bootstrap + Stability
 
+**Adaptive Weighting:**
+- AdaptiveWeightCalculator: Adaptive weight calculation with zero handling
+- WeightCalculator: Hierarchical weight calculation for multi-level data
+- calculate_adaptive_weights: Convenience function for adaptive weights
+
 **Fusion Method:**
 - GameTheoryWeightCombination: Cooperative game-theoretic fusion
 
@@ -34,17 +39,29 @@ from .normalization import global_min_max_normalize, GlobalNormalizer
 from .bootstrap import bayesian_bootstrap_weights, BayesianBootstrap
 from .validation import temporal_stability_verification, TemporalStabilityValidator
 from .base import WeightResult, calculate_weights
+from .adaptive import (
+    AdaptiveWeightCalculator, 
+    WeightCalculator, 
+    AdaptiveWeightResult,
+    calculate_adaptive_weights
+)
 
-# Backward compatibility alias
+# Alias for common usage
 RobustGlobalWeighting = HybridWeightingPipeline
 
 __all__ = [
-    # Core result type
+    # Core result types
     'WeightResult',
+    'AdaptiveWeightResult',
     
     # Primary pipeline
     'HybridWeightingPipeline',
-    'RobustGlobalWeighting',  # Backward compatibility
+    'RobustGlobalWeighting',
+    
+    # Adaptive weighting
+    'AdaptiveWeightCalculator',
+    'WeightCalculator',
+    'calculate_adaptive_weights',
     
     # Individual calculators
     'EntropyWeightCalculator',
