@@ -27,10 +27,7 @@ class WeightMethod(Enum):
 
 class AggregationType(Enum):
     """Supported rank aggregation methods."""
-    BORDA = "borda"
-    COPELAND = "copeland"
-    KEMENY = "kemeny"
-    STACKING = "stacking"
+    EVIDENTIAL_REASONING = "evidential_reasoning"
 
 
 @dataclass
@@ -144,15 +141,22 @@ class VIKORConfig:
 
 
 @dataclass
-class FuzzyTOPSISConfig:
-    """Fuzzy TOPSIS configuration."""
-    use_temporal_variance: bool = True
-    alpha_cut: float = 0.0
+class IFSConfig:
+    """Intuitionistic Fuzzy Set configuration (Atanassov, 1986).
+    
+    Parameters
+    ----------
+    spread_factor : float
+        Controls how temporal standard deviation maps to IFS hesitancy.
+        Higher values → more hesitancy for volatile subcriteria.
+    n_grades : int
+        Number of linguistic grades for ER belief distributions.
+    use_temporal_variance : bool
+        Whether to derive hesitancy from temporal variance.
+    """
     spread_factor: float = 1.0
-    linguistic_scales: Dict[str, tuple] = field(default_factory=lambda: {
-        "VL": (0.0, 0.0, 0.2), "L": (0.0, 0.2, 0.4),
-        "M": (0.2, 0.5, 0.8), "H": (0.6, 0.8, 1.0), "VH": (0.8, 1.0, 1.0)
-    })
+    n_grades: int = 5
+    use_temporal_variance: bool = True
 
 
 @dataclass
@@ -233,20 +237,31 @@ class WeightingConfig:
 
 
 @dataclass
-class EnsembleConfig:
-    """Ensemble and meta-learning configuration."""
-    # All 10 MCDM methods (5 traditional + 5 fuzzy)
+class EvidentialReasoningConfig:
+    """Evidential Reasoning configuration (Yang & Xu, 2002).
+    
+    Two-stage hierarchical aggregation:
+      Stage 1: Within each criterion, combine 12 MCDM method scores via ER.
+      Stage 2: Combine 8 criterion beliefs via ER with criterion weights.
+    
+    Parameters
+    ----------
+    n_grades : int
+        Number of linguistic assessment grades.
+    method_weight_scheme : str
+        How to weight individual MCDM methods within each criterion.
+        'equal' = uniform 1/12, 'rank_based' = 1/rank weights.
+    base_methods : list
+        Names of all MCDM methods used.
+    """
+    n_grades: int = 5
+    method_weight_scheme: Literal["equal", "rank_based"] = "equal"
     base_methods: List[str] = field(default_factory=lambda: [
         # Traditional MCDM
-        "topsis", "dynamic_topsis", "vikor", "promethee", "copras", "edas",
-        # Fuzzy MCDM
-        "fuzzy_topsis", "fuzzy_vikor", "fuzzy_promethee", "fuzzy_copras", "fuzzy_edas"
+        "topsis", "vikor", "promethee", "copras", "edas", "saw",
+        # IFS MCDM
+        "ifs_topsis", "ifs_vikor", "ifs_promethee", "ifs_copras", "ifs_edas", "ifs_saw"
     ])
-    meta_learner: Literal["ridge", "bayesian", "xgboost"] = "ridge"
-    alpha: float = 1.0  # Regularization strength for ridge
-    meta_cv_folds: int = 5
-    aggregation_method: AggregationType = AggregationType.BORDA
-    method_weights: Optional[Dict[str, float]] = None
 
 
 @dataclass
@@ -297,12 +312,12 @@ class Config:
     random: RandomConfig = field(default_factory=RandomConfig)
     topsis: TOPSISConfig = field(default_factory=TOPSISConfig)
     vikor: VIKORConfig = field(default_factory=VIKORConfig)
-    fuzzy: FuzzyTOPSISConfig = field(default_factory=FuzzyTOPSISConfig)
+    ifs: IFSConfig = field(default_factory=IFSConfig)
     panel_regression: PanelRegressionConfig = field(default_factory=PanelRegressionConfig)
     random_forest: RandomForestConfig = field(default_factory=RandomForestConfig)
     neural: NeuralConfig = field(default_factory=NeuralConfig)
     weighting: WeightingConfig = field(default_factory=WeightingConfig)
-    ensemble: EnsembleConfig = field(default_factory=EnsembleConfig)
+    er: EvidentialReasoningConfig = field(default_factory=EvidentialReasoningConfig)
     convergence: ConvergenceConfig = field(default_factory=ConvergenceConfig)
     validation: ValidationConfig = field(default_factory=ValidationConfig)
     visualization: VisualizationConfig = field(default_factory=VisualizationConfig)
@@ -357,7 +372,8 @@ MCDM METHODS:
   TOPSIS normalization: {self.topsis.normalization.value}
   TOPSIS weights: {self.topsis.weight_method.value}
   VIKOR v parameter: {self.vikor.v}
-  Fuzzy temporal variance: {self.fuzzy.use_temporal_variance}
+  IFS spread factor: {self.ifs.spread_factor}
+  IFS temporal variance: {self.ifs.use_temporal_variance}
 
 WEIGHTING:
   Strategy: Robust Global Hybrid (Entropy + CRITIC + MEREC + SD)
@@ -367,13 +383,15 @@ WEIGHTING:
 
 ML METHODS:
   Random Forest estimators: {self.random_forest.n_estimators}
-  Neural hidden units: {self.neural.hidden_units} (disabled by default)
+  Neural hidden units: {self.neural.hidden_units}
   Neural epochs: {self.neural.epochs}
 
-ENSEMBLE:
-  Base methods: {len(self.ensemble.base_methods)}
-  Meta-learner: {self.ensemble.meta_learner}
-  Aggregation: {self.ensemble.aggregation_method.value}
+RANK AGGREGATION:
+  Method: Evidential Reasoning (Yang & Xu, 2002)
+  Fuzzy extension: Intuitionistic Fuzzy Sets (Atanassov, 1986)
+  Base methods: {len(self.er.base_methods)}
+  Method weighting: {self.er.method_weight_scheme}
+  Assessment grades: {self.er.n_grades}
 
 VALIDATION:
   Bootstrap iterations: {self.validation.n_bootstrap}

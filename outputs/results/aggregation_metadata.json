@@ -1,8 +1,0 @@
-{
-  "kendall_w": 0.9452184179456907,
-  "interpretation": "Strong agreement",
-  "n_entities": 6,
-  "aggregation_method": "borda",
-  "top_entity": "P01",
-  "top_score": 4.818181818181818
-}

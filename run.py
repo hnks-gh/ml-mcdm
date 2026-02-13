@@ -4,8 +4,7 @@
 Entry point for ML-MCDM analysis pipeline.
 
 Usage:
-    python run.py                      # Run with data/data.csv (default)
-    python run.py path/to/data.csv     # Run with custom data file
+    python run.py                      # Run with data/ (default)
 """
 
 import sys
@@ -13,9 +12,9 @@ from pathlib import Path
 
 # Configuration
 CONFIG = {
-    'data_path': 'data/data.csv',
-    'n_provinces': 64,
-    'n_years': 5,
+    'data_path': None,  # Uses yearly CSV files from data/ folder automatically
+    'n_provinces': 63,  # Actual provinces in data
+    'n_years': 14,
     'output_dir': 'outputs',
 }
 
@@ -31,11 +30,18 @@ def main():
     # Import here to avoid slow startup for --help
     from src import MLMCDMPipeline, get_default_config
     
-    # Configure
+    # Configure  
     config = get_default_config()
     config.panel.n_provinces = CONFIG['n_provinces']
-    config.panel.years = list(range(2020, 2020 + CONFIG['n_years']))
+    # Use last N years from available data
+    end_year = 2024
+    start_year = end_year - CONFIG['n_years'] + 1
+    config.panel.years = list(range(start_year, end_year + 1))
     # n_components will be read from actual data
+    
+    # Reduce computational burden for testing
+    config.weighting.bootstrap_iterations = 9  # Very quick testing (default: 999)
+    config.random_forest.n_estimators = 20  # Faster testing (default: 200)
     
     print(f"{'─'*70}")
     print(f"  CONFIGURATION")

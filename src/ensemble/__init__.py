@@ -3,73 +3,34 @@
 Ensemble Module
 ===============
 
-Ensemble methods for combining MCDM rankings and ML predictions.
+Evidential Reasoning for combining MCDM rankings.
 
 Submodules
 ----------
-aggregation
-    Rank aggregation methods (Borda, Copeland, Kemeny-Young, Median)
-    Stacking ensemble for prediction combination
+evidential_reasoning
+    Evidential Reasoning (Yang & Xu, 2002) for hierarchical belief
+    combination of multi-method MCDM evidence.
 
-Legacy Imports
---------------
-For backward compatibility, classes are also available at the
-package level. New code should import from submodules:
-
->>> from src.ensemble.aggregation import BordaCount, StackingEnsemble
+Usage
+-----
+>>> from src.ensemble.evidential_reasoning import (
+...     EvidentialReasoningEngine,
+...     HierarchicalEvidentialReasoning,
+...     HierarchicalERResult,
+... )
 """
 
-# Import from new aggregation submodule
-from .aggregation import (
-    # Base classes
-    BaseRankAggregator,
-    AggregatedRanking,
-    
-    # Rank aggregation methods
-    BordaCount,
-    CopelandMethod,
-    KemenyYoung,
-    MedianRank,
-    
-    # Stacking ensemble
-    StackingEnsemble,
-    TemporalStackingEnsemble,
-    StackingResult,
-    
-    # Convenience functions
-    aggregate_rankings,
-    borda_count,
-    copeland_method,
-    kemeny_young,
-    median_rank,
-    stacking_ensemble,
+from .evidential_reasoning import (
+    BeliefDistribution,
+    EvidentialReasoningEngine,
+    HierarchicalEvidentialReasoning,
+    HierarchicalERResult,
 )
 
-# Backward compatibility alias
-RankAggregator = BaseRankAggregator
 
 __all__ = [
-    # Base classes
-    'BaseRankAggregator',
-    'RankAggregator',  # Backward compatibility
-    'AggregatedRanking',
-    
-    # Rank aggregation methods
-    'BordaCount',
-    'CopelandMethod',
-    'KemenyYoung',
-    'MedianRank',
-    
-    # Stacking ensemble
-    'StackingEnsemble',
-    'TemporalStackingEnsemble',
-    'StackingResult',
-    
-    # Convenience functions
-    'aggregate_rankings',
-    'borda_count',
-    'copeland_method',
-    'kemeny_young',
-    'median_rank',
-    'stacking_ensemble',
+    'BeliefDistribution',
+    'EvidentialReasoningEngine',
+    'HierarchicalEvidentialReasoning',
+    'HierarchicalERResult',
 ]

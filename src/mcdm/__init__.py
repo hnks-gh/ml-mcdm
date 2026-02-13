@@ -3,20 +3,20 @@
 Multi-Criteria Decision Making Module
 =====================================
 
-Comprehensive MCDM methods including traditional and fuzzy variants.
+Comprehensive MCDM methods including traditional and IFS variants.
 
 Submodules
 ----------
 traditional
-    Traditional MCDM methods: TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS
-fuzzy
-    Fuzzy MCDM methods using Triangular Fuzzy Numbers
+    Traditional MCDM methods: TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS, SAW
+ifs
+    Intuitionistic Fuzzy Set MCDM methods (Atanassov, 1986)
 
 Usage
 -----
->>> from src.mcdm.traditional import TOPSISCalculator, VIKORCalculator
->>> from src.mcdm.fuzzy import FuzzyTOPSIS, FuzzyVIKOR
->>> from src.weighting import EntropyWeightCalculator, CRITICWeightCalculator, RobustGlobalWeighting
+>>> from src.mcdm.traditional import TOPSISCalculator, VIKORCalculator, SAWCalculator
+>>> from src.mcdm.ifs import IFS_TOPSIS, IFS_VIKOR
+>>> from src.weighting import EntropyWeightCalculator, CRITICWeightCalculator
 """
 
 # Import from traditional submodule
@@ -26,17 +26,18 @@ from .traditional import (
     PROMETHEECalculator, PROMETHEEResult,
     COPRASCalculator, COPRASResult,
     EDASCalculator, EDASResult,
+    SAWCalculator, SAWResult,
 )
 
-# Import from fuzzy submodule
-from .fuzzy import (
-    TriangularFuzzyNumber, FuzzyDecisionMatrix,
-    LINGUISTIC_SCALE_5, LINGUISTIC_SCALE_7, IMPORTANCE_SCALE,
-    FuzzyTOPSIS, FuzzyTOPSISResult,
-    FuzzyVIKOR, FuzzyVIKORResult,
-    FuzzyPROMETHEE, FuzzyPROMETHEEResult,
-    FuzzyCOPRAS, FuzzyCOPRASResult,
-    FuzzyEDAS, FuzzyEDASResult,
+# Import from IFS submodule
+from .ifs import (
+    IFN, IFSDecisionMatrix,
+    IFS_SAW, IFS_SAWResult,
+    IFS_TOPSIS, IFS_TOPSISResult,
+    IFS_VIKOR, IFS_VIKORResult,
+    IFS_PROMETHEE, IFS_PROMETHEEResult,
+    IFS_COPRAS, IFS_COPRASResult,
+    IFS_EDAS, IFS_EDASResult,
 )
 
 # Import weighting methods from weighting module
@@ -54,17 +55,15 @@ DynamicTOPSISResult = TOPSISResult
 
 
 __all__ = [
-    # Fuzzy base
-    'TriangularFuzzyNumber',
-    'FuzzyDecisionMatrix',
-    'LINGUISTIC_SCALE_5',
-    'LINGUISTIC_SCALE_7',
-    'IMPORTANCE_SCALE',
+    # IFS base
+    'IFN',
+    'IFSDecisionMatrix',
     
     # Weights
     'EntropyWeightCalculator',
     'CRITICWeightCalculator',
-    'PCAWeightCalculator',
+    'MERECWeightCalculator',
+    'StandardDeviationWeightCalculator',
     'RobustGlobalWeighting',
     'WeightResult',
     
@@ -75,41 +74,45 @@ __all__ = [
     'PROMETHEECalculator', 'PROMETHEEResult',
     'COPRASCalculator', 'COPRASResult',
     'EDASCalculator', 'EDASResult',
+    'SAWCalculator', 'SAWResult',
     
-    # Fuzzy MCDM
-    'FuzzyTOPSIS', 'FuzzyTOPSISResult',
-    'FuzzyVIKOR', 'FuzzyVIKORResult',
-    'FuzzyPROMETHEE', 'FuzzyPROMETHEEResult',
-    'FuzzyCOPRAS', 'FuzzyCOPRASResult',
-    'FuzzyEDAS', 'FuzzyEDASResult',
+    # IFS MCDM
+    'IFS_SAW', 'IFS_SAWResult',
+    'IFS_TOPSIS', 'IFS_TOPSISResult',
+    'IFS_VIKOR', 'IFS_VIKORResult',
+    'IFS_PROMETHEE', 'IFS_PROMETHEEResult',
+    'IFS_COPRAS', 'IFS_COPRASResult',
+    'IFS_EDAS', 'IFS_EDASResult',
 ]
 
 
 # Convenience function to get all MCDM calculators
-def get_all_calculators(fuzzy: bool = False):
+def get_all_calculators(ifs: bool = False):
     """
     Get dictionary of all MCDM calculators.
     
     Parameters
     ----------
-    fuzzy : bool, default=False
-        If True, returns fuzzy versions; if False, returns traditional
+    ifs : bool, default=False
+        If True, returns IFS versions; if False, returns traditional
     
     Returns
     -------
     Dict[str, class]
         Dictionary of calculator classes
     """
-    if fuzzy:
+    if ifs:
         return {
-            'topsis': FuzzyTOPSIS,
-            'vikor': FuzzyVIKOR,
-            'promethee': FuzzyPROMETHEE,
-            'copras': FuzzyCOPRAS,
-            'edas': FuzzyEDAS,
+            'saw': IFS_SAW,
+            'topsis': IFS_TOPSIS,
+            'vikor': IFS_VIKOR,
+            'promethee': IFS_PROMETHEE,
+            'copras': IFS_COPRAS,
+            'edas': IFS_EDAS,
         }
     else:
         return {
+            'saw': SAWCalculator,
             'topsis': TOPSISCalculator,
             'vikor': VIKORCalculator,
             'promethee': PROMETHEECalculator,

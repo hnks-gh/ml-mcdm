@@ -5,26 +5,35 @@ ML-MCDM: Machine Learning Enhanced Multi-Criteria Decision Making
 
 A comprehensive framework for MCDM analysis with ML-powered forecasting.
 
+Architecture
+------------
+IFS-MCDM + Evidential Reasoning (Yang & Xu, 2002) two-stage hierarchy:
+  Stage 1: Within each of 8 criteria, combine 12 method scores via ER
+  Stage 2: Combine 8 criterion beliefs via ER with criterion weights
+
 Package Structure
 -----------------
 src/
 ├── weighting/          # Criterion weighting methods
 │   ├── entropy.py      # Entropy weight calculation
 │   ├── critic.py       # CRITIC weight calculation
-│   └── ensemble.py     # Ensemble weight combination
+│   ├── merec.py        # MEREC weight calculation
+│   ├── standard_deviation.py
+│   └── fusion.py       # Reliability-weighted fusion
 │
 ├── mcdm/
 │   ├── traditional/    # Traditional MCDM methods
-│   │   ├── topsis.py   # TOPSIS with multi-period variants
-│   │   ├── vikor.py    # VIKOR with multi-period variants
+│   │   ├── topsis.py   # TOPSIS
+│   │   ├── vikor.py    # VIKOR
 │   │   ├── promethee.py
 │   │   ├── copras.py
-│   │   └── edas.py
+│   │   ├── edas.py
+│   │   └── saw.py      # Simple Additive Weighting
 │   │
-│   └── fuzzy/          # Fuzzy MCDM methods
-│       ├── base.py     # Triangular Fuzzy Numbers
-│       ├── topsis.py   # Fuzzy TOPSIS
-│       ├── vikor.py    # Fuzzy VIKOR
+│   └── ifs/            # IFS MCDM methods (Atanassov, 1986)
+│       ├── base.py     # IFN, IFSDecisionMatrix
+│       ├── topsis.py   # IFS-TOPSIS
+│       ├── vikor.py    # IFS-VIKOR
 │       └── ...
 │
 ├── ml/
@@ -35,11 +44,12 @@ src/
 │       └── unified.py         # Unified forecaster
 │
 ├── ensemble/
-│   └── aggregation/    # Rank aggregation & stacking
-│       ├── borda.py    # Borda Count
-│       ├── copeland.py # Copeland method
-│       ├── kemeny.py   # Kemeny-Young
-│       └── stacking.py # Stacking ensemble
+│   └── evidential_reasoning/  # ER aggregation
+│       ├── base.py            # BeliefDistribution, ER engine
+│       └── hierarchical_er.py # Two-stage hierarchical ER
+│
+├── ranking/
+│   └── pipeline.py     # Unified ranking orchestrator
 │
 └── analysis/           # Validation & sensitivity
     ├── sensitivity.py  # Monte Carlo sensitivity
