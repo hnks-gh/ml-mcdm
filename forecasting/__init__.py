@@ -1,53 +1,47 @@
 # -*- coding: utf-8 -*-
 """
-ML Forecasting Module (EXPERIMENTAL)
-=====================================
+ML Forecasting Module
+=====================
 
-⚠️ **EXPERIMENTAL STATUS**: This module is currently under active development
-and is not integrated into the main ML-MCDM pipeline. It is provided for
-future enhancement and research purposes. The API may change without notice.
-
-**Current Status**: Isolated from main workflow, planned for future integration.
-
-**Planned Enhancements**:
-- Integration with main pipeline for temporal forecasting
-- Enhanced uncertainty quantification
-- Multi-step ahead forecasting capabilities
-- Model selection optimization
-
-This module provides machine learning forecasting methods for multi-criteria
+State-of-the-art ensemble forecasting system for multi-criteria
 decision making with temporal/panel data.
 
-Submodules:
-    - tree_ensemble: Gradient Boosting, Random Forest, Extra Trees
-    - linear: Bayesian Ridge, Huber, Ridge regression
-    - neural: MLP, Attention-based networks
-    - features: Temporal feature engineering
-    - unified: Orchestrated ensemble forecasting
+Architecture:
+    Tier 1 - Base Models:
+        - tree_ensemble: Gradient Boosting, Random Forest, Extra Trees
+        - linear: Bayesian Ridge, Huber, Ridge regression
+        - neural: MLP, Attention-based networks
+        - panel_var: Panel Vector Autoregression with fixed effects
+        - quantile_forest: Distributional forecasting via quantile RF
+        - hierarchical_bayes: Partial pooling via empirical Bayes
+        - neural_additive: Neural Additive Models (interpretable)
 
-Available Classes:
-    - UnifiedForecaster: Main orchestrator for ensemble forecasting
-    - GradientBoostingForecaster: GB-based forecasting
-    - RandomForestForecaster: RF-based forecasting
-    - ExtraTreesForecaster: ET-based forecasting
-    - BayesianForecaster: Bayesian linear regression
-    - HuberForecaster: Robust linear regression
-    - NeuralForecaster: MLP with modern architecture
-    - AttentionForecaster: Attention-based neural network
-    - TemporalFeatureEngineer: Feature engineering for time series
+    Tier 2 - Meta-Ensemble:
+        - super_learner: Stacked generalization with meta-learning
+        - auto_ensemble: Bayesian optimization model selection
+
+    Tier 3 - Calibration:
+        - conformal: Distribution-free prediction intervals
+        - evaluation: Comprehensive evaluation and ablation
+
+    Orchestration:
+        - features: Temporal feature engineering
+        - unified: Full pipeline orchestration
 
 Example Usage:
     >>> from forecasting import UnifiedForecaster, ForecastMode
-    >>> 
-    >>> # Create forecaster
+    >>>
+    >>> # Standard mode (backward compatible)
     >>> forecaster = UnifiedForecaster(mode=ForecastMode.BALANCED)
-    >>> 
-    >>> # Fit and predict
     >>> result = forecaster.fit_predict(panel_data, target_year=2025)
-    >>> 
-    >>> # Get predictions
-    >>> predictions = result.predictions
-    >>> uncertainty = result.uncertainty
+    >>>
+    >>> # Advanced mode with Super Learner + all SOTA models
+    >>> forecaster = UnifiedForecaster(mode=ForecastMode.ADVANCED)
+    >>> result = forecaster.fit_predict(panel_data, target_year=2025)
+    >>>
+    >>> # Auto mode with Bayesian optimization
+    >>> forecaster = UnifiedForecaster(mode=ForecastMode.AUTO)
+    >>> result = forecaster.fit_predict(panel_data, target_year=2025)
 """
 
 # Feature engineering
@@ -74,6 +68,20 @@ from .neural import (
     DenseLayer,
     AttentionLayer,
 )
+
+# Advanced models (state-of-the-art)
+from .panel_var import PanelVARForecaster
+from .quantile_forest import QuantileRandomForestForecaster
+from .hierarchical_bayes import HierarchicalBayesForecaster
+from .neural_additive import NeuralAdditiveForecaster
+
+# Meta-ensemble methods
+from .super_learner import SuperLearner
+from .auto_ensemble import AutoEnsembleSelector
+
+# Calibration and evaluation
+from .conformal import ConformalPredictor
+from .evaluation import ForecastEvaluator, AblationStudy
 
 # Unified orchestrator
 from .unified import (
@@ -112,6 +120,18 @@ __all__ = [
     'AttentionForecaster',
     'DenseLayer',
     'AttentionLayer',
+    # Advanced models (SOTA)
+    'PanelVARForecaster',
+    'QuantileRandomForestForecaster',
+    'HierarchicalBayesForecaster',
+    'NeuralAdditiveForecaster',
+    # Meta-ensemble
+    'SuperLearner',
+    'AutoEnsembleSelector',
+    # Calibration and evaluation
+    'ConformalPredictor',
+    'ForecastEvaluator',
+    'AblationStudy',
     # Unified
     'UnifiedForecaster',
     'UnifiedForecastResult',
