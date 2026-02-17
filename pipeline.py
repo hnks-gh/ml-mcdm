@@ -3,18 +3,15 @@
 ML-MCDM Pipeline Orchestrator
 ==============================
 
-Eight-phase production pipeline:
+Seven-phase production pipeline:
 
   Phase 1  Data Loading
   Phase 2  Weight Calculation       (GTWC + Bayesian Bootstrap)
   Phase 3  Hierarchical Ranking     (12 MCDM + two-stage ER)
-  Phase 4  ML Feature Importance    (Random Forest, optional)
-  Phase 5  Sensitivity Analysis     (Monte Carlo weight perturbation)
+  Phase 4  ML Forecasting           (6 models + Super Learner + Conformal)
+  Phase 5  Sensitivity Analysis     (Hierarchical multi-level robustness)
   Phase 6  Visualisation            (high-resolution figures)
   Phase 7  Result Export            (CSV / JSON / text report)
-
-Note: ML forecasting (Phase 6 old) is **isolated** from the workflow
-and will not execute unless explicitly re-enabled in a future release.
 """
 
 import numpy as np
@@ -28,15 +25,23 @@ import json
 
 warnings.filterwarnings('ignore')
 
-# Internal imports
-from .config import Config, get_default_config
-from .logger import setup_logger, ProgressLogger
-from .data_loader import DataLoader, PanelData
-
-from .mcdm.traditional import TOPSISCalculator
-from .ranking import HierarchicalRankingPipeline, HierarchicalRankingResult
-from .analysis import SensitivityAnalysis
-from .visualization import PanelVisualizer
+# Internal imports (support both package and direct execution)
+try:
+    from .config import Config, get_default_config
+    from .logger import setup_logger, ProgressLogger
+    from .data_loader import DataLoader, PanelData
+    from .mcdm.traditional import TOPSISCalculator
+    from .ranking import HierarchicalRankingPipeline, HierarchicalRankingResult
+    from .analysis import SensitivityAnalysis
+    from .visualization import PanelVisualizer
+except ImportError:
+    from config import Config, get_default_config
+    from logger import setup_logger, ProgressLogger
+    from data_loader import DataLoader, PanelData
+    from mcdm.traditional import TOPSISCalculator
+    from ranking import HierarchicalRankingPipeline, HierarchicalRankingResult
+    from analysis import SensitivityAnalysis
+    from visualization import PanelVisualizer
 
 
 def _to_array(x) -> np.ndarray:
@@ -70,11 +75,11 @@ class PipelineResult:
     # Hierarchical Ranking (IFS + ER)
     ranking_result: HierarchicalRankingResult
 
-    # ML Results (optional — may be empty)
-    rf_feature_importance: Dict[str, float]
+    # ML Forecasting (UnifiedForecaster)
+    forecast_result: Optional[Any] = None
 
     # Analysis
-    sensitivity_result: Any
+    sensitivity_result: Any = None
 
     # Meta
     execution_time: float = 0.0
@@ -146,7 +151,7 @@ class MLMCDMPipeline:
 
         self.logger.info("=" * 60)
         self.logger.info("ML-MCDM PANEL DATA ANALYSIS PIPELINE")
-        self.logger.info("IFS + Evidential Reasoning Architecture")
+        self.logger.info("State-of-the-Art: IFS + ER + Forecasting")
         self.logger.info("=" * 60)
 
         # Phase 1: Data Loading
@@ -161,20 +166,22 @@ class MLMCDMPipeline:
         with ProgressLogger(self.logger, "Phase 3: Hierarchical Ranking (IFS + ER)"):
             ranking_result = self._run_hierarchical_ranking(panel_data, weights)
 
-        # Phase 4: ML Feature Importance (optional)
-        ml_results: Dict[str, Any] = {'rf_importance': {}}
-        with ProgressLogger(self.logger, "Phase 4: ML Feature Importance"):
+        # Phase 4: ML Forecasting (6 models + Super Learner + Conformal)
+        forecast_result = None
+        with ProgressLogger(self.logger, "Phase 4: ML Forecasting (SOTA Ensemble)"):
             try:
-                ml_results = self._run_ml(panel_data, ranking_result)
+                forecast_result = self._run_forecasting(panel_data)
             except Exception as e:
-                self.logger.warning(f"ML analysis skipped: {e}")
+                self.logger.warning(f"Forecasting skipped: {e}")
+                import traceback
+                self.logger.debug(traceback.format_exc())
 
         # Phase 5: Sensitivity Analysis
         analysis_results: Dict[str, Any] = {'sensitivity': None}
         with ProgressLogger(self.logger, "Phase 5: Sensitivity Analysis"):
             try:
                 analysis_results = self._run_analysis(
-                    panel_data, ranking_result, weights)
+                    panel_data, ranking_result, weights, forecast_result)
             except Exception as e:
                 self.logger.warning(f"Sensitivity analysis skipped: {e}")
 
@@ -185,7 +192,7 @@ class MLMCDMPipeline:
             try:
                 self._generate_all_visualizations(
                     panel_data, weights, ranking_result,
-                    analysis_results, ml_results=ml_results,
+                    analysis_results, forecast_result=forecast_result,
                 )
             except Exception as e:
                 self.logger.warning(f"Visualisation failed: {e}")
@@ -194,7 +201,7 @@ class MLMCDMPipeline:
         with ProgressLogger(self.logger, "Phase 7: Saving Results"):
             try:
                 self._save_all_results(
-                    panel_data, weights, ranking_result, ml_results,
+                    panel_data, weights, ranking_result, forecast_result,
                     analysis_results, execution_time,
                 )
             except Exception as e:
@@ -222,7 +229,7 @@ class MLMCDMPipeline:
             fused_weights=weights['fused'],
             weight_details=weights.get('details', {}),
             ranking_result=ranking_result,
-            rf_feature_importance=ml_results.get('rf_importance', {}),
+            forecast_result=forecast_result,
             sensitivity_result=analysis_results.get('sensitivity'),
             execution_time=execution_time,
             config=self.config,
@@ -346,60 +353,61 @@ class MLMCDMPipeline:
         )
 
     # -----------------------------------------------------------------
-    # Phase 4: ML Feature Importance (optional)
+    # Phase 4: ML Forecasting (State-of-the-Art Ensemble)
     # -----------------------------------------------------------------
 
-    def _run_ml(
+    def _run_forecasting(
         self,
         panel_data: PanelData,
-        ranking_result: HierarchicalRankingResult,
-    ) -> Dict[str, Any]:
-        """Train Random Forest on ER scores for feature importance."""
-        from .ml import RandomForestTS
-
-        results: Dict[str, Any] = {'rf_result': None, 'rf_importance': {}}
-        subcriteria = panel_data.hierarchy.all_subcriteria
-
-        features_df = panel_data.subcriteria_long.copy()
-
-        # Map ER scores to each province
-        score_map = ranking_result.final_scores.to_dict()
-        features_df['target_score'] = features_df['Province'].map(score_map)
-        features_df = features_df.dropna(subset=['target_score'])
-
-        unique_years = features_df['Year'].nunique() if 'Year' in features_df.columns else 0
-        rf_splits = self.config.random_forest.n_splits
-
-        if unique_years < rf_splits + 1 and unique_years >= 2:
-            rf_splits = max(1, unique_years - 1)
-
-        if len(features_df) < 10 or unique_years < 2:
-            self.logger.warning(
-                f"Skipping RF: insufficient data "
-                f"({len(features_df)} samples, {unique_years} years)"
-            )
-            return results
-
-        rf = RandomForestTS(
-            n_estimators=self.config.random_forest.n_estimators,
-            max_depth=self.config.random_forest.max_depth,
-            min_samples_split=self.config.random_forest.min_samples_split,
-            min_samples_leaf=self.config.random_forest.min_samples_leaf,
-            max_features=self.config.random_forest.max_features,
-            n_splits=rf_splits,
+    ) -> Any:
+        """
+        Run state-of-the-art forecasting using UnifiedForecaster.
+        
+        Architecture:
+        - 6 diverse base models (GB, BayesianRidge, QuantileRF, PanelVAR, HierarchBayes, NAM)
+        - Super Learner meta-ensemble (automatic optimal weighting)
+        - Conformal Prediction (distribution-free 95% intervals)
+        """
+        if not self.config.forecast.enabled:
+            self.logger.info("Forecasting disabled in config")
+            return None
+        
+        from forecasting import UnifiedForecaster
+        
+        # Determine target year
+        target_year = self.config.forecast.target_year
+        if target_year is None:
+            target_year = max(panel_data.years) + 1
+        
+        self.logger.info(f"Target year: {target_year}")
+        self.logger.info(f"Base models: 6 (GB, BayesianRidge, QuantileRF, PanelVAR, HierarchBayes, NAM)")
+        self.logger.info(f"Meta-learner: Super Learner (Ridge)")
+        self.logger.info(f"Calibration: Conformal {self.config.forecast.conformal_method} (α={self.config.forecast.conformal_alpha})")
+        
+        forecaster = UnifiedForecaster(
+            conformal_method=self.config.forecast.conformal_method,
+            conformal_alpha=self.config.forecast.conformal_alpha,
+            cv_folds=self.config.forecast.cv_folds,
+            random_state=self.config.forecast.random_state,
+            verbose=self.config.forecast.verbose,
         )
-
-        rf_result = rf.fit_predict(features_df, 'target_score', subcriteria)
-        results['rf_result'] = rf_result
-        results['rf_importance'] = rf_result.feature_importance.to_dict()
-
-        cv_r2 = np.mean(rf_result.cv_scores.get('r2', [0]))
-        self.logger.info(f"RF CV R² = {cv_r2:.4f}")
-
-        return results
+        
+        result = forecaster.fit_predict(panel_data, target_year=target_year)
+        
+        # Log results
+        if hasattr(result, 'model_weights'):
+            self.logger.info("Super Learner weights:")
+            for model, weight in sorted(result.model_weights.items(), key=lambda x: x[1], reverse=True):
+                self.logger.info(f"  {model:20s}: {weight:.4f}")
+        
+        if hasattr(result, 'cv_metrics'):
+            cv = result.cv_metrics
+            self.logger.info(f"CV Performance: R²={cv.get('r2', 0):.4f}, RMSE={cv.get('rmse', 0):.4f}")
+        
+        return result
 
     # -----------------------------------------------------------------
-    # Phase 5: Sensitivity Analysis
+    # Phase 5: Enhanced Sensitivity Analysis
     # -----------------------------------------------------------------
 
     def _run_analysis(
@@ -407,31 +415,56 @@ class MLMCDMPipeline:
         panel_data: PanelData,
         ranking_result: HierarchicalRankingResult,
         weights: Dict[str, Any],
+        forecast_result: Optional[Any] = None,
     ) -> Dict[str, Any]:
-        subcriteria = panel_data.hierarchy.all_subcriteria
-        latest_year = max(panel_data.years)
-        matrix = panel_data.subcriteria_cross_section[latest_year][subcriteria].values
-
-        def topsis_ranking_func(m, w):
-            df = pd.DataFrame(m, columns=subcriteria)
-            w_dict = dict(zip(subcriteria, w))
-            calc = TOPSISCalculator()
-            res = calc.calculate(df, w_dict)
-            return res.ranks.values
-
-        sensitivity = SensitivityAnalysis(
-            n_simulations=self.config.validation.n_simulations,
+        """
+        Run hierarchical sensitivity analysis on the full pipeline.
+        
+        Tests robustness at multiple levels:
+        - Subcriteria weight perturbations
+        - Criteria weight perturbations  
+        - Temporal stability across years
+        - IFS uncertainty sensitivity
+        - Forecast robustness (if available)
+        """
+        self.logger.info("Running hierarchical sensitivity analysis")
+        
+        # Create ranking pipeline instance for re-running with perturbed weights
+        ranking_pipeline = HierarchicalRankingPipeline(
+            n_methods_traditional=6,
+            n_methods_ifs=6,
+            er_config=self.config.er
         )
-        sens_result = sensitivity.analyze(
-            matrix,
-            weights['fused'],
-            topsis_ranking_func,
-            criteria_names=subcriteria,
-            alternative_names=panel_data.provinces,
+        
+        # Run sensitivity analysis
+        analyzer = SensitivityAnalysis(
+            n_simulations=self.config.validation.n_simulations,
+            perturbation_range=0.15,  # ±15% weight perturbation
+            ifs_perturbation=0.10,     # ±10% IFS uncertainty
+            seed=self.config.random.seed
+        )
+        
+        sens_result = analyzer.analyze_full_pipeline(
+            panel_data=panel_data,
+            ranking_pipeline=ranking_pipeline,
+            weights=weights,
+            ranking_result=ranking_result,
+            forecast_result=forecast_result
+        )
+        
+        self.logger.info(
+            f"Sensitivity analysis: robustness = {sens_result.overall_robustness:.4f}"
         )
         self.logger.info(
-            f"Sensitivity: robustness = {sens_result.overall_robustness:.4f}"
+            f"  Criteria sensitivity: {len(sens_result.criteria_sensitivity)} criteria analyzed"
         )
+        self.logger.info(
+            f"  Temporal stability: {len(sens_result.temporal_stability)} year pairs"
+        )
+        self.logger.info(
+            f"  Top-5 stability: {sens_result.top_n_stability.get(5, 0):.1%}"
+        )
+        
         return {'sensitivity': sens_result}
 
     # -----------------------------------------------------------------
@@ -444,7 +477,7 @@ class MLMCDMPipeline:
         weights: Dict[str, Any],
         ranking_result: HierarchicalRankingResult,
         analysis_results: Dict[str, Any],
-        ml_results: Optional[Dict[str, Any]] = None,
+        forecast_result: Optional[Any] = None,
     ) -> None:
         fig_count = 0
 
@@ -492,12 +525,18 @@ class MLMCDMPipeline:
                 )
                 fig_count += 1
 
-            # 5. Feature importance
-            if ml_results and ml_results.get('rf_importance'):
+            # 5. Forecast feature importance
+            if forecast_result and hasattr(forecast_result, 'feature_importance'):
+                # Convert DataFrame to dict if needed
+                if hasattr(forecast_result.feature_importance, 'to_dict'):
+                    imp_dict = forecast_result.feature_importance['Importance'].to_dict()
+                else:
+                    imp_dict = forecast_result.feature_importance
+                
                 self.visualizer.plot_feature_importance_single(
-                    ml_results['rf_importance'],
-                    title='Random Forest Feature Importance',
-                    save_name='05_feature_importance.png',
+                    imp_dict,
+                    title='Forecast Feature Importance (Aggregated)',
+                    save_name='05_forecast_feature_importance.png',
                 )
                 fig_count += 1
 
@@ -517,7 +556,7 @@ class MLMCDMPipeline:
         panel_data: PanelData,
         weights: Dict[str, Any],
         ranking_result: HierarchicalRankingResult,
-        ml_results: Dict[str, Any],
+        forecast_result: Optional[Any],
         analysis_results: Dict[str, Any],
         execution_time: float,
     ) -> None:
@@ -586,19 +625,46 @@ class MLMCDMPipeline:
                           float_format='%.6f')
         self.logger.info("Saved: weights_analysis.csv")
 
-        # 7. RF feature importance
-        if ml_results.get('rf_result'):
-            rf = ml_results['rf_result']
-            rf.feature_importance.to_frame('Importance').to_csv(
-                results_dir / 'feature_importance.csv'
-            )
-            self.logger.info("Saved: feature_importance.csv")
-
-            if rf.cv_scores:
-                cv_df = pd.DataFrame(rf.cv_scores)
-                cv_df.index.name = 'Fold'
-                cv_df.to_csv(results_dir / 'cv_scores.csv')
-                self.logger.info("Saved: cv_scores.csv")
+        # 7. ML Forecasting results
+        if forecast_result is not None:
+            # Predictions with intervals
+            if hasattr(forecast_result, 'predictions'):
+                pred_df = forecast_result.predictions.copy()
+                if hasattr(forecast_result, 'lower_bound') and hasattr(forecast_result, 'upper_bound'):
+                    for col in pred_df.columns:
+                        if col in forecast_result.lower_bound.columns:
+                            pred_df[f'{col}_lower'] = forecast_result.lower_bound[col]
+                            pred_df[f'{col}_upper'] = forecast_result.upper_bound[col]
+                pred_df.to_csv(results_dir / 'forecast_predictions.csv', float_format='%.6f')
+                self.logger.info("Saved: forecast_predictions.csv")
+            
+            # Model weights from Super Learner
+            if hasattr(forecast_result, 'model_weights'):
+                weights_df = pd.DataFrame([
+                    {'Model': k, 'Weight': v}
+                    for k, v in sorted(
+                        forecast_result.model_weights.items(),
+                        key=lambda x: x[1], reverse=True
+                    )
+                ])
+                weights_df.to_csv(results_dir / 'forecast_model_weights.csv', index=False,
+                                  float_format='%.6f')
+                self.logger.info("Saved: forecast_model_weights.csv")
+            
+            # Feature importance
+            if hasattr(forecast_result, 'feature_importance'):
+                forecast_result.feature_importance.to_csv(
+                    results_dir / 'forecast_feature_importance.csv',
+                    float_format='%.6f'
+                )
+                self.logger.info("Saved: forecast_feature_importance.csv")
+            
+            # CV metrics
+            if hasattr(forecast_result, 'cv_metrics'):
+                cv_df = pd.DataFrame([forecast_result.cv_metrics])
+                cv_df.to_csv(results_dir / 'forecast_cv_metrics.csv', index=False,
+                             float_format='%.6f')
+                self.logger.info("Saved: forecast_cv_metrics.csv")
 
         # 8. Sensitivity
         if analysis_results.get('sensitivity'):
@@ -660,7 +726,7 @@ class MLMCDMPipeline:
         try:
             report = self._build_text_report(
                 panel_data, weights, ranking_result,
-                ml_results, analysis_results, execution_time,
+                forecast_result, analysis_results, execution_time,
             )
             with open(reports_dir / 'report.txt', 'w', encoding='utf-8') as f:
                 f.write(report)
@@ -679,7 +745,7 @@ class MLMCDMPipeline:
         panel_data: PanelData,
         weights: Dict[str, Any],
         ranking_result: HierarchicalRankingResult,
-        ml_results: Dict[str, Any],
+        forecast_result: Optional[Any],
         analysis_results: Dict[str, Any],
         execution_time: float,
     ) -> str:
@@ -758,16 +824,41 @@ class MLMCDMPipeline:
                     lines.append(f"  {k:<20} {v:>12.4f}")
             lines.append("")
 
-        # --- ML Feature Importance ---
-        if ml_results.get('rf_importance'):
+        # --- ML Forecasting ---
+        if forecast_result is not None:
             lines.append("-" * w)
-            lines.append("  5. RF FEATURE IMPORTANCE")
+            lines.append("  5. ML FORECASTING (State-of-the-Art Ensemble)")
             lines.append("-" * w)
-            sorted_imp = sorted(ml_results['rf_importance'].items(),
-                                key=lambda x: x[1], reverse=True)
-            for feat, imp in sorted_imp[:15]:
-                lines.append(f"  {feat:<20} {imp:.4f}")
-            lines.append("")
+            
+            # Model weights
+            if hasattr(forecast_result, 'model_weights'):
+                lines.append("  Super Learner Model Weights:")
+                for model, weight in sorted(forecast_result.model_weights.items(),
+                                           key=lambda x: x[1], reverse=True):
+                    lines.append(f"    {model:<25} {weight:>8.4f}")
+                lines.append("")
+            
+            # CV metrics
+            if hasattr(forecast_result, 'cv_metrics'):
+                cv = forecast_result.cv_metrics
+                lines.append("  Cross-Validation Performance:")
+                if 'r2' in cv:
+                    lines.append(f"    R² Score    : {cv['r2']:.4f}")
+                if 'rmse' in cv:
+                    lines.append(f"    RMSE        : {cv['rmse']:.4f}")
+                if 'mae' in cv:
+                    lines.append(f"    MAE         : {cv['mae']:.4f}")
+                lines.append("")
+            
+            # Feature importance (top 15)
+            if hasattr(forecast_result, 'feature_importance'):
+                lines.append("  Top 15 Important Features:")
+                imp_df = forecast_result.feature_importance
+                if hasattr(imp_df, 'head'):
+                    imp_df = imp_df.head(15)
+                    for feat, row in imp_df.iterrows():
+                        lines.append(f"    {feat:<25} {row['Importance']:.4f}")
+                lines.append("")
 
         lines.append("=" * w)
         lines.append("  END OF REPORT")

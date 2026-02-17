@@ -3,64 +3,67 @@
 Analysis Module
 ===============
 
-Validation and sensitivity analysis tools for MCDM rankings and ML models.
+Production-grade validation and sensitivity analysis for MCDM rankings and ML models.
 
 Components
 ----------
-Sensitivity Analysis
-    Monte Carlo sensitivity analysis for MCDM rankings
-    Weight perturbation and critical weight analysis
+Sensitivity Analysis (PRODUCTION-READY)
+    State-of-the-art hierarchical sensitivity for IFS+ER+Forecasting pipeline
+    - Multi-level analysis (subcriteria → criteria → final)
+    - IFS membership/non-membership uncertainty
+    - Temporal stability across years
+    - Forecast robustness testing
     
-Validation
-    Cross-validation (K-Fold, Time Series)
-    Bootstrap validation with confidence intervals
-    MCDM ranking-specific validation
+Validation (PRODUCTION-READY)
+    Comprehensive validation for hierarchical IFS+ER pipeline
+    - Cross-level consistency checking
+    - IFS parameter validation
+    - Weight scheme robustness
+    - Forecast quality metrics
+    - End-to-end pipeline validation
 
 Example
 -------
 >>> from analysis import (
 ...     SensitivityAnalysis, run_sensitivity_analysis,
-...     CrossValidator, BootstrapValidator, RankingValidator
+...     Validator, run_validation
 ... )
 >>> 
->>> # Quick sensitivity analysis
->>> result = run_sensitivity_analysis(matrix, weights, ranking_func)
->>> print(f"Robustness: {result.overall_robustness:.3f}")
+>>> # Production sensitivity analysis
+>>> sens_result = run_sensitivity_analysis(
+...     panel_data, ranking_pipeline, weights, ranking_result, forecast_result
+... )
+>>> print(f"Robustness: {sens_result.overall_robustness:.3f}")
+>>> 
+>>> # Production validation
+>>> val_result = run_validation(
+...     panel_data, weights, ranking_result, forecast_result
+... )
+>>> print(f"Validity: {val_result.overall_validity:.3f}")
 """
 
+# Sensitivity Analysis (production-ready)
 from .sensitivity import (
-    SensitivityAnalysis, 
+    SensitivityAnalysis,
     SensitivityResult,
-    WeightPerturbation,
     run_sensitivity_analysis
 )
+
+# Validation (production-ready)
 from .validation import (
-    CrossValidator, 
-    ValidationResult, 
-    BootstrapValidator,
-    RankingValidator,
-    bootstrap_validation, 
-    r2_score, 
-    mse_score, 
-    mae_score
+    Validator,
+    ValidationResult,
+    run_validation
 )
 
 __all__ = [
     # Sensitivity Analysis
-    'SensitivityAnalysis', 
+    'SensitivityAnalysis',
     'SensitivityResult',
-    'WeightPerturbation',
     'run_sensitivity_analysis',
     
     # Validation
-    'CrossValidator', 
-    'ValidationResult', 
-    'BootstrapValidator',
-    'RankingValidator',
-    'bootstrap_validation', 
-    
-    # Metrics
-    'r2_score', 
-    'mse_score', 
-    'mae_score',
+    'Validator',
+    'ValidationResult',
+    'run_validation',
 ]

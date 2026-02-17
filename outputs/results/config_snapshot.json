@@ -44,7 +44,7 @@
     "use_temporal_variance": true
   },
   "weighting": {
-    "bootstrap_iterations": 29,
+    "bootstrap_iterations": 999,
     "stability_threshold": 0.95,
     "epsilon": 1e-10
   },
@@ -66,32 +66,17 @@
       "ifs_saw"
     ]
   },
-  "random_forest": {
-    "n_estimators": 30,
-    "max_depth": 10,
-    "min_samples_split": 5,
-    "min_samples_leaf": 2,
-    "max_features": "sqrt",
-    "n_splits": 4,
-    "gap": 0,
-    "use_lags": true,
-    "n_lags": 2,
-    "use_rolling_features": true,
-    "rolling_window": 2
-  },
-  "neural": {
+  "forecast": {
     "enabled": true,
-    "hidden_units": 64,
-    "n_layers": 2,
-    "dropout": 0.2,
-    "epochs": 100,
-    "batch_size": 16,
-    "learning_rate": 0.001,
-    "patience": 15,
-    "attention": false
+    "target_year": null,
+    "conformal_method": "CQR",
+    "conformal_alpha": 0.05,
+    "cv_folds": 3,
+    "random_state": 42,
+    "verbose": true
   },
   "validation": {
-    "n_simulations": 100,
+    "n_simulations": 1000,
     "weight_perturbation": 0.1,
     "n_sensitivity_scenarios": 100,
     "rank_correlation_threshold": 0.85

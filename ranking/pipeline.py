@@ -45,7 +45,7 @@ from ..mcdm.ifs import (
     IFS_SAW, IFS_TOPSIS, IFS_VIKOR,
     IFS_PROMETHEE, IFS_COPRAS, IFS_EDAS,
 )
-from evidential_reasoning import (
+from ..evidential_reasoning import (
     HierarchicalEvidentialReasoning, HierarchicalERResult,
     BeliefDistribution, EvidentialReasoningEngine,
 )

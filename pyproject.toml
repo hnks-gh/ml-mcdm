@@ -8,7 +8,7 @@ version = "2.0.0"
 description = "Advanced Machine Learning Enhanced Multi-Criteria Decision Making Framework with 10 MCDM Methods, Time-Series Forecasting, and Robust Ensemble Aggregation"
 readme = "README.md"
 license = {text = "MIT"}
-requires-python = ">=3.8,<3.13"
+requires-python = ">=3.8"
 authors = [
     {name = "Son Hoang", email = "hoang@example.com"}
 ]
@@ -96,16 +96,12 @@ Issues = "https://github.com/hoangsonww/ml-mcdm/issues"
 Changelog = "https://github.com/hoangsonww/ml-mcdm/blob/main/CHANGELOG.md"
 
 [tool.setuptools]
-package-dir = {"" = "."}
+packages = ["ml_mcdm"]
+package-dir = {"ml_mcdm" = "."}
 zip-safe = false
 
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["mcdm*", "weighting*", "ranking*", "analysis*", "forecasting*", "evidential_reasoning*"]
-exclude = ["tests*", "docs*", "outputs*", "data*", ".venv*", "*.egg-info*"]
-
 [tool.setuptools.package-data]
-"*" = ["*.csv", "*.json", "*.md", "*.txt", "*.yaml", "*.yml"]
+"ml_mcdm" = ["*.csv", "*.json", "*.md", "*.txt", "*.yaml", "*.yml"]
 
 [tool.black]
 line-length = 100

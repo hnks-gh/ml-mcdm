@@ -75,8 +75,8 @@ class SuperLearner:
         verbose: Print progress messages
 
     Example:
-        >>> from forecasting.tree_ensemble import GradientBoostingForecaster
-        >>> from forecasting.linear import BayesianForecaster
+        >>> from forecasting.gradient_boosting import GradientBoostingForecaster
+        >>> from forecasting.bayesian import BayesianForecaster
         >>>
         >>> base = {
         ...     'gb': GradientBoostingForecaster(),

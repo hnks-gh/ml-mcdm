@@ -409,7 +409,7 @@ class ProgressLogger:
         
         LogContext.set("phase", self.operation)
         
-        self.logger.info(f"▶ Starting: {self.operation}")
+        self.logger.info(f">> Starting: {self.operation}")
         return self
     
     def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
@@ -422,7 +422,7 @@ class ProgressLogger:
         if exc_type is None:
             self.metrics.status = "completed"
             self.logger.info(
-                f"✓ Completed: {self.operation} "
+                f"[OK] Completed: {self.operation} "
                 f"({elapsed:.2f}s{self._get_rate_info()})"
             )
         else:
@@ -488,7 +488,7 @@ class ProgressLogger:
         status : str
             Status indicator
         """
-        icons = {"done": "✓", "skip": "⊘", "warn": "⚡", "fail": "✗"}
+        icons = {"done": "[OK]", "skip": "[SKIP]", "warn": "[WARN]", "fail": "[FAIL]"}
         icon = icons.get(status, "•")
         self.logger.info(f"  {icon} {step_name}")
 
@@ -991,11 +991,11 @@ class PipelineLogger:
     def step(self, message: str, status: str = "info") -> None:
         """Log a step with status indicator."""
         icons = {
-            "info": "•",
-            "done": "✓",
-            "skip": "⊘", 
-            "warn": "⚡",
-            "error": "✗"
+            "info": "*",
+            "done": "[OK]",
+            "skip": "[SKIP]", 
+            "warn": "[WARN]",
+            "error": "[X]"
         }
         icon = icons.get(status, "•")
         self.logger.info(f"  {icon} {message}")

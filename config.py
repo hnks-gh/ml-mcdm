@@ -17,8 +17,7 @@ Configuration Groups
 - IFSConfig                — Intuitionistic Fuzzy Set parameters
 - WeightingConfig          — GTWC + Bayesian Bootstrap
 - EvidentialReasoningConfig— two-stage ER aggregation
-- RandomForestConfig       — RF feature-importance model
-- NeuralConfig             — neural forecaster settings
+- ForecastConfig           — ML forecasting ensemble settings
 - ValidationConfig         — sensitivity / robustness analysis
 - VisualizationConfig      — figure appearance defaults
 """
@@ -232,37 +231,30 @@ class EvidentialReasoningConfig:
 
 
 # =========================================================================
-# ML / Forecasting  (isolated from the main workflow by default)
+# ML Forecasting (State-of-the-Art Ensemble)
 # =========================================================================
 
 @dataclass
-class RandomForestConfig:
-    """Random Forest time-series configuration (feature-importance model)."""
-    n_estimators: int = 200
-    max_depth: Optional[int] = 10
-    min_samples_split: int = 5
-    min_samples_leaf: int = 2
-    max_features: str = "sqrt"
-    n_splits: int = 4
-    gap: int = 0
-    use_lags: bool = True
-    n_lags: int = 2
-    use_rolling_features: bool = True
-    rolling_window: int = 2
-
-
-@dataclass
-class NeuralConfig:
-    """MLP / Attention neural forecaster parameters."""
+class ForecastConfig:
+    """
+    State-of-the-art forecasting configuration for UnifiedForecaster.
+    
+    Uses 6 diverse models + Super Learner + Conformal Prediction.
+    Optimized for small-to-medium panel data (N < 1000).
+    """
     enabled: bool = True
-    hidden_units: int = 64
-    n_layers: int = 2
-    dropout: float = 0.2
-    epochs: int = 100
-    batch_size: int = 16
-    learning_rate: float = 0.001
-    patience: int = 15
-    attention: bool = False
+    target_year: Optional[int] = None  # Auto-set to latest_year + 1
+    
+    # Conformal prediction settings
+    conformal_method: str = 'CQR'  # 'split', 'cv_plus', 'CQR'
+    conformal_alpha: float = 0.05  # 95% coverage
+    
+    # Cross-validation
+    cv_folds: int = 3
+    
+    # Ensemble settings (6 models fixed)
+    random_state: int = 42
+    verbose: bool = True
 
 
 # =========================================================================
@@ -314,9 +306,8 @@ class Config:
     weighting: WeightingConfig = field(default_factory=WeightingConfig)
     er: EvidentialReasoningConfig = field(default_factory=EvidentialReasoningConfig)
 
-    # ML (isolated — not executed in main workflow by default)
-    random_forest: RandomForestConfig = field(default_factory=RandomForestConfig)
-    neural: NeuralConfig = field(default_factory=NeuralConfig)
+    # ML Forecasting
+    forecast: ForecastConfig = field(default_factory=ForecastConfig)
 
     # Analysis
     validation: ValidationConfig = field(default_factory=ValidationConfig)

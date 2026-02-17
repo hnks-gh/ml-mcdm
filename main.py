@@ -14,7 +14,7 @@ Pipeline Phases
 1. Data Loading        – yearly CSVs from data/
 2. Weight Calculation  – GTWC (Entropy + CRITIC + MEREC + SD)
 3. Hierarchical Ranking – 12 MCDM + two-stage ER
-4. ML Feature Importance – Random Forest (optional)
+4. ML Forecasting       – 6-model ensemble + Super Learner + Conformal
 5. Sensitivity Analysis  – Monte Carlo weight perturbation
 6. Visualisation         – high-resolution PNGs
 7. Result Export         – CSV / JSON / text report
@@ -35,8 +35,8 @@ def main():
     # ------------------------------------------------------------------
     # Lazy imports (avoids heavy loading on --help)
     # ------------------------------------------------------------------
-    from pipeline import MLMCDMPipeline
-    from config import get_default_config
+    from ml_mcdm.pipeline import MLMCDMPipeline
+    from ml_mcdm.config import get_default_config
 
     config = get_default_config()
 
@@ -47,12 +47,10 @@ def main():
     if production_mode:
         # ── Production settings ──
         config.weighting.bootstrap_iterations = 999
-        config.random_forest.n_estimators = 200
         config.validation.n_simulations = 1000
     else:
         # ── Quick-test settings (still bootstraps, just fewer iterations) ──
         config.weighting.bootstrap_iterations = 29      # fast but valid
-        config.random_forest.n_estimators = 30           # lighter RF
         config.validation.n_simulations = 100            # fewer MC sims
 
     # ------------------------------------------------------------------
@@ -141,13 +139,13 @@ def print_results(result):
         print(f"\n  SENSITIVITY")
         print(f"    Robustness  : {result.sensitivity_result.overall_robustness:.4f}")
 
-    # RF importance (top 5)
-    if result.rf_feature_importance:
-        print(f"\n  TOP 5 FEATURES (Random Forest)")
-        sorted_imp = sorted(result.rf_feature_importance.items(),
-                            key=lambda x: x[1], reverse=True)[:5]
-        for feat, imp in sorted_imp:
-            print(f"    {feat:<20} {imp:.4f}")
+    # ML Forecasting (if enabled)
+    if result.forecast_result:
+        print(f"\n  ML FORECASTING (Ensemble Performance)")
+        cv_scores = result.forecast_result.cv_scores
+        print(f"    Mean CV R²      : {cv_scores['r2_mean']:.4f}")
+        print(f"    Mean CV MAE     : {cv_scores['mae_mean']:.4f}")
+        print(f"    Prediction Year : {result.forecast_result.target_year or 'Latest+1'}")
 
     # Execution time
     print(f"\n  RUNTIME : {result.execution_time:.2f}s")

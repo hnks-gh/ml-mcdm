@@ -413,20 +413,20 @@ class ForecastEvaluator:
 
             lines.append(f"  Residual mean:        {diag.get('residual_mean', 'N/A'):.6f}")
             lines.append(f"  Residual std:         {diag.get('residual_std', 'N/A'):.6f}")
-            lines.append(f"  Mean ≈ 0:             {'✓' if diag.get('mean_is_zero', False) else '✗'}")
+            lines.append(f"  Mean approx 0:        {'[OK]' if diag.get('mean_is_zero', False) else '[X]'}")
 
             if "durbin_watson" in diag:
                 lines.append(f"  Durbin-Watson:        {diag['durbin_watson']:.4f}")
-                lines.append(f"  No autocorrelation:   {'✓' if diag.get('no_autocorrelation', False) else '✗'}")
+                lines.append(f"  No autocorrelation:   {'[OK]' if diag.get('no_autocorrelation', False) else '[X]'}")
 
             if "heteroscedasticity_corr" in diag:
                 lines.append(f"  Heterosc. corr:       {diag['heteroscedasticity_corr']:.4f}")
-                lines.append(f"  Homoscedastic:        {'✓' if diag.get('homoscedastic', False) else '✗'}")
+                lines.append(f"  Homoscedastic:        {'[OK]' if diag.get('homoscedastic', False) else '[X]'}")
 
             if "skewness" in diag:
                 lines.append(f"  Skewness:             {diag['skewness']:.4f}")
                 lines.append(f"  Excess kurtosis:      {diag['excess_kurtosis']:.4f}")
-                lines.append(f"  ≈ Normal:             {'✓' if diag.get('approximately_normal', False) else '✗'}")
+                lines.append(f"  Approx Normal:        {'[OK]' if diag.get('approximately_normal', False) else '[X]'}")
 
         lines.append("\n" + "=" * 80)
         return "\n".join(lines)

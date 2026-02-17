@@ -12,7 +12,7 @@ This framework combines state-of-the-art Multi-Criteria Decision Making (MCDM) m
 
 1. **Objective Weighting** via Game Theory Weight Combination (GTWC)
 2. **Hierarchical Ranking** using Intuitionistic Fuzzy Sets (IFS) + Evidential Reasoning (ER)
-3. **ML Feature Importance** via Random Forest with cross-validation
+3. **ML Forecasting** via 6-model ensemble + Super Learner + Conformal Prediction
 
 **Application:** Vietnam PAPI (Provincial Governance and Public Administration Performance Index) analysis across 63 provinces over 14 years (2011-2024).
 
@@ -34,17 +34,32 @@ This framework combines state-of-the-art Multi-Criteria Decision Making (MCDM) m
 - **Uncertainty Quantification**: Bayesian Bootstrap (999 iterations)
 - **Temporal Stability**: Split-half validation
 
-### 🤖 Machine Learning
-- **Feature Importance**: Random Forest Gini importance with cross-validated R²
-- **Forecasting** *(available, currently isolated from pipeline)*:
-  - 7 Model Types: GB, RF, ET, Bayesian Ridge, Huber, Ridge, MLP
-  - Performance-Based Weighting, Uncertainty Quantification
+### 🤖 Machine Learning Forecasting
+- **State-of-the-Art Ensemble**: 6 diverse models optimized for N<1000
+  - Gradient Boosting (Huber loss)
+  - Bayesian Ridge (uncertainty quantification)
+  - Quantile Random Forest (distributional forecasting)
+  - Panel VAR (panel-specific dynamics)
+  - Hierarchical Bayesian (partial pooling)
+  - Neural Additive Models (interpretable non-linearity)
+- **Super Learner**: Automatic optimal model weighting via meta-learning
+- **Conformal Prediction**: Distribution-free 95% prediction intervals
+- **Feature Importance**: Aggregated across all 6 models
 
 ### 📊 Analysis & Validation
+- **Hierarchical Sensitivity Analysis**: Multi-level robustness testing
+  - Subcriteria & criteria weight perturbation (±15%)
+  - IFS uncertainty analysis (μ/ν perturbation ±10%)
+  - Temporal stability (year-to-year correlation)
+  - Monte Carlo simulation (100+ iterations)
+  - Forecast robustness testing
+- **Comprehensive Validation**: End-to-end pipeline validation
+  - Cross-level consistency checking
+  - IFS parameter validation (μ + ν ≤ 1)
+  - Weight scheme robustness (temporal + method agreement)
+  - Forecast quality metrics
 - **Convergence Analysis**: Kendall's W concordance coefficient
-- **Sensitivity Analysis**: Weight perturbation studies
-- **Cross-Validation**: Time-series CV with proper temporal ordering
-- **Robustness Testing**: Bootstrap confidence intervals
+- **Bootstrap Uncertainty**: Bayesian Bootstrap confidence intervals
 
 ---
 
@@ -133,9 +148,9 @@ ml-mcdm/
 ├── ranking/               # Ranking orchestrator
 │   └── pipeline.py        # Hierarchical ranking pipeline
 │
-├── analysis/              # Analysis tools
-│   ├── sensitivity.py
-│   └── validation.py
+├── analysis/              # Production-ready analysis
+│   ├── sensitivity.py     # Hierarchical sensitivity (565 lines)
+│   └── validation.py      # Comprehensive validation (533 lines)
 │
 ├── forecasting/           # Machine learning (experimental)
 │   ├── base.py
@@ -255,14 +270,13 @@ Combines 4 weighting methods through:
 
 ---
 
-### ML Feature Importance
+### ML Forecasting
 
-Random Forest Gini importance quantifies each feature's contribution to
-ranking prediction.  Cross-validated R² provides reliability.
-
-> *Full ensemble forecasting (7 models) is implemented in the `forecasting/`
-> module but is currently experimental and isolated from the main pipeline.
-> It will be enhanced and integrated in future releases.*
+The pipeline integrates state-of-the-art ensemble forecasting with 6 diverse
+models (Gradient Boosting, Bayesian Ridge, Quantile Forest, Panel VAR,
+Hierarchical Bayes, Neural Additive Models). Super Learner meta-ensemble
+automatically optimizes model weights, with conformal prediction providing
+distribution-free uncertainty intervals.
 
 ---
 
@@ -279,8 +293,12 @@ ranking prediction.  Cross-validated R² provides reliability.
 | `weights_analysis.csv` | Weight derivation details |
 | `feature_importance.csv` | RF Gini importance scores |
 | `cv_scores.csv` | Cross-validation R² by fold |
-| `sensitivity_analysis.csv` | Weight perturbation results |
-| `robustness_summary.csv` | Robustness metrics |
+| **`sensitivity_subcriteria.csv`** | **28 subcriteria sensitivity scores** |
+| **`sensitivity_criteria.csv`** | **8 criteria sensitivity scores** |
+| **`temporal_stability.csv`** | **Year-to-year rank correlations** |
+| **`top_n_stability.csv`** | **Top-N ranking stability metrics** |
+| **`ifs_sensitivity.csv`** | **IFS μ/ν uncertainty analysis** |
+| `robustness_summary.csv` | Overall robustness + confidence level |
 | `prediction_uncertainty_er.csv` | ER belief-structure uncertainty |
 | `data_summary_statistics.csv` | Descriptive statistics of input data |
 | `execution_summary.json` | Pipeline timing and metadata |

@@ -122,25 +122,65 @@ class OutputManager:
         return saved
 
     # -----------------------------------------------------------------
-    # ML results
+    # Forecasting results
     # -----------------------------------------------------------------
 
-    def save_ml_results(
+    def save_forecast_results(
         self,
-        ml_results: Dict[str, Any],
+        forecast_result: Any,
     ) -> Dict[str, str]:
+        """
+        Save ML forecasting results from UnifiedForecaster.
+        
+        Saves:
+        - Predictions with uncertainty intervals
+        - Model weights from Super Learner
+        - Feature importance aggregated across models
+        - Cross-validation metrics
+        - Model performance diagnostics
+        """
         saved: Dict[str, str] = {}
-        if ml_results.get('rf_importance'):
-            imp_df = pd.DataFrame([
-                {'Feature': k, 'Importance': v}
+        
+        # 1. Predictions with intervals
+        if hasattr(forecast_result, 'predictions'):
+            pred_df = forecast_result.predictions.copy()
+            if hasattr(forecast_result, 'lower_bound'):
+                pred_df = pd.concat([
+                    pred_df,
+                    forecast_result.lower_bound.add_suffix('_lower'),
+                    forecast_result.upper_bound.add_suffix('_upper')
+                ], axis=1)
+            path = self.results_dir / 'forecast_predictions.csv'
+            pred_df.to_csv(path, float_format='%.6f')
+            saved['predictions'] = str(path)
+        
+        # 2. Model weights from Super Learner
+        if hasattr(forecast_result, 'model_weights'):
+            weights_df = pd.DataFrame([
+                {'Model': k, 'Weight': v}
                 for k, v in sorted(
-                    ml_results['rf_importance'].items(),
-                    key=lambda x: x[1], reverse=True,
+                    forecast_result.model_weights.items(),
+                    key=lambda x: x[1], reverse=True
                 )
             ])
-            path = self.results_dir / 'feature_importance.csv'
-            imp_df.to_csv(path, index=False, float_format='%.6f')
+            path = self.results_dir / 'forecast_model_weights.csv'
+            weights_df.to_csv(path, index=False, float_format='%.6f')
+            saved['model_weights'] = str(path)
+        
+        # 3. Feature importance
+        if hasattr(forecast_result, 'feature_importance'):
+            imp_df = forecast_result.feature_importance.copy()
+            path = self.results_dir / 'forecast_feature_importance.csv'
+            imp_df.to_csv(path, float_format='%.6f')
             saved['feature_importance'] = str(path)
+        
+        # 4. CV metrics
+        if hasattr(forecast_result, 'cv_metrics'):
+            cv_df = pd.DataFrame([forecast_result.cv_metrics])
+            path = self.results_dir / 'forecast_cv_metrics.csv'
+            cv_df.to_csv(path, index=False, float_format='%.6f')
+            saved['cv_metrics'] = str(path)
+        
         return saved
 
     # -----------------------------------------------------------------
@@ -151,9 +191,91 @@ class OutputManager:
         self,
         analysis_results: Dict[str, Any],
     ) -> Dict[str, str]:
+        """
+        Save analysis results including hierarchical sensitivity analysis.
+        
+        Saves comprehensive results:
+        - Subcriteria sensitivity (28 subcriteria)
+        - Criteria sensitivity (8 criteria)
+        - Temporal stability (year-to-year correlation)
+        - IFS uncertainty sensitivity
+        - Forecast robustness
+        - Overall robustness score
+        """
         saved: Dict[str, str] = {}
         sens = analysis_results.get('sensitivity')
-        if sens and hasattr(sens, 'weight_sensitivity'):
+        
+        if sens is None:
+            return saved
+        
+        # Save subcriteria sensitivity (main sensitivity analysis)
+        if hasattr(sens, 'subcriteria_sensitivity') and sens.subcriteria_sensitivity:
+            df = pd.DataFrame([
+                {'Subcriterion': k, 'Sensitivity': v}
+                for k, v in sorted(
+                    sens.subcriteria_sensitivity.items(),
+                    key=lambda x: x[1], reverse=True,
+                )
+            ])
+            path = self.results_dir / 'sensitivity_subcriteria.csv'
+            df.to_csv(path, index=False, float_format='%.6f')
+            saved['sensitivity_subcriteria'] = str(path)
+        
+        # Save criteria sensitivity
+        if hasattr(sens, 'criteria_sensitivity') and sens.criteria_sensitivity:
+            df = pd.DataFrame([
+                {'Criterion': k, 'Sensitivity': v}
+                for k, v in sorted(
+                    sens.criteria_sensitivity.items(),
+                    key=lambda x: x[1], reverse=True,
+                )
+            ])
+            path = self.results_dir / 'sensitivity_criteria.csv'
+            df.to_csv(path, index=False, float_format='%.6f')
+            saved['sensitivity_criteria'] = str(path)
+        
+        # Save temporal stability
+        if hasattr(sens, 'temporal_stability') and sens.temporal_stability:
+            df = pd.DataFrame([
+                {'YearPair': k, 'Correlation': v}
+                for k, v in sens.temporal_stability.items()
+            ])
+            path = self.results_dir / 'temporal_stability.csv'
+            df.to_csv(path, index=False, float_format='%.6f')
+            saved['temporal_stability'] = str(path)
+        
+        # Save top-N stability
+        if hasattr(sens, 'top_n_stability') and sens.top_n_stability:
+            df = pd.DataFrame([
+                {'TopN': k, 'Stability': v}
+                for k, v in sorted(sens.top_n_stability.items())
+            ])
+            path = self.results_dir / 'top_n_stability.csv'
+            df.to_csv(path, index=False, float_format='%.6f')
+            saved['top_n_stability'] = str(path)
+        
+        # Save IFS sensitivity
+        if hasattr(sens, 'ifs_membership_sensitivity'):
+            ifs_df = pd.DataFrame([{
+                'IFS_Membership_Sensitivity': sens.ifs_membership_sensitivity,
+                'IFS_NonMembership_Sensitivity': getattr(sens, 'ifs_nonmembership_sensitivity', 0.0),
+            }])
+            path = self.results_dir / 'ifs_sensitivity.csv'
+            ifs_df.to_csv(path, index=False, float_format='%.6f')
+            saved['ifs_sensitivity'] = str(path)
+        
+        # Save overall robustness summary
+        if hasattr(sens, 'overall_robustness'):
+            robust_df = pd.DataFrame([{
+                'Overall_Robustness': sens.overall_robustness,
+                'Confidence_Level': getattr(sens, 'confidence_level', 0.95),
+            }])
+            path = self.results_dir / 'robustness_summary.csv'
+            robust_df.to_csv(path, index=False, float_format='%.6f')
+            saved['robustness'] = str(path)
+        
+        # Legacy fallback for old sensitivity results
+        if hasattr(sens, 'weight_sensitivity') and not hasattr(sens, 'subcriteria_sensitivity'):
             df = pd.DataFrame([
                 {'Criterion': k, 'Sensitivity': v}
                 for k, v in sorted(
@@ -164,13 +286,7 @@ class OutputManager:
             path = self.results_dir / 'sensitivity_analysis.csv'
             df.to_csv(path, index=False, float_format='%.6f')
             saved['sensitivity'] = str(path)
-
-            robust_df = pd.DataFrame([{
-                'Robustness': sens.overall_robustness,
-            }])
-            path = self.results_dir / 'robustness_summary.csv'
-            robust_df.to_csv(path, index=False, float_format='%.6f')
-            saved['robustness'] = str(path)
+        
         return saved
 
     # -----------------------------------------------------------------

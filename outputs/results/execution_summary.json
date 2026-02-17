@@ -1,5 +1,5 @@
 {
-  "execution_time_seconds": 32.82,
+  "execution_time_seconds": 706.45,
   "n_provinces": 63,
   "n_years": 14,
   "years": [
@@ -36,7 +36,7 @@
     "IFS_SAW"
   ],
   "target_year": 2024,
-  "kendall_w": 0.878566967869277,
+  "kendall_w": 0.878659005009654,
   "aggregation": "Evidential Reasoning (Yang & Xu, 2002)",
   "fuzzy_extension": "Intuitionistic Fuzzy Sets (Atanassov, 1986)"
 }

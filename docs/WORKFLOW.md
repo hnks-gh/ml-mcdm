@@ -25,14 +25,16 @@ The ML-MCDM pipeline analyzes panel data (entities × time periods × criteria) 
 - **Two-Stage Aggregation**: Within-criterion ER → Global ER
 - **GTWC Weighting**: Game Theory Weight Combination (Entropy + CRITIC + MEREC + SD)
 - **Bayesian Bootstrap**: 999 iterations for weight uncertainty quantification
+- **ML Forecasting**: 6-model ensemble + Super Learner + Conformal Prediction
 - **Temporal Stability**: Split-half validation for robustness
 
 ### Key Features
 
 - **Automated Pipeline**: Single entry point (`main.py`) runs complete analysis
 - **Modular Design**: 7 independent phases with clean interfaces
+- **State-of-the-Art Forecasting**: UnifiedForecaster with 6 diverse models
 - **Robust Error Handling**: Adaptive zero-handling, graceful fallbacks with detailed logging
-- **High-Quality Outputs**: 300 DPI figures, 14 comprehensive output files, detailed text reports
+- **High-Quality Outputs**: 300 DPI figures, comprehensive CSV/JSON results, detailed reports
 
 ---
 
@@ -73,8 +75,13 @@ The ML-MCDM pipeline analyzes panel data (entities × time periods × criteria) 
 │                           │                                              │
 │  Phase 5: Sensitivity Analysis                                          │
 │  ┌──────────────────────────────────────────────────────────┐           │
-│  │ Monte Carlo weight perturbation (1000 simulations)       │           │
-│  │ → Robustness score + rank stability                     │           │
+│  │ Hierarchical multi-level sensitivity analysis:           │           │
+│  │ • Subcriteria weight perturbation (±15%)                │           │
+│  │ • Criteria weight perturbation (±15%)                   │           │
+│  │ • IFS uncertainty (μ/ν ±10%)                            │           │
+│  │ • Temporal stability (14-year correlation)              │           │
+│  │ • Monte Carlo simulation (100+ iterations)              │           │
+│  │ → Overall robustness score (0-1)                        │           │
 │  └────────────────────────┬─────────────────────────────────┘           │
 │                           │                                              │
 │  Phase 6: Visualization                                                 │
@@ -305,20 +312,6 @@ For **each of 8 criteria** (C01 through C08):
 
 ---
 
-### Phase 6.5: Future Prediction
-
-**Purpose:** Predict next year (2025) rankings using UnifiedForecaster ensemble.
-
-| Component | Description |
-|-----------|-----------|
-| Predicted Components | Forecasted criterion values for 2025 using 7-model ensemble |
-| Predicted Rankings | TOPSIS/VIKOR rankings for 2025 |
-| Uncertainty | Prediction confidence intervals |
-| Model Weights | Contribution of each forecaster (GB, RF, ET, Bayesian, Huber, MLP, Attention) |
-
-**Output:** `predicted_rankings_2025.csv`, `predicted_components_2025.csv`, `prediction_uncertainty_2025.csv`, `forecast_model_weights_2025.csv`
-
----
 
 ### Phase 7: Visualization
 
@@ -333,11 +326,7 @@ For **each of 8 criteria** (C01 through C08):
 | Analysis | Sensitivity, final ranking (09-12) |
 | Predictions | Future predictions comparison (13) |
 
-**Output:** 22 PNG files in `outputs/figures/`
-
----
-
-### Phase 8: Output Generation
+**Output:** 5-10 PNG files in `outputs/figures/`
 
 **Purpose:** Save all results in organized structure.
 
@@ -374,10 +363,13 @@ outputs/
 │   │
 │   ├── feature_importance.csv         # RF Gini importance (28 subcriteria)
 │   ├── cv_scores.csv                  # Time-series CV results (5 folds)
-│   ├── rf_test_metrics.csv            # Final test set performance
 │   │
-│   ├── sensitivity_analysis.csv       # Per-entity rank stability
-│   ├── robustness_summary.csv         # Overall robustness metrics
+│   ├── sensitivity_subcriteria.csv    # Subcriteria sensitivity (28 scores)
+│   ├── sensitivity_criteria.csv       # Criteria sensitivity (8 scores)
+│   ├── temporal_stability.csv         # Year-to-year correlations
+│   ├── top_n_stability.csv            # Top-N ranking stability
+│   ├── ifs_sensitivity.csv            # IFS μ/ν uncertainty
+│   ├── robustness_summary.csv         # Overall robustness + confidence
 │   ├── prediction_uncertainty_er.csv  # IFS hesitancy degrees (π)
 │   │
 │   ├── data_summary_statistics.csv    # Descriptive stats
@@ -391,7 +383,7 @@ outputs/
     └── debug.log                      # Detailed execution trace (DEBUG level)
 ```
 
-**Total Output:** 5 figures + 14 data files + 1 report + 1 log = **21 files**
+**Total Output:** 5 figures + 17 data files + 1 report + 1 log = **24 files**
 
 ---
 
@@ -409,22 +401,21 @@ python main.py --production   # Production mode  (999 bootstrap, 200 RF trees, 1
 **Python API:**
 
 ```python
-from src import MLMCDMPipeline, get_default_config
+from ml_mcdm.pipeline import MLMCDMPipeline
+from ml_mcdm.config import get_default_config
 
 # Quick-test config
 config = get_default_config()
 config.weighting.bootstrap_iterations = 29
-config.random_forest.n_estimators = 30
 config.validation.n_simulations = 100
 
 pipeline = MLMCDMPipeline(config)
 result = pipeline.run()
 
 # Access results
-final_ranking_df = result.get_final_ranking_df()
-top_10 = final_ranking_df.head(10)
-print(f"Kendall's W: {result.ranking_result.kendall_w:.4f}")
-print(f"Robustness: {result.sensitivity_result.overall_robustness:.4f}")
+rankings = result.ranking.final_er_scores
+print(f"Kendall's W: {result.ranking.kendall_w:.4f}")
+print(f"Robustness: {result.analysis['sensitivity'].overall_robustness:.4f}")
 ```
 
 ### Key Configuration Options
@@ -503,10 +494,11 @@ print(f"Robustness: {result.sensitivity_result.overall_robustness:.4f}")
   ✓ Completed in 1.45s
 
 ▶ Phase 5/7: Sensitivity Analysis
-  Monte Carlo: 100 simulations
-  Robustness: 0.9772 (97.72% entities stable)
-  Mean rank change: 0.87
-  ✓ Completed in 3.93s
+  Hierarchical robustness testing (100+ simulations)
+  Robustness: 0.9772 (HIGH confidence)
+  Top-5 stability: 95.2%
+  Temporal correlation: 0.94
+  ✓ Completed in 4.50s
 
 ▶ Phase 6/7: Visualization
   Generated 5 figures (300 DPI)
@@ -532,15 +524,15 @@ The ML-MCDM pipeline provides:
 2. **Objective Weighting**: GTWC (4 methods) with Bayesian Bootstrap uncertainty
 3. **Multi-Method Consensus**: 12 MCDM methods (6 traditional + 6 IFS)
 4. **ML Feature Importance**: Random Forest with time-series CV
-5. **Robustness Validation**: Monte Carlo sensitivity analysis (1000 simulations)
-6. **Comprehensive Outputs**: 5 high-resolution figures + 14 data files + detailed report
+5. **Hierarchical Sensitivity**: Multi-level robustness analysis (100+ simulations)
+6. **Comprehensive Outputs**: 5 high-resolution figures + 17+ data files + detailed report
 7. **Production-Ready**: Single-command execution with quick-test and production modes
 
 **Key Metrics (typical values):**
 - Kendall's W: 0.85-0.90 (strong method agreement)
 - CV R²: 0.70-0.80 (good predictive power)
-- Robustness: 0.95-0.98 (very stable rankings)
-- Bootstrap cosine: > 0.95 (weight stability)
+- Overall Robustness: 0.90-0.98 (very stable rankings)
+- Weight Stability: > 0.95 (bootstrap cosine similarity)
 
 For methodology details, see:
 - [ranking.md](ranking.md) — IFS + ER hierarchical ranking

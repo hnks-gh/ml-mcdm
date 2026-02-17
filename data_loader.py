@@ -14,8 +14,12 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 
-from .config import Config, get_config
-from .logger import get_logger
+try:
+    from .config import Config, get_config
+    from .logger import get_logger
+except ImportError:
+    from config import Config, get_config
+    from logger import get_logger
 
 
 @dataclass
@@ -118,7 +122,7 @@ class DataLoader:
         # Create hierarchical views
         panel_data = self._create_hierarchical_views(yearly_data, hierarchy)
         
-        self.logger.info(f"✓ Loaded: {panel_data.n_provinces} provinces, "
+        self.logger.info(f"[OK] Loaded: {panel_data.n_provinces} provinces, "
                         f"{panel_data.n_years} years, "
                         f"{panel_data.n_subcriteria} subcriteria, "
                         f"{panel_data.n_criteria} criteria")
@@ -159,7 +163,7 @@ class DataLoader:
         for c in criteria_to_subcriteria:
             criteria_to_subcriteria[c] = sorted(criteria_to_subcriteria[c])
         
-        self.logger.info(f"✓ Loaded hierarchy: {len(criteria_to_subcriteria)} criteria, "
+        self.logger.info(f"[OK] Loaded hierarchy: {len(criteria_to_subcriteria)} criteria, "
                         f"{len(subcriteria_to_criteria)} subcriteria")
         
         return HierarchyMapping(

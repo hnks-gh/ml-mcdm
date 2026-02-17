@@ -3,31 +3,29 @@
 Unified Forecasting Orchestrator
 ================================
 
-Combines multiple ML forecasting methods into a unified ensemble,
-with automatic model selection and weighting.
+State-of-the-art ensemble forecasting system optimized for small-to-medium
+panel data (N < 1000).
 
 Features:
-- Multiple model types (tree ensemble, linear, neural)
-- Automatic performance-based weighting
-- Cross-validation with time series split
-- Uncertainty quantification
-- Comprehensive result reporting
+- 5-6 diverse model types (tree, linear, panel-specific)
+- Super Learner meta-ensemble with automatic weighting
+- Conformal prediction for distribution-free intervals
+- Comprehensive feature engineering
+- Time-series aware cross-validation
 """
 
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Optional, Tuple, Union, Any
 from dataclasses import dataclass, field
-from enum import Enum
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 import warnings
 import copy
 
 from .base import BaseForecaster, ForecastResult
-from .tree_ensemble import GradientBoostingForecaster, RandomForestForecaster, ExtraTreesForecaster
-from .linear import BayesianForecaster, HuberForecaster, RidgeForecaster
-from .neural import NeuralForecaster, AttentionForecaster
+from .gradient_boosting import GradientBoostingForecaster
+from .bayesian import BayesianForecaster
 from .features import TemporalFeatureEngineer
 
 # State-of-the-art advanced models
@@ -37,21 +35,9 @@ from .hierarchical_bayes import HierarchicalBayesForecaster
 from .neural_additive import NeuralAdditiveForecaster
 from .super_learner import SuperLearner
 from .conformal import ConformalPredictor
-from .auto_ensemble import AutoEnsembleSelector
 from .evaluation import ForecastEvaluator, AblationStudy
 
 warnings.filterwarnings('ignore')
-
-
-class ForecastMode(Enum):
-    """Forecasting mode selection."""
-    FAST = "fast"             # Quick prediction with fewer models
-    BALANCED = "balanced"     # Good trade-off between speed and accuracy
-    ACCURATE = "accurate"     # Maximum accuracy with all models
-    NEURAL = "neural"         # Neural network focused
-    ENSEMBLE = "ensemble"     # Full ensemble
-    ADVANCED = "advanced"     # State-of-the-art: Super Learner + all advanced models
-    AUTO = "auto"             # Bayesian optimization-selected ensemble
 
 
 @dataclass
@@ -166,21 +152,20 @@ class UnifiedForecaster:
     """
     State-of-the-art unified forecasting system.
 
-    Combines multiple forecasting approaches in a tiered architecture:
+    Optimized for small-to-medium panel data (N < 1000) with statistically-principled
+    ensemble design emphasizing model diversity over quantity.
 
-    Tier 1 - Base Models:
-        1. Gradient Boosting Ensemble (GBM, RF, ET)
-        2. Quantile Random Forest (distributional forecasting)
-        3. Panel VAR (panel fixed effects + autoregressive)
-        4. Hierarchical Bayesian (partial pooling)
-        5. Neural Additive Models (interpretable non-linearity)
-        6. Linear Methods (Bayesian Ridge, Huber, Ridge)
-        7. Neural Networks (MLP, Attention) [optional]
+    Tier 1 - Base Models (6 diverse models):
+        1. Gradient Boosting (robust tree ensemble)
+        2. Bayesian Ridge (linear with uncertainty quantification)
+        3. Quantile Random Forest (distributional forecasting)
+        4. Panel VAR (panel fixed effects + autoregressive)
+        5. Hierarchical Bayesian (partial pooling)
+        6. Neural Additive Models (interpretable non-linearity)
 
     Tier 2 - Meta-Ensemble:
         - Super Learner: Trains meta-learner on out-of-fold predictions
-        - Auto-Ensemble: Bayesian optimization for model selection
-        - Replaces simple weighted averaging with learned combination
+        - Optimal weighting learned from validation performance
 
     Tier 3 - Uncertainty Calibration:
         - Conformal Prediction: Distribution-free guaranteed intervals
@@ -188,162 +173,74 @@ class UnifiedForecaster:
         - Hierarchical Bayes: Posterior predictive uncertainty
 
     Features:
-    - Automatic model selection and weighting via Super Learner
-    - Comprehensive feature engineering
+    - Automatic model weighting via Super Learner
+    - Comprehensive temporal feature engineering
     - Multi-level ensemble stacking with meta-learning
-    - Calibrated uncertainty quantification
-    - Time-series aware validation
-    - Bayesian optimization for model selection (AUTO mode)
+    - Calibrated uncertainty quantification (95% coverage guarantee)
+    - Time-series aware cross-validation
 
     Parameters:
-        mode: Forecasting mode (FAST, BALANCED, ACCURATE, NEURAL,
-              ENSEMBLE, ADVANCED, AUTO)
-        include_neural: Whether to include neural models
-        include_tree_ensemble: Whether to include tree-based models
-        include_linear: Whether to include linear models
-        include_advanced: Whether to include advanced models
-                         (Panel VAR, QRF, Hier. Bayes, NAM)
-        use_super_learner: Whether to use Super Learner meta-ensemble
-                          instead of simple weighted averaging
-        use_conformal: Whether to add conformal prediction intervals
         conformal_method: Conformal method ('split', 'cv_plus', 'adaptive')
-        conformal_alpha: Miscoverage rate for conformal intervals
-        cv_folds: Number of cross-validation folds
-        random_state: Random seed
+        conformal_alpha: Miscoverage rate for conformal intervals (default: 0.05 = 95% coverage)
+        cv_folds: Number of cross-validation folds (default: 3)
+        random_state: Random seed for reproducibility
         verbose: Print progress messages
 
     Example:
-        >>> # Standard mode (backward compatible)
-        >>> forecaster = UnifiedForecaster(mode=ForecastMode.BALANCED)
+        >>> forecaster = UnifiedForecaster()
         >>> result = forecaster.fit_predict(panel_data, target_year=2025)
         >>>
-        >>> # Advanced mode with Super Learner + all models
-        >>> forecaster = UnifiedForecaster(mode=ForecastMode.ADVANCED)
-        >>> result = forecaster.fit_predict(panel_data, target_year=2025)
-        >>>
-        >>> # Auto mode with Bayesian optimization
-        >>> forecaster = UnifiedForecaster(mode=ForecastMode.AUTO)
+        >>> # With custom conformal settings
+        >>> forecaster = UnifiedForecaster(conformal_alpha=0.10, cv_folds=5)
         >>> result = forecaster.fit_predict(panel_data, target_year=2025)
     """
 
     def __init__(self,
-                 mode: ForecastMode = ForecastMode.BALANCED,
-                 include_neural: bool = False,
-                 include_tree_ensemble: bool = True,
-                 include_linear: bool = True,
-                 include_advanced: bool = True,
-                 use_super_learner: bool = True,
-                 use_conformal: bool = True,
                  conformal_method: str = 'cv_plus',
                  conformal_alpha: float = 0.05,
                  cv_folds: int = 3,
                  random_state: int = 42,
                  verbose: bool = True):
-        self.mode = mode
-        self.include_neural = include_neural
-        self.include_tree_ensemble = include_tree_ensemble
-        self.include_linear = include_linear
-        self.include_advanced = include_advanced
-        self.use_super_learner = use_super_learner
-        self.use_conformal = use_conformal
         self.conformal_method = conformal_method
         self.conformal_alpha = conformal_alpha
         self.cv_folds = cv_folds
         self.random_state = random_state
         self.verbose = verbose
 
-        # Auto-configure based on mode
-        if mode == ForecastMode.ADVANCED:
-            self.include_advanced = True
-            self.use_super_learner = True
-            self.use_conformal = True
-        elif mode == ForecastMode.AUTO:
-            self.include_advanced = True
-            self.use_super_learner = False  # Auto uses Optuna instead
-            self.use_conformal = True
-        elif mode == ForecastMode.FAST:
-            self.include_advanced = False
-            self.use_super_learner = False
-            self.use_conformal = False
-
         self.models_: Dict[str, BaseForecaster] = {}
         self.model_weights_: Dict[str, float] = {}
         self.feature_engineer_ = TemporalFeatureEngineer()
         self.super_learner_: Optional[SuperLearner] = None
-        self.auto_ensemble_: Optional[AutoEnsembleSelector] = None
         self.conformal_predictor_: Optional[ConformalPredictor] = None
         self.evaluator_: Optional[ForecastEvaluator] = None
     
     def _create_models(self) -> Dict[str, BaseForecaster]:
-        """Create model instances based on mode."""
+        """Create all base model instances (6 diverse models)."""
         models = {}
 
-        # --- Tree-based ensemble models ---
-        if self.include_tree_ensemble:
-            if self.mode in [ForecastMode.BALANCED, ForecastMode.ACCURATE,
-                             ForecastMode.ENSEMBLE, ForecastMode.ADVANCED,
-                             ForecastMode.AUTO]:
-                models['GradientBoosting'] = GradientBoostingForecaster(
-                    n_estimators=200, random_state=self.random_state
-                )
-                models['RandomForest'] = RandomForestForecaster(
-                    n_estimators=100, random_state=self.random_state
-                )
-            if self.mode in [ForecastMode.ACCURATE, ForecastMode.ENSEMBLE,
-                             ForecastMode.ADVANCED, ForecastMode.AUTO]:
-                models['ExtraTrees'] = ExtraTreesForecaster(
-                    n_estimators=100, random_state=self.random_state
-                )
-            if self.mode == ForecastMode.FAST:
-                models['GradientBoosting'] = GradientBoostingForecaster(
-                    n_estimators=50, random_state=self.random_state
-                )
+        # Tree-based model (1 model)
+        models['GradientBoosting'] = GradientBoostingForecaster(
+            n_estimators=200, random_state=self.random_state
+        )
 
-        # --- Linear models ---
-        if self.include_linear:
-            if self.mode in [ForecastMode.BALANCED, ForecastMode.ACCURATE,
-                             ForecastMode.ENSEMBLE, ForecastMode.ADVANCED,
-                             ForecastMode.AUTO]:
-                models['BayesianRidge'] = BayesianForecaster()
-                models['Huber'] = HuberForecaster()
-            if self.mode == ForecastMode.FAST:
-                models['Ridge'] = RidgeForecaster()
+        # Bayesian linear model (1 model)
+        models['BayesianRidge'] = BayesianForecaster()
 
-        # --- Advanced models (new state-of-the-art) ---
-        if self.include_advanced:
-            if self.mode in [ForecastMode.BALANCED, ForecastMode.ACCURATE,
-                             ForecastMode.ENSEMBLE, ForecastMode.ADVANCED,
-                             ForecastMode.AUTO]:
-                # Quantile Random Forest (distributional forecasting)
-                models['QuantileRF'] = QuantileRandomForestForecaster(
-                    n_estimators=200, random_state=self.random_state
-                )
-                # Panel VAR (fixed effects + autoregressive)
-                models['PanelVAR'] = PanelVARForecaster(
-                    n_lags=2, alpha=1.0, use_fixed_effects=True,
-                    random_state=self.random_state
-                )
-                # Hierarchical Bayesian (partial pooling)
-                models['HierarchicalBayes'] = HierarchicalBayesForecaster(
-                    n_em_iterations=50, random_state=self.random_state
-                )
-                # Neural Additive Model (interpretable non-linearity)
-                models['NAM'] = NeuralAdditiveForecaster(
-                    n_basis_per_feature=50, n_iterations=10,
-                    random_state=self.random_state
-                )
-
-        # --- Neural network models (optional) ---
-        if self.include_neural:
-            if self.mode in [ForecastMode.NEURAL, ForecastMode.ACCURATE,
-                             ForecastMode.ENSEMBLE, ForecastMode.ADVANCED]:
-                models['NeuralMLP'] = NeuralForecaster(
-                    hidden_dims=[128, 64], n_epochs=50, seed=self.random_state
-                )
-            if self.mode in [ForecastMode.NEURAL, ForecastMode.ENSEMBLE]:
-                models['Attention'] = AttentionForecaster(
-                    hidden_dim=64, n_epochs=50, seed=self.random_state
-                )
+        # Advanced panel-specific models (4 models)
+        models['QuantileRF'] = QuantileRandomForestForecaster(
+            n_estimators=200, random_state=self.random_state
+        )
+        models['PanelVAR'] = PanelVARForecaster(
+            n_lags=2, alpha=1.0, use_fixed_effects=True,
+            random_state=self.random_state
+        )
+        models['HierarchicalBayes'] = HierarchicalBayesForecaster(
+            n_em_iterations=50, random_state=self.random_state
+        )
+        models['NAM'] = NeuralAdditiveForecaster(
+            n_basis_per_feature=50, n_iterations=10,
+            random_state=self.random_state
+        )
 
         return models
     
@@ -355,28 +252,27 @@ class UnifiedForecaster:
         """
         Fit models and make predictions for target year.
 
-        Architecture (ADVANCED / AUTO modes):
-            1. Feature engineering (temporal lags, rolling stats, etc.)
-            2. Create base models (tree, linear, advanced)
-            3. Super Learner meta-ensemble OR Auto-Ensemble selection
-            4. Conformal prediction interval calibration
-            5. Return predictions + calibrated uncertainty
+        Pipeline:
+            1. Temporal feature engineering (lags, rolling stats, momentum, trend)
+            2. Train 6 diverse base models (tree, linear, panel-specific)
+            3. Super Learner meta-ensemble (automatic optimal weighting)
+            4. Conformal prediction calibration (distribution-free intervals)
+            5. Return predictions with uncertainty quantification
 
         Args:
             panel_data: Panel data object with temporal data
             target_year: Year to predict
-            weights: Optional pre-specified model weights
+            weights: Optional pre-specified model weights (overrides Super Learner)
 
         Returns:
-            UnifiedForecastResult with predictions and analysis
+            UnifiedForecastResult with predictions, intervals, and diagnostics
         """
         if self.verbose:
-            print(f"Starting unified forecasting for {target_year}...")
-            print(f"  Mode: {self.mode.value}")
+            print(f"Starting state-of-the-art forecasting for {target_year}...")
 
         # ===== Stage 1: Feature engineering =====
         if self.verbose:
-            print("  Stage 1: Engineering features...")
+            print("  Stage 1: Engineering temporal features...")
 
         X_train, y_train, X_pred, _ = self.feature_engineer_.fit_transform(
             panel_data, target_year
@@ -386,82 +282,34 @@ class UnifiedForecaster:
         self.models_ = self._create_models()
 
         if self.verbose:
-            print(f"  Stage 2: {len(self.models_)} base models created:")
+            print(f"  Stage 2: {len(self.models_)} diverse base models created:")
             for name in self.models_:
                 print(f"    - {name}")
 
-        # ===== Stage 3: Model combination strategy =====
+        # ===== Stage 3: Super Learner meta-ensemble =====
         X_arr = X_train.values
         y_arr = y_train.values
+        
+        if self.verbose:
+            print("  Stage 3: Training Super Learner meta-ensemble...")
 
-        if self.mode == ForecastMode.AUTO:
-            # AUTO mode: Bayesian optimization ensemble selection
-            if self.verbose:
-                print("  Stage 3: Auto-Ensemble (Bayesian Optimization)...")
+        self.super_learner_ = SuperLearner(
+            base_models=self.models_,
+            meta_learner_type='ridge',
+            n_cv_folds=min(self.cv_folds + 2, 5),
+            positive_weights=True,
+            normalize_weights=True,
+            random_state=self.random_state,
+            verbose=self.verbose,
+        )
+        self.super_learner_.fit(X_arr, y_arr)
 
-            self.auto_ensemble_ = AutoEnsembleSelector(
-                base_models=self.models_,
-                n_trials=50,
-                cv_folds=self.cv_folds,
-                min_models=2,
-                max_models=min(6, len(self.models_)),
-                random_state=self.random_state,
-                verbose=self.verbose,
-            )
-            self.auto_ensemble_.fit(X_arr, y_arr)
+        self.model_weights_ = self.super_learner_.get_meta_weights()
+        cv_scores = self.super_learner_.get_cv_scores()
 
-            self.model_weights_ = self.auto_ensemble_.get_best_weights()
-            cv_scores = {name: [] for name in self.models_}
-            predictions_arr = self.auto_ensemble_.predict(X_pred.values)
-            unc_arr = self.auto_ensemble_.predict_with_uncertainty(X_pred.values)
-            if isinstance(unc_arr, tuple):
-                predictions_arr, uncertainty_arr = unc_arr
-            else:
-                uncertainty_arr = np.zeros_like(predictions_arr)
-
-        elif self.use_super_learner and self.mode in [
-            ForecastMode.ADVANCED, ForecastMode.ACCURATE,
-            ForecastMode.ENSEMBLE
-        ]:
-            # ADVANCED mode: Super Learner meta-ensemble
-            if self.verbose:
-                print("  Stage 3: Super Learner meta-ensemble...")
-
-            self.super_learner_ = SuperLearner(
-                base_models=self.models_,
-                meta_learner_type='ridge',
-                n_cv_folds=min(self.cv_folds + 2, 5),
-                positive_weights=True,
-                normalize_weights=True,
-                random_state=self.random_state,
-                verbose=self.verbose,
-            )
-            self.super_learner_.fit(X_arr, y_arr)
-
-            self.model_weights_ = self.super_learner_.get_meta_weights()
-            cv_scores = self.super_learner_.get_cv_scores()
-
-            predictions_arr, uncertainty_arr = (
-                self.super_learner_.predict_with_uncertainty(X_pred.values)
-            )
-
-        else:
-            # Legacy mode: simple weighted averaging
-            if self.verbose:
-                print("  Stage 3: Cross-validation + weighted averaging...")
-
-            cv_scores = self._cross_validate(X_arr, y_arr)
-
-            if weights is None:
-                self.model_weights_ = self._calculate_weights(cv_scores)
-            else:
-                self.model_weights_ = weights
-
-            # Fit all models on full training data
-            for name, model in self.models_.items():
-                model.fit(X_arr, y_arr)
-
-            predictions_arr, uncertainty_arr = self._ensemble_predict(X_pred.values)
+        predictions_arr, uncertainty_arr = (
+            self.super_learner_.predict_with_uncertainty(X_pred.values)
+        )
 
         # Reshape if needed
         if predictions_arr.ndim == 1:
@@ -494,49 +342,42 @@ class UnifiedForecaster:
         }
 
         # ===== Stage 5: Conformal prediction calibration =====
-        if self.use_conformal:
+        if self.verbose:
+            print("  Stage 4: Conformal prediction calibration...")
+
+        try:
+            self.conformal_predictor_ = ConformalPredictor(
+                method=self.conformal_method,
+                alpha=self.conformal_alpha,
+                random_state=self.random_state,
+            )
+
+            # Calibrate against Super Learner
+            cal_model = self.super_learner_
+
+            self.conformal_predictor_.calibrate(
+                cal_model, X_arr, y_arr, cv_folds=self.cv_folds
+            )
+
+            # Overwrite intervals with conformal-calibrated intervals
+            cp_lower, cp_upper = self.conformal_predictor_.predict_intervals(
+                X_pred.values, point_predictions=pred_df.values.mean(axis=1)
+            )
+
+            # Apply conformal intervals to all components
+            for col in y_train.columns:
+                intervals['lower'][col] = cp_lower
+                intervals['upper'][col] = cp_upper
+
             if self.verbose:
-                print("  Stage 5: Conformal prediction calibration...")
+                width = self.conformal_predictor_.get_interval_width()
+                print(f"    Conformal interval width: {width:.4f}")
+                print(f"    Coverage guarantee: {(1 - self.conformal_alpha) * 100:.0f}%")
 
-            try:
-                self.conformal_predictor_ = ConformalPredictor(
-                    method=self.conformal_method,
-                    alpha=self.conformal_alpha,
-                    random_state=self.random_state,
-                )
-
-                # Determine which model to calibrate against
-                if self.super_learner_ is not None:
-                    cal_model = self.super_learner_
-                elif self.auto_ensemble_ is not None:
-                    cal_model = self.auto_ensemble_
-                else:
-                    # Use a simple wrapper for the weighted ensemble
-                    cal_model = self._create_ensemble_wrapper()
-
-                self.conformal_predictor_.calibrate(
-                    cal_model, X_arr, y_arr, cv_folds=self.cv_folds
-                )
-
-                # Overwrite intervals with conformal-calibrated intervals
-                cp_lower, cp_upper = self.conformal_predictor_.predict_intervals(
-                    X_pred.values, point_predictions=pred_df.values.mean(axis=1)
-                )
-
-                # Apply conformal intervals to all components
-                for col in y_train.columns:
-                    intervals['lower'][col] = cp_lower
-                    intervals['upper'][col] = cp_upper
-
-                if self.verbose:
-                    width = self.conformal_predictor_.get_interval_width()
-                    print(f"    Conformal interval width: {width:.4f}")
-                    print(f"    Coverage guarantee: {(1 - self.conformal_alpha) * 100:.0f}%")
-
-            except Exception as e:
-                if self.verbose:
-                    print(f"    Warning: Conformal calibration failed: {e}")
-                    print("    Using standard Gaussian intervals as fallback.")
+        except Exception as e:
+            if self.verbose:
+                print(f"    Warning: Conformal calibration failed: {e}")
+                print("    Using standard Gaussian intervals as fallback.")
 
         # ===== Stage 6: Aggregate results =====
         feature_importance = self._aggregate_feature_importance(
@@ -556,12 +397,8 @@ class UnifiedForecaster:
         training_info = {
             'n_samples': len(X_train),
             'n_features': X_train.shape[1],
-            'mode': self.mode.value,
-            'ensemble_method': (
-                'super_learner' if self.super_learner_ is not None
-                else 'auto_ensemble' if self.auto_ensemble_ is not None
-                else 'weighted_averaging'
-            ),
+            'mode': 'advanced',  # Always use ADVANCED mode
+            'ensemble_method': 'super_learner',  # Always use Super Learner
             'conformal_calibrated': self.conformal_predictor_ is not None,
         }
 
