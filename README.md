@@ -31,7 +31,7 @@ This framework combines state-of-the-art Multi-Criteria Decision Making (MCDM) m
 ### ⚖️ Objective Weight Calculation
 - **4 Complementary Methods**: Entropy, CRITIC, MEREC, Standard Deviation
 - **Game Theory Combination**: Intra-group hybridization + cooperative optimization
-- **Uncertainty Quantification**: Bayesian Bootstrap (199 iterations)
+- **Uncertainty Quantification**: Bayesian Bootstrap (999 iterations)
 - **Temporal Stability**: Split-half validation
 
 ### 🤖 Machine Learning Forecasting
@@ -266,7 +266,7 @@ Combines 4 weighting methods through:
    W^* = α_1 \cdot W_{\text{GroupA}} + α_2 \cdot W_{\text{GroupB}}
    $$
 
-4. **Bayesian Bootstrap:** 199 iterations for uncertainty quantification
+4. **Bayesian Bootstrap:** 999 iterations for uncertainty quantification
 
 ---
 

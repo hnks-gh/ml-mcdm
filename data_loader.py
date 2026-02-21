@@ -77,6 +77,24 @@ class PanelData:
     @property
     def n_criteria(self) -> int:
         return len(self.hierarchy.all_criteria)
+
+    @property
+    def components(self) -> List[str]:
+        """Alias for subcriteria names (used by forecasting module)."""
+        return self.hierarchy.all_subcriteria
+
+    @property
+    def cross_section(self) -> Dict:
+        """Alias for subcriteria_cross_section (used by MCDM/forecasting)."""
+        return self.subcriteria_cross_section
+
+    def get_province(self, province: str) -> pd.DataFrame:
+        """Get a province's subcriteria data across all years, indexed by year."""
+        long = self.subcriteria_long
+        prov_data = long[long['Province'] == province].copy()
+        prov_data = prov_data.set_index('Year')
+        cols = [c for c in prov_data.columns if c != 'Province']
+        return prov_data[cols]
     
     def get_subcriteria_year(self, year: int) -> pd.DataFrame:
         """Get subcriteria data for specific year."""

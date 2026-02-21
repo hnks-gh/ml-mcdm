@@ -36,7 +36,7 @@ Step 3: Game Theory Weight Combination (GTWC)
       └── W* = α₁·W_GroupA + α₂·W_GroupB
   ↓
 Step 4: Bayesian Bootstrap (uncertainty quantification)
-  ├── Dirichlet resampling (199 iterations)
+  ├── Dirichlet resampling (999 iterations)
   ├── Re-compute Steps 2-3 on each sample
   └── Calculate posterior statistics
   ↓
@@ -405,7 +405,7 @@ class GameTheoryWeightCombination:
 #### **Algorithm**
 
 ```
-For each iteration b = 1, ..., B (default B=199):
+For each iteration b = 1, ..., B (default B=999):
 
   1. Draw Dirichlet weights:
      g_i ~ Exponential(1) for i = 1, ..., N
@@ -427,12 +427,6 @@ After B iterations:
   - Standard deviation: σ_j = sqrt((1/(B-1)) Σ_b (w_j^(b) - w̄_j)²)
   - 95% CI: [Q_0.025(w_j), Q_0.975(w_j)]
 ```
-
-**Why B=199?**
-- Odd number avoids interpolation at 2.5th and 97.5th percentiles
-- Efron & Tibshirani (1993) recommend ~200 replicates for standard error estimation
-- Sufficient for stable bootstrap confidence intervals (Davison & Hinkley, 1997)
-- Provides good balance between computational efficiency and statistical precision
 
 **Implementation:**
 ```python
@@ -622,7 +616,7 @@ details = {
     
     # Bootstrap statistics
     'bootstrap': {
-        'iterations': 199,
+        'iterations': 999,
         'mean_weights': {criterion: float, ...},  # Final output
         'std_weights': {criterion: float, ...},   # Uncertainty
         'ci_lower_2_5': {criterion: float, ...},  # 95% CI lower
@@ -673,9 +667,9 @@ details = {
 @dataclass
 class WeightingConfig:
     # Bayesian Bootstrap
-    bootstrap_iterations: int = 199
+    bootstrap_iterations: int = 999
     # Odd number → no interpolation at percentiles
-    # 199 is sufficient for 95% CIs (Efron & Tibshirani, 1993)
+    # 999 provides robust 95% CIs (Efron & Tibshirani, 1993)
     
     # Stability verification
     stability_threshold: float = 0.95

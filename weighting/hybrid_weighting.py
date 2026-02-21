@@ -37,7 +37,7 @@ class HybridWeightingPipeline:
     
     Parameters
     ----------
-    bootstrap_iterations : int, default=199
+    bootstrap_iterations : int, default=999
         Number of Bayesian Bootstrap iterations for uncertainty quantification.
     stability_threshold : float, default=0.95
         Minimum cosine similarity for temporal stability (split-half test).
@@ -74,7 +74,7 @@ class HybridWeightingPipeline:
     >>> 
     >>> # Initialize pipeline with GTWC fusion
     >>> pipeline = HybridWeightingPipeline(
-    >>>     bootstrap_iterations=199
+    >>>     bootstrap_iterations=999
     >>> )
     >>> 
     >>> # Calculate weights
@@ -147,7 +147,7 @@ class HybridWeightingPipeline:
 
     def __init__(
         self,
-        bootstrap_iterations: int = 199,
+        bootstrap_iterations: int = 999,
         stability_threshold: float = 0.95,
         epsilon: float = 1e-10,
         seed: int = 42,
@@ -155,7 +155,7 @@ class HybridWeightingPipeline:
         """
         Parameters
         ----------
-        bootstrap_iterations : int, default=199
+        bootstrap_iterations : int, default=999
             Number of Bayesian bootstrap iterations for uncertainty quantification.
         stability_threshold : float, default=0.95
             Minimum required stability score (0-1) for validation.

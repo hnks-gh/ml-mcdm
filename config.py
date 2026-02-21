@@ -203,7 +203,7 @@ class WeightingConfig:
     4. Bayesian Bootstrap uncertainty quantification
     5. Split-half temporal stability verification
     """
-    bootstrap_iterations: int = 199
+    bootstrap_iterations: int = 999
     stability_threshold: float = 0.95
     epsilon: float = 1e-10
 
