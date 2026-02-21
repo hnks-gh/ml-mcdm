@@ -87,13 +87,19 @@ $$
 To convert IFN to crisp score for comparison:
 
 $$
-S(\text{IFN}) = \frac{\mu - \nu + 1}{2} \in [0, 1]
+S(\text{IFN}) = \mu - \nu \in [-1, 1]
 $$
+
+**Reference:** Chen & Tan (1994)
 
 **Interpretation:**
 - S = 1: Perfect membership (μ=1, ν=0)
-- S = 0.5: Complete hesitancy (μ=0, ν=0, π=1) or neutrality (μ=0.5, ν=0.5)
-- S = 0: Perfect non-membership (μ=0, ν=1)
+- S = 0: Complete hesitancy (μ=0, ν=0, π=1) or neutrality (μ=0.5, ν=0.5)
+- S = -1: Perfect non-membership (μ=0, ν=1)
+
+> **Note:** Some presentations rescale to [0,1] via $S' = (\mu - \nu + 1)/2$; the
+> implementation uses the raw Chen–Tan form $S = \mu - \nu$ which preserves the
+> same ranking order.
 
 ### 1.3 IFS Construction from Temporal Data
 
@@ -112,40 +118,40 @@ for each alternative i, criterion j:
     # Step 1: Membership from normalized current value
     μ_ij = current_data[i, j]  # Already in [0, 1]
     
-    # Step 2: Non-membership from temporal uncertainty
+    # Step 2: Hesitancy from temporal uncertainty
     relative_std = historical_std[i, j] / (global_range[j] + ε)
-    ν_ij = spread_factor × relative_std
+    π_ij = min(spread_factor × relative_std, 1 − μ_ij)
+    π_ij = max(π_ij, 0)
     
-    # Step 3: Enforce IFS constraint
-    if μ_ij + ν_ij > 1:
-        scaling = 1 / (μ_ij + ν_ij)
-        μ_ij = μ_ij × scaling
-        ν_ij = ν_ij × scaling
-    
-    # Step 4: Compute hesitancy
-    π_ij = 1 - μ_ij - ν_ij
+    # Step 3: Non-membership as remainder
+    ν_ij = 1 − μ_ij − π_ij
     
     IFN[i, j] = (μ_ij, ν_ij, π_ij)
 ```
 
 **Rationale:**
-- High temporal variability → high ν (more uncertainty about true performance)
-- Stable performance → low ν (confident in current value)
-- Hesitancy π captures unexplained variation
+- High temporal variability → high π (more hesitancy / indeterminacy)
+- Stable performance → low π (confident in current value)
+- Non-membership ν absorbs the leftover after μ and π are set
 
 ### 1.4 IFS Distance Metrics
 
-#### Euclidean Distance
+All distances below are the **Szmidt–Kacprzyk normalized** forms
+(factor $1/2$ ensures $d \in [0,1]$ for a single IFN pair).
+
+#### Normalized Euclidean Distance
 $$
-d_E(A, B) = \sqrt{(\mu_A - \mu_B)^2 + (\nu_A - \nu_B)^2 + (\pi_A - \pi_B)^2}
+d_E(A, B) = \sqrt{\frac{1}{2}\left[(\mu_A - \mu_B)^2 + (\nu_A - \nu_B)^2 + (\pi_A - \pi_B)^2\right]}
 $$
 
-#### Hamming Distance
+#### Normalized Hamming Distance
 $$
-d_H(A, B) = |\mu_A - \mu_B| + |\nu_A - \nu_B| + |\pi_A - \pi_B|
+d_H(A, B) = \frac{1}{2}\left(|\mu_A - \mu_B| + |\nu_A - \nu_B| + |\pi_A - \pi_B|\right)
 $$
 
 #### Szmidt-Kacprzyk Normalized Distance
+
+Same as the normalized Euclidean distance above (used in IFS-VIKOR and IFS-TOPSIS):
 $$
 d_{SK}(A, B) = \sqrt{\frac{1}{2}\left[(\mu_A - \mu_B)^2 + (\nu_A - \nu_B)^2 + (\pi_A - \pi_B)^2\right]}
 $$
@@ -215,18 +221,22 @@ All traditional methods operate on **min-max normalized crisp values** ∈ [0, 1
 
 For each criterion j, define preference $P_j(a, b)$ based on difference $d = x_{aj} - x_{bj}$:
 
-**V-shape function:**
+**V-shape preference function (Type III, default):**
 $$
 P_j(a, b) = \begin{cases}
-0 & \text{if } d \leq q \\
-\frac{d - q}{p - q} & \text{if } q < d < p \\
+0 & \text{if } d \leq 0 \\
+\frac{d}{p} & \text{if } 0 < d < p \\
 1 & \text{if } d \geq p
 \end{cases}
 $$
 
 where:
-- q: Indifference threshold (0.1)
-- p: Preference threshold (0.3)
+- p: Preference threshold (default 0.3)
+
+> **Note:** A V-shape with indifference threshold (Type V) is also
+> available via $q$ (indifference threshold, default 0.1):
+>
+> $P_j = 0$ if $d \le q$; $P_j = (d-q)/(p-q)$ if $q < d < p$; $P_j = 1$ if $d \ge p$.
 
 **Aggregated Preferences:**
 $$
@@ -264,7 +274,7 @@ where:
 
 3. Relative significance:
    $$
-   Q_i = S_{+i} + \frac{\sum_i S_{-i}}{S_{-i} \sum_i \frac{1}{S_{-i}}}
+   Q_i = S_{+i} + \frac{\sum_k S_{-k}}{S_{-i} \cdot \sum_k \frac{1}{S_{-k}}}
    $$
 
 4. Utility degree:
@@ -303,9 +313,14 @@ where:
    SP_i = \sum_j w_j \cdot PDA_{ij}, \quad SN_i = \sum_j w_j \cdot NDA_{ij}
    $$
 
-5. Appraisal score:
+5. Normalize:
    $$
-   AS_i = \frac{1}{2}(SP_i + 1 - SN_i)
+   NSP_i = \frac{SP_i}{\max_k SP_k}, \quad NSN_i = 1 - \frac{SN_i}{\max_k SN_k}
+   $$
+
+6. Appraisal score:
+   $$
+   AS_i = \frac{NSP_i + NSN_i}{2}
    $$
 
 **Pros:** Uses average as reference (robust to outliers)  
@@ -343,7 +358,7 @@ All IFS methods operate on **IFSDecisionMatrix** containing IFNs (μ, ν, π).
 
 **Steps:**
 1. Weighted IFS matrix: $\tilde{v}_{ij} = w_j \otimes \text{IFN}_{ij}$
-   - Scalar multiplication: $w \otimes (\mu, \nu, \pi) = (w\mu, 1-(1-\nu)^w, \pi)$ (approximate)
+   - Scalar multiplication (Xu, 2007): $w \otimes (\mu, \nu, \pi) = (1-(1-\mu)^w,\; \nu^w,\; \text{remainder})$
 
 2. IFS ideal solutions:
    - Benefit: $\tilde{A}^+ = (\max(\mu_{ij}), \min(\nu_{ij}), \pi)$
@@ -420,17 +435,24 @@ Distance from average uses IFS score differences.
 
 #### 2.2.6 IFS-SAW
 
-**Extension:** Direct IFS aggregation with weights.
+**Extension:** Weighted sum of IFS score values.
+
+The implementation uses the Chen–Tan score function for each cell,
+then applies a simple weighted sum:
 
 $$
-\text{IFS-Score}_i = \bigoplus_{j=1}^p w_j \otimes \text{IFN}_{ij}
+\text{IFS-SAW}_i = \sum_{j=1}^p w_j \cdot S(\text{IFN}_{ij})
 $$
 
-Using intuitionistic fuzzy weighted averaging (IFWA) operator:
+where $S(\text{IFN}) = \mu - \nu$.
 
-$$
-\text{IFWA}(\text{IFN}_1, \ldots, \text{IFN}_p) = \left(1 - \prod_j (1-\mu_j)^{w_j}, \prod_j \nu_j^{w_j}\right)
-$$
+> **Theoretical alternative (not implemented):** The IFWA operator
+> aggregates directly in IFS space:
+>
+> $\text{IFWA}(\text{IFN}_1, \ldots, \text{IFN}_p) = \left(1 - \prod_j (1-\mu_j)^{w_j},\; \prod_j \nu_j^{w_j}\right)$
+>
+> The score-based approach is adopted for computational simplicity
+> and consistency with the other IFS-MCDM methods.
 
 ---
 
@@ -464,25 +486,32 @@ Where:
 
 ### 3.3 Score-to-Belief Conversion
 
-**Method:** Linear interpolation between adjacent grades.
+**Method:** Linear interpolation between adjacent grade utilities.
 
-Given normalized score $s \in [0, 1]$:
+Grade utilities are evenly spaced from 1.0 (Excellent) to 0.0 (Bad):
+
+| Grade     | Utility |
+|-----------|---------|
+| Excellent | 1.00    |
+| Good      | 0.75    |
+| Fair      | 0.50    |
+| Poor      | 0.25    |
+| Bad       | 0.00    |
+
+Given normalized score $s \in [0, 1]$, find the two adjacent grades
+$H_k, H_{k+1}$ such that $u_k \geq s \geq u_{k+1}$ and interpolate:
+
+$$
+\beta_k = \frac{s - u_{k+1}}{u_k - u_{k+1}}, \quad \beta_{k+1} = 1 - \beta_k
+$$
+
+**Example (s = 0.65):**
 
 ```python
-if s >= 0.8:   # Excellent-Good range
-    β_E = (s - 0.75) / 0.25
-    β_G = 1 - β_E
-elif s >= 0.6: # Good-Fair range
-    β_G = (s - 0.5) / 0.25
-    β_F = 1 - β_G
-elif s >= 0.4: # Fair-Poor range
-    β_F = (s - 0.25) / 0.25
-    β_P = 1 - β_F
-elif s >= 0.2: # Poor-Bad range
-    β_P = (s - 0.0) / 0.25
-    β_B = 1 - β_P
-else:          # All Bad
-    β_B = 1.0
+# s=0.65 falls between Good (0.75) and Fair (0.50)
+β_Good = (0.65 - 0.50) / (0.75 - 0.50) = 0.60
+β_Fair = 1 - 0.60 = 0.40
+# All other grades receive zero belief
 ```
 
 **Rationale:** Uncertainty is captured by splitting belief between grades, not by H (we have 12 sources, consensus reduces H).

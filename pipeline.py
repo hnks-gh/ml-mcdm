@@ -34,6 +34,7 @@ try:
     from .ranking import HierarchicalRankingPipeline, HierarchicalRankingResult
     from .analysis import SensitivityAnalysis
     from .visualization import PanelVisualizer
+    from .output_manager import OutputManager
 except ImportError:
     from config import Config, get_default_config
     from logger import setup_logger, ProgressLogger
@@ -42,6 +43,7 @@ except ImportError:
     from ranking import HierarchicalRankingPipeline, HierarchicalRankingResult
     from analysis import SensitivityAnalysis
     from visualization import PanelVisualizer
+    from output_manager import OutputManager
 
 
 def _to_array(x) -> np.ndarray:
@@ -112,8 +114,8 @@ class MLMCDMPipeline:
         IFS         : IFS-TOPSIS, IFS-VIKOR, IFS-PROMETHEE, IFS-COPRAS,
                       IFS-EDAS, IFS-SAW
     * Two-stage Evidential Reasoning aggregation (Yang & Xu, 2002)
-    * Random Forest feature importance (optional)
-    * Monte Carlo sensitivity analysis
+    * ML Forecasting: 6-model ensemble + Super Learner (optional)
+    * Hierarchical sensitivity analysis
     """
 
     def __init__(self, config: Optional[Config] = None):
@@ -125,6 +127,9 @@ class MLMCDMPipeline:
         # Logger
         debug_file = Path(self.config.output_dir) / 'logs' / 'debug.log'
         self.logger = setup_logger('ml_mcdm', debug_file=debug_file)
+
+        # Output manager (production-ready result persistence)
+        self.output_manager = OutputManager(base_output_dir=self.config.output_dir)
 
         # Visualiser & output helpers
         self.visualizer = PanelVisualizer(
@@ -308,7 +313,7 @@ class MLMCDMPipeline:
         if stab:
             self.logger.info(
                 f"  Stability: cos={stab.get('cosine_similarity', 0):.4f}, "
-                f"spearman={stab.get('spearman_correlation', 0):.4f}, "
+                f"pearson={stab.get('pearson_correlation', 0):.4f}, "
                 f"stable={stab.get('is_stable', 'N/A')}"
             )
 
@@ -452,6 +457,9 @@ class MLMCDMPipeline:
             forecast_result=forecast_result
         )
         
+        # Validate production-ready hierarchical structure
+        self._validate_sensitivity_result(sens_result)
+        
         self.logger.info(
             f"Sensitivity analysis: robustness = {sens_result.overall_robustness:.4f}"
         )
@@ -459,13 +467,62 @@ class MLMCDMPipeline:
             f"  Criteria sensitivity: {len(sens_result.criteria_sensitivity)} criteria analyzed"
         )
         self.logger.info(
+            f"  Subcriteria sensitivity: {len(sens_result.subcriteria_sensitivity)} subcriteria analyzed"
+        )
+        self.logger.info(
             f"  Temporal stability: {len(sens_result.temporal_stability)} year pairs"
         )
         self.logger.info(
             f"  Top-5 stability: {sens_result.top_n_stability.get(5, 0):.1%}"
         )
+        self.logger.info(
+            f"  IFS sensitivity: μ={sens_result.ifs_membership_sensitivity:.4f}, "
+            f"ν={sens_result.ifs_nonmembership_sensitivity:.4f}"
+        )
         
         return {'sensitivity': sens_result}
+    
+    def _validate_sensitivity_result(self, sens_result: Any) -> None:
+        """
+        Validate that sensitivity result has all required hierarchical attributes.
+        Ensures production-ready structure - no legacy fallbacks allowed.
+        """
+        required_attrs = {
+            'subcriteria_sensitivity': 'Subcriteria-level weight sensitivity',
+            'criteria_sensitivity': 'Criteria-level weight sensitivity',
+            'temporal_stability': 'Temporal stability across years',
+            'top_n_stability': 'Top-N ranking stability',
+            'rank_stability': 'Province-level rank stability',
+            'ifs_membership_sensitivity': 'IFS membership sensitivity',
+            'ifs_nonmembership_sensitivity': 'IFS non-membership sensitivity',
+            'overall_robustness': 'Overall robustness score',
+        }
+        
+        missing = []
+        empty = []
+        
+        for attr, description in required_attrs.items():
+            if not hasattr(sens_result, attr):
+                missing.append(f"{attr} ({description})")
+            else:
+                value = getattr(sens_result, attr)
+                # Check if dict/list attributes are empty
+                if isinstance(value, (dict, list)) and len(value) == 0:
+                    empty.append(f"{attr} ({description})")
+        
+        if missing:
+            raise ValueError(
+                f"Sensitivity result missing required attributes:\n  " +
+                "\n  ".join(missing) +
+                "\n\nEnsure SensitivityAnalysis.analyze_full_pipeline() returns "
+                "complete hierarchical structure."
+            )
+        
+        if empty:
+            self.logger.warning(
+                f"Sensitivity result has empty attributes:\n  " +
+                "\n  ".join(empty)
+            )
 
     # -----------------------------------------------------------------
     # Phase 6: Visualisations
@@ -516,14 +573,30 @@ class MLMCDMPipeline:
             )
             fig_count += 1
 
-            # 4. Sensitivity analysis
+            # 4. Hierarchical sensitivity analysis (production-ready)
             if analysis_results.get('sensitivity'):
-                self.visualizer.plot_sensitivity_analysis(
-                    analysis_results['sensitivity'].weight_sensitivity,
-                    title='Weight Sensitivity Analysis',
-                    save_name='04_sensitivity_analysis.png',
-                )
-                fig_count += 1
+                sens = analysis_results['sensitivity']
+                
+                # Criteria-level sensitivity
+                if hasattr(sens, 'criteria_sensitivity') and sens.criteria_sensitivity:
+                    self.visualizer.plot_sensitivity_analysis(
+                        sens.criteria_sensitivity,
+                        title='Criteria Weight Sensitivity',
+                        save_name='04_criteria_sensitivity.png',
+                    )
+                    fig_count += 1
+                
+                # Subcriteria-level sensitivity (top 15 most sensitive)
+                if hasattr(sens, 'subcriteria_sensitivity') and sens.subcriteria_sensitivity:
+                    sorted_sub = sorted(sens.subcriteria_sensitivity.items(),
+                                      key=lambda x: x[1], reverse=True)[:15]
+                    top_subcrit_sens = dict(sorted_sub)
+                    self.visualizer.plot_sensitivity_analysis(
+                        top_subcrit_sens,
+                        title='Subcriteria Weight Sensitivity (Top 15)',
+                        save_name='04_subcriteria_sensitivity.png',
+                    )
+                    fig_count += 1
 
             # 5. Forecast feature importance
             if forecast_result and hasattr(forecast_result, 'feature_importance'):
@@ -548,7 +621,7 @@ class MLMCDMPipeline:
             self.logger.debug(traceback.format_exc())
 
     # -----------------------------------------------------------------
-    # Phase 7: Save Results
+    # Phase 7: Save Results (Production-Ready using OutputManager)
     # -----------------------------------------------------------------
 
     def _save_all_results(
@@ -560,39 +633,38 @@ class MLMCDMPipeline:
         analysis_results: Dict[str, Any],
         execution_time: float,
     ) -> None:
+        """
+        Save all results using OutputManager for production-ready persistence.
+        
+        Uses the centralized OutputManager to ensure consistent, comprehensive
+        output handling with support for new hierarchical sensitivity structure.
+        """
         results_dir = Path(self.config.output_dir) / 'results'
-        results_dir.mkdir(parents=True, exist_ok=True)
         reports_dir = Path(self.config.output_dir) / 'reports'
-        reports_dir.mkdir(parents=True, exist_ok=True)
-
-        # 1. Final rankings
-        ranking_df = pd.DataFrame({
-            'Province': ranking_result.final_ranking.index,
-            'ER_Score': ranking_result.final_scores.values,
-            'ER_Rank': ranking_result.final_ranking.values,
-        }).sort_values('ER_Rank').reset_index(drop=True)
-        ranking_df.insert(0, 'Rank', range(1, len(ranking_df) + 1))
-        ranking_df.to_csv(results_dir / 'final_rankings.csv', index=False)
+        
+        # 1. Subcriteria weights (Entropy, CRITIC, MEREC, StdDev, Fused)
+        subcriteria = weights['subcriteria']
+        weights_dict = {
+            'entropy': weights['entropy'],
+            'critic': weights['critic'],
+            'merec': weights['merec'],
+            'std_dev': weights['std_dev'],
+            'fused': weights['fused'],
+        }
+        self.output_manager.save_weights(weights_dict, subcriteria)
+        self.logger.info("Saved: weights_analysis.csv")
+        
+        # 2. Final ER rankings
+        self.output_manager.save_rankings(ranking_result, panel_data.provinces)
         self.logger.info("Saved: final_rankings.csv")
-
-        # 2. Criterion weights used by ER Stage 2
-        crit_w = ranking_result.criterion_weights_used
-        pd.DataFrame([crit_w]).to_csv(
-            results_dir / 'criterion_weights.csv', index=False
-        )
-        self.logger.info("Saved: criterion_weights.csv")
-
+        
         # 3. MCDM scores per criterion group
-        for crit_id, method_scores in ranking_result.criterion_method_scores.items():
-            crit_df = pd.DataFrame(method_scores)
-            crit_df.index = panel_data.provinces
-            crit_df.index.name = 'Province'
-            crit_df.to_csv(results_dir / f'mcdm_scores_{crit_id}.csv')
-        self.logger.info(
-            f"Saved: mcdm_scores_*.csv ({len(ranking_result.criterion_method_scores)} files)"
+        saved_scores = self.output_manager.save_mcdm_scores_by_criterion(
+            ranking_result, panel_data.provinces
         )
-
-        # 4. MCDM rank comparison across all methods (latest-year global)
+        self.logger.info(f"Saved: mcdm_scores_*.csv ({len(saved_scores)} files)")
+        
+        # 4. MCDM rank comparison across all methods
         all_method_ranks = {}
         for crit_id, method_ranks in ranking_result.criterion_method_ranks.items():
             for method, ranks_series in method_ranks.items():
@@ -604,90 +676,34 @@ class MLMCDMPipeline:
         rank_comparison_df.index.name = 'Province'
         rank_comparison_df.to_csv(results_dir / 'mcdm_rank_comparison.csv')
         self.logger.info("Saved: mcdm_rank_comparison.csv")
-
-        # 5. ER uncertainty
+        
+        # 5. Criterion weights used by ER Stage 2
+        crit_w = ranking_result.criterion_weights_used
+        pd.DataFrame([crit_w]).to_csv(
+            results_dir / 'criterion_weights.csv', index=False
+        )
+        self.logger.info("Saved: criterion_weights.csv")
+        
+        # 6. ER uncertainty
         ranking_result.er_result.uncertainty.to_csv(
             results_dir / 'prediction_uncertainty_er.csv'
         )
         self.logger.info("Saved: prediction_uncertainty_er.csv")
-
-        # 6. Subcriteria weights
-        subcriteria = weights['subcriteria']
-        weights_df = pd.DataFrame({
-            'Subcriteria': subcriteria,
-            'Entropy': weights['entropy'],
-            'CRITIC': weights['critic'],
-            'MEREC': weights['merec'],
-            'Std_Dev': weights['std_dev'],
-            'Fused': weights['fused'],
-        })
-        weights_df.to_csv(results_dir / 'weights_analysis.csv', index=False,
-                          float_format='%.6f')
-        self.logger.info("Saved: weights_analysis.csv")
-
-        # 7. ML Forecasting results
+        
+        # 7. ML Forecasting results (Super Learner + Conformal)
         if forecast_result is not None:
-            # Predictions with intervals
-            if hasattr(forecast_result, 'predictions'):
-                pred_df = forecast_result.predictions.copy()
-                if hasattr(forecast_result, 'lower_bound') and hasattr(forecast_result, 'upper_bound'):
-                    for col in pred_df.columns:
-                        if col in forecast_result.lower_bound.columns:
-                            pred_df[f'{col}_lower'] = forecast_result.lower_bound[col]
-                            pred_df[f'{col}_upper'] = forecast_result.upper_bound[col]
-                pred_df.to_csv(results_dir / 'forecast_predictions.csv', float_format='%.6f')
-                self.logger.info("Saved: forecast_predictions.csv")
-            
-            # Model weights from Super Learner
-            if hasattr(forecast_result, 'model_weights'):
-                weights_df = pd.DataFrame([
-                    {'Model': k, 'Weight': v}
-                    for k, v in sorted(
-                        forecast_result.model_weights.items(),
-                        key=lambda x: x[1], reverse=True
-                    )
-                ])
-                weights_df.to_csv(results_dir / 'forecast_model_weights.csv', index=False,
-                                  float_format='%.6f')
-                self.logger.info("Saved: forecast_model_weights.csv")
-            
-            # Feature importance
-            if hasattr(forecast_result, 'feature_importance'):
-                forecast_result.feature_importance.to_csv(
-                    results_dir / 'forecast_feature_importance.csv',
-                    float_format='%.6f'
-                )
-                self.logger.info("Saved: forecast_feature_importance.csv")
-            
-            # CV metrics
-            if hasattr(forecast_result, 'cv_metrics'):
-                cv_df = pd.DataFrame([forecast_result.cv_metrics])
-                cv_df.to_csv(results_dir / 'forecast_cv_metrics.csv', index=False,
-                             float_format='%.6f')
-                self.logger.info("Saved: forecast_cv_metrics.csv")
-
-        # 8. Sensitivity
+            saved_forecast = self.output_manager.save_forecast_results(forecast_result)
+            for key, path in saved_forecast.items():
+                filename = Path(path).name
+                self.logger.info(f"Saved: {filename}")
+        
+        # 8. Hierarchical Sensitivity Analysis (NEW production-ready structure)
         if analysis_results.get('sensitivity'):
-            sens = analysis_results['sensitivity']
-            if hasattr(sens, 'weight_sensitivity') and sens.weight_sensitivity:
-                sens_df = pd.DataFrame([
-                    {'Criterion': k, 'Sensitivity': v}
-                    for k, v in sorted(
-                        sens.weight_sensitivity.items(),
-                        key=lambda x: x[1], reverse=True,
-                    )
-                ])
-                sens_df.to_csv(results_dir / 'sensitivity_analysis.csv', index=False,
-                               float_format='%.6f')
-                self.logger.info("Saved: sensitivity_analysis.csv")
-
-            if hasattr(sens, 'overall_robustness'):
-                pd.DataFrame([{
-                    'Robustness': sens.overall_robustness,
-                }]).to_csv(results_dir / 'robustness_summary.csv', index=False,
-                           float_format='%.6f')
-                self.logger.info("Saved: robustness_summary.csv")
-
+            saved_analysis = self.output_manager.save_analysis_results(analysis_results)
+            for key, path in saved_analysis.items():
+                filename = Path(path).name
+                self.logger.info(f"Saved: {filename}")
+        
         # 9. Data summary statistics
         latest_year = max(panel_data.years)
         summary_df = panel_data.subcriteria_cross_section[latest_year].describe().T
@@ -695,7 +711,7 @@ class MLMCDMPipeline:
         summary_df.to_csv(results_dir / 'data_summary_statistics.csv',
                           float_format='%.6f')
         self.logger.info("Saved: data_summary_statistics.csv")
-
+        
         # 10. Execution summary (JSON)
         summary = {
             'execution_time_seconds': round(execution_time, 2),
@@ -714,15 +730,15 @@ class MLMCDMPipeline:
         with open(results_dir / 'execution_summary.json', 'w') as f:
             json.dump(summary, f, indent=2, default=str)
         self.logger.info("Saved: execution_summary.json")
-
+        
         # 11. Config snapshot
         try:
             self.config.save(results_dir / 'config_snapshot.json')
             self.logger.info("Saved: config_snapshot.json")
         except Exception:
             pass
-
-        # 12. Text report
+        
+        # 12. Comprehensive text report
         try:
             report = self._build_text_report(
                 panel_data, weights, ranking_result,
@@ -733,7 +749,9 @@ class MLMCDMPipeline:
             self.logger.info("Saved: report.txt")
         except Exception as e:
             self.logger.warning(f"Report generation failed: {e}")
-
+            import traceback
+            self.logger.debug(traceback.format_exc())
+        
         self.logger.info(f"All results saved to {results_dir}")
 
     # -----------------------------------------------------------------
@@ -809,20 +827,58 @@ class MLMCDMPipeline:
             lines.append(f"  {int(row['Rank']):<6} {row['Province']:<25} {row['Score']:>10.4f}")
         lines.append("")
 
-        # --- Sensitivity ---
+        # --- Sensitivity (Hierarchical Analysis) ---
         if analysis_results.get('sensitivity'):
             sens = analysis_results['sensitivity']
             lines.append("-" * w)
-            lines.append("  4. SENSITIVITY ANALYSIS")
+            lines.append("  4. HIERARCHICAL SENSITIVITY ANALYSIS")
             lines.append("-" * w)
             lines.append(f"  Overall robustness : {sens.overall_robustness:.4f}")
-            if hasattr(sens, 'weight_sensitivity') and sens.weight_sensitivity:
-                lines.append(f"  {'Criterion':<20} {'Sensitivity':>12}")
-                lines.append("  " + "-" * 32)
-                for k, v in sorted(sens.weight_sensitivity.items(),
-                                   key=lambda x: x[1], reverse=True)[:10]:
-                    lines.append(f"  {k:<20} {v:>12.4f}")
+            lines.append(f"  Confidence level   : {sens.confidence_level * 100:.0f}%")
             lines.append("")
+            
+            # Criteria-level sensitivity
+            if hasattr(sens, 'criteria_sensitivity') and sens.criteria_sensitivity:
+                lines.append("  CRITERIA SENSITIVITY (higher = more sensitive to weights):")
+                lines.append(f"    {'Criterion':<20} {'Sensitivity':>12}")
+                lines.append("    " + "-" * 32)
+                for k, v in sorted(sens.criteria_sensitivity.items(),
+                                   key=lambda x: x[1], reverse=True):
+                    lines.append(f"    {k:<20} {v:>12.4f}")
+                lines.append("")
+            
+            # Subcriteria-level sensitivity (top 10)
+            if hasattr(sens, 'subcriteria_sensitivity') and sens.subcriteria_sensitivity:
+                lines.append("  SUBCRITERIA SENSITIVITY (top 10 most sensitive):")
+                lines.append(f"    {'Subcriterion':<20} {'Sensitivity':>12}")
+                lines.append("    " + "-" * 32)
+                for k, v in sorted(sens.subcriteria_sensitivity.items(),
+                                   key=lambda x: x[1], reverse=True)[:10]:
+                    lines.append(f"    {k:<20} {v:>12.4f}")
+                lines.append("")
+            
+            # Top-N stability
+            if hasattr(sens, 'top_n_stability') and sens.top_n_stability:
+                lines.append("  RANKING STABILITY (top-N positions):")
+                for n in sorted(sens.top_n_stability.keys()):
+                    stability = sens.top_n_stability[n]
+                    lines.append(f"    Top-{n:2d} stability : {stability:>6.1%}")
+                lines.append("")
+            
+            # IFS uncertainty
+            if hasattr(sens, 'ifs_membership_sensitivity'):
+                lines.append("  IFS UNCERTAINTY SENSITIVITY:")
+                lines.append(f"    Membership (μ)     : {sens.ifs_membership_sensitivity:.4f}")
+                if hasattr(sens, 'ifs_nonmembership_sensitivity'):
+                    lines.append(f"    Non-membership (ν) : {sens.ifs_nonmembership_sensitivity:.4f}")
+                lines.append("")
+            
+            # Temporal stability (year-to-year)
+            if hasattr(sens, 'temporal_stability') and sens.temporal_stability:
+                lines.append("  TEMPORAL STABILITY (year-to-year rank correlation):")
+                for transition, corr in sorted(sens.temporal_stability.items()):
+                    lines.append(f"    {transition}: {corr:.4f}")
+                lines.append("")
 
         # --- ML Forecasting ---
         if forecast_result is not None:

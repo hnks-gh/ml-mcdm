@@ -61,7 +61,8 @@ class EntropyWeightCalculator:
     def __init__(self, epsilon: float = 1e-10):
         self.epsilon = epsilon
     
-    def calculate(self, data: pd.DataFrame) -> WeightResult:
+    def calculate(self, data: pd.DataFrame,
+                  sample_weights: 'np.ndarray | None' = None) -> WeightResult:
         """
         Calculate entropy weights.
         
@@ -70,6 +71,11 @@ class EntropyWeightCalculator:
         data : pd.DataFrame
             Decision matrix (alternatives × criteria)
             All values should be positive
+        sample_weights : np.ndarray or None, optional
+            Observation weights (length = n_alternatives).  When provided,
+            the proportion matrix and effective sample size are computed
+            using these weights (continuous Bayesian Bootstrap support).
+            Must sum to 1.  If *None*, all observations are weighted equally.
         
         Returns
         -------
@@ -94,44 +100,60 @@ class EntropyWeightCalculator:
         if non_numeric:
             raise TypeError(f"Non-numeric columns found: {non_numeric}")
         
+        n = len(data)
+        
+        # Validate / default observation weights
+        if sample_weights is not None:
+            w = np.asarray(sample_weights, dtype=float)
+            if w.shape[0] != n:
+                raise ValueError(
+                    f"sample_weights length ({w.shape[0]}) != n_observations ({n})")
+            w = w / (w.sum() + self.epsilon)  # ensure sums to 1
+        else:
+            w = np.full(n, 1.0 / n)
+        
         # Validate input: entropy requires non-negative values
         # If negative values exist, shift data to positive range
         data_valid = data.copy()
         for col in data_valid.columns:
             if data_valid[col].min() < 0:
-                # Shift column to positive range: x' = x - min(x) + epsilon
                 data_valid[col] = data_valid[col] - data_valid[col].min() + self.epsilon
         
-        # Normalize to proportions
-        col_sums = data_valid.sum(axis=0)
-        # Handle edge case of zero or near-zero sums
-        col_sums = col_sums.clip(lower=self.epsilon)
+        X = data_valid.values  # (n, p)
         
-        P = data_valid / col_sums
-        P = P.clip(lower=self.epsilon)  # Ensure all proportions are positive
+        # Weighted proportions: p_ij = w_i * x_ij / Σ_i(w_i * x_ij)
+        wX = w[:, None] * X  # broadcast observation weights
+        col_sums = wX.sum(axis=0)
+        col_sums = np.clip(col_sums, self.epsilon, None)
+        P = wX / col_sums
+        P = np.clip(P, self.epsilon, None)
         
-        # Calculate entropy
-        n = len(data)
-        if n < 2:
-            raise ValueError("Entropy calculation requires at least 2 observations")
+        # Effective sample size: N_eff = (Σw_i)² / Σw_i²  (Kish, 1965)
+        n_eff = (w.sum() ** 2) / ((w ** 2).sum() + self.epsilon)
+        n_eff = max(n_eff, 2.0)  # floor at 2 to keep log defined
         
-        k = 1 / np.log(n)
-        # P is already >= epsilon from clipping, so log(P) is safe
+        k = 1.0 / np.log(n_eff)
         E = -k * (P * np.log(P)).sum(axis=0)
         
         # Calculate divergence (information content)
-        D = 1 - E
-        D = D.clip(lower=self.epsilon)
+        D = 1.0 - E
+        D = np.clip(D, self.epsilon, None)
         
-        # Normalize to weights
-        weights = D / D.sum()
+        # Normalize to criterion weights
+        weights_arr = D / D.sum()
+        
+        columns = data.columns.tolist()
+        weights_dict = {col: float(weights_arr[j]) for j, col in enumerate(columns)}
+        E_dict = {col: float(E[j]) for j, col in enumerate(columns)}
+        D_dict = {col: float(D[j]) for j, col in enumerate(columns)}
         
         return WeightResult(
-            weights=weights.to_dict(),
+            weights=weights_dict,
             method="entropy",
             details={
-                "entropy_values": E.to_dict(),
-                "divergence_values": D.to_dict(),
-                "n_samples": n
+                "entropy_values": E_dict,
+                "divergence_values": D_dict,
+                "n_samples": n,
+                "n_effective": float(n_eff),
             }
         )

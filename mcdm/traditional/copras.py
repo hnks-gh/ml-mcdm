@@ -164,13 +164,13 @@ class COPRASCalculator:
         S_minus.name = 'S_minus'
         
         # Step 4: Calculate relative significance Q
+        # Q_i = S+_i + ΣS- / (S-_i × Σ(1/S-_j))  [Zavadskas et al., 1994]
         S_minus_sum = S_minus.sum()
-        S_minus_min = S_minus.min() if len(cost_cols) > 0 else 0
         
         if len(cost_cols) > 0 and S_minus_sum > 0:
             S_minus_safe = S_minus.replace(0, 1e-10)
-            denominator = (S_minus_safe * (S_minus_sum / S_minus_safe).sum())
-            Q = S_plus + (S_minus_min * S_minus_sum) / denominator
+            inv_sum = (1.0 / S_minus_safe).sum()
+            Q = S_plus + S_minus_sum / (S_minus_safe * inv_sum)
         else:
             Q = S_plus
         

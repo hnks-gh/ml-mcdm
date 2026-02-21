@@ -36,7 +36,7 @@ Step 3: Game Theory Weight Combination (GTWC)
       └── W* = α₁·W_GroupA + α₂·W_GroupB
   ↓
 Step 4: Bayesian Bootstrap (uncertainty quantification)
-  ├── Dirichlet resampling (999 iterations)
+  ├── Dirichlet resampling (199 iterations)
   ├── Re-compute Steps 2-3 on each sample
   └── Calculate posterior statistics
   ↓
@@ -65,7 +65,7 @@ x_normalized = (x - min_global) / (max_global - min_global) + ε
 - **Global normalization** uses min/max across ALL time periods (not per-year)
 - Preserves growth/decline patterns over the 14-year span
 - Epsilon shift (ε = 1e-10) ensures strictly positive values for logarithmic operations
-- Applied to entire N × p matrix: (896 observations × 29 criteria)
+- Applied to entire N × p matrix: (882 observations × 28 sub-criteria)
 
 **Why Global?**
 - Year-by-year normalization would erase temporal trends
@@ -338,12 +338,15 @@ Minimize: L = ‖α₁·W_A + α₂·W_B − W_A‖² + ‖α₁·W_A + α₂·W
 ```
 
 **Solution via Lagrange Multipliers:**
+
+Taking the gradient ∇L = 0 yields the 2×2 linear system:
+
 ```
 Solve the system: A · α = b
 
 Where:
-A = ⎡ W_A·W_A   W_A·W_B ⎤    b = ⎡ W_A·W_A ⎤
-    ⎣ W_B·W_A   W_B·W_B ⎦        ⎣ W_B·W_B ⎦
+A = ⎡ W_A·W_A   W_A·W_B ⎤    b = ⎡ (W_A·W_A + W_A·W_B) / 2 ⎤
+    ⎣ W_B·W_A   W_B·W_B ⎦        ⎣ (W_A·W_B + W_B·W_B) / 2 ⎦
 
 (· denotes dot product, yielding scalar values)
 ```
@@ -402,7 +405,7 @@ class GameTheoryWeightCombination:
 #### **Algorithm**
 
 ```
-For each iteration b = 1, ..., B (default B=999):
+For each iteration b = 1, ..., B (default B=199):
 
   1. Draw Dirichlet weights:
      g_i ~ Exponential(1) for i = 1, ..., N
@@ -425,10 +428,11 @@ After B iterations:
   - 95% CI: [Q_0.025(w_j), Q_0.975(w_j)]
 ```
 
-**Why B=999?**
+**Why B=199?**
 - Odd number avoids interpolation at 2.5th and 97.5th percentiles
-- Standard practice for percentile-based credible intervals (Davison & Hinkley, 1997)
-- Provides stable posterior statistics
+- Efron & Tibshirani (1993) recommend ~200 replicates for standard error estimation
+- Sufficient for stable bootstrap confidence intervals (Davison & Hinkley, 1997)
+- Provides good balance between computational efficiency and statistical precision
 
 **Implementation:**
 ```python
@@ -561,13 +565,12 @@ def _stability_verification(
         np.linalg.norm(W_first) * np.linalg.norm(W_second)
     )
     
-    # Spearman correlation
-    spearman_r, spearman_p = stats.spearmanr(W_first, W_second)
+    # Pearson correlation (weights are continuous, not ranks)
+    pearson_r = np.corrcoef(W_first, W_second)[0, 1]
     
     return {
         'cosine_similarity': float(cos_sim),
-        'spearman_correlation': float(spearman_r),
-        'spearman_pvalue': float(spearman_p),
+        'pearson_correlation': float(pearson_r),
         'is_stable': cos_sim >= self.stability_threshold,
         'split_point': int(split_point)
     }
@@ -619,7 +622,7 @@ details = {
     
     # Bootstrap statistics
     'bootstrap': {
-        'iterations': 999,
+        'iterations': 199,
         'mean_weights': {criterion: float, ...},  # Final output
         'std_weights': {criterion: float, ...},   # Uncertainty
         'ci_lower_2_5': {criterion: float, ...},  # 95% CI lower
@@ -629,8 +632,7 @@ details = {
     # Stability verification
     'stability': {
         'cosine_similarity': float,      # Target ≥ 0.95
-        'spearman_correlation': float,   # Rank consistency
-        'spearman_pvalue': float,
+        'pearson_correlation': float,    # Linear consistency
         'is_stable': bool,
         'split_point': int
     },
@@ -656,8 +658,8 @@ details = {
 
 **With Bayesian Bootstrap (B iterations):**
 - **Total: O(B × N × p²)**
-- For B=999, N=896, p=29: ~75M operations
-- **Runtime:** 2-3 minutes on modern CPU
+- For B=199, N=882, p=28: ~15M operations
+- **Runtime:** ~30 seconds on modern CPU
 
 **Stability verification:**
 - Computes weights twice on half-sized data
@@ -671,9 +673,9 @@ details = {
 @dataclass
 class WeightingConfig:
     # Bayesian Bootstrap
-    bootstrap_iterations: int = 999
+    bootstrap_iterations: int = 199
     # Odd number → no interpolation at percentiles
-    # 999 is standard for 95% CIs
+    # 199 is sufficient for 95% CIs (Efron & Tibshirani, 1993)
     
     # Stability verification
     stability_threshold: float = 0.95

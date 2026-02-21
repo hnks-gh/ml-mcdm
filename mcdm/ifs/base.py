@@ -133,12 +133,16 @@ class IFN:
 
     @staticmethod
     def normalized_euclidean(a: 'IFN', b: 'IFN') -> float:
-        """Szmidt–Kacprzyk normalized Euclidean distance."""
+        """Szmidt–Kacprzyk normalized Euclidean distance (single element).
+
+        Formula: d_SK = sqrt((1/2)[(μ_A−μ_B)² + (ν_A−ν_B)² + (π_A−π_B)²])
+        Ref: Szmidt & Kacprzyk (2000), Fuzzy Sets and Systems, 114(3).
+        """
         return np.sqrt((
             (a.mu - b.mu) ** 2
             + (a.nu - b.nu) ** 2
             + (a.pi - b.pi) ** 2
-        ) / 6)
+        ) / 2)
 
     # ------------------------------------------------------------------
     # Comparison (lexicographic: score first, then accuracy)
@@ -296,3 +300,51 @@ class IFSDecisionMatrix:
                 nu = 1.0 - mu - pi
                 matrix[alt][crit] = IFN(mu=mu, nu=nu)
         return IFSDecisionMatrix(matrix, alternatives, criteria)
+
+    # ------------------------------------------------------------------
+    # Perturbation (for sensitivity analysis)
+    # ------------------------------------------------------------------
+    def perturb(
+        self,
+        delta_mu: float,
+        delta_nu: float,
+        rng: np.random.RandomState,
+    ) -> 'IFSDecisionMatrix':
+        """
+        Return a new IFSDecisionMatrix with randomly perturbed IFNs.
+
+        For every cell (i, j) the perturbation is:
+
+            μ'_ij = clip(μ_ij + U(-δ_μ, δ_μ),  0, 1)
+            ν'_ij = clip(ν_ij + U(-δ_ν, δ_ν),  0, 1)
+
+        followed by the IFS constraint enforcement inside ``IFN.__post_init__``
+        which renormalises if μ' + ν' > 1.
+
+        Parameters
+        ----------
+        delta_mu : float
+            Maximum absolute perturbation on membership degree.
+        delta_nu : float
+            Maximum absolute perturbation on non-membership degree.
+        rng : np.random.RandomState
+            Random state for reproducibility.
+
+        Returns
+        -------
+        IFSDecisionMatrix
+            New matrix with perturbed IFNs (original is unchanged).
+        """
+        new_matrix: Dict[str, Dict[str, IFN]] = {}
+        for alt in self.alternatives:
+            new_matrix[alt] = {}
+            for crit in self.criteria:
+                ifn = self.matrix[alt][crit]
+                mu_new = float(np.clip(
+                    ifn.mu + rng.uniform(-delta_mu, delta_mu), 0.0, 1.0))
+                nu_new = float(np.clip(
+                    ifn.nu + rng.uniform(-delta_nu, delta_nu), 0.0, 1.0))
+                # IFN.__post_init__ enforces μ + ν ≤ 1
+                new_matrix[alt][crit] = IFN(mu=mu_new, nu=nu_new)
+        return IFSDecisionMatrix(new_matrix, list(self.alternatives),
+                                 list(self.criteria))

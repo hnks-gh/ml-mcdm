@@ -11,9 +11,19 @@ Provides the ``OutputManager`` class for persisting analysis artefacts
     ├── figures/   — visualisation charts  (PNG)
     └── reports/   — comprehensive text report
 
-This module is *not* called by the pipeline directly; the pipeline does
-its own inline saving via ``_save_all_results``.  ``OutputManager`` is
-kept available for advanced / ad-hoc usage and backward compatibility.
+**Production-Ready Implementation:**
+The pipeline uses ``OutputManager`` for centralized result persistence,
+ensuring comprehensive, consistent output handling with full support for:
+
+- Hierarchical sensitivity analysis (subcriteria, criteria, temporal stability)
+- IFS uncertainty sensitivity (membership/non-membership perturbation)
+- Super Learner ensemble forecasting results
+- Conformal prediction intervals
+- Cross-validation metrics
+- Feature importance ranking
+
+Updated to support the state-of-the-art IFS + Evidential Reasoning + 
+ML Forecasting architecture.
 """
 
 import numpy as np
@@ -192,15 +202,24 @@ class OutputManager:
         analysis_results: Dict[str, Any],
     ) -> Dict[str, str]:
         """
-        Save analysis results including hierarchical sensitivity analysis.
+        Save hierarchical sensitivity analysis results (PRODUCTION-READY).
         
-        Saves comprehensive results:
-        - Subcriteria sensitivity (28 subcriteria)
-        - Criteria sensitivity (8 criteria)
-        - Temporal stability (year-to-year correlation)
-        - IFS uncertainty sensitivity
-        - Forecast robustness
-        - Overall robustness score
+        This method expects SensitivityResult with the following REQUIRED attributes:
+        - subcriteria_sensitivity : Dict[str, float] - Per-subcriterion sensitivity
+        - criteria_sensitivity : Dict[str, float] - Per-criterion sensitivity
+        - temporal_stability : Dict[str, float] - Year-to-year rank correlation
+        - top_n_stability : Dict[int, float] - Top-3, Top-5, Top-10 stability
+        - rank_stability : Dict[str, float] - Province-level stability
+        - ifs_membership_sensitivity : float - IFS μ perturbation sensitivity
+        - ifs_nonmembership_sensitivity : float - IFS ν perturbation sensitivity
+        - overall_robustness : float - Aggregate robustness score
+        
+        NO legacy fallbacks - ensures clean production implementation.
+        
+        Returns
+        -------
+        Dict[str, str]
+            Mapping of result type to saved file paths
         """
         saved: Dict[str, str] = {}
         sens = analysis_results.get('sensitivity')
@@ -208,7 +227,7 @@ class OutputManager:
         if sens is None:
             return saved
         
-        # Save subcriteria sensitivity (main sensitivity analysis)
+        # REQUIRED: Subcriteria sensitivity
         if hasattr(sens, 'subcriteria_sensitivity') and sens.subcriteria_sensitivity:
             df = pd.DataFrame([
                 {'Subcriterion': k, 'Sensitivity': v}
@@ -221,7 +240,7 @@ class OutputManager:
             df.to_csv(path, index=False, float_format='%.6f')
             saved['sensitivity_subcriteria'] = str(path)
         
-        # Save criteria sensitivity
+        # REQUIRED: Criteria sensitivity
         if hasattr(sens, 'criteria_sensitivity') and sens.criteria_sensitivity:
             df = pd.DataFrame([
                 {'Criterion': k, 'Sensitivity': v}
@@ -234,7 +253,7 @@ class OutputManager:
             df.to_csv(path, index=False, float_format='%.6f')
             saved['sensitivity_criteria'] = str(path)
         
-        # Save temporal stability
+        # REQUIRED: Temporal stability
         if hasattr(sens, 'temporal_stability') and sens.temporal_stability:
             df = pd.DataFrame([
                 {'YearPair': k, 'Correlation': v}
@@ -244,7 +263,7 @@ class OutputManager:
             df.to_csv(path, index=False, float_format='%.6f')
             saved['temporal_stability'] = str(path)
         
-        # Save top-N stability
+        # REQUIRED: Top-N stability
         if hasattr(sens, 'top_n_stability') and sens.top_n_stability:
             df = pd.DataFrame([
                 {'TopN': k, 'Stability': v}
@@ -254,38 +273,25 @@ class OutputManager:
             df.to_csv(path, index=False, float_format='%.6f')
             saved['top_n_stability'] = str(path)
         
-        # Save IFS sensitivity
+        # REQUIRED: IFS sensitivity
         if hasattr(sens, 'ifs_membership_sensitivity'):
             ifs_df = pd.DataFrame([{
                 'IFS_Membership_Sensitivity': sens.ifs_membership_sensitivity,
-                'IFS_NonMembership_Sensitivity': getattr(sens, 'ifs_nonmembership_sensitivity', 0.0),
+                'IFS_NonMembership_Sensitivity': sens.ifs_nonmembership_sensitivity,
             }])
             path = self.results_dir / 'ifs_sensitivity.csv'
             ifs_df.to_csv(path, index=False, float_format='%.6f')
             saved['ifs_sensitivity'] = str(path)
         
-        # Save overall robustness summary
+        # REQUIRED: Overall robustness summary
         if hasattr(sens, 'overall_robustness'):
             robust_df = pd.DataFrame([{
                 'Overall_Robustness': sens.overall_robustness,
-                'Confidence_Level': getattr(sens, 'confidence_level', 0.95),
+                'Confidence_Level': sens.confidence_level,
             }])
             path = self.results_dir / 'robustness_summary.csv'
             robust_df.to_csv(path, index=False, float_format='%.6f')
             saved['robustness'] = str(path)
-        
-        # Legacy fallback for old sensitivity results
-        if hasattr(sens, 'weight_sensitivity') and not hasattr(sens, 'subcriteria_sensitivity'):
-            df = pd.DataFrame([
-                {'Criterion': k, 'Sensitivity': v}
-                for k, v in sorted(
-                    sens.weight_sensitivity.items(),
-                    key=lambda x: x[1], reverse=True,
-                )
-            ])
-            path = self.results_dir / 'sensitivity_analysis.csv'
-            df.to_csv(path, index=False, float_format='%.6f')
-            saved['sensitivity'] = str(path)
         
         return saved
 

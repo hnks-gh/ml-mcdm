@@ -24,7 +24,8 @@ class MERECWeightCalculator:
     def __init__(self, epsilon: float = 1e-10):
         self.epsilon = epsilon
     
-    def calculate(self, data: pd.DataFrame) -> WeightResult:
+    def calculate(self, data: pd.DataFrame,
+                  sample_weights: 'np.ndarray | None' = None) -> WeightResult:
         """
         Calculate MEREC weights from decision matrix.
         
@@ -32,6 +33,11 @@ class MERECWeightCalculator:
         ----------
         data : pd.DataFrame
             Decision matrix (alternatives × criteria)
+        sample_weights : np.ndarray or None, optional
+            Observation weights (length = n_alternatives).  When provided,
+            the removal-effect sum is weighted:
+            E_j = Σ_i  w_i |ln S_i^(j) − ln S_i|
+            Must sum to 1.  If *None*, uniform weighting is used.
             
         Returns
         -------
@@ -58,34 +64,41 @@ class MERECWeightCalculator:
         n_alternatives, n_criteria = data.shape
         columns = data.columns.tolist()
         
+        # Validate / default observation weights
+        if sample_weights is not None:
+            w = np.asarray(sample_weights, dtype=float)
+            if w.shape[0] != n_alternatives:
+                raise ValueError(
+                    f"sample_weights length ({w.shape[0]}) "
+                    f"!= n_alternatives ({n_alternatives})")
+            w = w / (w.sum() + self.epsilon)
+        else:
+            w = np.full(n_alternatives, 1.0 / n_alternatives)
+        
         # Step 1: Min-Max Normalization to [0, 1]
         X_norm = self._normalize(data.values)
         
         # Step 2: Calculate overall performance with all criteria
-        # S_i = ln(1 + (1/n)Σ|ln(x_ij)|)
         S_overall = self._calculate_performance(X_norm)
         
-        # Step 3-4: Calculate removal effect for each criterion
+        # Step 3-4: Calculate weighted removal effect for each criterion
         removal_effects = np.zeros(n_criteria)
-        S_without = {}  # Store for details
+        S_without = {}
         
         for j in range(n_criteria):
-            # Remove criterion j (set to 1 in normalized space = neutral)
             X_removed = X_norm.copy()
             X_removed[:, j] = 1.0
             
-            # Calculate performance without criterion j
             S_j = self._calculate_performance(X_removed)
             S_without[columns[j]] = S_j
             
-            # Removal effect: sum of absolute log differences
-            # E_j = Σ|ln(S_i^j) - ln(S_i)|
-            removal_effects[j] = np.sum(np.abs(
+            # Weighted removal effect: E_j = Σ w_i |ln(S_i^j) - ln(S_i)|
+            abs_diff = np.abs(
                 np.log(S_j + self.epsilon) - np.log(S_overall + self.epsilon)
-            ))
+            )
+            removal_effects[j] = np.dot(w, abs_diff)
         
-        # Step 5: Normalize to weights
-        # Ensure no zero removal effects
+        # Step 5: Normalize to criterion weights
         removal_effects = np.clip(removal_effects, self.epsilon, None)
         weights = removal_effects / removal_effects.sum()
         

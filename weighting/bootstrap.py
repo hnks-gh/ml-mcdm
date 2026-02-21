@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 def bayesian_bootstrap_weights(
     X_norm: np.ndarray,
     criteria_cols: List[str],
-    weight_calculator: Callable[[pd.DataFrame, List[str]], np.ndarray],
+    weight_calculator: Callable[..., np.ndarray],
     n_iterations: int = 999,
     seed: int = 42,
     epsilon: float = 1e-10
@@ -25,8 +25,10 @@ def bayesian_bootstrap_weights(
     """
     Perform Bayesian Bootstrap for weight uncertainty quantification.
     
-    Uses Dirichlet resampling (more efficient than discrete bootstrap) to
-    generate posterior distribution of weights.
+    Uses continuous Dirichlet observation weights (Rubin, 1981) passed
+    directly to the weight calculators, avoiding lossy discrete resampling.
+    Each underlying method (Entropy, CRITIC, MEREC, SD) accepts the
+    observation weight vector and computes weighted statistics internally.
     
     Parameters
     ----------
@@ -35,9 +37,9 @@ def bayesian_bootstrap_weights(
     criteria_cols : List[str]
         Names of criteria columns.
     weight_calculator : Callable
-        Function that takes (X_df, criteria_cols) and returns weight array.
-        This should perform the complete weight calculation pipeline
-        (e.g., entropy + critic + merec + sd → fusion).
+        Function with signature
+        ``(X_df, criteria_cols, sample_weights=None) -> np.ndarray``.
+        *sample_weights* is a 1-D array of observation weights summing to 1.
     n_iterations : int, default=999
         Number of bootstrap iterations. Odd number to avoid interpolation
         at percentiles (2.5%, 97.5%).
@@ -65,15 +67,19 @@ def bayesian_bootstrap_weights(
     1. Draw observation weights from Dirichlet(1, ..., 1):
        - Sample g_i ~ Exponential(1) for i = 1, ..., N
        - Compute w_i = g_i / Σ_k g_k
-    2. Resample observations with probabilities w
-    3. Calculate weights on bootstrap sample
-    4. Store weight vector
+    2. Pass continuous weights to each weight calculator which computes
+       weighted proportions / weighted covariance / weighted removal
+       effects internally.
+    3. Fuse the four weight vectors via GTWC.
+    4. Store the fused weight vector.
     
-    **Why Dirichlet instead of discrete uniform resampling?**
-    - More efficient: continuous weights vs discrete sampling
-    - Theoretically principled: Dirichlet(1,...,1) is non-informative prior
-    - Equivalent to standard bootstrap in large samples
-    - Better for smooth statistics (like weighted means)
+    **Why continuous weights instead of discrete resampling?**
+    - Preserves the full information in the Dirichlet draw.
+    - Discrete ``rng.choice()`` collapses the continuous weight vector
+      into a multinomial count vector, discarding weight precision and
+      potentially duplicating / dropping observations.
+    - All four weight methods (Entropy, CRITIC, MEREC, SD) now accept
+      ``sample_weights`` for exact weighted computation.
     
     **Why B=999?**
     - Odd number avoids interpolation at 2.5th and 97.5th percentiles
@@ -86,8 +92,8 @@ def bayesian_bootstrap_weights(
     >>> import pandas as pd
     >>> from weighting.bootstrap import bayesian_bootstrap_weights
     >>> 
-    >>> # Define weight calculator
-    >>> def my_weight_calculator(X_df, criteria_cols):
+    >>> # Define weight calculator (must accept sample_weights kwarg)
+    >>> def my_weight_calculator(X_df, criteria_cols, sample_weights=None):
     >>>     # Your weight calculation logic here
     >>>     return np.array([0.3, 0.5, 0.2])
     >>> 
@@ -117,12 +123,15 @@ def bayesian_bootstrap_weights(
     B = n_iterations
     rng = np.random.RandomState(seed)
     
+    # Full dataset (used in every iteration — no resampling)
+    X_df_full = pd.DataFrame(X_norm, columns=criteria_cols)
+    
     # Storage for bootstrap samples
     all_weights = np.zeros((B, p))
     failed_iterations = 0
     
     logger.info(f"Starting Bayesian Bootstrap: {B} iterations on "
-                f"{N} observations × {p} criteria")
+                f"{N} observations × {p} criteria (continuous weights)")
     
     for b in range(B):
         try:
@@ -130,14 +139,10 @@ def bayesian_bootstrap_weights(
             g = rng.exponential(1.0, size=N)
             obs_weights = g / g.sum()
             
-            # Step 2: Resample observations according to Dirichlet weights
-            # (produces essentially continuous weighting of observations)
-            indices = rng.choice(N, size=N, replace=True, p=obs_weights)
-            X_boot = X_norm[indices, :]
-            X_df = pd.DataFrame(X_boot, columns=criteria_cols)
-            
-            # Step 3: Calculate weights on bootstrap sample
-            W_boot = weight_calculator(X_df, criteria_cols)
+            # Step 2: Pass continuous observation weights to the weight
+            #         calculator (no discrete resampling).
+            W_boot = weight_calculator(X_df_full, criteria_cols,
+                                       sample_weights=obs_weights)
             
             # Validate and normalize
             if np.any(np.isnan(W_boot)) or np.any(np.isinf(W_boot)):
@@ -218,7 +223,7 @@ class BayesianBootstrap:
         self,
         X_norm: np.ndarray,
         criteria_cols: List[str],
-        weight_calculator: Callable[[pd.DataFrame, List[str]], np.ndarray]
+        weight_calculator: Callable[..., np.ndarray]
     ) -> Dict:
         """
         Execute Bayesian Bootstrap.

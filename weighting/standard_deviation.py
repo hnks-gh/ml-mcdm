@@ -27,7 +27,8 @@ class StandardDeviationWeightCalculator:
         self.epsilon = epsilon
         self.ddof = ddof
     
-    def calculate(self, data: pd.DataFrame) -> WeightResult:
+    def calculate(self, data: pd.DataFrame,
+                  sample_weights: 'np.ndarray | None' = None) -> WeightResult:
         """
         Calculate standard deviation weights from decision matrix.
         
@@ -35,6 +36,12 @@ class StandardDeviationWeightCalculator:
         ----------
         data : pd.DataFrame
             Decision matrix (alternatives × criteria)
+        sample_weights : np.ndarray or None, optional
+            Observation weights (length = n_alternatives).  When provided,
+            the weighted standard deviation is used:
+            σ_j^w = sqrt( Σ w_i (x_ij − x̄_j^w)² )
+            with x̄_j^w = Σ w_i x_ij.
+            Must sum to 1.  If *None*, the unweighted formula is used.
             
         Returns
         -------
@@ -58,33 +65,56 @@ class StandardDeviationWeightCalculator:
         if non_numeric:
             raise TypeError(f"Non-numeric columns found: {non_numeric}")
         
+        n = len(data)
+        X = data.values  # (n, p)
         columns = data.columns.tolist()
         
-        # Calculate standard deviation for each criterion
-        std = data.std(axis=0, ddof=self.ddof)
-        std = std.replace(0, self.epsilon)
+        if sample_weights is not None:
+            w = np.asarray(sample_weights, dtype=float)
+            if w.shape[0] != n:
+                raise ValueError(
+                    f"sample_weights length ({w.shape[0]}) != n_observations ({n})")
+            w = w / (w.sum() + self.epsilon)
+            
+            # Weighted mean: x̄_j = Σ w_i x_ij
+            wmean = w @ X  # (p,)
+            # Weighted std: σ_j = sqrt(Σ w_i (x_ij - x̄_j)²)
+            # with reliability-weights Bessel correction:
+            #   V1 = Σw_i = 1,  V2 = Σw_i²
+            #   σ² = (1 / (V1 - V2)) * Σ w_i (x - x̄)²
+            deviations = X - wmean  # (n, p)
+            var_biased = (w[:, None] * deviations ** 2).sum(axis=0)  # (p,)
+            V2 = (w ** 2).sum()
+            correction = 1.0 / max(1.0 - V2, self.epsilon)  # Bessel for weights
+            std_arr = np.sqrt(var_biased * correction)
+            mean_arr = wmean
+        else:
+            std_arr = data.std(axis=0, ddof=self.ddof).values
+            mean_arr = data.mean(axis=0).values
+        
+        std_arr = np.where(std_arr < self.epsilon, self.epsilon, std_arr)
+        mean_arr = np.where(np.abs(mean_arr) < self.epsilon, self.epsilon, mean_arr)
         
         # Normalize to weights
-        weights = std / std.sum()
+        weights_arr = std_arr / std_arr.sum()
         
-        # Also compute coefficient of variation (CV) for reference
-        # CV = σ/μ measures relative variability
-        mean = data.mean(axis=0)
-        mean = mean.replace(0, self.epsilon)
-        cv = std / mean
-        
-        # Compute range (max - min) as additional dispersion measure
+        cv_arr = std_arr / np.abs(mean_arr)
         data_range = data.max(axis=0) - data.min(axis=0)
         
+        std_dict = {col: float(std_arr[j]) for j, col in enumerate(columns)}
+        cv_dict = {col: float(cv_arr[j]) for j, col in enumerate(columns)}
+        weights_dict = {col: float(weights_arr[j]) for j, col in enumerate(columns)}
+        mean_dict = {col: float(mean_arr[j]) for j, col in enumerate(columns)}
+        
         return WeightResult(
-            weights=weights.to_dict(),
+            weights=weights_dict,
             method="standard_deviation",
             details={
-                "std_values": std.to_dict(),
-                "coefficient_of_variation": cv.to_dict(),
+                "std_values": std_dict,
+                "coefficient_of_variation": cv_dict,
                 "range_values": data_range.to_dict(),
-                "mean_values": mean.to_dict(),
-                "n_samples": len(data),
+                "mean_values": mean_dict,
+                "n_samples": n,
                 "ddof": self.ddof,
                 "interpretation": "Higher weights indicate criteria with more "
                                 "variation (dispersion) across alternatives."

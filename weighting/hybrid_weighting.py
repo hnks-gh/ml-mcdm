@@ -37,7 +37,7 @@ class HybridWeightingPipeline:
     
     Parameters
     ----------
-    bootstrap_iterations : int, default=999
+    bootstrap_iterations : int, default=199
         Number of Bayesian Bootstrap iterations for uncertainty quantification.
     stability_threshold : float, default=0.95
         Minimum cosine similarity for temporal stability (split-half test).
@@ -74,7 +74,7 @@ class HybridWeightingPipeline:
     >>> 
     >>> # Initialize pipeline with GTWC fusion
     >>> pipeline = HybridWeightingPipeline(
-    >>>     bootstrap_iterations=999
+    >>>     bootstrap_iterations=199
     >>> )
     >>> 
     >>> # Calculate weights
@@ -147,7 +147,7 @@ class HybridWeightingPipeline:
 
     def __init__(
         self,
-        bootstrap_iterations: int = 999,
+        bootstrap_iterations: int = 199,
         stability_threshold: float = 0.95,
         epsilon: float = 1e-10,
         seed: int = 42,
@@ -155,7 +155,7 @@ class HybridWeightingPipeline:
         """
         Parameters
         ----------
-        bootstrap_iterations : int, default=999
+        bootstrap_iterations : int, default=199
             Number of Bayesian bootstrap iterations for uncertainty quantification.
         stability_threshold : float, default=0.95
             Minimum required stability score (0-1) for validation.
@@ -272,12 +272,26 @@ class HybridWeightingPipeline:
         )
 
         # ── Step 4: Bayesian Bootstrap Validation ──
-        def compute_fused_weights(X_df: pd.DataFrame, cols: List[str]) -> np.ndarray:
-            """Helper: compute fused weights for bootstrap using GTWC."""
-            W_e = np.array([self.entropy_calc.calculate(X_df).weights[c] for c in cols])
-            W_c = np.array([self.critic_calc.calculate(X_df).weights[c] for c in cols])
-            W_m = np.array([self.merec_calc.calculate(X_df).weights[c] for c in cols])
-            W_s = np.array([self.sd_calc.calculate(X_df).weights[c] for c in cols])
+        def compute_fused_weights(X_df: pd.DataFrame, cols: List[str],
+                                  sample_weights: 'np.ndarray | None' = None) -> np.ndarray:
+            """Helper: compute fused weights for bootstrap using GTWC.
+            
+            Parameters
+            ----------
+            X_df : pd.DataFrame
+                Full (unsampled) data matrix.
+            cols : list[str]
+                Criterion column names.
+            sample_weights : np.ndarray or None
+                Dirichlet observation weights forwarded from the Bayesian
+                Bootstrap loop.  Passed through to each weight calculator
+                so that weighted statistics are computed without discrete
+                resampling.
+            """
+            W_e = np.array([self.entropy_calc.calculate(X_df, sample_weights=sample_weights).weights[c] for c in cols])
+            W_c = np.array([self.critic_calc.calculate(X_df, sample_weights=sample_weights).weights[c] for c in cols])
+            W_m = np.array([self.merec_calc.calculate(X_df, sample_weights=sample_weights).weights[c] for c in cols])
+            W_s = np.array([self.sd_calc.calculate(X_df, sample_weights=sample_weights).weights[c] for c in cols])
             
             wv = {'entropy': W_e, 'critic': W_c, 'merec': W_m, 'std_dev': W_s}
             W_fused, _ = self.gtwc.combine(wv)
@@ -319,13 +333,13 @@ class HybridWeightingPipeline:
         # Convert StabilityResult dataclass → dict for downstream consumption
         stability = {
             'cosine_similarity': stability.cosine_similarity,
-            'spearman_correlation': stability.correlation,
+            'pearson_correlation': stability.correlation,
             'is_stable': stability.is_stable,
             'split_point': stability.split_point,
         }
         
         logger.info(f"Step 5: Stability — cosine={stability['cosine_similarity']:.4f}, "
-                    f"spearman={stability['spearman_correlation']:.4f}")
+                    f"pearson={stability['pearson_correlation']:.4f}")
 
         # Build result dictionary
         weights_dict = {col: float(W_final[j])

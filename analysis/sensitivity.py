@@ -475,18 +475,130 @@ class SensitivityAnalysis:
                                      weights: Dict) -> Tuple[float, float]:
         """
         Test sensitivity to IFS membership/non-membership uncertainty.
-        
-        In the IFS framework, uncertainty comes from temporal variance
-        affecting μ (membership) and ν (non-membership) values.
+
+        Performs Monte Carlo perturbation of the IFS decision matrices
+        and measures the resulting rank displacement.
+
+        For each simulation:
+        1. Build the base IFS matrices (one per criterion group).
+        2. Perturb μ values by U(-δ_μ, δ_μ) → re-rank → record displacement.
+        3. Perturb ν values by U(-δ_ν, δ_ν) → re-rank → record displacement.
+
+        Sensitivity = mean(|Δrank|) / n_provinces, normalised to [0, 1].
+
+        Returns
+        -------
+        mu_sensitivity : float
+            Normalised mean rank displacement under μ perturbation.
+        nu_sensitivity : float
+            Normalised mean rank displacement under ν perturbation.
         """
-        # This would require modifying the IFS construction to inject uncertainty
-        # For now, return placeholder values based on theoretical analysis
-        # TODO: Implement IFS perturbation in the ranking pipeline
-        
-        # Estimate based on typical IFS sensitivity in the literature
-        mu_sensitivity = 0.35  # Moderate sensitivity to membership
-        nu_sensitivity = 0.28  # Lower sensitivity to non-membership
-        
+        import logging
+        _logger = logging.getLogger('ml_mcdm')
+
+        base_year = max(panel_data.years)
+        n_provinces = len(panel_data.provinces)
+        n_sims = min(self.n_simulations, 50)  # cap for cost
+        delta = self.ifs_perturbation  # default 0.10
+
+        # ── Obtain base ranking & base IFS matrices ──
+        try:
+            base_result = ranking_pipeline.rank(
+                panel_data, weights, target_year=base_year)
+            base_ranking = base_result.final_ranking.rank().values
+        except Exception as e:
+            _logger.warning(f"IFS sensitivity: base ranking failed ({e}), "
+                            "returning zero sensitivity.")
+            return 0.0, 0.0
+
+        # Build base IFS matrices per criterion (same logic as the
+        # ranking pipeline uses internally).
+        from ..mcdm.ifs.base import IFSDecisionMatrix
+        hierarchy = panel_data.hierarchy
+        current_data = panel_data.subcriteria_cross_section[base_year]
+        historical_std = ranking_pipeline._compute_historical_std(panel_data)
+        global_range = ranking_pipeline._compute_global_range(panel_data)
+
+        base_ifs: Dict[str, IFSDecisionMatrix] = {}
+        for crit_id in sorted(hierarchy.all_criteria):
+            subcrit_cols = hierarchy.criteria_to_subcriteria.get(crit_id, [])
+            subcrit_cols = [sc for sc in subcrit_cols if sc in current_data.columns]
+            if not subcrit_cols:
+                continue
+
+            df_crit = current_data[subcrit_cols].copy()
+            cost_local = [c for c in subcrit_cols
+                          if c in ranking_pipeline.cost_criteria]
+            df_norm = ranking_pipeline._minmax_normalise(
+                df_crit, cost_criteria=cost_local)
+            std_crit = (historical_std[subcrit_cols].copy()
+                        if all(sc in historical_std.columns
+                               for sc in subcrit_cols)
+                        else pd.DataFrame(0.0,
+                                          index=panel_data.provinces,
+                                          columns=subcrit_cols))
+            range_crit = (global_range[subcrit_cols]
+                          if all(sc in global_range.index
+                                 for sc in subcrit_cols)
+                          else pd.Series(1.0, index=subcrit_cols))
+
+            base_ifs[crit_id] = IFSDecisionMatrix.from_temporal_variance(
+                current_data=df_norm,
+                historical_std=std_crit,
+                global_range=range_crit,
+                spread_factor=ranking_pipeline.ifs_spread_factor,
+            )
+
+        if not base_ifs:
+            _logger.warning("IFS sensitivity: no IFS matrices built.")
+            return 0.0, 0.0
+
+        # ── Monte Carlo: μ perturbation ──
+        mu_displacements: List[float] = []
+        for _ in range(n_sims):
+            overrides = {
+                cid: mat.perturb(delta_mu=delta, delta_nu=0.0, rng=self.rng)
+                for cid, mat in base_ifs.items()
+            }
+            try:
+                res = ranking_pipeline.rank(
+                    panel_data, weights,
+                    target_year=base_year,
+                    ifs_overrides=overrides)
+                new_ranking = res.final_ranking.rank().values
+                mu_displacements.append(
+                    np.mean(np.abs(new_ranking - base_ranking)))
+            except Exception:
+                continue
+
+        # ── Monte Carlo: ν perturbation ──
+        nu_displacements: List[float] = []
+        for _ in range(n_sims):
+            overrides = {
+                cid: mat.perturb(delta_mu=0.0, delta_nu=delta, rng=self.rng)
+                for cid, mat in base_ifs.items()
+            }
+            try:
+                res = ranking_pipeline.rank(
+                    panel_data, weights,
+                    target_year=base_year,
+                    ifs_overrides=overrides)
+                new_ranking = res.final_ranking.rank().values
+                nu_displacements.append(
+                    np.mean(np.abs(new_ranking - base_ranking)))
+            except Exception:
+                continue
+
+        # Normalise: displacement / (n_provinces / 2)  → [0, 1]
+        max_disp = n_provinces / 2.0
+        mu_sensitivity = (float(np.mean(mu_displacements)) / max_disp
+                          if mu_displacements else 0.0)
+        nu_sensitivity = (float(np.mean(nu_displacements)) / max_disp
+                          if nu_displacements else 0.0)
+
+        _logger.info(f"IFS sensitivity ({n_sims} sims): "
+                     f"μ={mu_sensitivity:.4f}, ν={nu_sensitivity:.4f}")
+
         return mu_sensitivity, nu_sensitivity
     
     def _forecast_robustness(self, forecast_result: Any) -> Dict[str, float]:

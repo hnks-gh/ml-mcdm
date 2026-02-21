@@ -66,7 +66,8 @@ class CRITICWeightCalculator:
     def __init__(self, epsilon: float = 1e-10):
         self.epsilon = epsilon
     
-    def calculate(self, data: pd.DataFrame) -> WeightResult:
+    def calculate(self, data: pd.DataFrame,
+                  sample_weights: 'np.ndarray | None' = None) -> WeightResult:
         """
         Calculate CRITIC weights.
         
@@ -74,6 +75,12 @@ class CRITICWeightCalculator:
         ----------
         data : pd.DataFrame
             Decision matrix (alternatives × criteria)
+        sample_weights : np.ndarray or None, optional
+            Observation weights (length = n_alternatives).  When provided,
+            the weighted covariance matrix is used to derive both the
+            weighted standard deviations and the weighted Pearson
+            correlation matrix.  Must sum to 1.
+            If *None*, the unweighted formula is used.
         
         Returns
         -------
@@ -98,34 +105,57 @@ class CRITICWeightCalculator:
         if non_numeric:
             raise TypeError(f"Non-numeric columns found: {non_numeric}")
         
-        # Standard deviation (contrast intensity)
-        std = data.std(axis=0)
-        std = std.replace(0, self.epsilon)
+        n = len(data)
+        X = data.values  # (n, p)
+        columns = data.columns.tolist()
         
-        # Correlation matrix
-        corr_matrix = data.corr()
+        if sample_weights is not None:
+            w = np.asarray(sample_weights, dtype=float)
+            if w.shape[0] != n:
+                raise ValueError(
+                    f"sample_weights length ({w.shape[0]}) != n_observations ({n})")
+            w = w / (w.sum() + self.epsilon)
+            
+            # Weighted covariance matrix via np.cov with aweights
+            # np.cov returns bias-corrected estimate with aweights
+            cov_matrix = np.cov(X.T, aweights=w)
+            if cov_matrix.ndim == 0:
+                cov_matrix = np.array([[float(cov_matrix)]])
+            
+            # Weighted std from diagonal of covariance
+            std_arr = np.sqrt(np.maximum(np.diag(cov_matrix), 0.0))
+            std_arr = np.where(std_arr < self.epsilon, self.epsilon, std_arr)
+            
+            # Weighted Pearson correlation from covariance
+            # r_jk = cov_jk / (σ_j σ_k)
+            outer_std = np.outer(std_arr, std_arr)
+            outer_std = np.where(outer_std < self.epsilon, self.epsilon, outer_std)
+            corr_arr = cov_matrix / outer_std
+            # Clamp to [-1, 1] for numerical safety
+            corr_arr = np.clip(corr_arr, -1.0, 1.0)
+            
+            corr_matrix = pd.DataFrame(corr_arr, index=columns, columns=columns)
+            std = pd.Series(std_arr, index=columns)
+        else:
+            # Standard (unweighted) statistics
+            std = data.std(axis=0)
+            std = std.replace(0, self.epsilon)
+            corr_matrix = data.corr()
         
         # Handle NaN values in correlation matrix (occurs with constant columns)
-        # Replace NaN with 1.0 (assume perfect self-correlation, zero conflict)
         corr_matrix = corr_matrix.fillna(1.0)
         
         # Conflict measure (sum of 1 - r_jk for all k)
-        # Higher values indicate more independence from other criteria
         conflict = (1 - corr_matrix).sum(axis=0)
-        
-        # Ensure conflict values are non-negative and handle edge cases
         conflict = conflict.clip(lower=self.epsilon)
         
-        # Information content (variance × conflict)
+        # Information content (std × conflict)
         C = std * conflict
         
-        # Handle edge case where all C values might be near zero
         if C.sum() < self.epsilon:
-            # Fallback to equal weights if no distinguishable information
-            n_criteria = len(data.columns)
-            weights = pd.Series(1.0 / n_criteria, index=data.columns)
+            n_criteria = len(columns)
+            weights = pd.Series(1.0 / n_criteria, index=columns)
         else:
-            # Normalize to weights
             weights = C / C.sum()
         
         return WeightResult(

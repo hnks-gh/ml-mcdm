@@ -6,8 +6,7 @@ ML-MCDM Analysis — Main Entry Point
 
 Usage
 -----
-    python main.py                # full run  (quick-test bootstrap)
-    python main.py --production   # production run (999 bootstrap)
+    python main.py
 
 Pipeline Phases
 ---------------
@@ -28,11 +27,6 @@ def main():
     """Configure and execute the ML-MCDM pipeline."""
 
     # ------------------------------------------------------------------
-    # Determine run mode
-    # ------------------------------------------------------------------
-    production_mode = '--production' in sys.argv
-
-    # ------------------------------------------------------------------
     # Lazy imports (avoids heavy loading on --help)
     # ------------------------------------------------------------------
     from ml_mcdm.pipeline import MLMCDMPipeline
@@ -44,23 +38,12 @@ def main():
     config.panel.n_provinces = 63
     config.panel.years = list(range(2011, 2025))
 
-    if production_mode:
-        # ── Production settings ──
-        config.weighting.bootstrap_iterations = 999
-        config.validation.n_simulations = 1000
-    else:
-        # ── Quick-test settings (still bootstraps, just fewer iterations) ──
-        config.weighting.bootstrap_iterations = 29      # fast but valid
-        config.validation.n_simulations = 100            # fewer MC sims
-
     # ------------------------------------------------------------------
     # Banner
     # ------------------------------------------------------------------
     print(f"\n{'='*70}")
     print("  ML-MCDM: IFS + Evidential Reasoning Hierarchical Ranking")
     print(f"{'='*70}")
-    mode_label = "PRODUCTION" if production_mode else "QUICK TEST"
-    print(f"  Mode              : {mode_label}")
     print(f"  Provinces         : {config.panel.n_provinces}")
     print(f"  Years             : {config.panel.years[0]}-{config.panel.years[-1]} "
           f"({config.panel.n_years} years)")

@@ -31,7 +31,7 @@ This framework combines state-of-the-art Multi-Criteria Decision Making (MCDM) m
 ### ⚖️ Objective Weight Calculation
 - **4 Complementary Methods**: Entropy, CRITIC, MEREC, Standard Deviation
 - **Game Theory Combination**: Intra-group hybridization + cooperative optimization
-- **Uncertainty Quantification**: Bayesian Bootstrap (999 iterations)
+- **Uncertainty Quantification**: Bayesian Bootstrap (199 iterations)
 - **Temporal Stability**: Split-half validation
 
 ### 🤖 Machine Learning Forecasting
@@ -88,11 +88,11 @@ This framework combines state-of-the-art Multi-Criteria Decision Making (MCDM) m
                ┌────────────┼────────────┐
                ▼            ▼            ▼
         ┌───────────┐ ┌───────────┐ ┌───────────┐
-        │ ML FEATURE│ │ ANALYSIS  │ │ VISUALISE │
-        │ IMPORTANCE│ │           │ │ & EXPORT  │
+        │ML FORECAST│ │ ANALYSIS  │ │ VISUALISE │
+        │ (OPTIONAL)│ │           │ │ & EXPORT  │
         │           │ │• Sensitiv.│ │           │
-        │• RF Gini  │ │• Robust.  │ │• 5 charts │
-        │• CV R²    │ │• Kendall W│ │• 14 files │
+        │• 6 Models │ │• Robust.  │ │• 5 charts │
+        │• Super L  │ │• Kendall W│ │• 14 files │
         └───────────┘ └───────────┘ └───────────┘
 ```
 
@@ -266,7 +266,7 @@ Combines 4 weighting methods through:
    W^* = α_1 \cdot W_{\text{GroupA}} + α_2 \cdot W_{\text{GroupB}}
    $$
 
-4. **Bayesian Bootstrap:** 999 iterations for uncertainty quantification
+4. **Bayesian Bootstrap:** 199 iterations for uncertainty quantification
 
 ---
 
@@ -291,8 +291,8 @@ distribution-free uncertainty intervals.
 | `mcdm_scores_C01–C08.csv` | Per-criterion scores from 12 methods |
 | `mcdm_rank_comparison.csv` | Rank comparison across MCDM methods |
 | `weights_analysis.csv` | Weight derivation details |
-| `feature_importance.csv` | RF Gini importance scores |
-| `cv_scores.csv` | Cross-validation R² by fold |
+| `forecast_feature_importance.csv` | Aggregated from 6 forecast models (optional) |
+| `forecast_cv_metrics.csv` | Cross-validation performance (optional) |
 | **`sensitivity_subcriteria.csv`** | **28 subcriteria sensitivity scores** |
 | **`sensitivity_criteria.csv`** | **8 criteria sensitivity scores** |
 | **`temporal_stability.csv`** | **Year-to-year rank correlations** |

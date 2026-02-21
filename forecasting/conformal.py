@@ -113,19 +113,35 @@ class ConformalPredictor:
         """
         Calibrate the conformal predictor using training data.
 
+        The target ``y`` must be 1-D (single output component).  For
+        multi-output problems, create one ``ConformalPredictor`` per
+        component and calibrate each on a single column of ``y``.
+
         Args:
-            base_model: Fitted model with .predict() method
+            base_model: Fitted model with .predict() method.
+                        For multi-output models, wrap the model so that
+                        ``.predict()`` returns only the relevant column.
             X: Feature matrix
-            y: True target values
+            y: True target values — must be 1-D or shape (n, 1)
             cv_folds: Number of CV folds for cv_plus method
 
         Returns:
             Self for method chaining
+
+        Raises:
+            ValueError:
+                If ``y`` has more than one column (multi-output).
         """
         self._base_model = base_model
 
+        if y.ndim > 1 and y.shape[1] > 1:
+            raise ValueError(
+                f"ConformalPredictor.calibrate() requires single-output y, "
+                f"got y.shape={y.shape}.  Calibrate one predictor per "
+                f"output component (with Bonferroni-corrected alpha)."
+            )
         if y.ndim > 1:
-            y = y.ravel() if y.shape[1] == 1 else y.mean(axis=1)
+            y = y.ravel()
 
         if self.method == "split":
             self._calibrate_split(base_model, X, y)

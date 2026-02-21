@@ -341,43 +341,73 @@ class UnifiedForecaster:
             'upper': pred_df + 1.96 * unc_df
         }
 
-        # ===== Stage 5: Conformal prediction calibration =====
+        # ===== Stage 5: Per-component conformal prediction (Bonferroni) =====
         if self.verbose:
-            print("  Stage 4: Conformal prediction calibration...")
+            print("  Stage 4: Per-component conformal prediction calibration...")
+
+        n_components = y_train.shape[1]
+        component_cols = y_train.columns.tolist()
+
+        # Bonferroni correction: α_per_component = α / D
+        # guarantees joint coverage ≥ 1 − α across all D components.
+        alpha_bonferroni = self.conformal_alpha / max(n_components, 1)
+
+        self.conformal_predictors_: Dict[str, ConformalPredictor] = {}
+
+        class _SingleOutputWrapper:
+            """Wrap a multi-output model to expose a single column."""
+            def __init__(self, model, col_index: int):
+                self._model = model
+                self._col = col_index
+            def predict(self, X: np.ndarray) -> np.ndarray:
+                pred = self._model.predict(X)
+                if pred.ndim == 1:
+                    return pred
+                return pred[:, self._col]
+            # Forward other attributes (e.g. fit) untouched
+            def __getattr__(self, name: str):
+                return getattr(self._model, name)
 
         try:
-            self.conformal_predictor_ = ConformalPredictor(
-                method=self.conformal_method,
-                alpha=self.conformal_alpha,
-                random_state=self.random_state,
-            )
+            for d, col in enumerate(component_cols):
+                wrapper = _SingleOutputWrapper(self.super_learner_, d)
+                y_col = y_arr[:, d] if y_arr.ndim > 1 else y_arr
 
-            # Calibrate against Super Learner
-            cal_model = self.super_learner_
+                cp = ConformalPredictor(
+                    method=self.conformal_method,
+                    alpha=alpha_bonferroni,
+                    random_state=self.random_state,
+                )
+                cp.calibrate(wrapper, X_arr, y_col, cv_folds=self.cv_folds)
 
-            self.conformal_predictor_.calibrate(
-                cal_model, X_arr, y_arr, cv_folds=self.cv_folds
-            )
+                # Predict intervals for this component
+                point_d = pred_df[col].values
+                lower_d, upper_d = cp.predict_intervals(
+                    X_pred.values, point_predictions=point_d)
 
-            # Overwrite intervals with conformal-calibrated intervals
-            cp_lower, cp_upper = self.conformal_predictor_.predict_intervals(
-                X_pred.values, point_predictions=pred_df.values.mean(axis=1)
-            )
+                intervals['lower'][col] = lower_d
+                intervals['upper'][col] = upper_d
+                self.conformal_predictors_[col] = cp
 
-            # Apply conformal intervals to all components
-            for col in y_train.columns:
-                intervals['lower'][col] = cp_lower
-                intervals['upper'][col] = cp_upper
+            # Backward-compat: keep a reference accessible as single predictor
+            self.conformal_predictor_ = next(
+                iter(self.conformal_predictors_.values()), None)
 
             if self.verbose:
-                width = self.conformal_predictor_.get_interval_width()
-                print(f"    Conformal interval width: {width:.4f}")
-                print(f"    Coverage guarantee: {(1 - self.conformal_alpha) * 100:.0f}%")
+                widths = [cp.get_interval_width()
+                          for cp in self.conformal_predictors_.values()]
+                print(f"    Per-component widths: "
+                      f"min={min(widths):.4f}, max={max(widths):.4f}")
+                print(f"    Bonferroni α/D = {alpha_bonferroni:.5f} "
+                      f"(D={n_components})")
+                print(f"    Joint coverage guarantee: "
+                      f"{(1 - self.conformal_alpha) * 100:.0f}%")
 
         except Exception as e:
             if self.verbose:
                 print(f"    Warning: Conformal calibration failed: {e}")
                 print("    Using standard Gaussian intervals as fallback.")
+            self.conformal_predictor_ = None
 
         # ===== Stage 6: Aggregate results =====
         feature_importance = self._aggregate_feature_importance(

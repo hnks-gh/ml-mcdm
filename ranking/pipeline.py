@@ -165,6 +165,7 @@ class HierarchicalRankingPipeline:
         panel_data: PanelData,
         subcriteria_weights: Dict[str, float],
         target_year: Optional[int] = None,
+        ifs_overrides: Optional[Dict[str, 'IFSDecisionMatrix']] = None,
     ) -> HierarchicalRankingResult:
         """
         Execute the full two-stage hierarchical ranking.
@@ -177,6 +178,10 @@ class HierarchicalRankingPipeline:
             {SC01: 0.035, SC02: 0.041, …} — fused subcriteria weights.
         target_year : int, optional
             Year to rank (default: latest year).
+        ifs_overrides : dict, optional
+            {criterion_id: IFSDecisionMatrix} — pre-built (e.g. perturbed)
+            IFS matrices to use *instead* of constructing from temporal
+            variance.  Used by sensitivity analysis.
 
         Returns
         -------
@@ -238,8 +243,10 @@ class HierarchicalRankingPipeline:
             ) else pd.Series(1.0, index=subcrit_cols)
 
             # Run traditional + IFS methods
+            ifs_override = (ifs_overrides or {}).get(crit_id)
             crit_scores, crit_ranks, ifs_diag = self._run_methods_for_criterion(
-                df_crit, std_crit, range_crit, local_weights, alternatives
+                df_crit, std_crit, range_crit, local_weights, alternatives,
+                ifs_matrix_override=ifs_override,
             )
 
             all_method_scores[crit_id] = crit_scores
@@ -271,6 +278,9 @@ class HierarchicalRankingPipeline:
             target_year=target_year,
         )
 
+    # Backward-compatible alias used by sensitivity analysis
+    run = rank
+
     # ==================================================================
     # Internal: method execution per criterion
     # ==================================================================
@@ -282,6 +292,7 @@ class HierarchicalRankingPipeline:
         global_range: pd.Series,
         subcrit_weights: Dict[str, float],
         alternatives: List[str],
+        ifs_matrix_override: Optional['IFSDecisionMatrix'] = None,
     ) -> Tuple[Dict[str, pd.Series], Dict[str, pd.Series], Dict]:
         """
         Run 12 MCDM methods on subcriteria data for one criterion group.
@@ -346,13 +357,16 @@ class HierarchicalRankingPipeline:
         # ----- Normalise crisp data to [0, 1] via min-max -----
         df_norm = self._minmax_normalise(df, cost_criteria=cost_local)
 
-        # ----- Build IFS matrix from temporal variance -----
-        ifs_matrix = IFSDecisionMatrix.from_temporal_variance(
-            current_data=df_norm,
-            historical_std=historical_std,
-            global_range=global_range,
-            spread_factor=self.ifs_spread_factor,
-        )
+        # ----- Build IFS matrix from temporal variance (or use override) -----
+        if ifs_matrix_override is not None:
+            ifs_matrix = ifs_matrix_override
+        else:
+            ifs_matrix = IFSDecisionMatrix.from_temporal_variance(
+                current_data=df_norm,
+                historical_std=historical_std,
+                global_range=global_range,
+                spread_factor=self.ifs_spread_factor,
+            )
 
         # Sample diagnostics (first 3 alternatives × first 2 subcriteria)
         ifs_diag = {}
