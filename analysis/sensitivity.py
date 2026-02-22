@@ -169,7 +169,14 @@ class SensitivityAnalysis:
         self.confidence_level = confidence_level
         self.seed = seed
         self.rng = np.random.RandomState(seed)
-    
+
+    def _weights_to_dict(self, weights: Dict, perturbed_array: Optional[np.ndarray] = None) -> Dict[str, float]:
+        """Convert weights dict/array to subcriteria Dict[str, float] for ranking pipeline."""
+        subcriteria = weights['subcriteria']
+        if perturbed_array is not None:
+            return dict(zip(subcriteria, perturbed_array))
+        return weights['fused_dict']
+
     def analyze_full_pipeline(self,
                               panel_data: Any,
                               ranking_pipeline: Any,
@@ -260,8 +267,8 @@ class SensitivityAnalysis:
         from ..ranking import HierarchicalRankingPipeline
         
         base_year = max(panel_data.years)
-        base_er_result = ranking_pipeline.run(
-            panel_data, weights, target_year=base_year
+        base_er_result = ranking_pipeline.rank(
+            panel_data, self._weights_to_dict(weights), target_year=base_year
         )
         base_ranking = base_er_result.final_ranking.rank().values
         
@@ -297,9 +304,9 @@ class SensitivityAnalysis:
                 
                 # Run pipeline with perturbed weights
                 try:
-                    perturbed_result = ranking_pipeline.run(
+                    perturbed_result = ranking_pipeline.rank(
                         panel_data, 
-                        {'fused': perturbed_weights}, 
+                        self._weights_to_dict(weights, perturbed_weights), 
                         target_year=base_year
                     )
                     new_ranking = perturbed_result.final_ranking.rank().values
@@ -337,9 +344,9 @@ class SensitivityAnalysis:
                 perturbed_weights = perturbed_weights / perturbed_weights.sum()
                 
                 try:
-                    perturbed_result = ranking_pipeline.run(
+                    perturbed_result = ranking_pipeline.rank(
                         panel_data, 
-                        {'fused': perturbed_weights}, 
+                        self._weights_to_dict(weights, perturbed_weights), 
                         target_year=base_year
                     )
                     new_ranking = perturbed_result.final_ranking.rank().values
@@ -369,7 +376,7 @@ class SensitivityAnalysis:
         n_provinces = len(panel_data.provinces)
         
         # Get base ranking
-        base_result = ranking_pipeline.run(panel_data, weights, target_year=base_year)
+        base_result = ranking_pipeline.rank(panel_data, self._weights_to_dict(weights), target_year=base_year)
         base_ranking = base_result.final_ranking.rank().values
         
         # Monte Carlo simulations
@@ -386,9 +393,9 @@ class SensitivityAnalysis:
             perturbed_weights = perturbed_weights / perturbed_weights.sum()
             
             try:
-                perturbed_result = ranking_pipeline.run(
+                perturbed_result = ranking_pipeline.rank(
                     panel_data, 
-                    {'fused': perturbed_weights}, 
+                    self._weights_to_dict(weights, perturbed_weights), 
                     target_year=base_year
                 )
                 simulated_rankings[sim] = perturbed_result.final_ranking.rank().values
@@ -438,7 +445,7 @@ class SensitivityAnalysis:
         
         for year in sample_years:
             try:
-                result = ranking_pipeline.run(panel_data, weights, target_year=year)
+                result = ranking_pipeline.rank(panel_data, self._weights_to_dict(weights), target_year=year)
                 year_rankings[year] = result.final_ranking.rank().values
             except Exception:
                 continue
@@ -504,7 +511,7 @@ class SensitivityAnalysis:
         # ── Obtain base ranking & base IFS matrices ──
         try:
             base_result = ranking_pipeline.rank(
-                panel_data, weights, target_year=base_year)
+                panel_data, self._weights_to_dict(weights), target_year=base_year)
             base_ranking = base_result.final_ranking.rank().values
         except Exception as e:
             _logger.warning(f"IFS sensitivity: base ranking failed ({e}), "
@@ -562,7 +569,7 @@ class SensitivityAnalysis:
             }
             try:
                 res = ranking_pipeline.rank(
-                    panel_data, weights,
+                    panel_data, self._weights_to_dict(weights),
                     target_year=base_year,
                     ifs_overrides=overrides)
                 new_ranking = res.final_ranking.rank().values
@@ -580,7 +587,7 @@ class SensitivityAnalysis:
             }
             try:
                 res = ranking_pipeline.rank(
-                    panel_data, weights,
+                    panel_data, self._weights_to_dict(weights),
                     target_year=base_year,
                     ifs_overrides=overrides)
                 new_ranking = res.final_ranking.rank().values
@@ -602,30 +609,48 @@ class SensitivityAnalysis:
         return mu_sensitivity, nu_sensitivity
     
     def _forecast_robustness(self, forecast_result: Any) -> Dict[str, float]:
-        """Analyze forecast feature importance stability."""
+        """Analyze forecast feature importance stability via bootstrap resampling.
+        
+        Bootstraps the feature importance scores across models to measure
+        the coefficient of variation (CV) of each feature's importance.
+        Lower CV means more stable/reliable importance.
+        """
         if not hasattr(forecast_result, 'feature_importance'):
             return {}
         
-        # Bootstrap resampling of feature importance
-        # (this would require re-running forecasts - simplified here)
-        
         feature_importance = forecast_result.feature_importance
-        if hasattr(feature_importance, 'to_dict'):
-            importance_dict = feature_importance['Importance'].to_dict()
-        elif isinstance(feature_importance, dict):
-            importance_dict = feature_importance
-        else:
-            return {}
+        if isinstance(feature_importance, pd.DataFrame) and not feature_importance.empty:
+            # Feature importance DataFrame: rows=features, cols=components or models
+            # Bootstrap resample columns to estimate importance stability
+            n_cols = feature_importance.shape[1]
+            if n_cols < 2:
+                # Not enough columns to bootstrap — return mean importance
+                return feature_importance.iloc[:, 0].to_dict()
+            
+            n_bootstrap = min(100, self.n_simulations)
+            bootstrap_means = []
+            for _ in range(n_bootstrap):
+                # Resample columns with replacement
+                col_indices = self.rng.choice(n_cols, size=n_cols, replace=True)
+                resampled = feature_importance.iloc[:, col_indices]
+                bootstrap_means.append(resampled.mean(axis=1).values)
+            
+            bootstrap_matrix = np.array(bootstrap_means)  # (n_bootstrap, n_features)
+            overall_mean = np.mean(bootstrap_matrix, axis=0)
+            overall_std = np.std(bootstrap_matrix, axis=0)
+            
+            # CV = std / mean (coefficient of variation)
+            feature_names = feature_importance.index.tolist()
+            feature_cv = {}
+            for i, feat in enumerate(feature_names):
+                if abs(overall_mean[i]) > 1e-10:
+                    feature_cv[feat] = float(overall_std[i] / abs(overall_mean[i]))
+                else:
+                    feature_cv[feat] = 0.0
+            
+            return feature_cv
         
-        # Simulate bootstrap stability (coefficient of variation)
-        # In practice, this should come from actual bootstrap resampling
-        feature_sens = {}
-        for feature, importance in importance_dict.items():
-            # Assume ~20% CV for stable features, ~50% for unstable
-            cv = self.rng.uniform(0.15, 0.45)
-            feature_sens[feature] = cv
-        
-        return feature_sens
+        return {}
     
     def _calculate_overall_robustness(self,
                                       rank_stability: Dict,

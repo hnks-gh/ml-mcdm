@@ -38,6 +38,11 @@ class COPRASResult:
     def final_ranks(self) -> pd.Series:
         """Get final rankings."""
         return self.ranks
+
+    @property
+    def final_scores(self) -> pd.Series:
+        """Get final scores (utility degree)."""
+        return self.utility_degree
     
     def top_n(self, n: int = 10) -> pd.DataFrame:
         """Get top n alternatives."""
@@ -140,10 +145,10 @@ class COPRASCalculator:
         weights = {col: weights.get(col, 1/len(data.columns)) 
                   for col in data.columns}
         
-        # Determine benefit and cost criteria
-        if self.benefit_criteria is None:
-            self.benefit_criteria = [col for col in data.columns 
-                                     if col not in self.cost_criteria]
+        # Determine benefit and cost criteria (use local to avoid stale state)
+        benefit_criteria = (self.benefit_criteria if self.benefit_criteria is not None
+                           else [col for col in data.columns
+                                 if col not in self.cost_criteria])
         
         # Step 1: Normalize decision matrix (sum normalization)
         norm_matrix = self._normalize(data)
@@ -154,7 +159,7 @@ class COPRASCalculator:
             weighted_matrix[col] = norm_matrix[col] * weights[col]
         
         # Step 3: Calculate S+ and S- for each alternative
-        benefit_cols = [col for col in data.columns if col in self.benefit_criteria]
+        benefit_cols = [col for col in data.columns if col in benefit_criteria]
         cost_cols = [col for col in data.columns if col in self.cost_criteria]
         
         S_plus = weighted_matrix[benefit_cols].sum(axis=1) if benefit_cols else pd.Series(0, index=data.index)
@@ -260,14 +265,13 @@ class MultiPeriodCOPRAS:
         
         for year in years:
             year_data = panel_data.cross_section[year]
-            year_data = year_data.set_index('Province') if 'Province' in year_data.columns else year_data
             numeric_cols = [col for col in year_data.columns 
-                          if col in panel_data.components]
+                          if col in panel_data.subcriteria_names]
             year_data = year_data[numeric_cols]
             
-            if self.benefit_criteria is None:
-                self.calculator.benefit_criteria = [col for col in numeric_cols 
-                                                   if col not in (self.cost_criteria or [])]
+            benefit_cols = [col for col in numeric_cols 
+                           if col not in (self.cost_criteria or [])]
+            self.calculator.benefit_criteria = benefit_cols
             
             result = self.calculator.calculate(year_data, weights)
             yearly_results[year] = result

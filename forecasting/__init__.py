@@ -72,11 +72,8 @@ from .unified import (
     UnifiedForecastResult,
 )
 
-# Base classes and results
-from .base import (
-    BaseForecaster,
-    ForecastResult,
-)
+# Base classes
+from .base import BaseForecaster
 
 __all__ = [
     # Feature engineering
@@ -101,5 +98,4 @@ __all__ = [
     'UnifiedForecastResult',
     # Base
     'BaseForecaster',
-    'ForecastResult',
 ]

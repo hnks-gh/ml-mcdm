@@ -41,6 +41,11 @@ class EDASResult:
     def final_ranks(self) -> pd.Series:
         """Get final rankings."""
         return self.ranks
+
+    @property
+    def final_scores(self) -> pd.Series:
+        """Get final scores (appraisal score)."""
+        return self.AS
     
     def top_n(self, n: int = 10) -> pd.DataFrame:
         """Get top n alternatives."""
@@ -145,10 +150,10 @@ class EDASCalculator:
         weights = {col: weights.get(col, 1/len(data.columns)) 
                   for col in data.columns}
         
-        # Determine benefit and cost criteria
-        if self.benefit_criteria is None:
-            self.benefit_criteria = [col for col in data.columns 
-                                     if col not in self.cost_criteria]
+        # Determine benefit and cost criteria (use local to avoid stale state)
+        benefit_criteria = (self.benefit_criteria if self.benefit_criteria is not None
+                           else [col for col in data.columns
+                                 if col not in self.cost_criteria])
         
         # Step 1: Calculate Average Solution (AV)
         average_solution = data.mean()
@@ -160,7 +165,7 @@ class EDASCalculator:
         for col in data.columns:
             av = average_solution[col]
             
-            if col in self.benefit_criteria:
+            if col in benefit_criteria:
                 if av > 0:
                     PDA[col] = np.maximum(0, data[col] - av) / av
                     NDA[col] = np.maximum(0, av - data[col]) / av
@@ -271,14 +276,13 @@ class MultiPeriodEDAS:
         
         for year in years:
             year_data = panel_data.cross_section[year]
-            year_data = year_data.set_index('Province') if 'Province' in year_data.columns else year_data
             numeric_cols = [col for col in year_data.columns 
-                          if col in panel_data.components]
+                          if col in panel_data.subcriteria_names]
             year_data = year_data[numeric_cols]
             
-            if self.benefit_criteria is None:
-                self.calculator.benefit_criteria = [col for col in numeric_cols 
-                                                   if col not in (self.cost_criteria or [])]
+            benefit_cols = [col for col in numeric_cols 
+                           if col not in (self.cost_criteria or [])]
+            self.calculator.benefit_criteria = benefit_cols
             
             result = self.calculator.calculate(year_data, weights)
             yearly_results[year] = result
@@ -316,9 +320,8 @@ class MultiPeriodEDAS:
         distance_data = {}
         for year in years:
             year_data = panel_data.cross_section[year]
-            year_data = year_data.set_index('Province') if 'Province' in year_data.columns else year_data
             numeric_cols = [col for col in year_data.columns 
-                          if col in panel_data.components]
+                          if col in panel_data.subcriteria_names]
             year_data = year_data[numeric_cols]
             avg = avg_evolution[year]
             

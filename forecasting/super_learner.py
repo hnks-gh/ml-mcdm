@@ -362,12 +362,17 @@ class SuperLearner:
         if not all_predictions:
             raise ValueError("No base models produced predictions")
 
-        # Weighted combination
+        # Weighted combination (renormalize weights for successful models only)
         n_samples = X.shape[0]
         result = np.zeros((n_samples, self._n_outputs))
 
+        active_weights = {name: self._meta_weights.get(name, 0.0) for name in model_names}
+        weight_sum = sum(active_weights.values())
+        if weight_sum > 0:
+            active_weights = {n: w / weight_sum for n, w in active_weights.items()}
+
         for pred, name in zip(all_predictions, model_names):
-            weight = self._meta_weights.get(name, 0.0)
+            weight = active_weights.get(name, 0.0)
             for out_col in range(self._n_outputs):
                 pred_col = min(out_col, pred.shape[1] - 1)
                 result[:, out_col] += weight * pred[:, pred_col]

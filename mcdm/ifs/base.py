@@ -29,6 +29,27 @@ import pandas as pd
 from typing import Dict, List, Optional, Tuple, Union
 from dataclasses import dataclass
 
+from ...weighting import WeightResult
+
+
+def resolve_weights(
+    weights: Union[Dict[str, float], 'WeightResult', None],
+    criteria: List[str],
+) -> Dict[str, float]:
+    """
+    Resolve weights to a {criterion: weight} dict.
+
+    Handles three input forms:
+    - None → equal weights
+    - WeightResult → extract .weights dict
+    - Dict → use directly (with fallback for missing keys)
+    """
+    if weights is None:
+        return {c: 1.0 / len(criteria) for c in criteria}
+    if isinstance(weights, WeightResult):
+        weights = weights.weights
+    return {c: weights.get(c, 1.0 / len(criteria)) for c in criteria}
+
 
 @dataclass
 class IFN:

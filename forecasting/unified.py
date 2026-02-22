@@ -23,7 +23,7 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 import warnings
 import copy
 
-from .base import BaseForecaster, ForecastResult
+from .base import BaseForecaster
 from .gradient_boosting import GradientBoostingForecaster
 from .bayesian import BayesianForecaster
 from .features import TemporalFeatureEngineer
@@ -451,101 +451,6 @@ class UnifiedForecaster:
             }
         )
 
-    def _create_ensemble_wrapper(self):
-        """Create a simple wrapper object with predict() for conformal calibration."""
-        models = self.models_
-        weights = self.model_weights_
-
-        class _EnsembleWrapper:
-            def __init__(self, models, weights):
-                self.models = models
-                self.weights = weights
-
-            def fit(self, X, y):
-                for name, model in self.models.items():
-                    model.fit(X, y)
-                return self
-
-            def predict(self, X):
-                all_preds = []
-                for name, model in self.models.items():
-                    pred = model.predict(X)
-                    if pred.ndim == 1:
-                        pred = pred.reshape(-1, 1)
-                    all_preds.append(pred * self.weights.get(name, 0.0))
-                result = np.sum(all_preds, axis=0)
-                return result.mean(axis=1) if result.ndim > 1 else result
-
-        return _EnsembleWrapper(models, weights)
-    
-    def _cross_validate(self,
-                       X: np.ndarray,
-                       y: np.ndarray
-                       ) -> Dict[str, List[float]]:
-        """Run time-series cross-validation."""
-        tscv = TimeSeriesSplit(n_splits=self.cv_folds)
-        cv_scores = {name: [] for name in self.models_.keys()}
-        
-        for train_idx, val_idx in tscv.split(X):
-            X_cv_train, X_cv_val = X[train_idx], X[val_idx]
-            y_cv_train, y_cv_val = y[train_idx], y[val_idx]
-            
-            for name, model in self.models_.items():
-                # Clone model for CV
-                model_copy = copy.deepcopy(model)
-                model_copy.fit(X_cv_train, y_cv_train)
-                
-                pred = model_copy.predict(X_cv_val)
-                if pred.ndim == 1:
-                    pred = pred.reshape(-1, 1)
-                if y_cv_val.ndim == 1:
-                    y_cv_val = y_cv_val.reshape(-1, 1)
-                
-                # Calculate R² for each output and average
-                r2_scores = []
-                for col in range(y_cv_val.shape[1]):
-                    r2 = r2_score(y_cv_val[:, col], pred[:, min(col, pred.shape[1]-1)])
-                    r2_scores.append(r2)
-                cv_scores[name].append(np.mean(r2_scores))
-        
-        return cv_scores
-    
-    def _calculate_weights(self,
-                          cv_scores: Dict[str, List[float]]
-                          ) -> Dict[str, float]:
-        """Calculate model weights based on CV performance."""
-        mean_scores = {name: np.mean(scores) for name, scores in cv_scores.items()}
-        
-        # Use softmax over scores (shifted for numerical stability)
-        scores_arr = np.array(list(mean_scores.values()))
-        scores_shifted = scores_arr - scores_arr.max()
-        exp_scores = np.exp(scores_shifted * 5)  # Temperature scaling
-        weights = exp_scores / exp_scores.sum()
-        
-        return dict(zip(mean_scores.keys(), weights))
-    
-    def _ensemble_predict(self,
-                         X: np.ndarray
-                         ) -> Tuple[np.ndarray, np.ndarray]:
-        """Make ensemble predictions with uncertainty."""
-        all_predictions = []
-        
-        for name, model in self.models_.items():
-            pred = model.predict(X)
-            if pred.ndim == 1:
-                pred = pred.reshape(-1, 1)
-            all_predictions.append(pred * self.model_weights_[name])
-        
-        # Weighted ensemble prediction
-        ensemble_pred = np.sum(all_predictions, axis=0)
-        
-        # Uncertainty from prediction disagreement
-        pred_array = np.stack([p / self.model_weights_[n] 
-                              for p, n in zip(all_predictions, self.models_.keys())], axis=0)
-        uncertainty = np.std(pred_array, axis=0)
-        
-        return ensemble_pred, uncertainty
-    
     def _aggregate_feature_importance(self,
                                      feature_names: List[str],
                                      component_names: List[str]

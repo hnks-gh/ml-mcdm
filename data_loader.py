@@ -79,8 +79,8 @@ class PanelData:
         return len(self.hierarchy.all_criteria)
 
     @property
-    def components(self) -> List[str]:
-        """Alias for subcriteria names (used by forecasting module)."""
+    def subcriteria_names(self) -> List[str]:
+        """List of all subcriteria names from the hierarchy."""
         return self.hierarchy.all_subcriteria
 
     @property

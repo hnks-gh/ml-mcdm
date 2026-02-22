@@ -21,9 +21,10 @@ Pipeline Phases
 
 import sys
 import time
+from typing import Any
 
 
-def main():
+def main() -> None:
     """Configure and execute the ML-MCDM pipeline."""
 
     # ------------------------------------------------------------------
@@ -80,7 +81,7 @@ def main():
         sys.exit(1)
 
 
-def print_results(result):
+def print_results(result: Any) -> None:
     """Print concise results summary to console."""
     import numpy as np
 
@@ -125,10 +126,11 @@ def print_results(result):
     # ML Forecasting (if enabled)
     if result.forecast_result:
         print(f"\n  ML FORECASTING (Ensemble Performance)")
-        cv_scores = result.forecast_result.cv_scores
-        print(f"    Mean CV R²      : {cv_scores['r2_mean']:.4f}")
-        print(f"    Mean CV MAE     : {cv_scores['mae_mean']:.4f}")
-        print(f"    Prediction Year : {result.forecast_result.target_year or 'Latest+1'}")
+        cv_scores = result.forecast_result.cross_validation_scores
+        all_cv = [s for scores in cv_scores.values() for s in scores]
+        print(f"    Mean CV R²      : {np.mean(all_cv):.4f}")
+        print(f"    Std  CV R²      : {np.std(all_cv):.4f}")
+        print(f"    Prediction Year : {result.forecast_result.training_info.get('target_year', 'Latest+1')}")
 
     # Execution time
     print(f"\n  RUNTIME : {result.execution_time:.2f}s")

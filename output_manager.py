@@ -941,7 +941,7 @@ class OutputManager:
         _p(
             f'Each of the {panel_data.n_criteria} criteria groups is independently '
             f'evaluated by the full battery of {len(ranking_result.methods_used)} '
-            f'MCDM methods. Normalised method scores within each criterion are '
+            f'MCDM methods. Normalized method scores within each criterion are '
             f'subsequently used as evidence in the Stage 1 ER aggregation. The '
             f'criterion-level weights applied at Stage 2 are reported below, followed '
             f'by a summary of the three highest-performing provinces per criterion.'
@@ -1383,7 +1383,7 @@ class OutputManager:
             'Twelve methods are applied: six classical (TOPSIS, VIKOR, PROMETHEE, '
             'COPRAS, EDAS, SAW) and six Intuitionistic Fuzzy Set extensions '
             '(IFS-TOPSIS, IFS-VIKOR, IFS-PROMETHEE, IFS-COPRAS, IFS-EDAS, IFS-SAW). '
-            'All methods are executed on the same normalised decision matrix and '
+            'All methods are executed on the same normalized decision matrix and '
             'weight vector, ensuring comparability of rank orderings.'
         )
         lines.append('')
@@ -1405,7 +1405,7 @@ class OutputManager:
             'IFS (Atanassov, 1986) extends classical fuzzy sets with a '
             'non-membership function, introducing a hesitancy margin '
             'h = 1 - mu - nu that captures epistemic uncertainty. Membership '
-            'is derived from normalised scores; non-membership from temporal '
+            'is derived from normalized scores; non-membership from temporal '
             'variance; hesitancy absorbs residual ambiguity.'
         )
         lines.append('')

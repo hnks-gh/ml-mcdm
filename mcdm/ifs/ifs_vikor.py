@@ -25,7 +25,7 @@ import pandas as pd
 from typing import Dict, List, Optional, Union
 from dataclasses import dataclass
 
-from .base import IFN, IFSDecisionMatrix
+from .base import IFN, IFSDecisionMatrix, resolve_weights
 from ...weighting import WeightResult
 
 
@@ -76,7 +76,7 @@ class IFS_VIKOR:
 
         criteria = ifs_matrix.criteria
         alternatives = ifs_matrix.alternatives
-        w = self._resolve_weights(weights, criteria)
+        w = resolve_weights(weights, criteria)
         dist_fn = IFN.normalized_euclidean
 
         # Step 1 — IFS best / worst per criterion
@@ -140,11 +140,3 @@ class IFS_VIKOR:
             ranks_S=ranks_S, ranks_R=ranks_R, ranks_Q=ranks_Q,
             compromise_set=compromise, weights=w, v=self.v,
         )
-
-    @staticmethod
-    def _resolve_weights(weights, criteria):
-        if weights is None:
-            return {c: 1.0 / len(criteria) for c in criteria}
-        if isinstance(weights, WeightResult):
-            weights = weights.weights
-        return {c: weights.get(c, 1.0 / len(criteria)) for c in criteria}

@@ -43,6 +43,11 @@ class SAWResult:
     def final_ranks(self) -> pd.Series:
         return self.ranks
 
+    @property
+    def final_scores(self) -> pd.Series:
+        """Get final scores (weighted sum)."""
+        return self.scores
+
     def top_n(self, n: int = 10) -> pd.DataFrame:
         return pd.DataFrame({
             'Score': self.scores, 'Rank': self.ranks

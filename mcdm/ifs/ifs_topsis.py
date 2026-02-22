@@ -24,7 +24,7 @@ import pandas as pd
 from typing import Dict, List, Optional, Union
 from dataclasses import dataclass
 
-from .base import IFN, IFSDecisionMatrix
+from .base import IFN, IFSDecisionMatrix, resolve_weights
 from ...weighting import WeightResult
 
 
@@ -73,7 +73,7 @@ class IFS_TOPSIS:
 
         criteria = ifs_matrix.criteria
         alternatives = ifs_matrix.alternatives
-        w = self._resolve_weights(weights, criteria)
+        w = resolve_weights(weights, criteria)
 
         # Step 1 — IFS weighted matrix (scalar weight × IFN)
         weighted: Dict[str, Dict[str, IFN]] = {}
@@ -128,11 +128,3 @@ class IFS_TOPSIS:
         if self.distance_metric == 'normalized_euclidean':
             return IFN.normalized_euclidean
         return IFN.euclidean_distance
-
-    @staticmethod
-    def _resolve_weights(weights, criteria):
-        if weights is None:
-            return {c: 1.0 / len(criteria) for c in criteria}
-        if isinstance(weights, WeightResult):
-            weights = weights.weights
-        return {c: weights.get(c, 1.0 / len(criteria)) for c in criteria}

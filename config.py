@@ -246,7 +246,7 @@ class ForecastConfig:
     target_year: Optional[int] = None  # Auto-set to latest_year + 1
     
     # Conformal prediction settings
-    conformal_method: str = 'CQR'  # 'split', 'cv_plus', 'CQR'
+    conformal_method: str = 'cv_plus'  # 'split', 'cv_plus', 'adaptive'
     conformal_alpha: float = 0.05  # 95% coverage
     
     # Cross-validation

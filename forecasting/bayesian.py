@@ -99,7 +99,21 @@ class BayesianForecaster(BaseForecaster):
             Tuple of (mean prediction, standard deviation)
         """
         X_scaled = self.scaler.transform(X)
-        mean, std = self.model.predict(X_scaled, return_std=True)
+        
+        if self._is_multi_output:
+            # MultiOutputRegressor doesn't support return_std,
+            # so iterate over individual estimators
+            means = []
+            stds = []
+            for estimator in self.model.estimators_:
+                m, s = estimator.predict(X_scaled, return_std=True)
+                means.append(m)
+                stds.append(s)
+            mean = np.column_stack(means)
+            std = np.column_stack(stds)
+        else:
+            mean, std = self.model.predict(X_scaled, return_std=True)
+        
         return mean, std
     
     def get_feature_importance(self) -> np.ndarray:

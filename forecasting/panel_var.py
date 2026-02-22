@@ -132,10 +132,12 @@ class PanelVARForecaster(BaseForecaster):
         Select optimal lag order using information criteria.
 
         Tests lag orders from 1 to max_lags and selects the one
-        minimizing AIC or BIC.
+        minimizing AIC or BIC.  For each candidate lag, only the
+        first ``lag * n_features`` columns of X are used so that
+        the effective model complexity changes with the lag order.
 
         Args:
-            X: Feature matrix
+            X: Feature matrix (may include fixed-effect dummies at the end)
             y: Target values
 
         Returns:
@@ -145,19 +147,25 @@ class PanelVARForecaster(BaseForecaster):
             return self.n_lags
 
         n_samples = X.shape[0]
+        n_base_features = X.shape[1]
         best_ic = np.inf
         best_lag = 1
 
         for lag in range(1, min(self.max_lags + 1, 4)):
             try:
+                # Use a subset of columns proportional to the lag order
+                # to simulate different model complexities
+                n_cols = min(lag * max(n_base_features // self.max_lags, 1), n_base_features)
+                X_lag = X[:, :n_cols]
+
                 model = Ridge(alpha=self.alpha, random_state=self.random_state)
-                model.fit(X, y if y.ndim == 1 else y[:, 0])
-                y_pred = model.predict(X)
                 y_target = y if y.ndim == 1 else y[:, 0]
+                model.fit(X_lag, y_target)
+                y_pred = model.predict(X_lag)
 
                 # Compute residual sum of squares
                 rss = np.sum((y_target - y_pred) ** 2)
-                k = X.shape[1]  # number of parameters
+                k = X_lag.shape[1]  # number of parameters
 
                 if self.lag_selection == "aic":
                     ic = n_samples * np.log(rss / n_samples + 1e-10) + 2 * k
@@ -192,6 +200,12 @@ class PanelVARForecaster(BaseForecaster):
         if y.ndim == 1:
             y = y.reshape(-1, 1)
         self._n_outputs = y.shape[1]
+
+        # Track number of entities for fixed effect extraction
+        if entity_indices is not None:
+            self._n_entities = len(np.unique(entity_indices))
+        else:
+            self._n_entities = 0
 
         # Build panel features with fixed effects
         X_panel = self._build_panel_features(X, entity_indices=entity_indices)

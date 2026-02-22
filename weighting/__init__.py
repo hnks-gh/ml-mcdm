@@ -37,7 +37,7 @@ from .standard_deviation import StandardDeviationWeightCalculator
 from .fusion import GameTheoryWeightCombination
 from .normalization import global_min_max_normalize, GlobalNormalizer
 from .bootstrap import bayesian_bootstrap_weights, BayesianBootstrap
-from .validation import temporal_stability_verification, TemporalStabilityValidator
+from .validation import temporal_stability_verification, TemporalStabilityValidator, StabilityResult
 from .base import WeightResult, calculate_weights
 from .adaptive import (
     AdaptiveWeightCalculator, 
@@ -46,9 +46,6 @@ from .adaptive import (
     calculate_adaptive_weights
 )
 
-# Alias for common usage
-RobustGlobalWeighting = HybridWeightingPipeline
-
 __all__ = [
     # Core result types
     'WeightResult',
@@ -56,7 +53,6 @@ __all__ = [
     
     # Primary pipeline
     'HybridWeightingPipeline',
-    'RobustGlobalWeighting',
     
     # Adaptive weighting
     'AdaptiveWeightCalculator',
@@ -77,5 +73,6 @@ __all__ = [
     'BayesianBootstrap',
     'temporal_stability_verification',
     'TemporalStabilityValidator',
+    'StabilityResult',
     'calculate_weights',
 ]

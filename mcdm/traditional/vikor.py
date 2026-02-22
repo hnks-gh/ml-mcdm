@@ -41,6 +41,11 @@ class VIKORResult:
     def final_ranks(self) -> pd.Series:
         """Get final rankings (by Q)."""
         return self.ranks_Q
+
+    @property
+    def final_scores(self) -> pd.Series:
+        """Get final scores (compromise index Q)."""
+        return self.Q
     
     def top_n(self, n: int = 10) -> pd.DataFrame:
         """Get top n alternatives."""
@@ -279,7 +284,7 @@ class MultiPeriodVIKOR:
         yearly_results = {}
         
         for year in years:
-            data = panel_data.get_year(year)
+            data = panel_data.get_subcriteria_year(year)
             result = self.calculator.calculate(data, weights)
             yearly_results[year] = result
         

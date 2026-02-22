@@ -16,7 +16,7 @@ Methods
 - IFS_EDAS      — Intuitionistic Fuzzy EDAS
 """
 
-from .base import IFN, IFSDecisionMatrix
+from .base import IFN, IFSDecisionMatrix, resolve_weights
 from .ifs_saw import IFS_SAW, IFS_SAWResult
 from .ifs_topsis import IFS_TOPSIS, IFS_TOPSISResult
 from .ifs_vikor import IFS_VIKOR, IFS_VIKORResult
@@ -26,7 +26,7 @@ from .ifs_edas import IFS_EDAS, IFS_EDASResult
 
 __all__ = [
     # Base
-    'IFN', 'IFSDecisionMatrix',
+    'IFN', 'IFSDecisionMatrix', 'resolve_weights',
     # Methods
     'IFS_SAW', 'IFS_SAWResult',
     'IFS_TOPSIS', 'IFS_TOPSISResult',

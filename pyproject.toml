@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ml-mcdm"
-version = "2.0.0"
+version = "4.0.0"
 description = "Advanced Machine Learning Enhanced Multi-Criteria Decision Making Framework with 10 MCDM Methods, Time-Series Forecasting, and Robust Ensemble Aggregation"
 readme = "README.md"
 license = {text = "MIT"}

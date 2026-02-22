@@ -20,7 +20,7 @@ import pandas as pd
 from typing import Dict, List, Optional, Union
 from dataclasses import dataclass
 
-from .base import IFN, IFSDecisionMatrix
+from .base import IFN, IFSDecisionMatrix, resolve_weights
 from ...weighting import WeightResult
 
 
@@ -58,7 +58,7 @@ class IFS_SAW:
         criteria = ifs_matrix.criteria
         alternatives = ifs_matrix.alternatives
 
-        w = self._resolve_weights(weights, criteria)
+        w = resolve_weights(weights, criteria)
         w_arr = np.array([w[c] for c in criteria])
 
         weighted = score_df.values * w_arr
@@ -70,11 +70,3 @@ class IFS_SAW:
 
         return IFS_SAWResult(scores=saw_scores, ranks=ranks,
                              weighted_scores=weighted_df, weights=w)
-
-    @staticmethod
-    def _resolve_weights(weights, criteria):
-        if weights is None:
-            return {c: 1.0 / len(criteria) for c in criteria}
-        if isinstance(weights, WeightResult):
-            weights = weights.weights
-        return {c: weights.get(c, 1.0 / len(criteria)) for c in criteria}

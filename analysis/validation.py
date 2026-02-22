@@ -275,63 +275,59 @@ class Validator:
         self,
         ranking_result
     ) -> Dict[str, float]:
-        """Validate cross-level ranking consistency."""
+        """Validate cross-level ranking consistency.
+        
+        Uses criterion_method_scores from HierarchicalRankingResult to check
+        that per-criterion scores are consistent with the final ER ranking.
+        """
         consistency = {}
         
-        if not hasattr(ranking_result, 'criteria_er_scores'):
-            return consistency
-        
-        # Check if subcriteria rankings aggregate consistently to criteria
-        # Use Spearman correlation between criteria ER scores and aggregated subcriteria
+        # Access the actual attributes on HierarchicalRankingResult
+        if not hasattr(ranking_result, 'criterion_method_scores'):
+            return {'overall': 0.8}
         
         try:
             from scipy.stats import spearmanr
             
-            # Subcriteria to criteria consistency
-            if hasattr(ranking_result, 'subcriteria_scores'):
-                # Aggregate subcriteria by criterion
-                criteria_from_sub = {}
-                for criterion_id, subcriteria_list in ranking_result.hierarchy.items():
-                    if hasattr(ranking_result, 'subcriteria_scores'):
-                        sub_scores = [
-                            ranking_result.subcriteria_scores.get(sc, 0.0)
-                            for sc in subcriteria_list
-                        ]
-                        criteria_from_sub[criterion_id] = np.mean(sub_scores) if sub_scores else 0.0
-                
-                if criteria_from_sub and hasattr(ranking_result, 'criteria_er_scores'):
-                    # Compare with actual criteria ER scores
-                    common_criteria = set(criteria_from_sub.keys()) & set(ranking_result.criteria_er_scores.keys())
-                    if len(common_criteria) > 2:
-                        sub_agg = [criteria_from_sub[c] for c in common_criteria]
-                        criteria_er = [ranking_result.criteria_er_scores[c] for c in common_criteria]
-                        corr, _ = spearmanr(sub_agg, criteria_er)
-                        consistency['subcriteria_to_criteria'] = corr if not np.isnan(corr) else 0.0
+            er_result = ranking_result.er_result
+            final_scores = er_result.final_scores
             
-            # Criteria to final consistency
-            if hasattr(ranking_result, 'criteria_er_scores') and hasattr(ranking_result, 'final_er_scores'):
-                # Average criteria scores per province
-                criteria_scores_array = np.array([list(ranking_result.criteria_er_scores.values())])
-                avg_criteria = criteria_scores_array.mean(axis=1)
-                
-                final_scores = list(ranking_result.final_er_scores.values())
-                
-                if len(avg_criteria) == len(final_scores) and len(final_scores) > 2:
-                    corr, _ = spearmanr(avg_criteria, final_scores)
-                    consistency['criteria_to_final'] = corr if not np.isnan(corr) else 0.0
+            # Per-criterion consistency: compare each criterion's aggregated
+            # method scores with the final ranking
+            criterion_correlations = []
+            for crit_id, method_scores in ranking_result.criterion_method_scores.items():
+                if not method_scores:
+                    continue
+                # Average across all methods for this criterion
+                all_scores = [s for s in method_scores.values() if hasattr(s, 'values')]
+                if not all_scores:
+                    continue
+                avg_crit_scores = pd.concat(all_scores, axis=1).mean(axis=1)
+                # Align with final scores
+                common = avg_crit_scores.index.intersection(final_scores.index)
+                if len(common) > 2:
+                    corr, _ = spearmanr(
+                        avg_crit_scores.loc[common].values,
+                        final_scores.loc[common].values
+                    )
+                    if not np.isnan(corr):
+                        consistency[f'{crit_id}_to_final'] = float(corr)
+                        criterion_correlations.append(float(corr))
+            
+            if criterion_correlations:
+                consistency['mean_criterion_to_final'] = float(np.mean(criterion_correlations))
         
         except Exception:
-            # If validation fails, return default consistency
             pass
         
         return consistency if consistency else {'overall': 0.8}
     
     def _validate_er_aggregation(self, ranking_result) -> float:
         """Validate ER aggregation quality (belief distribution properties)."""
-        if not hasattr(ranking_result, 'final_er_scores'):
-            return 0.8  # Default if ER scores not available
+        if not hasattr(ranking_result, 'er_result'):
+            return 0.8  # Default if ER result not available
         
-        scores = np.array(list(ranking_result.final_er_scores.values()))
+        scores = ranking_result.er_result.final_scores.values
         
         # Check properties:
         # 1. Scores should be in [0, 1]
@@ -350,41 +346,51 @@ class Validator:
         self,
         ranking_result
     ) -> Tuple[Dict[str, bool], bool]:
-        """Validate IFS parameters (μ + ν ≤ 1, 0 ≤ π ≤ 1)."""
+        """Validate IFS parameters (μ + ν ≤ 1, 0 ≤ π ≤ 1).
+        
+        Uses ifs_diagnostics from HierarchicalRankingResult, which maps
+        criterion → {alternative → {subcrit → IFN}}.
+        """
         ifs_checks = {}
         
-        if not hasattr(ranking_result, 'ifs_scores'):
-            # No IFS scores available, assume valid
+        if not hasattr(ranking_result, 'ifs_diagnostics'):
+            return {'default': True}, True
+        
+        ifs_diag = ranking_result.ifs_diagnostics
+        if not ifs_diag:
             return {'default': True}, True
         
         try:
-            ifs_scores = ranking_result.ifs_scores
-            
-            # Check μ + ν ≤ 1 constraint
-            membership_nonmembership_valid = True
+            overall_valid = True
             hesitancy_valid = True
             
-            for method, scores in ifs_scores.items():
-                if isinstance(scores, pd.DataFrame):
-                    if 'membership' in scores.columns and 'non_membership' in scores.columns:
-                        mu = scores['membership'].values
-                        nu = scores['non_membership'].values
-                        pi = 1 - mu - nu
-                        
-                        # Check constraints
-                        sum_valid = np.all(mu + nu <= 1 + self.ifs_tolerance)
-                        hesit_valid = np.all((pi >= -self.ifs_tolerance) & (pi <= 1 + self.ifs_tolerance))
-                        
-                        ifs_checks[f'{method}_sum'] = sum_valid
-                        ifs_checks[f'{method}_hesitancy'] = hesit_valid
-                        
-                        membership_nonmembership_valid &= sum_valid
-                        hesitancy_valid &= hesit_valid
+            for crit_id, crit_diag in ifs_diag.items():
+                if not isinstance(crit_diag, dict):
+                    continue
+                # crit_diag may contain IFS matrix objects or sample IFNs
+                # Check any IFN objects found
+                for alt_key, alt_data in crit_diag.items():
+                    if isinstance(alt_data, dict):
+                        for sub_key, ifn in alt_data.items():
+                            if hasattr(ifn, 'mu') and hasattr(ifn, 'nu'):
+                                mu, nu = ifn.mu, ifn.nu
+                                pi = 1 - mu - nu
+                                sum_ok = (mu + nu) <= 1 + self.ifs_tolerance
+                                hesit_ok = (-self.ifs_tolerance <= pi <= 1 + self.ifs_tolerance)
+                                
+                                if not sum_ok:
+                                    ifs_checks[f'{crit_id}_{alt_key}_{sub_key}_sum'] = False
+                                    overall_valid = False
+                                if not hesit_ok:
+                                    ifs_checks[f'{crit_id}_{alt_key}_{sub_key}_hesitancy'] = False
+                                    hesitancy_valid = False
             
-            return ifs_checks if ifs_checks else {'default': True}, hesitancy_valid
+            if not ifs_checks:
+                ifs_checks['default'] = True
+            
+            return ifs_checks, hesitancy_valid
         
         except Exception:
-            # If validation fails, assume valid
             return {'default': True}, True
     
     def _validate_weight_temporal_stability(
@@ -392,49 +398,74 @@ class Validator:
         panel_data,
         weights: Dict[str, Any]
     ) -> float:
-        """Validate temporal stability of weights across years."""
+        """Validate temporal stability of weights across years.
+        
+        Uses the 'details' dict from the weighting pipeline which contains
+        bootstrap and stability information.
+        """
         if not hasattr(panel_data, 'years') or len(panel_data.years) < 2:
-            return 1.0  # No temporal data, assume stable
+            return 1.0
         
-        # If weights have bootstrap samples, check stability
-        if 'bootstrap_weights' in weights:
-            bootstrap_weights = weights['bootstrap_weights']
-            if len(bootstrap_weights) > 1:
-                # Calculate variance across bootstrap samples
-                weight_matrix = np.array(bootstrap_weights)
-                stability = 1.0 - np.mean(np.std(weight_matrix, axis=0))
-                return max(0.0, min(1.0, stability))
+        details = weights.get('details', {})
         
-        # Default: assume reasonable stability
+        # Check bootstrap-based stability from the weighting pipeline
+        bootstrap_info = details.get('bootstrap', {})
+        if bootstrap_info:
+            std_weights = bootstrap_info.get('std_weights', {})
+            if std_weights:
+                # Mean coefficient of variation across subcriteria
+                subcriteria = weights.get('subcriteria', [])
+                fused = weights.get('fused', np.array([]))
+                if len(fused) > 0 and len(subcriteria) > 0:
+                    cvs = []
+                    for i, sc in enumerate(subcriteria):
+                        w = fused[i] if i < len(fused) else 0
+                        s = std_weights.get(sc, 0)
+                        if w > 1e-10:
+                            cvs.append(s / w)
+                    if cvs:
+                        mean_cv = np.mean(cvs)
+                        # Stability = 1 - mean_cv, clipped to [0, 1]
+                        return float(np.clip(1.0 - mean_cv, 0.0, 1.0))
+        
+        # Check cosine similarity from stability info
+        stability_info = details.get('stability', {})
+        if stability_info:
+            cosine_sim = stability_info.get('cosine_similarity', None)
+            if cosine_sim is not None:
+                return float(np.clip(cosine_sim, 0.0, 1.0))
+        
         return 0.90
     
     def _validate_weight_method_agreement(
         self,
         weights: Dict[str, Any]
     ) -> float:
-        """Validate agreement among different weighting methods."""
-        if 'method_weights' not in weights:
-            return 0.85  # Default agreement
+        """Validate agreement among the four weighting methods.
         
-        method_weights = weights['method_weights']
+        Compares entropy, critic, merec, std_dev weight arrays using
+        pairwise Spearman correlation.
+        """
+        method_keys = ['entropy', 'critic', 'merec', 'std_dev']
+        available = {k: weights[k] for k in method_keys if k in weights}
         
-        if len(method_weights) < 2:
-            return 1.0
+        if len(available) < 2:
+            return 0.85
         
-        # Calculate pairwise correlations
         from scipy.stats import spearmanr
         
-        weight_arrays = [np.array(list(w.values())) for w in method_weights.values()]
+        weight_arrays = [np.asarray(w) for w in available.values()]
         
         correlations = []
         for i in range(len(weight_arrays)):
             for j in range(i + 1, len(weight_arrays)):
-                corr, _ = spearmanr(weight_arrays[i], weight_arrays[j])
-                if not np.isnan(corr):
-                    correlations.append(corr)
+                if len(weight_arrays[i]) == len(weight_arrays[j]) and len(weight_arrays[i]) > 2:
+                    corr, _ = spearmanr(weight_arrays[i], weight_arrays[j])
+                    if not np.isnan(corr):
+                        correlations.append(corr)
         
         if correlations:
-            return np.mean(correlations)
+            return float(np.mean(correlations))
         
         return 0.85
     
@@ -442,22 +473,33 @@ class Validator:
         self,
         weights: Dict[str, Any]
     ) -> Dict[str, Tuple[float, float]]:
-        """Get bootstrap confidence intervals for weights."""
+        """Get bootstrap confidence intervals for weights.
+        
+        Extracts CI from the weighting pipeline's bootstrap details.
+        """
         ci = {}
         
-        if 'bootstrap_ci' in weights:
-            return weights['bootstrap_ci']
+        details = weights.get('details', {})
+        bootstrap_info = details.get('bootstrap', {})
         
-        if 'bootstrap_weights' in weights:
-            bootstrap_weights = weights['bootstrap_weights']
-            if len(bootstrap_weights) > 10:
-                weight_matrix = np.array(bootstrap_weights)
-                
-                # Calculate 95% CI for each criterion
-                for i, criterion in enumerate(weights.get('fused', {}).keys()):
-                    lower = np.percentile(weight_matrix[:, i], 2.5)
-                    upper = np.percentile(weight_matrix[:, i], 97.5)
-                    ci[criterion] = (lower, upper)
+        # Check for pre-computed CI in bootstrap details
+        ci_info = bootstrap_info.get('ci_95', {})
+        if ci_info:
+            for sc, (lo, hi) in ci_info.items():
+                ci[sc] = (float(lo), float(hi))
+            return ci
+        
+        # Compute from std_weights + fused if CI not pre-computed
+        std_weights = bootstrap_info.get('std_weights', {})
+        subcriteria = weights.get('subcriteria', [])
+        fused = weights.get('fused', np.array([]))
+        
+        if std_weights and len(fused) > 0:
+            for i, sc in enumerate(subcriteria):
+                if i < len(fused):
+                    w = fused[i]
+                    s = std_weights.get(sc, 0)
+                    ci[sc] = (float(w - 1.96 * s), float(w + 1.96 * s))
         
         return ci
     

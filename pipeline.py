@@ -10,7 +10,7 @@ Seven-phase production pipeline:
   Phase 3  Hierarchical Ranking     (12 MCDM + two-stage ER)
   Phase 4  ML Forecasting           (6 models + Super Learner + Conformal)
   Phase 5  Sensitivity Analysis     (Hierarchical multi-level robustness)
-  Phase 6  Visualisation            (high-resolution figures)
+  Phase 6  Visualization            (high-resolution figures)
   Phase 7  Result Export            (CSV / JSON / text report)
 """
 
@@ -22,6 +22,7 @@ from dataclasses import dataclass
 import warnings
 import time
 import json
+import traceback
 
 warnings.filterwarnings('ignore')
 
@@ -161,7 +162,7 @@ class MLMCDMPipeline:
 
         # Phase 1: Data Loading
         with ProgressLogger(self.logger, "Phase 1: Data Loading"):
-            panel_data = self._load_data(data_path)
+            panel_data = self._load_data()
 
         # Phase 2: Weight Calculation
         with ProgressLogger(self.logger, "Phase 2: Weight Calculation (GTWC)"):
@@ -178,21 +179,26 @@ class MLMCDMPipeline:
                 forecast_result = self._run_forecasting(panel_data)
             except Exception as e:
                 self.logger.warning(f"Forecasting skipped: {e}")
-                import traceback
                 self.logger.debug(traceback.format_exc())
 
-        # Phase 5: Sensitivity Analysis
-        analysis_results: Dict[str, Any] = {'sensitivity': None}
-        with ProgressLogger(self.logger, "Phase 5: Sensitivity Analysis"):
+        # Phase 5: Sensitivity Analysis & Validation
+        analysis_results: Dict[str, Any] = {'sensitivity': None, 'validation': None}
+        with ProgressLogger(self.logger, "Phase 5: Sensitivity Analysis & Validation"):
             try:
                 analysis_results = self._run_analysis(
                     panel_data, ranking_result, weights, forecast_result)
-            except (Exception, KeyboardInterrupt) as e:
+            except Exception as e:
                 self.logger.warning(f"Sensitivity analysis skipped: {e}")
+            
+            try:
+                analysis_results['validation'] = self._run_validation(
+                    panel_data, weights, ranking_result, forecast_result)
+            except Exception as e:
+                self.logger.warning(f"Validation skipped: {e}")
 
         execution_time = time.time() - start_time
 
-        # Phase 6: Visualisations
+        # Phase 6: Visualizations
         with ProgressLogger(self.logger, "Phase 6: Generating Figures"):
             try:
                 self._generate_all_visualizations(
@@ -200,7 +206,7 @@ class MLMCDMPipeline:
                     analysis_results, forecast_result=forecast_result,
                 )
             except Exception as e:
-                self.logger.warning(f"Visualisation failed: {e}")
+                self.logger.warning(f"Visualization failed: {e}")
 
         # Phase 7: Save Results
         with ProgressLogger(self.logger, "Phase 7: Saving Results"):
@@ -211,7 +217,6 @@ class MLMCDMPipeline:
                 )
             except Exception as e:
                 self.logger.warning(f"Result saving failed: {e}")
-                import traceback
                 self.logger.debug(traceback.format_exc())
 
         self.logger.info("=" * 60)
@@ -244,7 +249,7 @@ class MLMCDMPipeline:
     # Phase 1: Data Loading
     # -----------------------------------------------------------------
 
-    def _load_data(self, data_path: Optional[str]) -> PanelData:
+    def _load_data(self) -> PanelData:
         loader = DataLoader(self.config)
         panel_data = loader.load()
         self.logger.info(
@@ -261,7 +266,7 @@ class MLMCDMPipeline:
 
     def _calculate_weights(self, panel_data: PanelData) -> Dict[str, Any]:
         """Run GTWC hybrid weighting on the full panel."""
-        from .weighting import RobustGlobalWeighting
+        from .weighting import HybridWeightingPipeline
 
         subcriteria = panel_data.hierarchy.all_subcriteria
         panel_df = panel_data.subcriteria_long.copy()
@@ -274,7 +279,7 @@ class MLMCDMPipeline:
             f"{len(subcriteria)} sub)"
         )
 
-        calc = RobustGlobalWeighting(
+        calc = HybridWeightingPipeline(
             bootstrap_iterations=self.config.weighting.bootstrap_iterations,
             stability_threshold=self.config.weighting.stability_threshold,
             epsilon=self.config.weighting.epsilon,
@@ -377,7 +382,10 @@ class MLMCDMPipeline:
             self.logger.info("Forecasting disabled in config")
             return None
         
-        from forecasting import UnifiedForecaster
+        try:
+            from .forecasting import UnifiedForecaster
+        except ImportError:
+            from forecasting import UnifiedForecaster
         
         # Determine target year
         target_year = self.config.forecast.target_year
@@ -400,14 +408,16 @@ class MLMCDMPipeline:
         result = forecaster.fit_predict(panel_data, target_year=target_year)
         
         # Log results
-        if hasattr(result, 'model_weights'):
+        if hasattr(result, 'model_contributions'):
             self.logger.info("Super Learner weights:")
-            for model, weight in sorted(result.model_weights.items(), key=lambda x: x[1], reverse=True):
+            for model, weight in sorted(result.model_contributions.items(), key=lambda x: x[1], reverse=True):
                 self.logger.info(f"  {model:20s}: {weight:.4f}")
         
-        if hasattr(result, 'cv_metrics'):
-            cv = result.cv_metrics
-            self.logger.info(f"CV Performance: R²={cv.get('r2', 0):.4f}, RMSE={cv.get('rmse', 0):.4f}")
+        if hasattr(result, 'cross_validation_scores'):
+            import numpy as _np
+            cv = result.cross_validation_scores
+            all_r2 = [s for scores in cv.values() for s in scores]
+            self.logger.info(f"CV Performance: Mean R²={_np.mean(all_r2):.4f} ± {_np.std(all_r2):.4f}")
         
         return result
 
@@ -482,6 +492,34 @@ class MLMCDMPipeline:
         
         return {'sensitivity': sens_result}
     
+    def _run_validation(
+        self,
+        panel_data: PanelData,
+        weights: Dict[str, Any],
+        ranking_result: HierarchicalRankingResult,
+        forecast_result: Optional[Any] = None,
+    ) -> Any:
+        """Run production validation on the full pipeline."""
+        from .analysis import Validator
+        
+        validator = Validator()
+        val_result = validator.validate_full_pipeline(
+            panel_data=panel_data,
+            weights=weights,
+            ranking_result=ranking_result,
+            forecast_result=forecast_result,
+        )
+        
+        self.logger.info(
+            f"Validation: {'PASSED' if val_result.validation_passed else 'FAILED'} "
+            f"(score={val_result.overall_validity:.4f})"
+        )
+        if val_result.validation_warnings:
+            for w in val_result.validation_warnings:
+                self.logger.warning(f"  {w}")
+        
+        return val_result
+
     def _validate_sensitivity_result(self, sens_result: Any) -> None:
         """
         Validate that sensitivity result has all required hierarchical attributes.
@@ -525,7 +563,7 @@ class MLMCDMPipeline:
             )
 
     # -----------------------------------------------------------------
-    # Phase 6: Visualisations (Publication-Quality Suite)
+    # Phase 6: Visualizations (Publication-Quality Suite)
     # -----------------------------------------------------------------
 
     def _generate_all_visualizations(
@@ -887,7 +925,6 @@ class MLMCDMPipeline:
             self.logger.info("Saved: report.txt (comprehensive analysis report)")
         except Exception as e:
             self.logger.warning(f"Report generation failed: {e}")
-            import traceback
             self.logger.debug(traceback.format_exc())
         
         total_files = len(self.output_manager.get_saved_files())

@@ -74,7 +74,7 @@ class AdaptiveWeightCalculator:
     def calculate(
         self, 
         data: pd.DataFrame,
-        alternative_col: str = "Province"
+        entity_col: str = "Province"
     ) -> AdaptiveWeightResult:
         """
         Calculate weights adaptively excluding zeros.
@@ -83,20 +83,20 @@ class AdaptiveWeightCalculator:
         ----------
         data : pd.DataFrame
             Decision matrix with alternatives and criteria
-            If contains 'Province' or alternative_col, it's treated as index
-        alternative_col : str
-            Name of alternative identifier column (if present)
+            If contains 'Province' or entity_col, it's treated as index
+        entity_col : str
+            Name of entity identifier column (if present)
         
         Returns
         -------
         AdaptiveWeightResult
             Weights with adaptive calculation metadata
         """
-        # Separate alternative column if present
-        if alternative_col in data.columns:
-            alternatives = data[alternative_col].tolist()
-            criteria_data = data.drop(columns=[alternative_col])
-        elif data.index.name == alternative_col or alternative_col == "index":
+        # Separate entity column if present
+        if entity_col in data.columns:
+            alternatives = data[entity_col].tolist()
+            criteria_data = data.drop(columns=[entity_col])
+        elif data.index.name == entity_col or entity_col == "index":
             alternatives = data.index.tolist()
             criteria_data = data
         else:
@@ -226,7 +226,7 @@ class AdaptiveWeightCalculator:
 def calculate_adaptive_weights(
     data: pd.DataFrame,
     method: str = "hybrid",
-    alternative_col: str = "Province"
+    entity_col: str = "Province"
 ) -> AdaptiveWeightResult:
     """
     Convenience function for adaptive weight calculation.
@@ -237,8 +237,8 @@ def calculate_adaptive_weights(
         Decision matrix
     method : str
         Weighting method: 'entropy', 'critic', 'merec', 'std_dev', 'hybrid'
-    alternative_col : str
-        Name of alternative identifier column
+    entity_col : str
+        Name of entity identifier column
     
     Returns
     -------
@@ -246,7 +246,7 @@ def calculate_adaptive_weights(
         Calculated weights with adaptive metadata
     """
     calc = AdaptiveWeightCalculator(method=method)
-    return calc.calculate(data, alternative_col=alternative_col)
+    return calc.calculate(data, entity_col=entity_col)
 
 
 class WeightCalculator:

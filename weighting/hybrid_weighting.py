@@ -65,7 +65,7 @@ class HybridWeightingPipeline:
     >>> from weighting import HybridWeightingPipeline
     >>> 
     >>> # Panel data: long format with entity, time, and criteria
-    >>> panel_df = pd.DataFrame({
+    >>> panel_data = pd.DataFrame({
     >>>     'Year': [2020, 2020, 2021, 2021],
     >>>     'Province': ['A', 'B', 'A', 'B'],
     >>>     'C1': [1.0, 2.0, 1.5, 2.5],
@@ -79,7 +79,7 @@ class HybridWeightingPipeline:
     >>> 
     >>> # Calculate weights
     >>> result = pipeline.calculate(
-    >>>     panel_df,
+    >>>     panel_data,
     >>>     entity_col='Province',
     >>>     time_col='Year',
     >>>     criteria_cols=['C1', 'C2']
@@ -180,7 +180,7 @@ class HybridWeightingPipeline:
 
     def calculate(
         self,
-        panel_df: pd.DataFrame,
+        panel_data: pd.DataFrame,
         entity_col: str = "Province",
         time_col: str = "Year",
         criteria_cols: Optional[List[str]] = None,
@@ -190,7 +190,7 @@ class HybridWeightingPipeline:
         
         Parameters
         ----------
-        panel_df : pd.DataFrame
+        panel_data : pd.DataFrame
             Panel data in long format with entity, time, and criteria columns.
         entity_col : str, default='Province'
             Name of entity identifier column.
@@ -209,19 +209,19 @@ class HybridWeightingPipeline:
             - details: Dict - comprehensive statistics and metadata
         """
         # Validate and prepare data
-        panel_df = panel_df.copy()
+        panel_data = panel_data.copy()
         if criteria_cols is None:
-            criteria_cols = [c for c in panel_df.columns
+            criteria_cols = [c for c in panel_data.columns
                             if c not in (entity_col, time_col)
-                            and pd.api.types.is_numeric_dtype(panel_df[c])]
+                            and pd.api.types.is_numeric_dtype(panel_data[c])]
 
-        n_obs = len(panel_df)
+        n_obs = len(panel_data)
         n_criteria = len(criteria_cols)
         logger.info(f"Hybrid Weighting Pipeline: {n_obs} observations × "
                     f"{n_criteria} criteria")
 
         # Extract criteria matrix
-        X_raw = panel_df[criteria_cols].values.astype(np.float64)
+        X_raw = panel_data[criteria_cols].values.astype(np.float64)
 
         # ── Step 1: Global Min-Max Normalization ──
         X_norm = global_min_max_normalize(X_raw, epsilon=self.epsilon)
@@ -312,7 +312,7 @@ class HybridWeightingPipeline:
 
         # ── Step 5: Temporal Stability Verification ──
         # Build a temporary DataFrame for split-half verification
-        stability_df = panel_df[[time_col] + criteria_cols].copy()
+        stability_df = panel_data[[time_col] + criteria_cols].copy()
 
         def compute_weights_from_df(df_half):
             """Helper: normalize subset and compute fused weights."""

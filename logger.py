@@ -24,7 +24,7 @@ import threading
 import traceback
 from pathlib import Path
 from datetime import datetime
-from typing import Optional, Dict, Any, List, Union, Callable
+from typing import Optional, Dict, Any, List, Union, Callable, Generator
 from dataclasses import dataclass, field
 from contextlib import contextmanager
 from functools import wraps
@@ -887,7 +887,7 @@ def log_exceptions(
 # =============================================================================
 
 @contextmanager
-def log_context(**kwargs):
+def log_context(**kwargs) -> Generator[None, None, None]:
     """
     Context manager for adding temporary context to logs.
     

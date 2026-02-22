@@ -70,7 +70,7 @@ class TemporalFeatureEngineer:
             entity_index: Entity identifiers
         """
         entities = panel_data.provinces
-        components = panel_data.components
+        components = panel_data.subcriteria_names
         years = sorted(panel_data.years)
         
         # Determine train years (all except last) and test year (last)

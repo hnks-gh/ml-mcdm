@@ -17,7 +17,6 @@ import numpy as np
 import pandas as pd
 from typing import Dict, List, Optional, Tuple, Union
 from dataclasses import dataclass, field
-from scipy.stats import spearmanr
 
 from ...weighting import WeightResult, EntropyWeightCalculator
 
@@ -33,6 +32,16 @@ class TOPSISResult:
     ideal_solution: pd.Series            # Ideal solution values
     anti_ideal_solution: pd.Series       # Anti-ideal solution values
     weights: Dict[str, float]            # Weights used
+    
+    @property
+    def final_ranks(self) -> pd.Series:
+        """Get final rankings."""
+        return self.ranks
+
+    @property
+    def final_scores(self) -> pd.Series:
+        """Get final scores (closeness coefficients)."""
+        return self.scores
     
     def top_n(self, n: int = 10) -> pd.DataFrame:
         """Get top n alternatives."""
@@ -278,7 +287,7 @@ class DynamicTOPSIS:
         yearly_scores = {}
         
         for year in years:
-            data = panel_data.get_year(year)
+            data = panel_data.get_subcriteria_year(year)
             result = self.static_topsis.calculate(data, weights)
             yearly_results[year] = result
             yearly_scores[year] = result.scores

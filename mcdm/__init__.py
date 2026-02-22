@@ -46,12 +46,9 @@ from ..weighting import (
     CRITICWeightCalculator,
     MERECWeightCalculator,
     StandardDeviationWeightCalculator,
-    RobustGlobalWeighting,
+    HybridWeightingPipeline,
     WeightResult
 )
-
-# Legacy alias
-DynamicTOPSISResult = TOPSISResult
 
 
 __all__ = [
@@ -64,7 +61,7 @@ __all__ = [
     'CRITICWeightCalculator',
     'MERECWeightCalculator',
     'StandardDeviationWeightCalculator',
-    'RobustGlobalWeighting',
+    'HybridWeightingPipeline',
     'WeightResult',
     
     # Traditional MCDM
@@ -87,7 +84,7 @@ __all__ = [
 
 
 # Convenience function to get all MCDM calculators
-def get_all_calculators(ifs: bool = False):
+def get_all_calculators(ifs: bool = False) -> Dict[str, type]:
     """
     Get dictionary of all MCDM calculators.
     

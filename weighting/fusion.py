@@ -11,8 +11,6 @@ See technical documentation for detailed formulas and references.
 
 import numpy as np
 from typing import Dict, List, Optional
-from scipy.optimize import minimize
-from scipy.stats import entropy as scipy_entropy
 import logging
 
 logger = logging.getLogger(__name__)

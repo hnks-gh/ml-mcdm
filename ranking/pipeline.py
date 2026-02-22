@@ -14,7 +14,7 @@ Stage 1 — Within-Criterion Ranking
         • Extract subcriteria data for C_k.
         • Build crisp decision matrix → run 6 traditional methods.
         • Build IFS decision matrix (temporal variance) → run 6 IFS methods.
-        • Normalise all 12 method scores to [0, 1].
+        • Normalize all 12 method scores to [0, 1].
 
 Stage 2 — Global Aggregation via Evidential Reasoning
     • Convert method scores to belief distributions (5 grades).
@@ -67,7 +67,7 @@ class HierarchicalRankingResult:
     er_result : HierarchicalERResult
         Full ER aggregation output (rankings, beliefs, uncertainty).
     criterion_method_scores : dict
-        {criterion: {method: pd.Series}} — raw normalised scores.
+        {criterion: {method: pd.Series}} — raw normalized scores.
     criterion_method_ranks : dict
         {criterion: {method: pd.Series}} — per-method ranks.
     criterion_weights_used : dict
@@ -278,9 +278,6 @@ class HierarchicalRankingPipeline:
             target_year=target_year,
         )
 
-    # Backward-compatible alias used by sensitivity analysis
-    run = rank
-
     # ==================================================================
     # Internal: method execution per criterion
     # ==================================================================
@@ -299,7 +296,7 @@ class HierarchicalRankingPipeline:
 
         Returns
         -------
-        scores : {method_name: pd.Series}  (normalised to [0, 1])
+        scores : {method_name: pd.Series}  (normalized to [0, 1])
         ranks  : {method_name: pd.Series}
         ifs_diag : sample IFS diagnostics
         """
@@ -354,8 +351,8 @@ class HierarchicalRankingPipeline:
         scores: Dict[str, pd.Series] = {}
         ranks: Dict[str, pd.Series] = {}
 
-        # ----- Normalise crisp data to [0, 1] via min-max -----
-        df_norm = self._minmax_normalise(df, cost_criteria=cost_local)
+        # ----- Normalize crisp data to [0, 1] via min-max -----
+        df_norm = self._minmax_normalize(df, cost_criteria=cost_local)
 
         # ----- Build IFS matrix from temporal variance (or use override) -----
         if ifs_matrix_override is not None:
@@ -382,14 +379,14 @@ class HierarchicalRankingPipeline:
         # ===== TRADITIONAL METHODS =====
         trad_results = self._run_traditional(df_norm, subcrit_weights, cost_local)
         for name, res in trad_results.items():
-            s = self._normalise_scores(res['scores'], higher_is_better=res['higher_better'])
+            s = self._normalize_scores(res['scores'], higher_is_better=res['higher_better'])
             scores[name] = s
             ranks[name] = res['ranks']
 
         # ===== IFS METHODS =====
         ifs_results = self._run_ifs(ifs_matrix, subcrit_weights, cost_local)
         for name, res in ifs_results.items():
-            s = self._normalise_scores(res['scores'], higher_is_better=res['higher_better'])
+            s = self._normalize_scores(res['scores'], higher_is_better=res['higher_better'])
             scores[name] = s
             ranks[name] = res['ranks']
         
@@ -440,7 +437,7 @@ class HierarchicalRankingPipeline:
 
         # VIKOR
         try:
-            vikor = VIKORCalculator(v=0.5)
+            vikor = VIKORCalculator(v=0.5, cost_criteria=cost_criteria)
             r = vikor.calculate(df, weights)
             # VIKOR Q: lower is better
             results['VIKOR'] = {
@@ -454,7 +451,8 @@ class HierarchicalRankingPipeline:
             promethee = PROMETHEECalculator(
                 preference_function='vshape',
                 preference_threshold=0.3,
-                indifference_threshold=0.1
+                indifference_threshold=0.1,
+                cost_criteria=cost_criteria
             )
             r = promethee.calculate(df, weights)
             results['PROMETHEE'] = {
@@ -524,7 +522,7 @@ class HierarchicalRankingPipeline:
 
         # IFS-VIKOR
         try:
-            calc = IFS_VIKOR(v=0.5)
+            calc = IFS_VIKOR(v=0.5, cost_criteria=cost_criteria)
             r = calc.calculate(ifs_matrix, weights)
             results['IFS_VIKOR'] = {
                 'scores': r.Q, 'ranks': r.ranks_Q, 'higher_better': False
@@ -609,14 +607,14 @@ class HierarchicalRankingPipeline:
             group_w = sum(subcriteria_weights.get(sc, 0.0) for sc in subcrit_list)
             criterion_weights[crit_id] = group_w
 
-            # Normalise within-group
+            # Normalize within-group
             local = {}
             for sc in subcrit_list:
                 w_sc = subcriteria_weights.get(sc, 0.0)
                 local[sc] = w_sc / group_w if group_w > 0 else 1.0 / len(subcrit_list)
             group_weights[crit_id] = local
 
-        # Normalise criterion weights to sum to 1
+        # Normalize criterion weights to sum to 1
         total = sum(criterion_weights.values())
         if total > 0:
             criterion_weights = {k: v / total for k, v in criterion_weights.items()}
@@ -654,11 +652,11 @@ class HierarchicalRankingPipeline:
         return all_data[subcrit_cols].max() - all_data[subcrit_cols].min()
 
     @staticmethod
-    def _minmax_normalise(
+    def _minmax_normalize(
         df: pd.DataFrame,
         cost_criteria: Optional[List[str]] = None,
     ) -> pd.DataFrame:
-        """Min-max normalise to [0, 1]. Cost criteria are inverted."""
+        """Min-max normalize to [0, 1]. Cost criteria are inverted."""
         result = df.copy().astype(float)
         cost_criteria = cost_criteria or []
 
@@ -677,11 +675,11 @@ class HierarchicalRankingPipeline:
         return result
 
     @staticmethod
-    def _normalise_scores(
+    def _normalize_scores(
         scores: pd.Series,
         higher_is_better: bool = True,
     ) -> pd.Series:
-        """Normalise a score Series to [0, 1] (1 = best)."""
+        """Normalize a score Series to [0, 1] (1 = best)."""
         s = scores.astype(float)
         if not higher_is_better:
             s = -s  # invert so higher = better
@@ -693,6 +691,6 @@ class HierarchicalRankingPipeline:
         if rng < 1e-12:
             return pd.Series(0.5, index=scores.index, name=scores.name)
 
-        normalised = (s - s_min) / rng
-        normalised.name = scores.name
-        return normalised
+        normalized = (s - s_min) / rng
+        normalized.name = scores.name
+        return normalized

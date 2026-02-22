@@ -83,7 +83,7 @@ _GRADIENT_CMAPS = {
 }
 
 
-def _apply_style():
+def _apply_style() -> None:
     """Apply a consistent publication style to all figures."""
     if not HAS_MATPLOTLIB:
         return

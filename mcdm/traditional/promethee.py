@@ -51,6 +51,11 @@ class PROMETHEEResult:
     def final_ranks(self) -> pd.Series:
         """Get final rankings (PROMETHEE II)."""
         return self.ranks_promethee_ii
+
+    @property
+    def final_scores(self) -> pd.Series:
+        """Get final scores (net flow Phi)."""
+        return self.phi_net
     
     def top_n(self, n: int = 10) -> pd.DataFrame:
         """Get top n alternatives."""
@@ -389,9 +394,8 @@ class MultiPeriodPROMETHEE:
         
         for year in years:
             year_data = panel_data.cross_section[year]
-            year_data = year_data.set_index('Province') if 'Province' in year_data.columns else year_data
             numeric_cols = [col for col in year_data.columns 
-                          if col in panel_data.components]
+                          if col in panel_data.subcriteria_names]
             year_data = year_data[numeric_cols]
             
             result = self.calculator.calculate(year_data, weights)
