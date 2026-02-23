@@ -86,8 +86,10 @@ class PanelVARForecaster(BaseForecaster):
         self.feature_importance_: Optional[np.ndarray] = None
         self.selected_lags_: int = n_lags
         self._n_outputs: int = 0
-        self._entity_encoder: Dict[str, int] = {}
+        self._entity_encoder: Dict = {}   # maps entity_id → column index in dummies
+        self._unique_entities: Optional[np.ndarray] = None
         self._n_entities: int = 0
+        self._n_base_features: int = 0     # original X.shape[1] to trim feature_importance_
         self._fitted: bool = False
 
     def _build_panel_features(
@@ -101,6 +103,8 @@ class PanelVARForecaster(BaseForecaster):
 
         Adds entity fixed effect dummies (within-transformation) and
         ensures autoregressive lag features are properly structured.
+        Uses the entity mapping stored during fit() so that predict()
+        produces the same number of columns.
 
         Args:
             X: Base feature matrix (n_samples, n_features)
@@ -113,17 +117,44 @@ class PanelVARForecaster(BaseForecaster):
         features_list = [X]
 
         # Add fixed effects as entity dummies (LSDV approach)
-        if self.use_fixed_effects and entity_indices is not None:
-            n_entities = len(np.unique(entity_indices))
-            if n_entities > 1:
-                # Create dummy variables (drop first for identification)
-                dummies = np.zeros((len(entity_indices), n_entities - 1))
-                unique_entities = np.unique(entity_indices)
-                for i, ent in enumerate(unique_entities[1:]):
-                    dummies[entity_indices == ent, i] = 1.0
-                features_list.append(dummies)
+        if self.use_fixed_effects and self._n_entities > 1:
+            n_dummies = self._n_entities - 1  # drop first for identification
+            dummies = np.zeros((X.shape[0], n_dummies))
+
+            if entity_indices is not None:
+                for ent_id, col_idx in self._entity_encoder.items():
+                    if col_idx is not None:  # col_idx is None for the reference entity
+                        mask = entity_indices == ent_id
+                        dummies[mask, col_idx] = 1.0
+
+            features_list.append(dummies)
 
         return np.hstack(features_list)
+
+    @staticmethod
+    def _build_lag_matrix(X: np.ndarray, n_lags: int) -> np.ndarray:
+        """
+        Construct a lagged feature matrix from *X*.
+
+        For lag order *p*, row *t* of the result is::
+
+            [X[t], X[t-1], X[t-2], ..., X[t-p]]
+
+        The first *p* rows are dropped because they lack sufficient
+        history.
+
+        Args:
+            X: Feature matrix of shape (T, d).
+            n_lags: Number of lags *p* to append.
+
+        Returns:
+            Lagged matrix of shape (T - p, d * (1 + p)).
+        """
+        n_rows, n_cols = X.shape
+        parts = [X[n_lags:]]
+        for lag in range(1, n_lags + 1):
+            parts.append(X[n_lags - lag : n_rows - lag])
+        return np.hstack(parts)
 
     def _select_lag_order(
         self, X: np.ndarray, y: np.ndarray
@@ -131,41 +162,42 @@ class PanelVARForecaster(BaseForecaster):
         """
         Select optimal lag order using information criteria.
 
-        Tests lag orders from 1 to max_lags and selects the one
-        minimizing AIC or BIC.  For each candidate lag, only the
-        first ``lag * n_features`` columns of X are used so that
-        the effective model complexity changes with the lag order.
+        For each candidate lag order *p* in ``1 .. max_lags``:
+          1. Build a proper lag matrix ``[X_t, X_{t-1}, ..., X_{t-p}]``.
+          2. Fit a Ridge model and compute residual sum of squares.
+          3. Evaluate AIC or BIC (accounting for the extra parameters
+             introduced by each additional lag).
 
         Args:
-            X: Feature matrix (may include fixed-effect dummies at the end)
-            y: Target values
+            X: Feature matrix (may include fixed-effect dummies).
+            y: Target values.
 
         Returns:
-            Optimal number of lags
+            Optimal number of lags.
         """
         if self.lag_selection == "fixed":
             return self.n_lags
 
-        n_samples = X.shape[0]
-        n_base_features = X.shape[1]
         best_ic = np.inf
         best_lag = 1
 
+        y_target = y if y.ndim == 1 else y[:, 0]
+
         for lag in range(1, min(self.max_lags + 1, 4)):
             try:
-                # Use a subset of columns proportional to the lag order
-                # to simulate different model complexities
-                n_cols = min(lag * max(n_base_features // self.max_lags, 1), n_base_features)
-                X_lag = X[:, :n_cols]
+                X_lag = self._build_lag_matrix(X, lag)
+                y_lag = y_target[lag:]          # align y with the lagged rows
+                n_samples = X_lag.shape[0]
+
+                if n_samples < lag + 2:         # too few rows left
+                    continue
 
                 model = Ridge(alpha=self.alpha, random_state=self.random_state)
-                y_target = y if y.ndim == 1 else y[:, 0]
-                model.fit(X_lag, y_target)
+                model.fit(X_lag, y_lag)
                 y_pred = model.predict(X_lag)
 
-                # Compute residual sum of squares
-                rss = np.sum((y_target - y_pred) ** 2)
-                k = X_lag.shape[1]  # number of parameters
+                rss = np.sum((y_lag - y_pred) ** 2)
+                k = X_lag.shape[1]              # number of parameters
 
                 if self.lag_selection == "aic":
                     ic = n_samples * np.log(rss / n_samples + 1e-10) + 2 * k
@@ -200,12 +232,21 @@ class PanelVARForecaster(BaseForecaster):
         if y.ndim == 1:
             y = y.reshape(-1, 1)
         self._n_outputs = y.shape[1]
+        self._n_base_features = X.shape[1]
 
-        # Track number of entities for fixed effect extraction
+        # Track entity encoding for fixed effects
         if entity_indices is not None:
-            self._n_entities = len(np.unique(entity_indices))
+            unique = np.unique(entity_indices)
+            self._unique_entities = unique
+            self._n_entities = len(unique)
+            # Build encoder: reference entity (first) gets None, rest get column indices
+            self._entity_encoder = {unique[0]: None}
+            for col_idx, ent in enumerate(unique[1:]):
+                self._entity_encoder[ent] = col_idx
         else:
             self._n_entities = 0
+            self._unique_entities = None
+            self._entity_encoder = {}
 
         # Build panel features with fixed effects
         X_panel = self._build_panel_features(X, entity_indices=entity_indices)
@@ -238,16 +279,21 @@ class PanelVARForecaster(BaseForecaster):
 
         # Average feature importance across outputs (trim to original X size)
         avg_imp = np.mean(all_importances, axis=0)
-        self.feature_importance_ = avg_imp[: X.shape[1]]
+        self.feature_importance_ = avg_imp[: self._n_base_features]
         self._fitted = True
         return self
 
-    def predict(self, X: np.ndarray) -> np.ndarray:
+    def predict(
+        self, X: np.ndarray, entity_indices: Optional[np.ndarray] = None
+    ) -> np.ndarray:
         """
         Make predictions using the fitted Panel VAR model.
 
         Args:
             X: Feature matrix of shape (n_samples, n_features)
+            entity_indices: Optional entity IDs. If provided, entity-specific
+                           fixed effects are applied. If None, predictions
+                           are at the population level (reference entity).
 
         Returns:
             Predictions of shape (n_samples, n_outputs)
@@ -255,7 +301,7 @@ class PanelVARForecaster(BaseForecaster):
         if not self._fitted:
             raise ValueError("Model not fitted yet. Call fit() first.")
 
-        X_panel = self._build_panel_features(X)
+        X_panel = self._build_panel_features(X, entity_indices=entity_indices)
         predictions = np.zeros((X.shape[0], self._n_outputs))
 
         for col in range(self._n_outputs):

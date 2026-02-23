@@ -156,16 +156,29 @@ class ConformalPredictor:
         return self
 
     def _calibrate_split(self, model, X: np.ndarray, y: np.ndarray):
-        """Calibrate using split conformal method."""
+        """Calibrate using split conformal method.
+        
+        Re-fits the model on the proper training portion so that
+        calibration residuals are computed on truly held-out data.
+        """
+        import copy
+
         n = len(y)
         n_cal = max(5, int(n * self.calibration_fraction))
 
-        # Use last n_cal samples as calibration (temporal ordering)
+        # Split: train on first (n - n_cal), calibrate on last n_cal
+        X_train = X[:-n_cal]
+        y_train = y[:-n_cal]
         X_cal = X[-n_cal:]
         y_cal = y[-n_cal:]
 
-        # Get predictions on calibration set
-        y_pred = model.predict(X_cal)
+        # Re-fit model on proper training set only
+        model_proper = copy.deepcopy(model)
+        if hasattr(model_proper, 'fit'):
+            model_proper.fit(X_train, y_train)
+
+        # Get predictions on held-out calibration set
+        y_pred = model_proper.predict(X_cal)
         if y_pred.ndim > 1:
             y_pred = y_pred.mean(axis=1) if y_pred.shape[1] > 1 else y_pred.ravel()
 
@@ -254,6 +267,9 @@ class ConformalPredictor:
 
         For time series data where the distribution may drift over time.
         Tracks effective coverage and adapts the quantile threshold.
+        
+        Initialises q_hat from the first half of residuals to avoid
+        look-ahead bias, then runs the online update from the second half.
         """
         y_pred = model.predict(X)
         if y_pred.ndim > 1:
@@ -262,16 +278,21 @@ class ConformalPredictor:
         residuals = np.abs(y - y_pred)
         self._conformity_scores = residuals
 
-        # Initialize with standard conformal quantile
         n = len(residuals)
-        q_level = min(np.ceil((1 - self.alpha) * (n + 1)) / n, 1.0)
-        self._q_hat = np.quantile(residuals, q_level)
+        # Use first half for initial quantile (avoids look-ahead)
+        n_init = max(5, n // 2)
+        init_residuals = residuals[:n_init]
+        q_level_init = min(
+            np.ceil((1 - self.alpha) * (n_init + 1)) / n_init, 1.0
+        )
+        self._q_hat = np.quantile(init_residuals, q_level_init)
 
         # ACI: track adaptive alpha using exponential smoothing
         self._aci_alpha_t = self.alpha
         self._aci_history = []
 
-        for t in range(len(residuals)):
+        # Online update starting from the initialisation boundary
+        for t in range(n_init, n):
             # Check if observation was covered
             covered = residuals[t] <= self._q_hat
             error_indicator = 0.0 if covered else 1.0
@@ -283,11 +304,13 @@ class ConformalPredictor:
             )
             self._aci_alpha_t = np.clip(self._aci_alpha_t, 0.001, 0.999)
 
-            # Update quantile threshold
+            # Update quantile threshold using residuals seen so far
+            seen = residuals[:t + 1]
             q_level = min(
-                np.ceil((1 - self._aci_alpha_t) * (n + 1)) / n, 1.0
+                np.ceil((1 - self._aci_alpha_t) * (len(seen) + 1)) / len(seen),
+                1.0,
             )
-            self._q_hat = np.quantile(residuals[:t + 1], q_level)
+            self._q_hat = np.quantile(seen, q_level)
 
             self._aci_history.append({
                 "alpha_t": self._aci_alpha_t,

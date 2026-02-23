@@ -215,10 +215,14 @@ class ForecastEvaluator:
         self, model, X: np.ndarray, y: np.ndarray
     ) -> Dict[str, Any]:
         """
-        Perform residual diagnostic tests.
+        Perform residual diagnostic tests using out-of-fold residuals.
+
+        Uses TimeSeriesSplit cross-validation to compute genuine
+        out-of-sample residuals, avoiding the overfitting bias that
+        arises when diagnostics are computed on in-sample residuals.
 
         Tests:
-            - Normality (Shapiro-Wilk on subsample)
+            - Normality (skewness and excess kurtosis)
             - Autocorrelation (Durbin-Watson statistic)
             - Heteroscedasticity (residual vs predicted correlation)
             - Mean zero test
@@ -226,16 +230,38 @@ class ForecastEvaluator:
         if y.ndim == 1:
             y = y.reshape(-1, 1)
 
-        model_copy = copy.deepcopy(model)
-        if hasattr(model_copy, "fit"):
-            model_copy.fit(X, y)
+        # Collect out-of-fold predictions via TimeSeriesSplit
+        n = X.shape[0]
+        tscv = TimeSeriesSplit(n_splits=min(self.n_folds, max(2, n // 5)))
 
-        pred = model_copy.predict(X)
-        if pred.ndim == 1:
-            pred = pred.reshape(-1, 1)
+        oof_residuals = np.full(n, np.nan)
+        oof_pred_mean = np.full(n, np.nan)
 
-        # Average residuals across outputs
-        residuals = np.mean(y - pred[:, :y.shape[1]], axis=1)
+        for train_idx, val_idx in tscv.split(X):
+            try:
+                model_copy = copy.deepcopy(model)
+                if hasattr(model_copy, "fit"):
+                    model_copy.fit(X[train_idx], y[train_idx])
+
+                pred = model_copy.predict(X[val_idx])
+                if pred.ndim == 1:
+                    pred = pred.reshape(-1, 1)
+
+                # Average residuals across outputs
+                oof_residuals[val_idx] = np.mean(
+                    y[val_idx] - pred[:, :y.shape[1]], axis=1
+                )
+                oof_pred_mean[val_idx] = np.mean(pred[:, :y.shape[1]], axis=1)
+            except Exception:
+                continue
+
+        # Keep only valid (non-NaN) positions
+        valid = ~np.isnan(oof_residuals)
+        if valid.sum() < 5:
+            return {"error": "Not enough OOF residuals for diagnostics"}
+
+        residuals = oof_residuals[valid]
+        pred_mean = oof_pred_mean[valid]
 
         diagnostics = {}
 
@@ -254,7 +280,6 @@ class ForecastEvaluator:
 
         # 3. Heteroscedasticity check (correlation between |residuals| and predictions)
         abs_resid = np.abs(residuals)
-        pred_mean = np.mean(pred, axis=1)
         if np.std(pred_mean) > 1e-10 and np.std(abs_resid) > 1e-10:
             corr = np.corrcoef(pred_mean, abs_resid)[0, 1]
             diagnostics["heteroscedasticity_corr"] = float(corr)

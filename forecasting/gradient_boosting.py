@@ -58,6 +58,10 @@ class GradientBoostingForecaster(BaseForecaster):
         self.subsample = subsample
         self.random_state = random_state
         
+        # NOTE: sklearn's GradientBoostingRegressor early stopping uses a
+        # RANDOM validation split (not temporal), which leaks future data
+        # into the stopping criterion.  We rely on a fixed n_estimators
+        # with conservative learning_rate + subsample for regularisation.
         self._base_model = GradientBoostingRegressor(
             n_estimators=n_estimators,
             max_depth=max_depth,
@@ -65,9 +69,6 @@ class GradientBoostingForecaster(BaseForecaster):
             subsample=subsample,
             random_state=random_state,
             loss='huber',  # Robust to outliers
-            validation_fraction=0.1,
-            n_iter_no_change=20,
-            tol=1e-4
         )
         self.model = None  # Will be set during fit
         self.scaler = RobustScaler()

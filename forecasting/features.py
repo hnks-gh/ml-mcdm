@@ -73,30 +73,41 @@ class TemporalFeatureEngineer:
         components = panel_data.subcriteria_names
         years = sorted(panel_data.years)
         
-        # Determine train years (all except last) and test year (last)
-        train_years = years[:-1]
-        last_year = years[-1]
+        # Use target_year to determine the prediction boundary.
+        # All years before target_year are available for training pairs;
+        # the last available year's features are used to predict target_year.
+        if target_year in years:
+            # target_year already in data → use it as the last training target
+            last_year = target_year
+        else:
+            # target_year is the next unseen year → predict beyond data
+            last_year = years[-1]
+        
+        # Training pairs: features(year_t) → target(year_{t+1})
+        # for every consecutive pair up to and including last_year
+        train_feature_years = [y for y in years if y < last_year]
         
         X_train_list = []
         y_train_list = []
         X_pred_list = []
+        entity_indices = []
         
-        for entity in entities:
+        for ent_idx, entity in enumerate(entities):
             entity_data = panel_data.get_province(entity)
             
             # Create features for each training year (predicting next year)
-            for i, year in enumerate(train_years[:-1]):  # Need at least one future year
-                target_year_idx = i + 1
-                if target_year_idx < len(train_years):
-                    features = self._create_features(
-                        entity_data, entity, years, year, entities, panel_data
-                    )
-                    target = entity_data.loc[train_years[target_year_idx], components].values
-                    
-                    X_train_list.append(features)
-                    y_train_list.append(target)
+            for i, year in enumerate(train_feature_years):
+                next_year = years[years.index(year) + 1]
+                features = self._create_features(
+                    entity_data, entity, years, year, entities, panel_data
+                )
+                target = entity_data.loc[next_year, components].values
+                
+                X_train_list.append(features)
+                y_train_list.append(target)
+                entity_indices.append(ent_idx)
             
-            # Create features for prediction (using last year to predict next)
+            # Create features for prediction (using last_year to predict target_year)
             pred_features = self._create_features(
                 entity_data, entity, years, last_year, entities, panel_data
             )
@@ -106,13 +117,17 @@ class TemporalFeatureEngineer:
         X_train = np.vstack(X_train_list)
         y_train = np.vstack(y_train_list)
         X_pred = np.vstack(X_pred_list)
+        entity_indices_arr = np.array(entity_indices, dtype=int)
         
         # Create DataFrames
         X_train_df = pd.DataFrame(X_train, columns=self.feature_names_)
         y_train_df = pd.DataFrame(y_train, columns=components)
         X_pred_df = pd.DataFrame(X_pred, columns=self.feature_names_, index=entities)
+        entity_index_df = pd.DataFrame(
+            {'entity_index': entity_indices_arr},
+        )
         
-        return X_train_df, y_train_df, X_pred_df, pd.DataFrame(index=entities)
+        return X_train_df, y_train_df, X_pred_df, entity_index_df
     
     def _create_features(self,
                          entity_data: pd.DataFrame,
@@ -240,6 +255,14 @@ class TemporalFeatureEngineer:
                     features.extend([0.5, 0])
                     feature_names.extend([f"{c}_percentile", f"{c}_zscore"])
         
+        # Validate that every entity-year produces the same feature vector
+        if self.feature_names_ and len(self.feature_names_) != len(feature_names):
+            raise ValueError(
+                f"Feature dimension mismatch: previous call produced "
+                f"{len(self.feature_names_)} features, this call produced "
+                f"{len(feature_names)}. Check cross_section data for "
+                f"entity={entity}, year={current_year}."
+            )
         self.feature_names_ = feature_names
         return np.array(features)
     

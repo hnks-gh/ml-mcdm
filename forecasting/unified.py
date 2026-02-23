@@ -274,9 +274,15 @@ class UnifiedForecaster:
         if self.verbose:
             print("  Stage 1: Engineering temporal features...")
 
-        X_train, y_train, X_pred, _ = self.feature_engineer_.fit_transform(
+        X_train, y_train, X_pred, entity_info = self.feature_engineer_.fit_transform(
             panel_data, target_year
         )
+
+        # Extract entity indices for models that use panel structure
+        if 'entity_index' in entity_info.columns:
+            entity_indices = entity_info['entity_index'].values
+        else:
+            entity_indices = None
 
         # ===== Stage 2: Create base models =====
         self.models_ = self._create_models()
@@ -302,7 +308,7 @@ class UnifiedForecaster:
             random_state=self.random_state,
             verbose=self.verbose,
         )
-        self.super_learner_.fit(X_arr, y_arr)
+        self.super_learner_.fit(X_arr, y_arr, entity_indices=entity_indices)
 
         self.model_weights_ = self.super_learner_.get_meta_weights()
         cv_scores = self.super_learner_.get_cv_scores()
@@ -455,14 +461,21 @@ class UnifiedForecaster:
                                      feature_names: List[str],
                                      component_names: List[str]
                                      ) -> pd.DataFrame:
-        """Aggregate feature importance across models."""
+        """Aggregate feature importance across fitted models."""
         importance_dict = {}
         
-        for name, model in self.models_.items():
+        # Use the FITTED base models from SuperLearner, not the unfitted originals
+        fitted_models = (
+            self.super_learner_._fitted_base_models
+            if self.super_learner_ is not None
+            else {}
+        )
+        
+        for name, model in fitted_models.items():
             try:
                 imp = model.get_feature_importance()
                 importance_dict[name] = imp
-            except:
+            except Exception:
                 pass
         
         if not importance_dict:

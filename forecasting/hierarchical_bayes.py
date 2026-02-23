@@ -36,6 +36,7 @@ References:
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Optional, Tuple, Any
+import warnings
 from sklearn.linear_model import Ridge, BayesianRidge
 from sklearn.preprocessing import StandardScaler
 
@@ -99,19 +100,20 @@ class HierarchicalBayesForecaster(BaseForecaster):
         self.random_state = random_state
         self.n_posterior_samples = n_posterior_samples
 
-        # Fitted parameters
-        self._global_model: Optional[BayesianRidge] = None
-        self._group_intercepts: Dict[int, np.ndarray] = {}
-        self._shrinkage_factors: Dict[int, float] = {}
-        self._sigma_obs: float = 1.0
-        self._sigma_group: float = 1.0
+        # Fitted parameters — stored per output
+        self._global_models: List[Optional[BayesianRidge]] = []
+        self._group_intercepts_per_output: List[Dict[int, float]] = []
+        self._shrinkage_factors_per_output: List[Dict[int, float]] = []
+        self._sigma_obs_per_output: List[float] = []
+        self._sigma_group_per_output: List[float] = []
         self._mu_global: Optional[np.ndarray] = None
         self._scaler: StandardScaler = StandardScaler()
         self._n_outputs: int = 1
         self._fitted: bool = False
         self.feature_importance_: Optional[np.ndarray] = None
+        self._group_indices: Optional[np.ndarray] = None
 
-        # Posterior parameters for uncertainty
+        # Posterior parameters for uncertainty (first output, backward compat)
         self._posterior_beta_mean: Optional[np.ndarray] = None
         self._posterior_beta_cov: Optional[np.ndarray] = None
 
@@ -146,16 +148,32 @@ class HierarchicalBayesForecaster(BaseForecaster):
         X_scaled = self._scaler.fit_transform(X)
         n_samples, n_features = X_scaled.shape
 
-        # If no group indices provided, create synthetic groups
-        # based on sample ordering (assumes panel structure)
+        # If no group indices provided, fall back to plain BayesianRidge
+        # (fabricating synthetic groups would be meaningless)
         if group_indices is None:
-            # Default: treat each entity as having equal number of observations
-            n_groups_est = min(63, max(1, n_samples // 10))
-            group_indices = np.repeat(np.arange(n_groups_est), 
-                                      n_samples // n_groups_est + 1)[:n_samples]
+            import warnings
+            warnings.warn(
+                "HierarchicalBayesForecaster: no group_indices provided. "
+                "Falling back to plain BayesianRidge (no partial pooling).",
+                UserWarning,
+            )
 
-        unique_groups = np.unique(group_indices)
-        n_groups = len(unique_groups)
+        # Store group_indices for predict-time use
+        self._group_indices = group_indices
+
+        if group_indices is not None:
+            unique_groups = np.unique(group_indices)
+            n_groups = len(unique_groups)
+        else:
+            unique_groups = np.array([])
+            n_groups = 0
+
+        # Reset per-output storage
+        self._global_models = []
+        self._group_intercepts_per_output = []
+        self._shrinkage_factors_per_output = []
+        self._sigma_obs_per_output = []
+        self._sigma_group_per_output = []
 
         # Fit per-output models
         all_importances = []
@@ -171,9 +189,9 @@ class HierarchicalBayesForecaster(BaseForecaster):
                 lambda_1=1e-6, lambda_2=1e-6,
             )
             global_model.fit(X_scaled, y_col)
+            self._global_models.append(global_model)
 
             if out_col == 0:
-                self._global_model = global_model
                 self._posterior_beta_mean = global_model.coef_.copy()
                 # Store posterior covariance for uncertainty
                 try:
@@ -185,65 +203,70 @@ class HierarchicalBayesForecaster(BaseForecaster):
             global_residuals = y_col - global_pred
 
             # Step 2: Estimate variance components via EM
+            # (only meaningful when group_indices are provided)
+            group_intercepts: Dict[int, float] = {}
+            shrinkage_factors: Dict[int, float] = {}
             sigma_obs = np.var(global_residuals) + 1e-10
-            sigma_group = np.var([
-                np.mean(global_residuals[group_indices == g])
-                for g in unique_groups
-                if np.sum(group_indices == g) > 0
-            ]) + 1e-10
+            sigma_group = 1e-10
 
-            prev_sigma_group = sigma_group
+            if group_indices is not None and n_groups > 1:
+                sigma_group = np.var([
+                    np.mean(global_residuals[group_indices == g])
+                    for g in unique_groups
+                    if np.sum(group_indices == g) > 0
+                ]) + 1e-10
 
-            for em_iter in range(self.n_em_iterations):
-                # E-step: Compute shrinkage factors and group intercepts
-                group_intercepts = {}
-                shrinkage_factors = {}
-
-                for g in unique_groups:
-                    mask = group_indices == g
-                    n_g = mask.sum()
-                    if n_g == 0:
-                        continue
-
-                    # Group mean of residuals (no-pooling estimate)
-                    y_bar_g = np.mean(global_residuals[mask])
-
-                    # Shrinkage factor B_g
-                    B_g = sigma_obs / (sigma_obs + n_g * sigma_group)
-                    B_g = np.clip(B_g, self.min_shrinkage, self.max_shrinkage)
-
-                    # Partially pooled intercept
-                    alpha_g = (1.0 - B_g) * y_bar_g  # Shrink toward 0 (global mean)
-
-                    group_intercepts[g] = alpha_g
-                    shrinkage_factors[g] = B_g
-
-                # M-step: Update variance components
-                # Update σ²_obs
-                residuals_new = np.zeros(n_samples)
-                for g in unique_groups:
-                    mask = group_indices == g
-                    if mask.sum() == 0:
-                        continue
-                    residuals_new[mask] = global_residuals[mask] - group_intercepts.get(g, 0.0)
-
-                sigma_obs = np.var(residuals_new) + 1e-10
-
-                # Update σ²_group
-                intercept_values = np.array(list(group_intercepts.values()))
-                sigma_group = np.var(intercept_values) + 1e-10
-
-                # Check convergence
-                if abs(sigma_group - prev_sigma_group) / (prev_sigma_group + 1e-10) < self.convergence_tol:
-                    break
                 prev_sigma_group = sigma_group
 
+                for em_iter in range(self.n_em_iterations):
+                    # E-step: Compute shrinkage factors and group intercepts
+                    group_intercepts = {}
+                    shrinkage_factors = {}
+
+                    for g in unique_groups:
+                        mask = group_indices == g
+                        n_g = mask.sum()
+                        if n_g == 0:
+                            continue
+
+                        # Group mean of residuals (no-pooling estimate)
+                        y_bar_g = np.mean(global_residuals[mask])
+
+                        # Shrinkage factor B_g
+                        B_g = sigma_obs / (sigma_obs + n_g * sigma_group)
+                        B_g = np.clip(B_g, self.min_shrinkage, self.max_shrinkage)
+
+                        # Partially pooled intercept
+                        alpha_g = (1.0 - B_g) * y_bar_g  # Shrink toward 0 (global mean)
+
+                        group_intercepts[g] = alpha_g
+                        shrinkage_factors[g] = B_g
+
+                    # M-step: Update variance components
+                    # Update σ²_obs
+                    residuals_new = np.zeros(n_samples)
+                    for g in unique_groups:
+                        mask = group_indices == g
+                        if mask.sum() == 0:
+                            continue
+                        residuals_new[mask] = global_residuals[mask] - group_intercepts.get(g, 0.0)
+
+                    sigma_obs = np.var(residuals_new) + 1e-10
+
+                    # Update σ²_group
+                    intercept_values = np.array(list(group_intercepts.values()))
+                    sigma_group = np.var(intercept_values) + 1e-10
+
+                    # Check convergence
+                    if abs(sigma_group - prev_sigma_group) / (prev_sigma_group + 1e-10) < self.convergence_tol:
+                        break
+                    prev_sigma_group = sigma_group
+
             # Store fitted parameters for this output
-            if out_col == 0:
-                self._group_intercepts = group_intercepts
-                self._shrinkage_factors = shrinkage_factors
-                self._sigma_obs = sigma_obs
-                self._sigma_group = sigma_group
+            self._group_intercepts_per_output.append(group_intercepts)
+            self._shrinkage_factors_per_output.append(shrinkage_factors)
+            self._sigma_obs_per_output.append(sigma_obs)
+            self._sigma_group_per_output.append(sigma_group)
 
             all_importances.append(np.abs(global_model.coef_))
 
@@ -251,15 +274,21 @@ class HierarchicalBayesForecaster(BaseForecaster):
         self._fitted = True
         return self
 
-    def predict(self, X: np.ndarray) -> np.ndarray:
+    def predict(
+        self, X: np.ndarray, group_indices: Optional[np.ndarray] = None
+    ) -> np.ndarray:
         """
         Make point predictions using the hierarchical model.
 
-        Uses the global model predictions. Group effects are averaged
-        out for new entities (prediction at the population level).
+        Uses per-output global models plus group intercepts when available.
+        For new / unknown entities, predictions fall back to population level
+        (global model only, group intercept = 0).
 
         Args:
             X: Feature matrix of shape (n_samples, n_features)
+            group_indices: Optional group IDs for each sample.
+                          If None, uses training-time group_indices mapping
+                          or predicts at population level.
 
         Returns:
             Predictions of shape (n_samples,) or (n_samples, n_outputs)
@@ -268,8 +297,24 @@ class HierarchicalBayesForecaster(BaseForecaster):
             raise ValueError("Model not fitted yet. Call fit() first.")
 
         X_scaled = self._scaler.transform(X)
-        predictions = self._global_model.predict(X_scaled)
+        n_samples = X_scaled.shape[0]
+        predictions = np.zeros((n_samples, self._n_outputs))
 
+        for out_col in range(self._n_outputs):
+            global_model = self._global_models[out_col]
+            base_pred = global_model.predict(X_scaled)
+
+            # Add group intercepts if available
+            group_intercepts = self._group_intercepts_per_output[out_col]
+            if group_indices is not None and group_intercepts:
+                for i in range(n_samples):
+                    g = group_indices[i]
+                    base_pred[i] += group_intercepts.get(g, 0.0)
+
+            predictions[:, out_col] = base_pred
+
+        if self._n_outputs == 1:
+            return predictions.ravel()
         return predictions
 
     def predict_with_uncertainty(
@@ -296,11 +341,14 @@ class HierarchicalBayesForecaster(BaseForecaster):
 
         X_scaled = self._scaler.transform(X)
 
-        # Point prediction from global model
-        mean_pred, param_std = self._global_model.predict(X_scaled, return_std=True)
+        # Point prediction from first output's global model (backward compat)
+        global_model_0 = self._global_models[0]
+        mean_pred, param_std = global_model_0.predict(X_scaled, return_std=True)
 
         # Total uncertainty: parameter uncertainty + observation noise + group variance
-        total_variance = param_std ** 2 + self._sigma_obs + self._sigma_group
+        sigma_obs = self._sigma_obs_per_output[0] if self._sigma_obs_per_output else 1.0
+        sigma_group = self._sigma_group_per_output[0] if self._sigma_group_per_output else 1.0
+        total_variance = param_std ** 2 + sigma_obs + sigma_group
         total_std = np.sqrt(total_variance)
 
         return mean_pred, total_std
@@ -379,15 +427,17 @@ class HierarchicalBayesForecaster(BaseForecaster):
         if not self._fitted:
             raise ValueError("Model not fitted yet")
 
-        shrink_vals = list(self._shrinkage_factors.values())
+        shrink_vals = list(self._shrinkage_factors_per_output[0].values()) if self._shrinkage_factors_per_output else []
+        sigma_obs = self._sigma_obs_per_output[0] if self._sigma_obs_per_output else 1.0
+        sigma_group = self._sigma_group_per_output[0] if self._sigma_group_per_output else 1.0
         return {
             "mean_shrinkage": np.mean(shrink_vals) if shrink_vals else 0.0,
             "min_shrinkage": np.min(shrink_vals) if shrink_vals else 0.0,
             "max_shrinkage": np.max(shrink_vals) if shrink_vals else 0.0,
-            "sigma_obs": self._sigma_obs,
-            "sigma_group": self._sigma_group,
-            "variance_partition": self._sigma_group / (self._sigma_group + self._sigma_obs),
-            "n_groups": len(self._group_intercepts),
+            "sigma_obs": sigma_obs,
+            "sigma_group": sigma_group,
+            "variance_partition": sigma_group / (sigma_group + sigma_obs),
+            "n_groups": len(self._group_intercepts_per_output[0]) if self._group_intercepts_per_output else 0,
         }
 
     def get_diagnostics(self) -> Dict[str, Any]:

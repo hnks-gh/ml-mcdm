@@ -44,6 +44,7 @@ from sklearn.model_selection import TimeSeriesSplit
 from sklearn.linear_model import ElasticNetCV, RidgeCV, Ridge
 from sklearn.metrics import r2_score, mean_squared_error
 from sklearn.preprocessing import StandardScaler
+from scipy.optimize import nnls
 import copy
 import warnings
 
@@ -120,7 +121,7 @@ class SuperLearner:
         self._n_outputs: int = 1
         self._oof_r2: Dict[str, float] = {}
 
-    def fit(self, X: np.ndarray, y: np.ndarray) -> "SuperLearner":
+    def fit(self, X: np.ndarray, y: np.ndarray, entity_indices: Optional[np.ndarray] = None) -> "SuperLearner":
         """
         Fit the Super Learner ensemble.
 
@@ -131,6 +132,7 @@ class SuperLearner:
         Args:
             X: Feature matrix of shape (n_samples, n_features)
             y: Target values of shape (n_samples,) or (n_samples, n_outputs)
+            entity_indices: Optional entity group IDs for panel-aware models
 
         Returns:
             Self for method chaining
@@ -162,7 +164,9 @@ class SuperLearner:
             for m_idx, (name, model) in enumerate(self.base_models.items()):
                 try:
                     model_copy = copy.deepcopy(model)
-                    model_copy.fit(X_train_cv, y_train_cv)
+                    # Forward entity_indices to models that accept them
+                    self._fit_model(model_copy, X_train_cv, y_train_cv,
+                                    entity_indices[train_idx] if entity_indices is not None else None)
 
                     pred = model_copy.predict(X_val_cv)
                     if pred.ndim == 1:
@@ -224,7 +228,7 @@ class SuperLearner:
         for name, model in self.base_models.items():
             try:
                 fitted_model = copy.deepcopy(model)
-                fitted_model.fit(X, y)
+                self._fit_model(fitted_model, X, y, entity_indices)
                 self._fitted_base_models[name] = fitted_model
             except Exception as e:
                 if self.verbose:
@@ -241,6 +245,18 @@ class SuperLearner:
                 print(f"    {name:25s}: {w:.4f} {bar}")
 
         return self
+
+    @staticmethod
+    def _fit_model(model, X, y, entity_indices=None):
+        """Fit a base model, forwarding entity_indices when supported."""
+        import inspect
+        sig = inspect.signature(model.fit)
+        if 'entity_indices' in sig.parameters and entity_indices is not None:
+            model.fit(X, y, entity_indices=entity_indices)
+        elif 'group_indices' in sig.parameters and entity_indices is not None:
+            model.fit(X, y, group_indices=entity_indices)
+        else:
+            model.fit(X, y)
 
     def _fit_meta_learner(self, oof_X: np.ndarray, oof_y: np.ndarray):
         """Fit the second-level meta-learner on OOF predictions."""
@@ -270,7 +286,7 @@ class SuperLearner:
                     l1_ratio=[0.1, 0.3, 0.5, 0.7, 0.9],
                     alphas=self.meta_alpha_range,
                     positive=self.positive_weights,
-                    cv=min(3, valid.sum() // 2),
+                    cv=max(2, min(3, valid.sum() // 2)),
                     max_iter=5000,
                     random_state=self.random_state,
                 )
@@ -286,9 +302,21 @@ class SuperLearner:
                 all_coefs.append(weights)
                 continue
             else:  # ridge
+                if self.positive_weights:
+                    # Use NNLS for a proper non-negative least-squares
+                    # solution instead of post-hoc clipping of Ridge coefs.
+                    try:
+                        coefs_nnls, _ = nnls(model_preds_valid, y_valid)
+                        all_coefs.append(coefs_nnls)
+                        if out_col == 0:
+                            self._meta_learner = None  # no sklearn meta object
+                        continue
+                    except Exception:
+                        pass  # fall through to RidgeCV
+
                 meta = RidgeCV(
                     alphas=self.meta_alpha_range,
-                    cv=min(3, valid.sum() // 2),
+                    cv=max(2, min(3, valid.sum() // 2)),
                 )
 
             try:
@@ -296,6 +324,8 @@ class SuperLearner:
                 coefs = meta.coef_.copy()
 
                 # Enforce non-negative weights if required
+                # (only reached for ridge when NNLS failed, or elasticnet
+                #  which already enforces positive= natively)
                 if self.positive_weights:
                     coefs = np.maximum(coefs, 0)
 
