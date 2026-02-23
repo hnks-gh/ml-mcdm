@@ -5,7 +5,7 @@ CSV & JSON Data Writer for ML-MCDM Pipeline
 
 All structured numerical output (weights, rankings, scores, forecasts,
 sensitivity analysis) is persisted through this single writer class.
-Every file lands in ``outputs/results/``.
+Every file lands in ``result/results/``.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ _logger = logging.getLogger(__name__)
 class CsvWriter:
     """Write CSV / JSON result files into ``<base_dir>/results/``."""
 
-    def __init__(self, base_output_dir: str = 'outputs'):
+    def __init__(self, base_output_dir: str = 'result'):
         self.results_dir = Path(base_output_dir) / 'results'
         self.results_dir.mkdir(parents=True, exist_ok=True)
         self._saved_files: List[str] = []

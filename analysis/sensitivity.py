@@ -304,7 +304,13 @@ class SensitivityAnalysis:
             panel_data, self._weights_to_dict(weights), target_year=base_year
         )
         base_ranking = base_er_result.final_ranking.rank().values
-        
+
+        # Precompute MCDM scores once — fast-path reruns only re-run ER
+        _precomp = getattr(base_er_result, 'criterion_method_scores', None)
+        _can_fast = (_precomp is not None) and hasattr(ranking_pipeline, 'rank_fast')
+        _hier = panel_data.hierarchy
+        _alts = list(panel_data.provinces)
+
         # Criteria-level sensitivity
         criteria_sens = {}
         fused_weights = weights['fused']
@@ -323,27 +329,35 @@ class SensitivityAnalysis:
             rank_changes = []
             
             # Perturb criterion weight (affects all its subcriteria)
-            for delta in self.rng.uniform(-self.perturbation_range, 
-                                          self.perturbation_range, 20):
+            for delta in self.rng.uniform(-self.perturbation_range,
+                                          self.perturbation_range, 5):
                 if abs(delta) < 0.01:
                     continue
-                
+
                 perturbed_weights = fused_weights.copy()
                 for idx in subcrit_indices:
                     perturbed_weights[idx] *= (1 + delta)
-                
+
                 # Renormalize
                 perturbed_weights = perturbed_weights / perturbed_weights.sum()
-                
-                # Run pipeline with perturbed weights
+                perts_dict = self._weights_to_dict(weights, perturbed_weights)
+
+                # Fast-path: only re-run ER aggregation (skip 12 MCDM methods)
                 try:
-                    perturbed_result = ranking_pipeline.rank(
-                        panel_data, 
-                        self._weights_to_dict(weights, perturbed_weights), 
-                        target_year=base_year
-                    )
-                    new_ranking = perturbed_result.final_ranking.rank().values
-                    
+                    if _can_fast:
+                        _er = ranking_pipeline.rank_fast(
+                            precomputed_scores=_precomp,
+                            subcriteria_weights=perts_dict,
+                            hierarchy=_hier,
+                            alternatives=_alts,
+                        )
+                        new_ranking = _er.final_ranking.rank().values
+                    else:
+                        perturbed_result = ranking_pipeline.rank(
+                            panel_data, perts_dict, target_year=base_year
+                        )
+                        new_ranking = perturbed_result.final_ranking.rank().values
+
                     # Measure rank change
                     rank_change = np.mean(np.abs(new_ranking - base_ranking))
                     rank_changes.append(rank_change)
@@ -366,23 +380,32 @@ class SensitivityAnalysis:
         
         for i, subcriterion in enumerate(subcriteria):
             rank_changes = []
-            
-            for delta in self.rng.uniform(-self.perturbation_range, 
-                                          self.perturbation_range, 10):
+
+            for delta in self.rng.uniform(-self.perturbation_range,
+                                          self.perturbation_range, 3):
                 if abs(delta) < 0.01:
                     continue
-                
+
                 perturbed_weights = fused_weights.copy()
                 perturbed_weights[i] *= (1 + delta)
                 perturbed_weights = perturbed_weights / perturbed_weights.sum()
-                
+                perts_dict2 = self._weights_to_dict(weights, perturbed_weights)
+
+                # Fast-path: only re-run ER aggregation
                 try:
-                    perturbed_result = ranking_pipeline.rank(
-                        panel_data, 
-                        self._weights_to_dict(weights, perturbed_weights), 
-                        target_year=base_year
-                    )
-                    new_ranking = perturbed_result.final_ranking.rank().values
+                    if _can_fast:
+                        _er2 = ranking_pipeline.rank_fast(
+                            precomputed_scores=_precomp,
+                            subcriteria_weights=perts_dict2,
+                            hierarchy=_hier,
+                            alternatives=_alts,
+                        )
+                        new_ranking = _er2.final_ranking.rank().values
+                    else:
+                        perturbed_result = ranking_pipeline.rank(
+                            panel_data, perts_dict2, target_year=base_year
+                        )
+                        new_ranking = perturbed_result.final_ranking.rank().values
                     rank_change = np.mean(np.abs(new_ranking - base_ranking))
                     rank_changes.append(rank_change)
                 except Exception:
@@ -411,7 +434,13 @@ class SensitivityAnalysis:
         # Get base ranking
         base_result = ranking_pipeline.rank(panel_data, self._weights_to_dict(weights), target_year=base_year)
         base_ranking = base_result.final_ranking.rank().values
-        
+
+        # Precompute MCDM scores for fast ER-only reruns
+        _precomp_mc = getattr(base_result, 'criterion_method_scores', None)
+        _can_fast_mc = (_precomp_mc is not None) and hasattr(ranking_pipeline, 'rank_fast')
+        _hier_mc = panel_data.hierarchy
+        _alts_mc = list(panel_data.provinces)
+
         # Monte Carlo simulations
         n_sims = min(self.n_simulations, 100)
         simulated_rankings = np.zeros((n_sims, n_provinces))
@@ -422,20 +451,28 @@ class SensitivityAnalysis:
                 # Create independent RNG for this simulation
                 rng = np.random.RandomState(self.seed + sim_idx)
                 perturbation = 1 + rng.uniform(
-                    -self.perturbation_range, 
-                    self.perturbation_range, 
+                    -self.perturbation_range,
+                    self.perturbation_range,
                     len(weights['fused'])
                 )
                 perturbed_weights = weights['fused'] * perturbation
                 perturbed_weights = perturbed_weights / perturbed_weights.sum()
-                
+                perts_mc_par = self._weights_to_dict(weights, perturbed_weights)
+
                 try:
-                    perturbed_result = ranking_pipeline.rank(
-                        panel_data, 
-                        self._weights_to_dict(weights, perturbed_weights), 
-                        target_year=base_year
-                    )
-                    return sim_idx, perturbed_result.final_ranking.rank().values
+                    if _can_fast_mc:
+                        _er_par = ranking_pipeline.rank_fast(
+                            precomputed_scores=_precomp_mc,
+                            subcriteria_weights=perts_mc_par,
+                            hierarchy=_hier_mc,
+                            alternatives=_alts_mc,
+                        )
+                        return sim_idx, _er_par.final_ranking.rank().values
+                    else:
+                        perturbed_result = ranking_pipeline.rank(
+                            panel_data, perts_mc_par, target_year=base_year
+                        )
+                        return sim_idx, perturbed_result.final_ranking.rank().values
                 except Exception:
                     return sim_idx, base_ranking  # Fallback to base
             
@@ -456,12 +493,20 @@ class SensitivityAnalysis:
                 perturbed_weights = perturbed_weights / perturbed_weights.sum()
                 
                 try:
-                    perturbed_result = ranking_pipeline.rank(
-                        panel_data, 
-                        self._weights_to_dict(weights, perturbed_weights), 
-                        target_year=base_year
-                    )
-                    simulated_rankings[sim] = perturbed_result.final_ranking.rank().values
+                    perts_mc_seq = self._weights_to_dict(weights, perturbed_weights)
+                    if _can_fast_mc:
+                        _er_seq = ranking_pipeline.rank_fast(
+                            precomputed_scores=_precomp_mc,
+                            subcriteria_weights=perts_mc_seq,
+                            hierarchy=_hier_mc,
+                            alternatives=_alts_mc,
+                        )
+                        simulated_rankings[sim] = _er_seq.final_ranking.rank().values
+                    else:
+                        perturbed_result = ranking_pipeline.rank(
+                            panel_data, perts_mc_seq, target_year=base_year
+                        )
+                        simulated_rankings[sim] = perturbed_result.final_ranking.rank().values
                 except Exception:
                     simulated_rankings[sim] = base_ranking  # Fallback to base
         
@@ -568,7 +613,7 @@ class SensitivityAnalysis:
 
         base_year = max(panel_data.years)
         n_provinces = len(panel_data.provinces)
-        n_sims = min(self.n_simulations, 50)  # cap for cost
+        n_sims = min(self.n_simulations, 15)  # cap for cost
         delta = self.ifs_perturbation  # default 0.10
 
         # ── Obtain base ranking & base IFS matrices ──

@@ -163,7 +163,7 @@ ml-mcdm/
 ├── tests/                 # Test suite
 │   └── weighting/         # Weighting module tests
 │
-├── outputs/               # Generated results (git-ignored)
+├── result/                # Generated results (git-ignored)
 │   ├── figures/          # PNG charts (300 DPI)
 │   ├── results/          # CSV files
 │   ├── reports/          # Text reports

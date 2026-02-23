@@ -3,7 +3,7 @@
 Publication-Quality Markdown + LaTeX Report Writer
 ===================================================
 
-Generates ``outputs/reports/report.md`` — a comprehensive analysis
+Generates ``result/reports/report.md`` — a comprehensive analysis
 report using proper Markdown headings, pipe tables, and LaTeX math
 blocks for equations.  Renderable with any Markdown viewer or
 convertible to PDF via Pandoc.
@@ -25,7 +25,7 @@ _logger = logging.getLogger(__name__)
 class ReportWriter:
     """Build and save a publication-quality Markdown report."""
 
-    def __init__(self, base_output_dir: str = 'outputs'):
+    def __init__(self, base_output_dir: str = 'result'):
         self.reports_dir = Path(base_output_dir) / 'reports'
         self.reports_dir.mkdir(parents=True, exist_ok=True)
         self._path = self.reports_dir / 'report.md'

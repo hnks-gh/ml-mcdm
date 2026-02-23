@@ -229,7 +229,7 @@ class UnifiedForecaster:
 
         # Tree-based model (1 model)
         models['GradientBoosting'] = GradientBoostingForecaster(
-            n_estimators=200, random_state=self.random_state
+            n_estimators=100, random_state=self.random_state
         )
 
         # Bayesian linear model (1 model)
@@ -237,17 +237,17 @@ class UnifiedForecaster:
 
         # Advanced panel-specific models (4 models)
         models['QuantileRF'] = QuantileRandomForestForecaster(
-            n_estimators=200, random_state=self.random_state
+            n_estimators=100, random_state=self.random_state
         )
         models['PanelVAR'] = PanelVARForecaster(
             n_lags=2, alpha=1.0, use_fixed_effects=True,
             random_state=self.random_state
         )
         models['HierarchicalBayes'] = HierarchicalBayesForecaster(
-            n_em_iterations=50, random_state=self.random_state
+            n_em_iterations=20, random_state=self.random_state
         )
         models['NAM'] = NeuralAdditiveForecaster(
-            n_basis_per_feature=50, n_iterations=10,
+            n_basis_per_feature=10, n_iterations=3,
             random_state=self.random_state
         )
 
@@ -312,7 +312,7 @@ class UnifiedForecaster:
         self.super_learner_ = SuperLearner(
             base_models=self.models_,
             meta_learner_type='ridge',
-            n_cv_folds=min(self.cv_folds + 2, 5),
+            n_cv_folds=self.cv_folds,
             positive_weights=True,
             normalize_weights=True,
             random_state=self.random_state,

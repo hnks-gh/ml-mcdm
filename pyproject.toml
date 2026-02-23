@@ -49,10 +49,10 @@ classifiers = [
 ]
 
 dependencies = [
-    "numpy>=1.21.0,<2.0.0",
-    "pandas>=1.3.0,<3.0.0",
+    "numpy>=1.21.0,<3.0.0",
+    "pandas>=1.3.0,<4.0.0",
     "scipy>=1.7.0,<2.0.0",
-    "scikit-learn>=1.0.0,<2.0.0",
+    "scikit-learn>=1.0.0,<3.0.0",
     "matplotlib>=3.4.0,<4.0.0",
     "seaborn>=0.11.0,<1.0.0",
 ]
@@ -132,7 +132,7 @@ include_trailing_comma = true
 force_grid_wrap = 0
 use_parentheses = true
 ensure_newline_before_comments = true
-skip_glob = ["*/migrations/*", "*/__pycache__/*", "outputs/*", ".venv/*"]
+skip_glob = ["*/migrations/*", "*/__pycache__/*", "result/*", ".venv/*"]
 
 [tool.mypy]
 python_version = "3.8"
@@ -147,7 +147,7 @@ no_implicit_optional = true
 ignore_missing_imports = true
 exclude = [
     "^tests/",
-    "^outputs/",
+    "^result/",
     "^\\.venv/",
 ]
 
@@ -176,7 +176,7 @@ addopts = [
     "--tb=short",
     "--import-mode=importlib",
 ]
-norecursedirs = ["__pycache__", ".git", "ml_mcdm.egg-info", "outputs"]
+norecursedirs = ["__pycache__", ".git", "ml_mcdm.egg-info", "result"]
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: marks tests as integration tests",
@@ -197,7 +197,7 @@ omit = [
     "*/__pycache__/*",
     "*/site-packages/*",
     "*/.venv/*",
-    "outputs/*",
+    "result/*",
     "ml_mcdm.egg-info/*",
 ]
 

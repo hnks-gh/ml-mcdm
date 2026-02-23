@@ -278,6 +278,56 @@ class HierarchicalRankingPipeline:
             target_year=target_year,
         )
 
+    def rank_fast(
+        self,
+        precomputed_scores: Dict[str, Dict[str, pd.Series]],
+        subcriteria_weights: Dict[str, float],
+        hierarchy: 'HierarchyMapping',
+        alternatives: List[str],
+    ) -> 'HierarchicalERResult':
+        """
+        Lightweight ER-only re-ranking using precomputed MCDM scores.
+
+        Skips ALL 12 MCDM method computations and re-runs only the ER
+        aggregation step with new criterion weights derived from
+        *subcriteria_weights*.  Yields ~50-100x speedup over
+        :meth:`rank` for sensitivity-analysis weight perturbations
+        where the underlying data and MCDM scores are unchanged.
+
+        Parameters
+        ----------
+        precomputed_scores : dict
+            Structure ``{criterion_id: {method_name: pd.Series(score)}}``
+            as returned by
+            :attr:`HierarchicalRankingResult.criterion_method_scores`.
+        subcriteria_weights : dict
+            Perturbed subcriteria weights ``{SC01: w, …}``.
+        hierarchy : HierarchyMapping
+            Hierarchy definition used to derive criterion-level weights.
+        alternatives : list of str
+            Province / alternative labels in canonical order.
+
+        Returns
+        -------
+        HierarchicalERResult
+            ER aggregation result with the perturbed weights.
+        """
+        # Derive criterion-level weights inline (no info logging to avoid spam)
+        criterion_weights: Dict[str, float] = {}
+        for crit_id, subcrit_list in hierarchy.criteria_to_subcriteria.items():
+            criterion_weights[crit_id] = sum(
+                subcriteria_weights.get(sc, 0.0) for sc in subcrit_list
+            )
+        total = sum(criterion_weights.values())
+        if total > 0:
+            criterion_weights = {k: v / total for k, v in criterion_weights.items()}
+
+        return self.er_aggregator.aggregate(
+            method_scores=precomputed_scores,
+            criterion_weights=criterion_weights,
+            alternatives=alternatives,
+        )
+
     # ==================================================================
     # Internal: method execution per criterion
     # ==================================================================

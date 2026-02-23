@@ -10,7 +10,7 @@ phase-specific plotter classes coordinated by a single
 Quick start::
 
     from visualization import VisualizationOrchestrator
-    viz = VisualizationOrchestrator('outputs/figures')
+    viz = VisualizationOrchestrator('result/figures')
     count = viz.generate_all(panel_data, weights, ranking_result, ...)
 """
 
@@ -38,7 +38,7 @@ class VisualizationOrchestrator:
     that callers do not need to know which sub-plotter owns which figure.
     """
 
-    def __init__(self, output_dir: str = 'outputs/figures', dpi: int = 300):
+    def __init__(self, output_dir: str = 'result/figures', dpi: int = 300):
         self.output_dir = output_dir
         self.ranking = RankingPlotter(output_dir, dpi)
         self.weighting = WeightingPlotter(output_dir, dpi)
@@ -381,7 +381,7 @@ class VisualizationOrchestrator:
 
 
 # Backward-compatible factory
-def create_visualizer(output_dir: str = 'outputs/figures') -> VisualizationOrchestrator:
+def create_visualizer(output_dir: str = 'result/figures') -> VisualizationOrchestrator:
     return VisualizationOrchestrator(output_dir=output_dir)
 
 

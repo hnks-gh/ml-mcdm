@@ -9,7 +9,7 @@ orchestration thereof.
 Quick start::
 
     from output import OutputOrchestrator
-    orch = OutputOrchestrator('outputs')
+    orch = OutputOrchestrator('result')
     orch.save_all(panel_data, weights, ranking_result, ...)
 """
 

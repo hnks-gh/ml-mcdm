@@ -75,11 +75,11 @@ venv.bak/
 *.tmp
 
 # Output files (keep directory structure with .gitkeep)
-outputs/results/*
-outputs/figures/*
-outputs/logs/*
-outputs/reports/*
-!outputs/**/.gitkeep
+result/results/*
+result/figures/*
+result/logs/*
+result/reports/*
+!result/**/.gitkeep
 
 # OS files
 .DS_Store

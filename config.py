@@ -71,7 +71,7 @@ class PathConfig:
 
     @property
     def output_dir(self) -> Path:
-        return self.base_dir / "outputs"
+        return self.base_dir / "result"
 
     @property
     def figures_dir(self) -> Path:

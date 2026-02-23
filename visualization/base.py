@@ -121,7 +121,7 @@ class BasePlotter:
     """
 
     def __init__(self,
-                 output_dir: str = 'outputs/figures',
+                 output_dir: str = 'result/figures',
                  dpi: int = 300,
                  figsize: Tuple[int, int] = (14, 9)):
         self.output_dir = Path(output_dir)

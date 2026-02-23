@@ -23,7 +23,7 @@ logger = logging.getLogger('ml_mcdm')
 class OutputOrchestrator:
     """Coordinate saving all results in one call."""
 
-    def __init__(self, base_output_dir: str = 'outputs'):
+    def __init__(self, base_output_dir: str = 'result'):
         self.base_dir = base_output_dir
         self.csv = CsvWriter(base_output_dir)
         self.report = ReportWriter(base_output_dir)

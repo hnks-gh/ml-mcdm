@@ -4,7 +4,7 @@ Structured Debug Logger for ML-MCDM Pipeline
 =============================================
 
 Records **every** detail of a pipeline run into a single structured
-JSON array file (``outputs/logs/debug_<timestamp>.json``).  Designed
+JSON array file (``result/logs/debug_<timestamp>.json``).  Designed
 for post-hoc inspection or automated quality-assurance tooling.
 
 Each entry carries: timestamp, level, module, function, line, phase,
@@ -27,7 +27,7 @@ from .context import Colors, LogContext
 class DebugLogger:
     """Accumulates structured log entries and flushes to a JSON array file."""
 
-    def __init__(self, output_dir: str = 'outputs/logs'):
+    def __init__(self, output_dir: str = 'result/logs'):
         self._dir = Path(output_dir)
         self._dir.mkdir(parents=True, exist_ok=True)
         ts = datetime.now().strftime('%Y%m%d_%H%M%S')

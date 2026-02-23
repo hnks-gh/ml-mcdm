@@ -306,7 +306,7 @@ For **each of 8 criteria** (C01 through C08):
 4. `04_sensitivity_analysis.png` — Rank stability heatmap
 5. `05_forecast_feature_importance.png` — Aggregated feature importance (if forecasting enabled)
 
-**Output:** 5 PNG files in `outputs/figures/`
+**Output:** 5 PNG files in `result/figures/`
 
 ---
 
@@ -321,7 +321,7 @@ See [Output Structure](#4-output-structure) below.
 ## 4. Output Structure
 
 ```
-outputs/
+result/
 ├── figures/                          # High-resolution visualizations (5 PNG files)
 │   ├── final_ranking_summary.png      # Top 20 provinces with ER utility
 │   ├── score_distribution.png         # Histogram + KDE
@@ -406,7 +406,7 @@ print(f"Robustness: {result.analysis['sensitivity'].overall_robustness:.4f}")
 | `n_simulations` | 1000 | Monte Carlo sensitivity simulations |
 | `random_state` | 42 | Reproducibility seed |
 | `n_splits` | 5 | Time-series CV folds |
-| `output_dir` | `outputs` | Result directory |
+| `output_dir` | `result` | Result directory |
 | `dpi` | 300 | Figure resolution |
 
 ### Performance
@@ -433,7 +433,7 @@ print(f"Robustness: {result.analysis['sensitivity'].overall_robustness:.4f}")
 
 ### Debug Log File
 
-- **Location:** `outputs/logs/debug.log`
+- **Location:** `result/logs/debug.log`
 - **Level:** DEBUG (captures everything)
 - **Format:** `timestamp | level | module | function:line | message`
 
@@ -450,7 +450,7 @@ print(f"Robustness: {result.analysis['sensitivity'].overall_robustness:.4f}")
   MCDM methods      : 12 (6 traditional + 6 IFS)
   Bootstrap iters   : 999
   Sensitivity sims  : 1000
-  Output            : outputs/
+  Output            : result/
 ======================================================================
 
 ▶ Phase 1/7: Data Loading
@@ -493,7 +493,7 @@ print(f"Robustness: {result.analysis['sensitivity'].overall_robustness:.4f}")
 
 ======================================================================
 Pipeline completed successfully in 32.82s
-Outputs: outputs/
+Outputs: result/
 ======================================================================
 ```
 
