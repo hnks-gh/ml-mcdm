@@ -29,22 +29,24 @@ warnings.filterwarnings('ignore')
 # Internal imports (support both package and direct execution)
 try:
     from .config import Config, get_default_config
-    from .logger import setup_logger, ProgressLogger
+    from .loggers import setup_logging
+    from .loggers.context import PhaseMetrics
     from .data_loader import DataLoader, PanelData
     from .mcdm.traditional import TOPSISCalculator
     from .ranking import HierarchicalRankingPipeline, HierarchicalRankingResult
     from .analysis import SensitivityAnalysis
-    from .visualization import PanelVisualizer
-    from .output_manager import OutputManager
+    from .visualization import VisualizationOrchestrator
+    from .output import OutputOrchestrator
 except ImportError:
     from config import Config, get_default_config
-    from logger import setup_logger, ProgressLogger
+    from loggers import setup_logging
+    from loggers.context import PhaseMetrics
     from data_loader import DataLoader, PanelData
     from mcdm.traditional import TOPSISCalculator
     from ranking import HierarchicalRankingPipeline, HierarchicalRankingResult
     from analysis import SensitivityAnalysis
-    from visualization import PanelVisualizer
-    from output_manager import OutputManager
+    from visualization import VisualizationOrchestrator
+    from output import OutputOrchestrator
 
 
 def _to_array(x) -> np.ndarray:
@@ -125,15 +127,19 @@ class MLMCDMPipeline:
         # Output directories
         self._setup_output_directory()
 
-        # Logger
-        debug_file = Path(self.config.output_dir) / 'logs' / 'debug.log'
-        self.logger = setup_logger('ml_mcdm', debug_file=debug_file)
+        # Logging (console + debug JSON)
+        self.console, self.debug_log = setup_logging(self.config.output_dir)
+        # stdlib-compatible logger used by submodules
+        import logging as _logging
+        self.logger = _logging.getLogger('ml_mcdm')
 
-        # Output manager (production-ready result persistence)
-        self.output_manager = OutputManager(base_output_dir=self.config.output_dir)
+        # Output orchestrator (CSV + Markdown report)
+        self.output_orch = OutputOrchestrator(
+            base_output_dir=self.config.output_dir,
+        )
 
-        # Visualiser & output helpers
-        self.visualizer = PanelVisualizer(
+        # Visualization orchestrator
+        self.visualizer = VisualizationOrchestrator(
             output_dir=str(Path(self.config.output_dir) / 'figures'),
             dpi=self.config.visualization.dpi,
         )
@@ -155,74 +161,89 @@ class MLMCDMPipeline:
         """Execute full analysis pipeline and return results."""
         start_time = time.time()
 
-        self.logger.info("=" * 60)
-        self.logger.info("ML-MCDM PANEL DATA ANALYSIS PIPELINE")
-        self.logger.info("State-of-the-Art: IFS + ER + Forecasting")
-        self.logger.info("=" * 60)
+        self.console.banner('ML-MCDM Panel Data Analysis Pipeline',
+                            subtitle='IFS + ER + ML Forecasting')
 
         # Phase 1: Data Loading
-        with ProgressLogger(self.logger, "Phase 1: Data Loading"):
+        with self.console.phase('Data Loading') as ph:
             panel_data = self._load_data()
+            ph.detail(f'{len(panel_data.provinces)} provinces, '
+                      f'{len(panel_data.years)} years, '
+                      f'{panel_data.n_subcriteria} subcriteria')
 
         # Phase 2: Weight Calculation
-        with ProgressLogger(self.logger, "Phase 2: Weight Calculation (GTWC)"):
+        with self.console.phase('Weight Calculation (GTWC)') as ph:
             weights = self._calculate_weights(panel_data)
 
         # Phase 3: Hierarchical Ranking (12 MCDM methods + ER)
-        with ProgressLogger(self.logger, "Phase 3: Hierarchical Ranking (IFS + ER)"):
+        with self.console.phase('Hierarchical Ranking (IFS + ER)') as ph:
             ranking_result = self._run_hierarchical_ranking(panel_data, weights)
 
         # Phase 4: ML Forecasting (6 models + Super Learner + Conformal)
         forecast_result = None
-        with ProgressLogger(self.logger, "Phase 4: ML Forecasting (SOTA Ensemble)"):
+        with self.console.phase('ML Forecasting (SOTA Ensemble)') as ph:
             try:
                 forecast_result = self._run_forecasting(panel_data)
             except Exception as e:
-                self.logger.warning(f"Forecasting skipped: {e}")
+                ph.warning(f'Forecasting skipped: {e}')
                 self.logger.debug(traceback.format_exc())
 
         # Phase 5: Sensitivity Analysis & Validation
         analysis_results: Dict[str, Any] = {'sensitivity': None, 'validation': None}
-        with ProgressLogger(self.logger, "Phase 5: Sensitivity Analysis & Validation"):
+        with self.console.phase('Sensitivity Analysis & Validation') as ph:
             try:
                 analysis_results = self._run_analysis(
                     panel_data, ranking_result, weights, forecast_result)
             except Exception as e:
-                self.logger.warning(f"Sensitivity analysis skipped: {e}")
-            
+                ph.warning(f'Sensitivity analysis skipped: {e}')
+
             try:
                 analysis_results['validation'] = self._run_validation(
                     panel_data, weights, ranking_result, forecast_result)
             except Exception as e:
-                self.logger.warning(f"Validation skipped: {e}")
+                ph.warning(f'Validation skipped: {e}')
 
         execution_time = time.time() - start_time
 
         # Phase 6: Visualizations
-        with ProgressLogger(self.logger, "Phase 6: Generating Figures"):
+        with self.console.phase('Generating Figures') as ph:
             try:
-                self._generate_all_visualizations(
-                    panel_data, weights, ranking_result,
-                    analysis_results, forecast_result=forecast_result,
+                fig_count = self.visualizer.generate_all(
+                    panel_data=panel_data,
+                    weights=weights,
+                    ranking_result=ranking_result,
+                    analysis_results=analysis_results,
+                    forecast_result=forecast_result,
                 )
+                ph.metric('Figures', fig_count)
             except Exception as e:
-                self.logger.warning(f"Visualization failed: {e}")
+                ph.warning(f'Visualization failed: {e}')
 
         # Phase 7: Save Results
-        with ProgressLogger(self.logger, "Phase 7: Saving Results"):
+        with self.console.phase('Saving Results') as ph:
             try:
-                self._save_all_results(
-                    panel_data, weights, ranking_result, forecast_result,
-                    analysis_results, execution_time,
+                figure_paths = self.visualizer.get_generated_figures()
+                self.output_orch.save_all(
+                    panel_data=panel_data,
+                    weights=weights,
+                    ranking_result=ranking_result,
+                    forecast_result=forecast_result,
+                    analysis_results=analysis_results,
+                    execution_time=execution_time,
+                    figure_paths=figure_paths,
+                    config=self.config,
                 )
             except Exception as e:
-                self.logger.warning(f"Result saving failed: {e}")
+                ph.warning(f'Result saving failed: {e}')
                 self.logger.debug(traceback.format_exc())
 
-        self.logger.info("=" * 60)
-        self.logger.info(f"Pipeline completed in {execution_time:.2f}s")
-        self.logger.info(f"Outputs → {self.config.output_dir}")
-        self.logger.info("=" * 60)
+        self.console.separator()
+        self.console.info(f'Pipeline completed in {execution_time:.2f}s')
+        self.console.info(f'Outputs → {self.config.output_dir}')
+        self.console.separator()
+
+        # Flush debug log
+        self.debug_log.close()
 
         # Build result object
         subcriteria = weights['subcriteria']
@@ -563,373 +584,9 @@ class MLMCDMPipeline:
             )
 
     # -----------------------------------------------------------------
-    # Phase 6: Visualizations (Publication-Quality Suite)
+    # Phase 6 & 7 — now handled by VisualizationOrchestrator and
+    #               OutputOrchestrator respectively.
     # -----------------------------------------------------------------
-
-    def _generate_all_visualizations(
-        self,
-        panel_data: PanelData,
-        weights: Dict[str, Any],
-        ranking_result: HierarchicalRankingResult,
-        analysis_results: Dict[str, Any],
-        forecast_result: Optional[Any] = None,
-    ) -> None:
-        """Generate comprehensive publication-quality figure suite.
-        
-        Each figure is individually wrapped in try/except to ensure one
-        failure does not prevent subsequent figures from being generated.
-        """
-        fig_count = 0
-        fig_fail = 0
-
-        def _safe_plot(label: str, fn, *args, **kwargs):
-            """Call a plot function safely; log failures and continue."""
-            nonlocal fig_count, fig_fail
-            try:
-                path = fn(*args, **kwargs)
-                if path:
-                    fig_count += 1
-                    return path
-            except Exception as exc:
-                fig_fail += 1
-                self.logger.debug(f"Figure '{label}' skipped: {exc}")
-            return None
-
-        scores = _to_array(ranking_result.final_scores)
-        ranks = _to_array(ranking_result.final_ranking)
-        provinces = panel_data.provinces
-        subcriteria = weights['subcriteria']
-        sens = analysis_results.get('sensitivity')
-
-        # ── RANKING FIGURES ──────────────────────────────────────
-        _safe_plot('fig01', self.visualizer.plot_final_ranking,
-                   provinces, scores, ranks,
-                   title='Hierarchical ER Final Ranking',
-                   save_name='fig01_final_er_ranking.png')
-
-        _safe_plot('fig02', self.visualizer.plot_final_ranking_summary,
-                   provinces, scores, ranks,
-                   title='ER Ranking Summary (Top & Bottom)',
-                   save_name='fig02_ranking_summary.png')
-
-        _safe_plot('fig03', self.visualizer.plot_score_distribution,
-                   scores,
-                   title='ER Score Distribution',
-                   save_name='fig03_score_distribution.png')
-
-        # ── WEIGHT FIGURES ───────────────────────────────────────
-        w_dict = {
-            'Entropy': weights['entropy'],
-            'CRITIC': weights['critic'],
-            'MEREC': weights['merec'],
-            'Std Dev': weights['std_dev'],
-            'Fused': weights['fused'],
-        }
-        _safe_plot('fig04', self.visualizer.plot_weights_comparison,
-                   w_dict, subcriteria,
-                   title='Subcriteria Weight Comparison',
-                   save_name='fig04_weights_comparison.png')
-
-        _safe_plot('fig05', self.visualizer.plot_weight_radar,
-                   w_dict, subcriteria,
-                   save_name='fig05_weight_radar.png')
-
-        _safe_plot('fig06', self.visualizer.plot_weight_heatmap,
-                   w_dict, subcriteria,
-                   save_name='fig06_weight_heatmap.png')
-
-        # ── METHOD AGREEMENT ─────────────────────────────────────
-        all_method_ranks = {}
-        for crit_id, method_ranks in ranking_result.criterion_method_ranks.items():
-            for method, rank_series in method_ranks.items():
-                col = f'{crit_id}_{method}'
-                all_method_ranks[col] = (
-                    rank_series.values if hasattr(rank_series, 'values')
-                    else np.asarray(rank_series))
-
-        if all_method_ranks:
-            _safe_plot('fig07', self.visualizer.plot_method_agreement_matrix,
-                       all_method_ranks,
-                       save_name='fig07_method_agreement.png')
-            _safe_plot('fig08', self.visualizer.plot_rank_parallel_coordinates,
-                       all_method_ranks, provinces,
-                       save_name='fig08_rank_parallel.png')
-
-        # ── PER-CRITERION SCORES ─────────────────────────────────
-        for ci, (crit_id, method_scores) in enumerate(
-                ranking_result.criterion_method_scores.items()):
-            _safe_plot(f'fig09_{crit_id}', self.visualizer.plot_criterion_scores,
-                       method_scores, crit_id, top_n=20,
-                       save_name=f'fig09_{crit_id}_scores.png')
-
-        # ── SENSITIVITY FIGURES ──────────────────────────────────
-        if sens is not None:
-            if hasattr(sens, 'criteria_sensitivity') and sens.criteria_sensitivity:
-                _safe_plot('fig10', self.visualizer.plot_sensitivity_tornado,
-                           sens.criteria_sensitivity,
-                           save_name='fig10_criteria_sensitivity_tornado.png')
-                _safe_plot('fig11', self.visualizer.plot_sensitivity_analysis,
-                           sens.criteria_sensitivity,
-                           title='Criteria Weight Sensitivity',
-                           save_name='fig11_criteria_sensitivity.png')
-
-            if hasattr(sens, 'subcriteria_sensitivity') and sens.subcriteria_sensitivity:
-                _safe_plot('fig12', self.visualizer.plot_subcriteria_sensitivity,
-                           sens.subcriteria_sensitivity,
-                           save_name='fig12_subcriteria_sensitivity.png')
-
-            if hasattr(sens, 'top_n_stability') and sens.top_n_stability:
-                _safe_plot('fig13', self.visualizer.plot_top_n_stability,
-                           sens.top_n_stability,
-                           save_name='fig13_top_n_stability.png')
-
-            if hasattr(sens, 'temporal_stability') and sens.temporal_stability:
-                _safe_plot('fig14', self.visualizer.plot_temporal_stability,
-                           sens.temporal_stability,
-                           save_name='fig14_temporal_stability.png')
-
-            if hasattr(sens, 'rank_stability') and sens.rank_stability:
-                _safe_plot('fig15', self.visualizer.plot_rank_volatility,
-                           sens.rank_stability,
-                           save_name='fig15_rank_volatility.png')
-
-            if hasattr(sens, 'ifs_membership_sensitivity'):
-                _safe_plot('fig16', self.visualizer.plot_ifs_sensitivity,
-                           sens.ifs_membership_sensitivity,
-                           getattr(sens, 'ifs_nonmembership_sensitivity', 0),
-                           save_name='fig16_ifs_sensitivity.png')
-
-            if hasattr(sens, 'overall_robustness'):
-                _safe_plot('fig17', self.visualizer.plot_robustness_summary,
-                           sens.overall_robustness,
-                           getattr(sens, 'confidence_level', 0.95),
-                           getattr(sens, 'criteria_sensitivity', {}),
-                           getattr(sens, 'top_n_stability', {}),
-                           getattr(sens, 'ifs_membership_sensitivity', 0),
-                           getattr(sens, 'ifs_nonmembership_sensitivity', 0),
-                           save_name='fig17_robustness_summary.png')
-
-        # ── ER UNCERTAINTY ───────────────────────────────────────
-        _safe_plot('fig18', self.visualizer.plot_er_uncertainty,
-                   ranking_result.er_result.uncertainty, provinces,
-                   save_name='fig18_er_uncertainty.png')
-
-        # ── FORECAST FIGURES ─────────────────────────────────────
-        if forecast_result is not None:
-            if hasattr(forecast_result, 'training_info'):
-                ti = forecast_result.training_info or {}
-                actual = ti.get('y_test')
-                predicted = ti.get('y_pred')
-                if actual is not None and predicted is not None:
-                    ent = ti.get('test_entities')
-                    _safe_plot('fig19', self.visualizer.plot_forecast_scatter,
-                               np.asarray(actual), np.asarray(predicted),
-                               entity_names=ent,
-                               save_name='fig19_forecast_scatter.png')
-                    _safe_plot('fig20', self.visualizer.plot_forecast_residuals,
-                               np.asarray(actual), np.asarray(predicted),
-                               save_name='fig20_forecast_residuals.png')
-
-            if hasattr(forecast_result, 'feature_importance') and forecast_result.feature_importance is not None:
-                imp = forecast_result.feature_importance
-                if hasattr(imp, 'to_dict'):
-                    imp_dict = (imp['Importance'].to_dict() if 'Importance' in imp.columns
-                                else imp.iloc[:, 0].to_dict())
-                else:
-                    imp_dict = imp
-                _safe_plot('fig21', self.visualizer.plot_feature_importance,
-                           imp_dict, save_name='fig21_feature_importance.png')
-
-            if hasattr(forecast_result, 'model_contributions') and forecast_result.model_contributions:
-                _safe_plot('fig22', self.visualizer.plot_model_weights_donut,
-                           forecast_result.model_contributions,
-                           save_name='fig22_model_weights.png')
-
-            if hasattr(forecast_result, 'model_performance') and forecast_result.model_performance:
-                _safe_plot('fig23', self.visualizer.plot_model_performance,
-                           forecast_result.model_performance,
-                           save_name='fig23_model_performance.png')
-
-            if hasattr(forecast_result, 'cross_validation_scores') and forecast_result.cross_validation_scores:
-                _safe_plot('fig24', self.visualizer.plot_cv_boxplots,
-                           forecast_result.cross_validation_scores,
-                           save_name='fig24_cv_boxplots.png')
-
-            if (hasattr(forecast_result, 'prediction_intervals')
-                    and forecast_result.prediction_intervals):
-                preds = forecast_result.predictions
-                intervals = forecast_result.prediction_intervals
-                lower = intervals.get('lower')
-                upper = intervals.get('upper')
-                if lower is not None and upper is not None:
-                    _safe_plot('fig25', self.visualizer.plot_prediction_intervals,
-                               preds, lower, upper,
-                               save_name='fig25_prediction_intervals.png')
-
-            if hasattr(forecast_result, 'predictions') and forecast_result.predictions is not None:
-                pred_df = forecast_result.predictions
-                if len(pred_df.columns) > 0:
-                    pred_col = pred_df.columns[0]
-                    pred_scores = pred_df[pred_col].values
-                    _safe_plot('fig26', self.visualizer.plot_rank_change_bubble,
-                               provinces, scores, pred_scores,
-                               prediction_year=getattr(
-                                   forecast_result, 'target_year',
-                                   max(panel_data.years) + 1),
-                               save_name='fig26_rank_change_bubble.png')
-
-        # ── EXECUTIVE DASHBOARD ──────────────────────────────────
-        top10_idx = np.argsort(ranks)[:10]
-        top10 = [(provinces[i], scores[i]) for i in top10_idx]
-        kpis = {
-            'Provinces': len(provinces),
-            'Years': len(panel_data.years),
-            'Subcriteria': panel_data.n_subcriteria,
-            'MCDM Methods': len(ranking_result.methods_used),
-        }
-        rob_text = ''
-        if sens and hasattr(sens, 'overall_robustness'):
-            rob_text = (
-                f'Overall Robustness : {sens.overall_robustness:.4f}\n'
-                f'Confidence Level   : {getattr(sens, "confidence_level", 0.95):.0%}\n'
-                f'IFS mu Sensitivity : {getattr(sens, "ifs_membership_sensitivity", 0):.4f}\n'
-                f'IFS nu Sensitivity : {getattr(sens, "ifs_nonmembership_sensitivity", 0):.4f}\n'
-            )
-        _safe_plot('fig27', self.visualizer.plot_executive_dashboard, {
-            'kpis': kpis,
-            'top_10': top10,
-            'fused_weights': weights['fused'],
-            'subcriteria_names': subcriteria,
-            'robustness_text': rob_text,
-        }, save_name='fig27_executive_dashboard.png')
-
-        self.logger.info(
-            f"Publication-quality figures generated: {fig_count} "
-            f"({fig_fail} skipped)"
-        )
-
-    # -----------------------------------------------------------------
-    # Phase 7: Save Results (Production-Ready using OutputManager)
-    # -----------------------------------------------------------------
-
-    def _save_all_results(
-        self,
-        panel_data: PanelData,
-        weights: Dict[str, Any],
-        ranking_result: HierarchicalRankingResult,
-        forecast_result: Optional[Any],
-        analysis_results: Dict[str, Any],
-        execution_time: float,
-    ) -> None:
-        """
-        Save all results using OutputManager for production-ready persistence.
-        
-        Produces a complete set of CSV files, JSON metadata, and a
-        comprehensive analysis report.
-        """
-        results_dir = Path(self.config.output_dir) / 'results'
-        
-        # 1. Subcriteria weights (Entropy, CRITIC, MEREC, StdDev, Fused + stats)
-        subcriteria = weights['subcriteria']
-        weights_dict = {
-            'entropy': weights['entropy'],
-            'critic': weights['critic'],
-            'merec': weights['merec'],
-            'std_dev': weights['std_dev'],
-            'fused': weights['fused'],
-        }
-        self.output_manager.save_weights(weights_dict, subcriteria)
-        self.logger.info("Saved: weights_analysis.csv")
-        
-        # 2. Final ER rankings (with tiers, z-scores, percentiles, uncertainty)
-        self.output_manager.save_rankings(ranking_result, panel_data.provinces)
-        self.logger.info("Saved: final_rankings.csv")
-        
-        # 3. MCDM scores per criterion group (scores + ranks + consensus)
-        saved_scores = self.output_manager.save_mcdm_scores_by_criterion(
-            ranking_result, panel_data.provinces
-        )
-        self.logger.info(f"Saved: mcdm_scores_*.csv ({len(saved_scores)} files)")
-        
-        # 4. Full rank comparison matrix (all methods × all criteria + stats)
-        self.output_manager.save_rank_comparison(ranking_result, panel_data.provinces)
-        self.logger.info("Saved: mcdm_rank_comparison.csv")
-        
-        # 5. Criterion weights used by ER Stage 2
-        crit_w = ranking_result.criterion_weights_used
-        pd.DataFrame([crit_w]).to_csv(
-            results_dir / 'criterion_weights.csv', index=False
-        )
-        self.logger.info("Saved: criterion_weights.csv")
-        
-        # 6. ER uncertainty per province
-        self.output_manager.save_er_uncertainty(ranking_result, panel_data.provinces)
-        self.logger.info("Saved: prediction_uncertainty_er.csv")
-        
-        # 7. Data summary statistics (descriptive + skewness, kurtosis, CV)
-        self.output_manager.save_data_summary(panel_data)
-        self.logger.info("Saved: data_summary_statistics.csv")
-        
-        # 8. ML Forecasting results (predictions, intervals, models, features, CV)
-        if forecast_result is not None:
-            saved_forecast = self.output_manager.save_forecast_results(forecast_result)
-            for key, path in saved_forecast.items():
-                filename = Path(path).name
-                self.logger.info(f"Saved: {filename}")
-        
-        # 9. Sensitivity Analysis (criteria, subcriteria, stability, IFS, temporal)
-        if analysis_results.get('sensitivity'):
-            saved_analysis = self.output_manager.save_analysis_results(analysis_results)
-            for key, path in saved_analysis.items():
-                filename = Path(path).name
-                self.logger.info(f"Saved: {filename}")
-        
-        # 10. Execution summary (JSON)
-        summary = {
-            'execution_time_seconds': round(execution_time, 2),
-            'n_provinces': len(panel_data.provinces),
-            'n_years': len(panel_data.years),
-            'years': panel_data.years,
-            'n_subcriteria': panel_data.n_subcriteria,
-            'n_criteria': panel_data.n_criteria,
-            'n_mcdm_methods': len(ranking_result.methods_used),
-            'methods_used': ranking_result.methods_used,
-            'target_year': ranking_result.target_year,
-            'kendall_w': ranking_result.kendall_w,
-            'aggregation': 'Evidential Reasoning (Yang & Xu, 2002)',
-            'fuzzy_extension': 'Intuitionistic Fuzzy Sets (Atanassov, 1986)',
-        }
-        with open(results_dir / 'execution_summary.json', 'w') as f:
-            json.dump(summary, f, indent=2, default=str)
-        self.logger.info("Saved: execution_summary.json")
-        
-        # 11. Config snapshot
-        try:
-            self.config.save(results_dir / 'config_snapshot.json')
-            self.logger.info("Saved: config_snapshot.json")
-        except Exception:
-            pass
-        
-        # 12. Comprehensive report (using OutputManager)
-        try:
-            figure_paths = self.visualizer.get_generated_figures()
-            report = self.output_manager.build_comprehensive_report(
-                panel_data=panel_data,
-                weights=weights,
-                ranking_result=ranking_result,
-                forecast_result=forecast_result,
-                analysis_results=analysis_results,
-                execution_time=execution_time,
-                figure_paths=figure_paths,
-            )
-            self.logger.info("Saved: report.txt (comprehensive analysis report)")
-        except Exception as e:
-            self.logger.warning(f"Report generation failed: {e}")
-            self.logger.debug(traceback.format_exc())
-        
-        total_files = len(self.output_manager.get_saved_files())
-        self.logger.info(f"Total output files: {total_files}")
-        self.logger.info(f"All results saved to {results_dir}")
 
 # Convenience function
 # =========================================================================

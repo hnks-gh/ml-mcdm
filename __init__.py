@@ -64,13 +64,15 @@ For detailed usage, see individual module documentation.
 """
 
 from .config import Config, get_default_config, get_config, set_config, reset_config
-from .logger import (
-    setup_logger, 
-    get_logger, 
+from .loggers import (
+    setup_logging,
+    ConsoleLogger,
+    DebugLogger,
+    # Backward-compatible shims
+    setup_logger,
+    get_logger,
     get_module_logger,
-    ProgressLogger, 
-    PipelineLogger,
-    LoggerFactory,
+    ProgressLogger,
     log_execution,
     log_exceptions,
     log_context,
@@ -78,47 +80,49 @@ from .logger import (
 )
 from .data_loader import DataLoader, PanelData, HierarchyMapping, load_data
 from .pipeline import MLMCDMPipeline, run_pipeline, PipelineResult
-from .output_manager import OutputManager, create_output_manager
-from .visualization import PanelVisualizer, create_visualizer
+from .output import OutputOrchestrator, CsvWriter, ReportWriter
+from .visualization import VisualizationOrchestrator, create_visualizer
 
-__version__ = '4.0.0'
+__version__ = '5.0.0'
 
 __all__ = [
     # Configuration
-    'Config', 
+    'Config',
     'get_default_config',
     'get_config',
     'set_config',
     'reset_config',
-    
+
     # Logging
-    'setup_logger', 
-    'get_logger', 
+    'setup_logging',
+    'ConsoleLogger',
+    'DebugLogger',
+    'setup_logger',
+    'get_logger',
     'get_module_logger',
-    'ProgressLogger', 
-    'PipelineLogger', 
-    'LoggerFactory',
-    'log_execution', 
-    'log_exceptions', 
-    'log_context', 
+    'ProgressLogger',
+    'log_execution',
+    'log_exceptions',
+    'log_context',
     'timed_operation',
-    
+
     # Data Loading
-    'DataLoader', 
+    'DataLoader',
     'PanelData',
     'HierarchyMapping',
     'load_data',
-    
+
     # Pipeline
     'MLMCDMPipeline',
-    'run_pipeline', 
+    'run_pipeline',
     'PipelineResult',
-    
+
     # Output Management
-    'OutputManager', 
-    'create_output_manager',
-    
+    'OutputOrchestrator',
+    'CsvWriter',
+    'ReportWriter',
+
     # Visualization
-    'PanelVisualizer', 
+    'VisualizationOrchestrator',
     'create_visualizer',
 ]

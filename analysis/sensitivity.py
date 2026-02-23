@@ -19,6 +19,8 @@ import pandas as pd
 from typing import Dict, List, Optional, Callable, Tuple, Any
 from dataclasses import dataclass, field
 import warnings
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
+import multiprocessing
 
 warnings.filterwarnings('ignore')
 
@@ -146,7 +148,8 @@ class SensitivityAnalysis:
                  perturbation_range: float = 0.15,
                  ifs_perturbation: float = 0.10,
                  confidence_level: float = 0.95,
-                 seed: int = 42):
+                 seed: int = 42,
+                 n_jobs: int = -1):
         """
         Initialize enhanced sensitivity analyzer.
         
@@ -162,6 +165,8 @@ class SensitivityAnalysis:
             Confidence level for statistical tests
         seed : int
             Random seed for reproducibility
+        n_jobs : int
+            Number of parallel jobs (-1 uses all CPU cores)
         """
         self.n_simulations = n_simulations
         self.perturbation_range = perturbation_range
@@ -169,6 +174,16 @@ class SensitivityAnalysis:
         self.confidence_level = confidence_level
         self.seed = seed
         self.rng = np.random.RandomState(seed)
+        
+        # Determine number of parallel workers
+        if n_jobs == -1:
+            self.n_jobs = max(1, multiprocessing.cpu_count() - 1)
+        elif n_jobs <= 0:
+            self.n_jobs = max(1, multiprocessing.cpu_count() + n_jobs)
+        else:
+            self.n_jobs = min(n_jobs, multiprocessing.cpu_count())
+        
+        self.use_parallel = self.n_jobs > 1
 
     def _weights_to_dict(self, weights: Dict, perturbed_array: Optional[np.ndarray] = None) -> Dict[str, float]:
         """Convert weights dict/array to subcriteria Dict[str, float] for ranking pipeline."""
@@ -204,6 +219,14 @@ class SensitivityAnalysis:
         SensitivityResult
             Comprehensive sensitivity analysis results
         """
+        import logging
+        _logger = logging.getLogger('ml_mcdm')
+        
+        if self.use_parallel:
+            _logger.info(f"Sensitivity analysis: Using parallel execution with {self.n_jobs} workers")
+        else:
+            _logger.info("Sensitivity analysis: Using sequential execution")
+        
         self.rng = np.random.RandomState(self.seed)  # Reset RNG
         
         # 1. Hierarchical weight sensitivity
@@ -371,7 +394,7 @@ class SensitivityAnalysis:
                               panel_data: Any,
                               ranking_pipeline: Any,
                               weights: Dict) -> Tuple[Dict, Dict, np.ndarray]:
-        """Monte Carlo simulation with simultaneous weight perturbations."""
+        """Monte Carlo simulation with simultaneous weight perturbations (parallelized)."""
         base_year = max(panel_data.years)
         n_provinces = len(panel_data.provinces)
         
@@ -380,27 +403,57 @@ class SensitivityAnalysis:
         base_ranking = base_result.final_ranking.rank().values
         
         # Monte Carlo simulations
-        simulated_rankings = np.zeros((min(self.n_simulations, 100), n_provinces))
+        n_sims = min(self.n_simulations, 100)
+        simulated_rankings = np.zeros((n_sims, n_provinces))
         
-        for sim in range(min(self.n_simulations, 100)):
-            # Random perturbation of ALL weights simultaneously
-            perturbation = 1 + self.rng.uniform(
-                -self.perturbation_range, 
-                self.perturbation_range, 
-                len(weights['fused'])
-            )
-            perturbed_weights = weights['fused'] * perturbation
-            perturbed_weights = perturbed_weights / perturbed_weights.sum()
-            
-            try:
-                perturbed_result = ranking_pipeline.rank(
-                    panel_data, 
-                    self._weights_to_dict(weights, perturbed_weights), 
-                    target_year=base_year
+        if self.use_parallel:
+            # Parallel execution using ThreadPoolExecutor (better for I/O-bound tasks)
+            def run_simulation(sim_idx):
+                # Create independent RNG for this simulation
+                rng = np.random.RandomState(self.seed + sim_idx)
+                perturbation = 1 + rng.uniform(
+                    -self.perturbation_range, 
+                    self.perturbation_range, 
+                    len(weights['fused'])
                 )
-                simulated_rankings[sim] = perturbed_result.final_ranking.rank().values
-            except Exception:
-                simulated_rankings[sim] = base_ranking  # Fallback to base
+                perturbed_weights = weights['fused'] * perturbation
+                perturbed_weights = perturbed_weights / perturbed_weights.sum()
+                
+                try:
+                    perturbed_result = ranking_pipeline.rank(
+                        panel_data, 
+                        self._weights_to_dict(weights, perturbed_weights), 
+                        target_year=base_year
+                    )
+                    return sim_idx, perturbed_result.final_ranking.rank().values
+                except Exception:
+                    return sim_idx, base_ranking  # Fallback to base
+            
+            with ThreadPoolExecutor(max_workers=self.n_jobs) as executor:
+                futures = {executor.submit(run_simulation, sim): sim for sim in range(n_sims)}
+                for future in as_completed(futures):
+                    sim_idx, ranking = future.result()
+                    simulated_rankings[sim_idx] = ranking
+        else:
+            # Sequential execution (original code)
+            for sim in range(n_sims):
+                perturbation = 1 + self.rng.uniform(
+                    -self.perturbation_range, 
+                    self.perturbation_range, 
+                    len(weights['fused'])
+                )
+                perturbed_weights = weights['fused'] * perturbation
+                perturbed_weights = perturbed_weights / perturbed_weights.sum()
+                
+                try:
+                    perturbed_result = ranking_pipeline.rank(
+                        panel_data, 
+                        self._weights_to_dict(weights, perturbed_weights), 
+                        target_year=base_year
+                    )
+                    simulated_rankings[sim] = perturbed_result.final_ranking.rank().values
+                except Exception:
+                    simulated_rankings[sim] = base_ranking  # Fallback to base
         
         # Calculate rank stability per province
         rank_stability = {}
@@ -560,41 +613,93 @@ class SensitivityAnalysis:
             _logger.warning("IFS sensitivity: no IFS matrices built.")
             return 0.0, 0.0
 
-        # ── Monte Carlo: μ perturbation ──
+        # ── Monte Carlo: μ perturbation (parallelized) ──
         mu_displacements: List[float] = []
-        for _ in range(n_sims):
-            overrides = {
-                cid: mat.perturb(delta_mu=delta, delta_nu=0.0, rng=self.rng)
-                for cid, mat in base_ifs.items()
-            }
-            try:
-                res = ranking_pipeline.rank(
-                    panel_data, self._weights_to_dict(weights),
-                    target_year=base_year,
-                    ifs_overrides=overrides)
-                new_ranking = res.final_ranking.rank().values
-                mu_displacements.append(
-                    np.mean(np.abs(new_ranking - base_ranking)))
-            except Exception:
-                continue
+        
+        if self.use_parallel:
+            def run_mu_sim(sim_idx):
+                rng = np.random.RandomState(self.seed + sim_idx)
+                overrides = {
+                    cid: mat.perturb(delta_mu=delta, delta_nu=0.0, rng=rng)
+                    for cid, mat in base_ifs.items()
+                }
+                try:
+                    res = ranking_pipeline.rank(
+                        panel_data, self._weights_to_dict(weights),
+                        target_year=base_year,
+                        ifs_overrides=overrides)
+                    new_ranking = res.final_ranking.rank().values
+                    return np.mean(np.abs(new_ranking - base_ranking))
+                except Exception:
+                    return None
+            
+            with ThreadPoolExecutor(max_workers=self.n_jobs) as executor:
+                futures = [executor.submit(run_mu_sim, i) for i in range(n_sims)]
+                for future in as_completed(futures):
+                    result = future.result()
+                    if result is not None:
+                        mu_displacements.append(result)
+        else:
+            for sim_idx in range(n_sims):
+                rng = np.random.RandomState(self.seed + sim_idx)
+                overrides = {
+                    cid: mat.perturb(delta_mu=delta, delta_nu=0.0, rng=rng)
+                    for cid, mat in base_ifs.items()
+                }
+                try:
+                    res = ranking_pipeline.rank(
+                        panel_data, self._weights_to_dict(weights),
+                        target_year=base_year,
+                        ifs_overrides=overrides)
+                    new_ranking = res.final_ranking.rank().values
+                    mu_displacements.append(
+                        np.mean(np.abs(new_ranking - base_ranking)))
+                except Exception:
+                    continue
 
-        # ── Monte Carlo: ν perturbation ──
+        # ── Monte Carlo: ν perturbation (parallelized) ──
         nu_displacements: List[float] = []
-        for _ in range(n_sims):
-            overrides = {
-                cid: mat.perturb(delta_mu=0.0, delta_nu=delta, rng=self.rng)
-                for cid, mat in base_ifs.items()
-            }
-            try:
-                res = ranking_pipeline.rank(
-                    panel_data, self._weights_to_dict(weights),
-                    target_year=base_year,
-                    ifs_overrides=overrides)
-                new_ranking = res.final_ranking.rank().values
-                nu_displacements.append(
-                    np.mean(np.abs(new_ranking - base_ranking)))
-            except Exception:
-                continue
+        
+        if self.use_parallel:
+            def run_nu_sim(sim_idx):
+                rng = np.random.RandomState(self.seed + sim_idx + 1000)  # Different seed offset
+                overrides = {
+                    cid: mat.perturb(delta_mu=0.0, delta_nu=delta, rng=rng)
+                    for cid, mat in base_ifs.items()
+                }
+                try:
+                    res = ranking_pipeline.rank(
+                        panel_data, self._weights_to_dict(weights),
+                        target_year=base_year,
+                        ifs_overrides=overrides)
+                    new_ranking = res.final_ranking.rank().values
+                    return np.mean(np.abs(new_ranking - base_ranking))
+                except Exception:
+                    return None
+            
+            with ThreadPoolExecutor(max_workers=self.n_jobs) as executor:
+                futures = [executor.submit(run_nu_sim, i) for i in range(n_sims)]
+                for future in as_completed(futures):
+                    result = future.result()
+                    if result is not None:
+                        nu_displacements.append(result)
+        else:
+            for sim_idx in range(n_sims):
+                rng = np.random.RandomState(self.seed + sim_idx + 1000)
+                overrides = {
+                    cid: mat.perturb(delta_mu=0.0, delta_nu=delta, rng=rng)
+                    for cid, mat in base_ifs.items()
+                }
+                try:
+                    res = ranking_pipeline.rank(
+                        panel_data, self._weights_to_dict(weights),
+                        target_year=base_year,
+                        ifs_overrides=overrides)
+                    new_ranking = res.final_ranking.rank().values
+                    nu_displacements.append(
+                        np.mean(np.abs(new_ranking - base_ranking)))
+                except Exception:
+                    continue
 
         # Normalise: displacement / (n_provinces / 2)  → [0, 1]
         max_disp = n_provinces / 2.0

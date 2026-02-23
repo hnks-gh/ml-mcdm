@@ -16,10 +16,10 @@ from dataclasses import dataclass
 
 try:
     from .config import Config, get_config
-    from .logger import get_logger
+    from .loggers import get_logger
 except ImportError:
     from config import Config, get_config
-    from logger import get_logger
+    from logging import getLogger as get_logger
 
 
 @dataclass
