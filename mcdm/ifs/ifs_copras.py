@@ -27,7 +27,7 @@ from typing import Dict, List, Optional, Union
 from dataclasses import dataclass
 
 from .base import IFN, IFSDecisionMatrix, resolve_weights
-from ...weighting import WeightResult
+from weighting import WeightResult
 
 
 @dataclass

@@ -139,7 +139,9 @@ class HierarchicalBayesForecaster(BaseForecaster):
         Returns:
             Self for method chaining
         """
-        np.random.seed(self.random_state)
+        # Use a local RNG instead of mutating global numpy random state.
+        # All sklearn estimators inside this method manage their own seeds.
+        _rng = np.random.default_rng(self.random_state)  # noqa: F841
 
         if y.ndim == 1:
             y = y.reshape(-1, 1)

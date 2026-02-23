@@ -33,13 +33,25 @@ Validation Components:
    - Rank preservation under perturbation
 """
 
+import logging
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass, field
 import warnings
+import functools
 
-warnings.filterwarnings('ignore')
+_logger = logging.getLogger(__name__)
+
+
+def _silence_warnings(func):
+    """Scope all warning filters to the duration of *func* only."""
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            return func(*args, **kwargs)
+    return wrapper
 
 
 @dataclass
@@ -165,6 +177,7 @@ class Validator:
         self.consistency_threshold = consistency_threshold
         self.stability_threshold = stability_threshold
     
+    @_silence_warnings
     def validate_full_pipeline(
         self,
         panel_data,
@@ -284,7 +297,7 @@ class Validator:
         
         # Access the actual attributes on HierarchicalRankingResult
         if not hasattr(ranking_result, 'criterion_method_scores'):
-            return {'overall': 0.8}
+            return {}
         
         try:
             from scipy.stats import spearmanr
@@ -317,15 +330,15 @@ class Validator:
             if criterion_correlations:
                 consistency['mean_criterion_to_final'] = float(np.mean(criterion_correlations))
         
-        except Exception:
-            pass
+        except Exception as _exc:
+            _logger.warning('hierarchical_consistency check failed: %s', _exc)
         
-        return consistency if consistency else {'overall': 0.8}
+        return consistency
     
     def _validate_er_aggregation(self, ranking_result) -> float:
         """Validate ER aggregation quality (belief distribution properties)."""
         if not hasattr(ranking_result, 'er_result'):
-            return 0.8  # Default if ER result not available
+            return 0.0  # ER result unavailable — cannot assert quality
         
         scores = ranking_result.er_result.final_scores.values
         
@@ -354,11 +367,12 @@ class Validator:
         ifs_checks = {}
         
         if not hasattr(ranking_result, 'ifs_diagnostics'):
-            return {'default': True}, True
+            # No diagnostic data available — nothing to invalidate
+            return {}, True
         
         ifs_diag = ranking_result.ifs_diagnostics
         if not ifs_diag:
-            return {'default': True}, True
+            return {}, True
         
         try:
             overall_valid = True
@@ -390,8 +404,9 @@ class Validator:
             
             return ifs_checks, hesitancy_valid
         
-        except Exception:
-            return {'default': True}, True
+        except Exception as _exc:
+            _logger.warning('IFS parameter validation failed: %s', _exc)
+            return {}, False
     
     def _validate_weight_temporal_stability(
         self,
@@ -530,9 +545,10 @@ class Validator:
         if not hasattr(forecast_result, 'prediction_intervals'):
             return None
         
-        # Calculate empirical coverage if actuals are available
-        # For now, return expected coverage
-        return 0.95
+        # Empirical coverage computation requires retained holdout actuals,
+        # which are not currently threaded through to this validator.
+        # Return None rather than a fabricated value.
+        return None
     
     def _validate_forecast_oos(
         self,

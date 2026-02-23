@@ -24,8 +24,6 @@ import time
 import json
 import traceback
 
-warnings.filterwarnings('ignore')
-
 # Internal imports (support both package and direct execution)
 try:
     from .config import Config, get_default_config
@@ -161,110 +159,112 @@ class MLMCDMPipeline:
         """Execute full analysis pipeline and return results."""
         start_time = time.time()
 
-        self.console.banner('ML-MCDM Panel Data Analysis Pipeline',
-                            subtitle='IFS + ER + ML Forecasting')
+        try:
+            self.console.banner('ML-MCDM Panel Data Analysis Pipeline',
+                                subtitle='IFS + ER + ML Forecasting')
 
-        # Phase 1: Data Loading
-        with self.console.phase('Data Loading') as ph:
-            panel_data = self._load_data()
-            ph.detail(f'{len(panel_data.provinces)} provinces, '
-                      f'{len(panel_data.years)} years, '
-                      f'{panel_data.n_subcriteria} subcriteria')
+            # Phase 1: Data Loading
+            with self.console.phase('Data Loading') as ph:
+                panel_data = self._load_data()
+                ph.detail(f'{len(panel_data.provinces)} provinces, '
+                          f'{len(panel_data.years)} years, '
+                          f'{panel_data.n_subcriteria} subcriteria')
 
-        # Phase 2: Weight Calculation
-        with self.console.phase('Weight Calculation (GTWC)') as ph:
-            weights = self._calculate_weights(panel_data)
+            # Phase 2: Weight Calculation
+            with self.console.phase('Weight Calculation (GTWC)') as ph:
+                weights = self._calculate_weights(panel_data)
 
-        # Phase 3: Hierarchical Ranking (12 MCDM methods + ER)
-        with self.console.phase('Hierarchical Ranking (IFS + ER)') as ph:
-            ranking_result = self._run_hierarchical_ranking(panel_data, weights)
+            # Phase 3: Hierarchical Ranking (12 MCDM methods + ER)
+            with self.console.phase('Hierarchical Ranking (IFS + ER)') as ph:
+                ranking_result = self._run_hierarchical_ranking(panel_data, weights)
 
-        # Phase 4: ML Forecasting (6 models + Super Learner + Conformal)
-        forecast_result = None
-        with self.console.phase('ML Forecasting (SOTA Ensemble)') as ph:
-            try:
-                forecast_result = self._run_forecasting(panel_data)
-            except Exception as e:
-                ph.warning(f'Forecasting skipped: {e}')
-                self.logger.debug(traceback.format_exc())
+            # Phase 4: ML Forecasting (6 models + Super Learner + Conformal)
+            forecast_result = None
+            with self.console.phase('ML Forecasting (SOTA Ensemble)') as ph:
+                try:
+                    forecast_result = self._run_forecasting(panel_data)
+                except Exception as e:
+                    ph.warning(f'Forecasting skipped: {e}')
+                    self.logger.debug(traceback.format_exc())
 
-        # Phase 5: Sensitivity Analysis & Validation
-        analysis_results: Dict[str, Any] = {'sensitivity': None, 'validation': None}
-        with self.console.phase('Sensitivity Analysis & Validation') as ph:
-            try:
-                analysis_results = self._run_analysis(
-                    panel_data, ranking_result, weights, forecast_result)
-            except Exception as e:
-                ph.warning(f'Sensitivity analysis skipped: {e}')
+            # Phase 5: Sensitivity Analysis & Validation
+            analysis_results: Dict[str, Any] = {'sensitivity': None, 'validation': None}
+            with self.console.phase('Sensitivity Analysis & Validation') as ph:
+                try:
+                    analysis_results = self._run_analysis(
+                        panel_data, ranking_result, weights, forecast_result)
+                except Exception as e:
+                    ph.warning(f'Sensitivity analysis skipped: {e}')
 
-            try:
-                analysis_results['validation'] = self._run_validation(
-                    panel_data, weights, ranking_result, forecast_result)
-            except Exception as e:
-                ph.warning(f'Validation skipped: {e}')
+                try:
+                    analysis_results['validation'] = self._run_validation(
+                        panel_data, weights, ranking_result, forecast_result)
+                except Exception as e:
+                    ph.warning(f'Validation skipped: {e}')
 
-        execution_time = time.time() - start_time
+            execution_time = time.time() - start_time
 
-        # Phase 6: Visualizations
-        with self.console.phase('Generating Figures') as ph:
-            try:
-                fig_count = self.visualizer.generate_all(
-                    panel_data=panel_data,
-                    weights=weights,
-                    ranking_result=ranking_result,
-                    analysis_results=analysis_results,
-                    forecast_result=forecast_result,
-                )
-                ph.metric('Figures', fig_count)
-            except Exception as e:
-                ph.warning(f'Visualization failed: {e}')
+            # Phase 6: Visualizations
+            with self.console.phase('Generating Figures') as ph:
+                try:
+                    fig_count = self.visualizer.generate_all(
+                        panel_data=panel_data,
+                        weights=weights,
+                        ranking_result=ranking_result,
+                        analysis_results=analysis_results,
+                        forecast_result=forecast_result,
+                    )
+                    ph.metric('Figures', fig_count)
+                except Exception as e:
+                    ph.warning(f'Visualization failed: {e}')
 
-        # Phase 7: Save Results
-        with self.console.phase('Saving Results') as ph:
-            try:
-                figure_paths = self.visualizer.get_generated_figures()
-                self.output_orch.save_all(
-                    panel_data=panel_data,
-                    weights=weights,
-                    ranking_result=ranking_result,
-                    forecast_result=forecast_result,
-                    analysis_results=analysis_results,
-                    execution_time=execution_time,
-                    figure_paths=figure_paths,
-                    config=self.config,
-                )
-            except Exception as e:
-                ph.warning(f'Result saving failed: {e}')
-                self.logger.debug(traceback.format_exc())
+            # Phase 7: Save Results
+            with self.console.phase('Saving Results') as ph:
+                try:
+                    figure_paths = self.visualizer.get_generated_figures()
+                    self.output_orch.save_all(
+                        panel_data=panel_data,
+                        weights=weights,
+                        ranking_result=ranking_result,
+                        forecast_result=forecast_result,
+                        analysis_results=analysis_results,
+                        execution_time=execution_time,
+                        figure_paths=figure_paths,
+                        config=self.config,
+                    )
+                except Exception as e:
+                    ph.warning(f'Result saving failed: {e}')
+                    self.logger.debug(traceback.format_exc())
 
-        self.console.separator()
-        self.console.info(f'Pipeline completed in {execution_time:.2f}s')
-        self.console.info(f'Outputs → {self.config.output_dir}')
-        self.console.separator()
+            self.console.separator()
+            self.console.info(f'Pipeline completed in {execution_time:.2f}s')
+            self.console.info(f'Outputs → {self.config.output_dir}')
+            self.console.separator()
 
-        # Flush debug log
-        self.debug_log.close()
 
-        # Build result object
-        subcriteria = weights['subcriteria']
-        latest_year = max(panel_data.years)
-        decision_matrix = panel_data.subcriteria_cross_section[latest_year][subcriteria].values
+            # Build result object
+            subcriteria = weights['subcriteria']
+            latest_year = max(panel_data.years)
+            decision_matrix = panel_data.subcriteria_cross_section[latest_year][subcriteria].values
 
-        return PipelineResult(
-            panel_data=panel_data,
-            decision_matrix=decision_matrix,
-            entropy_weights=weights['entropy'],
-            critic_weights=weights['critic'],
-            merec_weights=weights['merec'],
-            std_dev_weights=weights['std_dev'],
-            fused_weights=weights['fused'],
-            weight_details=weights.get('details', {}),
-            ranking_result=ranking_result,
-            forecast_result=forecast_result,
-            sensitivity_result=analysis_results.get('sensitivity'),
-            execution_time=execution_time,
-            config=self.config,
-        )
+            return PipelineResult(
+                panel_data=panel_data,
+                decision_matrix=decision_matrix,
+                entropy_weights=weights['entropy'],
+                critic_weights=weights['critic'],
+                merec_weights=weights['merec'],
+                std_dev_weights=weights['std_dev'],
+                fused_weights=weights['fused'],
+                weight_details=weights.get('details', {}),
+                ranking_result=ranking_result,
+                forecast_result=forecast_result,
+                sensitivity_result=analysis_results.get('sensitivity'),
+                execution_time=execution_time,
+                config=self.config,
+            )
+        finally:
+            # Always flush & close the debug log — even if a phase raises
+            self.debug_log.close()
 
     # -----------------------------------------------------------------
     # Phase 1: Data Loading

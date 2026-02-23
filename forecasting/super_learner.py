@@ -47,10 +47,19 @@ from sklearn.preprocessing import StandardScaler
 from scipy.optimize import nnls
 import copy
 import warnings
+import functools
 
 from .base import BaseForecaster
 
-warnings.filterwarnings("ignore")
+
+def _silence_warnings(func):
+    """Scope all warning filters to the duration of *func* only."""
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            return func(*args, **kwargs)
+    return wrapper
 
 
 class SuperLearner:
@@ -121,6 +130,7 @@ class SuperLearner:
         self._n_outputs: int = 1
         self._oof_r2: Dict[str, float] = {}
 
+    @_silence_warnings
     def fit(self, X: np.ndarray, y: np.ndarray, entity_indices: Optional[np.ndarray] = None) -> "SuperLearner":
         """
         Fit the Super Learner ensemble.

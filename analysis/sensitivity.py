@@ -19,10 +19,19 @@ import pandas as pd
 from typing import Dict, List, Optional, Callable, Tuple, Any
 from dataclasses import dataclass, field
 import warnings
+import functools
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 import multiprocessing
 
-warnings.filterwarnings('ignore')
+
+def _silence_warnings(func):
+    """Scope all warning filters to the duration of *func* only."""
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            return func(*args, **kwargs)
+    return wrapper
 
 
 @dataclass
@@ -192,6 +201,7 @@ class SensitivityAnalysis:
             return dict(zip(subcriteria, perturbed_array))
         return weights['fused_dict']
 
+    @_silence_warnings
     def analyze_full_pipeline(self,
                               panel_data: Any,
                               ranking_pipeline: Any,
@@ -287,7 +297,7 @@ class SensitivityAnalysis:
                                          ranking_pipeline: Any,
                                          weights: Dict) -> Tuple[Dict, Dict]:
         """Analyze sensitivity at both hierarchy levels."""
-        from ..ranking import HierarchicalRankingPipeline
+        from ranking import HierarchicalRankingPipeline
         
         base_year = max(panel_data.years)
         base_er_result = ranking_pipeline.rank(
@@ -573,7 +583,7 @@ class SensitivityAnalysis:
 
         # Build base IFS matrices per criterion (same logic as the
         # ranking pipeline uses internally).
-        from ..mcdm.ifs.base import IFSDecisionMatrix
+        from mcdm.ifs.base import IFSDecisionMatrix
         hierarchy = panel_data.hierarchy
         current_data = panel_data.subcriteria_cross_section[base_year]
         historical_std = ranking_pipeline._compute_historical_std(panel_data)
@@ -589,7 +599,7 @@ class SensitivityAnalysis:
             df_crit = current_data[subcrit_cols].copy()
             cost_local = [c for c in subcrit_cols
                           if c in ranking_pipeline.cost_criteria]
-            df_norm = ranking_pipeline._minmax_normalise(
+            df_norm = ranking_pipeline._minmax_normalize(
                 df_crit, cost_criteria=cost_local)
             std_crit = (historical_std[subcrit_cols].copy()
                         if all(sc in historical_std.columns

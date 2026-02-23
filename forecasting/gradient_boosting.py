@@ -14,6 +14,7 @@ This method is well-suited for:
 
 import numpy as np
 from typing import Optional
+from sklearn.base import clone
 from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.multioutput import MultiOutputRegressor
 from sklearn.preprocessing import RobustScaler
@@ -82,7 +83,7 @@ class GradientBoostingForecaster(BaseForecaster):
         # Handle multi-output case
         if y.ndim > 1 and y.shape[1] > 1:
             self._is_multi_output = True
-            self.model = MultiOutputRegressor(self._base_model)
+            self.model = MultiOutputRegressor(clone(self._base_model))
             self.model.fit(X_scaled, y)
             # Average feature importance across outputs
             self.feature_importance_ = np.mean(
@@ -90,7 +91,7 @@ class GradientBoostingForecaster(BaseForecaster):
             )
         else:
             self._is_multi_output = False
-            self.model = self._base_model
+            self.model = clone(self._base_model)
             self.model.fit(X_scaled, y.ravel() if y.ndim > 1 else y)
             self.feature_importance_ = self.model.feature_importances_
         return self

@@ -36,6 +36,7 @@ try:
     HAS_SCIPY = True
 except ImportError:
     HAS_SCIPY = False
+    sp_stats = None
 
 # =========================================================================
 # Color constants

@@ -11,7 +11,7 @@ Provides crisp (non-fuzzy) Multi-Criteria Decision Making methods:
 - SAW: Simple Additive Weighting
 """
 
-from .topsis import TOPSISCalculator, TOPSISResult, DynamicTOPSIS, DynamicTOPSISResult
+from .topsis import TOPSISCalculator, TOPSISResult
 from .vikor import VIKORCalculator, VIKORResult, MultiPeriodVIKOR
 from .promethee import PROMETHEECalculator, PROMETHEEResult, PreferenceFunction, MultiPeriodPROMETHEE
 from .copras import COPRASCalculator, COPRASResult
@@ -21,8 +21,7 @@ from .saw import SAWCalculator, SAWResult
 __all__ = [
     # TOPSIS
     'TOPSISCalculator', 'TOPSISResult',
-    'DynamicTOPSIS', 'DynamicTOPSISResult',
-    
+
     # VIKOR
     'VIKORCalculator', 'VIKORResult', 'MultiPeriodVIKOR',
     

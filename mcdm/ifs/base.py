@@ -29,7 +29,7 @@ import pandas as pd
 from typing import Dict, List, Optional, Tuple, Union
 from dataclasses import dataclass
 
-from ...weighting import WeightResult
+from weighting import WeightResult
 
 
 def resolve_weights(

@@ -140,9 +140,22 @@ def temporal_stability_verification(
     # Sort by time and split in half
     sorted_df = panel_df.sort_values(time_col).copy()
     time_periods = sorted(sorted_df[time_col].unique())
-    split_idx = len(time_periods) // 2
-    split_point = time_periods[split_idx]
-    
+
+    # Guard: need at least 2 distinct periods for a meaningful split-half test
+    if len(time_periods) < 2:
+        return StabilityResult(
+            is_stable=True,
+            cosine_similarity=1.0,
+            correlation=1.0,
+            split_point=int(time_periods[0]) if time_periods else 0,
+            details={'note': 'insufficient time periods for split-half test'},
+        )
+
+    # Guarantee both halves are non-empty: the split point is the last
+    # period of the *first* half (index split_idx-1, at least index 0).
+    split_idx = max(1, len(time_periods) // 2)
+    split_point = time_periods[split_idx - 1]
+
     # Split data
     first_half = sorted_df[sorted_df[time_col] <= split_point]
     second_half = sorted_df[sorted_df[time_col] > split_point]

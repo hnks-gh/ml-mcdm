@@ -177,6 +177,10 @@ class ConformalPredictor:
         if hasattr(model_proper, 'fit'):
             model_proper.fit(X_train, y_train)
 
+        # Replace base model so predict_intervals uses the correctly
+        # re-fitted model whose residuals we are calibrating against.
+        self._base_model = model_proper
+
         # Get predictions on held-out calibration set
         y_pred = model_proper.predict(X_cal)
         if y_pred.ndim > 1:

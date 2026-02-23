@@ -311,32 +311,46 @@ class HybridWeightingPipeline:
                     f"mean std: {bootstrap_results['std_weights'].mean():.6f}")
 
         # ── Step 5: Temporal Stability Verification ──
-        # Build a temporary DataFrame for split-half verification
-        stability_df = panel_data[[time_col] + criteria_cols].copy()
+        if time_col not in panel_data.columns:
+            # Cross-sectional data has no time dimension — skip stability check
+            logger.warning(
+                "Step 5: time_col '%s' not found in panel_data; "
+                "temporal stability verification skipped.", time_col
+            )
+            stability = {
+                'cosine_similarity': None,
+                'pearson_correlation': None,
+                'is_stable': None,
+                'split_point': None,
+                'note': f"time_col '{time_col}' not present — cross-sectional data",
+            }
+        else:
+            # Build a temporary DataFrame for split-half verification
+            stability_df = panel_data[[time_col] + criteria_cols].copy()
 
-        def compute_weights_from_df(df_half):
-            """Helper: normalize subset and compute fused weights."""
-            X_half = df_half[criteria_cols].values.astype(float)
-            X_half_norm = global_min_max_normalize(X_half, epsilon=self.epsilon)
-            X_half_df = pd.DataFrame(X_half_norm, columns=criteria_cols)
-            return compute_fused_weights(X_half_df, criteria_cols)
+            def compute_weights_from_df(df_half):
+                """Helper: normalize subset and compute fused weights."""
+                X_half = df_half[criteria_cols].values.astype(float)
+                X_half_norm = global_min_max_normalize(X_half, epsilon=self.epsilon)
+                X_half_df = pd.DataFrame(X_half_norm, columns=criteria_cols)
+                return compute_fused_weights(X_half_df, criteria_cols)
 
-        stability = temporal_stability_verification(
-            panel_df=stability_df,
-            weight_calculator=compute_weights_from_df,
-            entity_col=entity_col,
-            time_col=time_col,
-            criteria_cols=criteria_cols,
-            threshold=self.stability_threshold,
-        )
+            _stab = temporal_stability_verification(
+                panel_df=stability_df,
+                weight_calculator=compute_weights_from_df,
+                entity_col=entity_col,
+                time_col=time_col,
+                criteria_cols=criteria_cols,
+                threshold=self.stability_threshold,
+            )
 
-        # Convert StabilityResult dataclass → dict for downstream consumption
-        stability = {
-            'cosine_similarity': stability.cosine_similarity,
-            'pearson_correlation': stability.correlation,
-            'is_stable': stability.is_stable,
-            'split_point': stability.split_point,
-        }
+            # Convert StabilityResult dataclass → dict for downstream consumption
+            stability = {
+                'cosine_similarity': _stab.cosine_similarity,
+                'pearson_correlation': _stab.correlation,
+                'is_stable': _stab.is_stable,
+                'split_point': _stab.split_point,
+            }
         
         logger.info(f"Step 5: Stability — cosine={stability['cosine_similarity']:.4f}, "
                     f"pearson={stability['pearson_correlation']:.4f}")

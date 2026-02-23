@@ -17,6 +17,9 @@ import textwrap
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+import logging
+
+_logger = logging.getLogger(__name__)
 
 
 class ReportWriter:
@@ -187,8 +190,8 @@ class ReportWriter:
                     cv = sd / mu if mu != 0 else 0.0
                     L.append(f'| {sc} | {mu:.4f} | {sd:.4f} | {mn:.4f} | {mx:.4f} | {cv:.4f} |')
             L.append('')
-        except Exception:
-            pass
+        except Exception as _exc:
+            _logger.debug('section skipped: %s', _exc)
 
         # ============================================================
         # 3. Weight Derivation
@@ -241,8 +244,8 @@ class ReportWriter:
                 row = ' | '.join(f'{corr[i, j]:.3f}' for j in range(4))
                 L.append(f'| {ml} | {row} |')
             L.append('')
-        except Exception:
-            pass
+        except Exception as _exc:
+            _logger.debug('section skipped: %s', _exc)
 
         # ============================================================
         # 4. ER Ranking
@@ -307,8 +310,8 @@ class ReportWriter:
                      f'{unc["utility_interval_width"].mean():.4f} '
                      f'(SD = {unc["utility_interval_width"].std():.4f})')
             L.append('')
-        except Exception:
-            pass
+        except Exception as _exc:
+            _logger.debug('section skipped: %s', _exc)
 
         # ============================================================
         # 5. Criterion-Level
@@ -381,8 +384,8 @@ class ReportWriter:
             for idx, count in all_top5.most_common(10):
                 L.append(f'| {panel_data.provinces[idx]} | {count} | {count/total:.1%} |')
             L.append('')
-        except Exception:
-            pass
+        except Exception as _exc:
+            _logger.debug('section skipped: %s', _exc)
 
         # ============================================================
         # 7. Sensitivity

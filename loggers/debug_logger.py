@@ -39,7 +39,13 @@ class DebugLogger:
         self._stdlib_logger = logging.getLogger('ml_mcdm')
         self._stdlib_logger.setLevel(logging.DEBUG)
         self._stdlib_logger.propagate = False
-        # Intercept handler
+        # Remove any stale _InterceptHandler from a previous instance to
+        # prevent duplicate log entries if DebugLogger is re-instantiated
+        # (e.g. during tests or repeated pipeline.run() calls).
+        self._stdlib_logger.handlers = [
+            h for h in self._stdlib_logger.handlers
+            if not isinstance(h, _InterceptHandler)
+        ]
         self._handler = _InterceptHandler(self)
         self._stdlib_logger.addHandler(self._handler)
 
@@ -95,6 +101,14 @@ class DebugLogger:
         path = self.flush()
         self._stdlib_logger.removeHandler(self._handler)
         return path
+
+    # Context-manager support — enables ``with DebugLogger() as log:``
+    def __enter__(self) -> "DebugLogger":
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
+        self.close()
+        return False  # never suppress exceptions
 
     @property
     def path(self) -> str:

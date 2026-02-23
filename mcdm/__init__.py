@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from typing import Dict
 """
 Multi-Criteria Decision Making Module
 =====================================
@@ -21,7 +22,7 @@ Usage
 
 # Import from traditional submodule
 from .traditional import (
-    TOPSISCalculator, TOPSISResult, DynamicTOPSIS, DynamicTOPSISResult,
+    TOPSISCalculator, TOPSISResult,
     VIKORCalculator, VIKORResult, MultiPeriodVIKOR,
     PROMETHEECalculator, PROMETHEEResult,
     COPRASCalculator, COPRASResult,
@@ -41,7 +42,7 @@ from .ifs import (
 )
 
 # Import weighting methods from weighting module
-from ..weighting import (
+from weighting import (
     EntropyWeightCalculator,
     CRITICWeightCalculator,
     MERECWeightCalculator,
@@ -66,7 +67,6 @@ __all__ = [
     
     # Traditional MCDM
     'TOPSISCalculator', 'TOPSISResult',
-    'DynamicTOPSIS', 'DynamicTOPSISResult',
     'VIKORCalculator', 'VIKORResult', 'MultiPeriodVIKOR',
     'PROMETHEECalculator', 'PROMETHEEResult',
     'COPRASCalculator', 'COPRASResult',

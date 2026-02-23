@@ -36,8 +36,17 @@ from .neural_additive import NeuralAdditiveForecaster
 from .super_learner import SuperLearner
 from .conformal import ConformalPredictor
 from .evaluation import ForecastEvaluator, AblationStudy
+import functools
 
-warnings.filterwarnings('ignore')
+
+def _silence_warnings(func):
+    """Scope all warning filters to the duration of *func* only."""
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            return func(*args, **kwargs)
+    return wrapper
 
 
 @dataclass
@@ -244,6 +253,7 @@ class UnifiedForecaster:
 
         return models
     
+    @_silence_warnings
     def fit_predict(self,
                    panel_data,
                    target_year: int,

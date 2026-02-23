@@ -16,8 +16,14 @@ class WeightResult:
     
     @property
     def as_array(self) -> np.ndarray:
-        """Return weights as numpy array in sorted key order for reproducibility."""
-        return np.array([self.weights[k] for k in sorted(self.weights.keys())])
+        """Return weights as numpy array preserving insertion (column) order.
+
+        Weight calculators build the dict by iterating over ``data.columns``,
+        so insertion order matches column order — guaranteed in Python 3.7+.
+        Callers that need a specific order should index into ``self.weights``
+        directly rather than relying on this property.
+        """
+        return np.array(list(self.weights.values()))
     
     @property
     def as_series(self) -> pd.Series:

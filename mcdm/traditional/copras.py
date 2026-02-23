@@ -18,7 +18,7 @@ import pandas as pd
 from typing import Dict, List, Optional, Union
 from dataclasses import dataclass
 
-from ...weighting import WeightResult, EntropyWeightCalculator
+from weighting import WeightResult, EntropyWeightCalculator
 
 
 @dataclass

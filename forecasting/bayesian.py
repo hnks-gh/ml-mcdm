@@ -14,6 +14,7 @@ This method is useful for:
 
 import numpy as np
 from typing import Optional, Tuple
+from sklearn.base import clone
 from sklearn.linear_model import BayesianRidge
 from sklearn.multioutput import MultiOutputRegressor
 from sklearn.preprocessing import StandardScaler
@@ -73,7 +74,7 @@ class BayesianForecaster(BaseForecaster):
         # Handle multi-output case
         if y.ndim > 1 and y.shape[1] > 1:
             self._is_multi_output = True
-            self.model = MultiOutputRegressor(self._base_model)
+            self.model = MultiOutputRegressor(clone(self._base_model))
             self.model.fit(X_scaled, y)
             # Average importance across outputs
             self.feature_importance_ = np.mean(
@@ -81,7 +82,7 @@ class BayesianForecaster(BaseForecaster):
             )
         else:
             self._is_multi_output = False
-            self.model = self._base_model
+            self.model = clone(self._base_model)
             self.model.fit(X_scaled, y.ravel() if y.ndim > 1 else y)
             self.feature_importance_ = np.abs(self.model.coef_)
         return self

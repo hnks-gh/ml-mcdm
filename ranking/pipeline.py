@@ -34,18 +34,18 @@ from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass, field
 import logging
 
-from ..data_loader import PanelData, HierarchyMapping
-from ..mcdm.traditional import (
+from data_loader import PanelData, HierarchyMapping
+from mcdm.traditional import (
     TOPSISCalculator, VIKORCalculator, PROMETHEECalculator,
     COPRASCalculator, EDASCalculator,
 )
-from ..mcdm.traditional.saw import SAWCalculator
-from ..mcdm.ifs import (
+from mcdm.traditional.saw import SAWCalculator
+from mcdm.ifs import (
     IFN, IFSDecisionMatrix,
     IFS_SAW, IFS_TOPSIS, IFS_VIKOR,
     IFS_PROMETHEE, IFS_COPRAS, IFS_EDAS,
 )
-from ..evidential_reasoning import (
+from evidential_reasoning import (
     HierarchicalEvidentialReasoning, HierarchicalERResult,
     BeliefDistribution, EvidentialReasoningEngine,
 )

@@ -20,7 +20,7 @@ from typing import Dict, List, Optional, Union
 from dataclasses import dataclass
 from scipy import stats
 
-from ...weighting import WeightResult, EntropyWeightCalculator
+from weighting import WeightResult, EntropyWeightCalculator
 
 
 @dataclass
@@ -164,21 +164,17 @@ class EDASCalculator:
         
         for col in data.columns:
             av = average_solution[col]
-            
+            # Always normalise by |AV| (EDAS paper: divide by |average_solution|).
+            # Using a small epsilon when av is near-zero keeps all PDA/NDA values
+            # on a comparable scale regardless of the sign of the average.
+            abs_av = max(abs(float(av)), 1e-10)
+
             if col in benefit_criteria:
-                if av > 0:
-                    PDA[col] = np.maximum(0, data[col] - av) / av
-                    NDA[col] = np.maximum(0, av - data[col]) / av
-                else:
-                    PDA[col] = np.maximum(0, data[col] - av)
-                    NDA[col] = np.maximum(0, av - data[col])
+                PDA[col] = np.maximum(0, data[col] - av) / abs_av
+                NDA[col] = np.maximum(0, av - data[col]) / abs_av
             else:
-                if av > 0:
-                    PDA[col] = np.maximum(0, av - data[col]) / av
-                    NDA[col] = np.maximum(0, data[col] - av) / av
-                else:
-                    PDA[col] = np.maximum(0, av - data[col])
-                    NDA[col] = np.maximum(0, data[col] - av)
+                PDA[col] = np.maximum(0, av - data[col]) / abs_av
+                NDA[col] = np.maximum(0, data[col] - av) / abs_av
         
         # Step 3: Calculate weighted sum of PDA and NDA
         SP = pd.Series(0.0, index=data.index)
@@ -410,12 +406,13 @@ class ModifiedEDAS(EDASCalculator):
         if self.use_trimmed_mean:
             # Override average solution with trimmed mean
             original_data = data.copy()
-            result = super().calculate(data, weights)
-            
-            # Recalculate with trimmed mean
+            result = super().calculate(original_data, weights)
+
+            # Recalculate average solution using trimmed mean
             trimmed_avg = {}
             for col in data.columns:
                 trimmed_avg[col] = stats.trim_mean(data[col].values, self.trim_percentage)
             result.average_solution = pd.Series(trimmed_avg)
-            
+            return result
+
         return super().calculate(data, weights)

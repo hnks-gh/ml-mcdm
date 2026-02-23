@@ -28,7 +28,7 @@ import pandas as pd
 from typing import Dict, List, Optional, Union
 from dataclasses import dataclass
 
-from ...weighting import WeightResult, EntropyWeightCalculator
+from weighting import WeightResult, EntropyWeightCalculator
 
 
 @dataclass
@@ -157,8 +157,20 @@ class SAWCalculator:
             return norm
 
         elif self.normalization == 'sum':
-            col_sums = X.sum(axis=0)
-            col_sums[col_sums == 0] = 1
-            return X / col_sums
+            norm = np.zeros_like(X, dtype=float)
+            for j, col in enumerate(data.columns):
+                col_vals = X[:, j]
+                if col in self.cost_criteria:
+                    # Cost criteria: invert so that smaller raw values get a
+                    # larger normalised score, then divide by the sum of
+                    # inverted values to keep the column in [0, 1].
+                    with np.errstate(divide='ignore', invalid='ignore'):
+                        inv = np.where(col_vals > 0, 1.0 / col_vals, 0.0)
+                    denom = inv.sum()
+                    norm[:, j] = inv / denom if denom > 0 else inv
+                else:
+                    denom = col_vals.sum()
+                    norm[:, j] = col_vals / (denom if denom != 0 else 1.0)
+            return norm
 
         raise ValueError(f"Unknown normalization: {self.normalization}")

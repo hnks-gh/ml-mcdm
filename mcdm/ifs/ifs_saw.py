@@ -21,7 +21,7 @@ from typing import Dict, List, Optional, Union
 from dataclasses import dataclass
 
 from .base import IFN, IFSDecisionMatrix, resolve_weights
-from ...weighting import WeightResult
+from weighting import WeightResult
 
 
 @dataclass
@@ -45,9 +45,15 @@ class IFS_SAW:
     Steps
     -----
     1. Compute score S_ij = μ_ij − ν_ij  for every cell.
+       For cost criteria the score is negated: S_ij = ν_ij − μ_ij,
+       so that a *lower* raw value still yields a *higher* weighted score.
     2. Weighted sum:  SAW_i = Σ_j w_j × S_ij.
     3. Rank alternatives by SAW score (higher → better).
     """
+
+    def __init__(self,
+                 cost_criteria: Optional[List[str]] = None):
+        self.cost_criteria: List[str] = cost_criteria or []
 
     def calculate(self,
                   ifs_matrix: IFSDecisionMatrix,
@@ -57,6 +63,12 @@ class IFS_SAW:
         score_df = ifs_matrix.to_score_matrix()
         criteria = ifs_matrix.criteria
         alternatives = ifs_matrix.alternatives
+
+        # Negate score for cost criteria (lower raw value → higher contribution).
+        if self.cost_criteria:
+            for c in self.cost_criteria:
+                if c in score_df.columns:
+                    score_df[c] = -score_df[c]
 
         w = resolve_weights(weights, criteria)
         w_arr = np.array([w[c] for c in criteria])

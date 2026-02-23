@@ -11,10 +11,14 @@ Every file lands in ``outputs/results/``.
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 import numpy as np
 import pandas as pd
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+import logging
+
+_logger = logging.getLogger(__name__)
 
 
 class CsvWriter:
@@ -120,8 +124,8 @@ class CsvWriter:
                 df['Belief_Entropy'] = unc['belief_entropy'].values
             if 'utility_interval_width' in unc.columns:
                 df['Utility_Interval_Width'] = unc['utility_interval_width'].values
-        except Exception:
-            pass
+        except Exception as _exc:
+            _logger.debug('section skipped: %s', _exc)
 
         df['Kendall_W'] = ranking_result.kendall_w
 
@@ -206,8 +210,8 @@ class CsvWriter:
             preds = forecast_result.predictions
             if preds is not None and not preds.empty:
                 saved['predictions'] = self._save_csv(preds, 'forecast_predictions.csv', float_fmt='%.4f')
-        except Exception:
-            pass
+        except Exception as _exc:
+            _logger.debug('section skipped: %s', _exc)
 
         # Prediction intervals
         try:
@@ -226,8 +230,8 @@ class CsvWriter:
                     combined.index.name = 'Entity'
                     saved['prediction_intervals'] = self._save_csv(
                         combined, 'prediction_intervals.csv', float_fmt='%.4f')
-        except Exception:
-            pass
+        except Exception as _exc:
+            _logger.debug('section skipped: %s', _exc)
 
         # Model contributions
         try:
@@ -241,8 +245,8 @@ class CsvWriter:
                 df = df.set_index('Rank')
                 saved['model_contributions'] = self._save_csv(
                     df, 'model_contributions.csv', float_fmt='%.6f')
-        except Exception:
-            pass
+        except Exception as _exc:
+            _logger.debug('section skipped: %s', _exc)
 
         # Model performance
         try:
@@ -252,8 +256,8 @@ class CsvWriter:
                 df = pd.DataFrame(rows).set_index('Model')
                 saved['model_performance'] = self._save_csv(
                     df, 'model_performance.csv', float_fmt='%.4f')
-        except Exception:
-            pass
+        except Exception as _exc:
+            _logger.debug('section skipped: %s', _exc)
 
         # Feature importance
         try:
@@ -267,8 +271,8 @@ class CsvWriter:
                 imp_copy['Rank'] = range(1, len(imp_copy) + 1)
                 saved['feature_importance'] = self._save_csv(
                     imp_copy, 'feature_importance.csv', float_fmt='%.6f')
-        except Exception:
-            pass
+        except Exception as _exc:
+            _logger.debug('section skipped: %s', _exc)
 
         # Cross-validation scores
         try:
@@ -284,8 +288,8 @@ class CsvWriter:
                 df.index.name = 'Model'
                 saved['cross_validation'] = self._save_csv(
                     df, 'cross_validation_scores.csv', float_fmt='%.4f')
-        except Exception:
-            pass
+        except Exception as _exc:
+            _logger.debug('section skipped: %s', _exc)
 
         # Holdout performance
         try:
@@ -295,8 +299,8 @@ class CsvWriter:
                 df.index = ['Holdout']
                 df.index.name = 'Set'
                 saved['holdout'] = self._save_csv(df, 'holdout_performance.csv', float_fmt='%.4f')
-        except Exception:
-            pass
+        except Exception as _exc:
+            _logger.debug('section skipped: %s', _exc)
 
         # Forecast summary JSON
         try:
@@ -312,8 +316,8 @@ class CsvWriter:
                 'data_summary': forecast_result.data_summary,
             }
             saved['summary'] = self._save_json(summary, 'forecast_summary.json')
-        except Exception:
-            pass
+        except Exception as _exc:
+            _logger.debug('section skipped: %s', _exc)
 
         return saved
 
@@ -339,8 +343,8 @@ class CsvWriter:
                 df['Interpretation'] = df['Sensitivity'].apply(
                     lambda x: 'High' if x > 0.1 else ('Medium' if x > 0.05 else 'Low'))
                 saved['criteria'] = self._save_csv(df, 'sensitivity_criteria.csv', float_fmt='%.6f')
-        except Exception:
-            pass
+        except Exception as _exc:
+            _logger.debug('section skipped: %s', _exc)
 
         # Subcriteria sensitivity
         try:
@@ -352,8 +356,8 @@ class CsvWriter:
                 ]).set_index('Subcriteria')
                 df['Rank'] = range(1, len(df) + 1)
                 saved['subcriteria'] = self._save_csv(df, 'sensitivity_subcriteria.csv', float_fmt='%.6f')
-        except Exception:
-            pass
+        except Exception as _exc:
+            _logger.debug('section skipped: %s', _exc)
 
         # Rank stability
         try:
@@ -369,8 +373,8 @@ class CsvWriter:
                         'Stable' if x > 0.7 else ('Moderate' if x > 0.5 else 'Volatile')))
                 saved['rank_stability'] = self._save_csv(
                     df, 'sensitivity_rank_stability.csv', float_fmt='%.4f')
-        except Exception:
-            pass
+        except Exception as _exc:
+            _logger.debug('section skipped: %s', _exc)
 
         # Top-N stability
         try:
@@ -380,8 +384,8 @@ class CsvWriter:
                     for n, v in sorted(sens.top_n_stability.items())
                 ]).set_index('Top_N')
                 saved['top_n'] = self._save_csv(df, 'sensitivity_top_n_stability.csv', float_fmt='%.4f')
-        except Exception:
-            pass
+        except Exception as _exc:
+            _logger.debug('section skipped: %s', _exc)
 
         # Temporal stability
         try:
@@ -393,8 +397,8 @@ class CsvWriter:
                 df['Interpretation'] = df['Rank_Correlation'].apply(
                     lambda x: 'Strong' if x > 0.8 else ('Moderate' if x > 0.5 else 'Weak'))
                 saved['temporal'] = self._save_csv(df, 'sensitivity_temporal.csv', float_fmt='%.4f')
-        except Exception:
-            pass
+        except Exception as _exc:
+            _logger.debug('section skipped: %s', _exc)
 
         # IFS sensitivity
         try:
@@ -409,8 +413,8 @@ class CsvWriter:
             df['Interpretation'] = df['Sensitivity'].apply(
                 lambda x: 'High' if x > 0.1 else ('Medium' if x > 0.05 else 'Low'))
             saved['ifs'] = self._save_csv(df, 'sensitivity_ifs.csv', float_fmt='%.6f')
-        except Exception:
-            pass
+        except Exception as _exc:
+            _logger.debug('section skipped: %s', _exc)
 
         # Summary JSON
         try:
@@ -425,8 +429,8 @@ class CsvWriter:
                 'top_n_stability': getattr(sens, 'top_n_stability', {}),
             }
             saved['summary'] = self._save_json(robustness, 'sensitivity_summary.json')
-        except Exception:
-            pass
+        except Exception as _exc:
+            _logger.debug('section skipped: %s', _exc)
 
         return saved
 
@@ -440,7 +444,8 @@ class CsvWriter:
             unc = ranking_result.er_result.uncertainty.copy()
             unc.index.name = 'Province'
             return self._save_csv(unc, 'prediction_uncertainty_er.csv', float_fmt='%.6f')
-        except Exception:
+        except Exception as _exc:
+            _logger.debug('er_uncertainty skipped: %s', _exc)
             return None
 
     # ==================================================================
@@ -471,7 +476,69 @@ class CsvWriter:
     # 10. EXECUTION SUMMARY (was bypassed in old pipeline.py)
     # ==================================================================
 
-    def save_execution_summary(self, summary: Dict[str, Any]) -> str:
+    def save_execution_summary(
+        self,
+        panel_data: Any = None,
+        ranking_result: Any = None,
+        execution_time: float = 0.0,
+    ) -> str:
+        """Build and persist an execution summary as JSON.
+
+        Parameters
+        ----------
+        panel_data:
+            PanelData object returned by the data loader.
+        ranking_result:
+            HierarchicalRankingResult from the ranking pipeline.
+        execution_time:
+            Wall-clock seconds for the full pipeline run.
+        """
+        summary: Dict[str, Any] = {
+            'generated_at': datetime.now(timezone.utc).isoformat(),
+            'execution_time_seconds': round(float(execution_time), 3),
+        }
+
+        # --- Panel metadata ---
+        if panel_data is not None:
+            try:
+                summary['panel'] = {
+                    'n_provinces': int(panel_data.n_provinces),
+                    'n_years': int(panel_data.n_years),
+                    'years': list(panel_data.years),
+                    'n_criteria': int(panel_data.n_criteria),
+                    'n_subcriteria': int(panel_data.n_subcriteria),
+                    'provinces': list(panel_data.provinces),
+                }
+            except Exception as _exc:
+                _logger.debug('panel metadata skipped: %s', _exc)
+                summary['panel'] = None
+
+        # --- Final rankings ---
+        if ranking_result is not None:
+            try:
+                final_ranking = ranking_result.final_ranking
+                final_scores = ranking_result.final_scores
+                # Convert Series to {province: rank/score} dicts
+                ranking_dict = {
+                    str(k): int(v) for k, v in final_ranking.items()
+                }
+                scores_dict = {
+                    str(k): round(float(v), 6) for k, v in final_scores.items()
+                }
+                # Top-5 provinces by rank (ascending = best)
+                top_provinces = (
+                    final_ranking.sort_values().head(5).index.tolist()
+                )
+                summary['ranking'] = {
+                    'final_ranking': ranking_dict,
+                    'final_scores': scores_dict,
+                    'top_5_provinces': [str(p) for p in top_provinces],
+                    'n_ranked': len(ranking_dict),
+                }
+            except Exception as _exc:
+                _logger.debug('ranking summary skipped: %s', _exc)
+                summary['ranking'] = None
+
         return self._save_json(summary, 'execution_summary.json')
 
     # ==================================================================
@@ -482,7 +549,8 @@ class CsvWriter:
         try:
             data = config.to_dict() if hasattr(config, 'to_dict') else {}
             return self._save_json(data, 'config_snapshot.json')
-        except Exception:
+        except Exception as _exc:
+            _logger.debug('config_snapshot skipped: %s', _exc)
             return None
 
 

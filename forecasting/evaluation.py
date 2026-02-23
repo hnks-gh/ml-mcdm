@@ -36,8 +36,17 @@ from sklearn.metrics import (
 from sklearn.model_selection import TimeSeriesSplit
 import copy
 import warnings
+import functools
 
-warnings.filterwarnings("ignore")
+
+def _silence_warnings(func):
+    """Scope all warning filters to the duration of *func* only."""
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            return func(*args, **kwargs)
+    return wrapper
 
 
 class ForecastEvaluator:
@@ -81,6 +90,7 @@ class ForecastEvaluator:
         self.window_size = window_size
         self.verbose = verbose
 
+    @_silence_warnings
     def evaluate(
         self,
         model,

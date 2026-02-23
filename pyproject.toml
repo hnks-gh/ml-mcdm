@@ -166,6 +166,7 @@ disable = [
 [tool.pytest.ini_options]
 minversion = "8.0"
 testpaths = ["tests"]
+pythonpath = ["."]
 python_files = ["test_*.py", "*_test.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
@@ -173,12 +174,9 @@ addopts = [
     "-v",
     "--strict-markers",
     "--tb=short",
-    "--cov=src",
-    "--cov-report=term-missing",
-    "--cov-report=html",
-    "--cov-report=xml",
-    "-n=auto",
+    "--import-mode=importlib",
 ]
+norecursedirs = ["__pycache__", ".git", "ml_mcdm.egg-info", "outputs"]
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: marks tests as integration tests",
@@ -193,12 +191,14 @@ filterwarnings = [
 ]
 
 [tool.coverage.run]
-source = ["src"]
+source = ["."]
 omit = [
     "*/tests/*",
     "*/__pycache__/*",
     "*/site-packages/*",
     "*/.venv/*",
+    "outputs/*",
+    "ml_mcdm.egg-info/*",
 ]
 
 [tool.coverage.report]

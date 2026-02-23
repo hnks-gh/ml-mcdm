@@ -63,27 +63,34 @@ Quick Start
 For detailed usage, see individual module documentation.
 """
 
-from .config import Config, get_default_config, get_config, set_config, reset_config
-from .loggers import (
-    setup_logging,
-    ConsoleLogger,
-    DebugLogger,
-    # Backward-compatible shims
-    setup_logger,
-    get_logger,
-    get_module_logger,
-    ProgressLogger,
-    log_execution,
-    log_exceptions,
-    log_context,
-    timed_operation,
-)
-from .data_loader import DataLoader, PanelData, HierarchyMapping, load_data
-from .pipeline import MLMCDMPipeline, run_pipeline, PipelineResult
-from .output import OutputOrchestrator, CsvWriter, ReportWriter
-from .visualization import VisualizationOrchestrator, create_visualizer
+try:
+    from config import Config, get_default_config, get_config, set_config, reset_config
+    from loggers import (
+        setup_logging,
+        ConsoleLogger,
+        DebugLogger,
+        # Backward-compatible shims
+        setup_logger,
+        get_logger,
+        get_module_logger,
+        ProgressLogger,
+        log_execution,
+        log_exceptions,
+        log_context,
+        timed_operation,
+    )
+    from data_loader import DataLoader, PanelData, HierarchyMapping, load_data
+    from pipeline import MLMCDMPipeline, run_pipeline, PipelineResult
+    from output import OutputOrchestrator, CsvWriter, ReportWriter
+    from visualization import VisualizationOrchestrator, create_visualizer
+except ImportError:
+    pass  # Allow partial import when loaded in isolation (e.g., during pytest package traversal)
 
-__version__ = '5.0.0'
+try:
+    from importlib.metadata import version as _pkg_version, PackageNotFoundError as _PkgNotFoundError
+    __version__: str = _pkg_version('ml-mcdm')
+except _PkgNotFoundError:
+    __version__ = '0.0.0+unknown'  # package not installed (running from source)
 
 __all__ = [
     # Configuration

@@ -254,13 +254,27 @@ class PanelVARForecaster(BaseForecaster):
         # Select optimal lag order
         self.selected_lags_ = self._select_lag_order(X_panel, y)
 
+        # Build lag-augmented feature matrix and align targets accordingly.
+        # _build_lag_matrix drops the first `selected_lags_` rows (no prior history),
+        # so y must be trimmed to match.
+        if self.selected_lags_ > 0:
+            X_fit = self._build_lag_matrix(X_panel, self.selected_lags_)
+            y_fit = y[self.selected_lags_:]
+        else:
+            X_fit = X_panel
+            y_fit = y
+
+        # Store the tail of training panel features to provide lag history
+        # during prediction on new (shorter) sequences.
+        self._X_panel_tail_ = X_panel[-max(self.selected_lags_, 1):]
+
         # Fit one model per output dimension
         all_importances = []
         for col in range(self._n_outputs):
-            y_col = y[:, col]
+            y_col = y_fit[:, col]
 
             scaler = StandardScaler()
-            X_scaled = scaler.fit_transform(X_panel)
+            X_scaled = scaler.fit_transform(X_fit)
             self.scalers_[col] = scaler
 
             if self.regularizer == "elasticnet":
@@ -302,12 +316,24 @@ class PanelVARForecaster(BaseForecaster):
             raise ValueError("Model not fitted yet. Call fit() first.")
 
         X_panel = self._build_panel_features(X, entity_indices=entity_indices)
+
+        # Build lag-augmented features for prediction.
+        # Prepend the stored training tail so even single-row prediction
+        # has access to the requisite lag history.
+        if self.selected_lags_ > 0:
+            tail = self._X_panel_tail_[-self.selected_lags_:]
+            X_extended = np.vstack([tail, X_panel])
+            X_lagged = self._build_lag_matrix(X_extended, self.selected_lags_)
+            # After lag building, we get exactly X_panel.shape[0] rows back
+        else:
+            X_lagged = X_panel
+
         predictions = np.zeros((X.shape[0], self._n_outputs))
 
         for col in range(self._n_outputs):
             scaler = self.scalers_[col]
             model = self.models_[col]
-            X_scaled = scaler.transform(X_panel)
+            X_scaled = scaler.transform(X_lagged)
             predictions[:, col] = model.predict(X_scaled)
 
         if self._n_outputs == 1:

@@ -18,7 +18,7 @@ from typing import Dict, List, Optional, Tuple, Union
 from dataclasses import dataclass
 from scipy.stats import spearmanr
 
-from ...weighting import WeightResult, EntropyWeightCalculator
+from weighting import WeightResult, EntropyWeightCalculator
 
 
 @dataclass
