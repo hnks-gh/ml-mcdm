@@ -10,10 +10,10 @@ readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.8"
 authors = [
-    {name = "Son Hoang", email = "hoang@example.com"}
+    {name = "Son Hoang", email = "sonhoang.NK@outlook.com"}
 ]
 maintainers = [
-    {name = "Son Hoang", email = "hoang@example.com"}
+    {name = "Son Hoang", email = "sonhoang.NK@outlook.com"}
 ]
 keywords = [
     "MCDM",
@@ -55,6 +55,13 @@ dependencies = [
     "scikit-learn>=1.0.0,<3.0.0",
     "matplotlib>=3.4.0,<4.0.0",
     "seaborn>=0.11.0,<1.0.0",
+    "typing-extensions>=4.0.0",
+    "joblib>=1.0.0",
+    "tqdm>=4.0.0",
+    "packaging>=21.0.0",
+    "pillow>=8.0.0",
+    "openpyxl>=3.0.0",
+    "statsmodels>=0.13.0",
 ]
 
 [project.optional-dependencies]
@@ -69,8 +76,8 @@ dev = [
     "pylint>=3.0.0",
 ]
 ml = [
-    "tensorflow>=2.10.0,<3.0.0",
-    "keras>=2.10.0,<3.0.0",
+    "tensorflow>=2.10.0,<2.22.0",
+    "keras>=2.10.0,<2.22.0",
     "xgboost>=1.7.0,<3.0.0",
     "lightgbm>=3.3.0,<5.0.0",
 ]
@@ -79,6 +86,11 @@ analysis = [
     "plotly>=5.0.0",
     "jupyter>=1.0.0",
     "ipykernel>=6.0.0",
+    "pillow>=8.0.0",
+    "openpyxl>=3.0.0",
+    "statsmodels>=0.13.0",
+    "tqdm>=4.0.0",
+    "joblib>=1.0.0",
 ]
 forecasting = [
     "optuna>=3.0.0,<5.0.0",
@@ -89,11 +101,11 @@ all = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/hoangsonww/ml-mcdm"
-Documentation = "https://github.com/hoangsonww/ml-mcdm/blob/main/README.md"
-Repository = "https://github.com/hoangsonww/ml-mcdm"
-Issues = "https://github.com/hoangsonww/ml-mcdm/issues"
-Changelog = "https://github.com/hoangsonww/ml-mcdm/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/hnks-gh/ml-mcdm"
+Documentation = "https://github.com/hnks-gh/ml-mcdm/blob/main/README.md"
+Repository = "https://github.com/hnks-gh/ml-mcdm"
+Issues = "https://github.com/hnks-gh/ml-mcdm/issues"
+Changelog = "https://github.com/hnks-gh/ml-mcdm/blob/main/CHANGELOG.md"
 
 [tool.setuptools]
 packages = ["ml_mcdm"]
