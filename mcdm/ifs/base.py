@@ -142,10 +142,10 @@ class IFN:
     # ------------------------------------------------------------------
     @staticmethod
     def euclidean_distance(a: 'IFN', b: 'IFN') -> float:
-        """Normalized Euclidean distance between two IFNs."""
-        return np.sqrt(((a.mu - b.mu) ** 2
-                        + (a.nu - b.nu) ** 2
-                        + (a.pi - b.pi) ** 2) / 2)
+        """Standard (non-normalized) Euclidean distance between two IFNs."""
+        return np.sqrt((a.mu - b.mu) ** 2
+                       + (a.nu - b.nu) ** 2
+                       + (a.pi - b.pi) ** 2)
 
     @staticmethod
     def hamming_distance(a: 'IFN', b: 'IFN') -> float:

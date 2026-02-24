@@ -332,28 +332,42 @@ class HierarchicalBayesForecaster(BaseForecaster):
 
         Total variance: Var(y_new) = x^T Σ_β x + σ²_obs + σ²_group
 
+        For multi-output problems each output is handled independently
+        with its own variance components.
+
         Args:
             X: Feature matrix
 
         Returns:
-            Tuple of (mean prediction, standard deviation)
+            Tuple of (mean predictions, standard deviations).
+            Shapes are (n_samples,) for single-output and
+            (n_samples, n_outputs) for multi-output.
         """
         if not self._fitted:
             raise ValueError("Model not fitted yet. Call fit() first.")
 
         X_scaled = self._scaler.transform(X)
+        n_samples = X_scaled.shape[0]
 
-        # Point prediction from first output's global model (backward compat)
-        global_model_0 = self._global_models[0]
-        mean_pred, param_std = global_model_0.predict(X_scaled, return_std=True)
+        means = np.zeros((n_samples, self._n_outputs))
+        stds  = np.zeros((n_samples, self._n_outputs))
 
-        # Total uncertainty: parameter uncertainty + observation noise + group variance
-        sigma_obs = self._sigma_obs_per_output[0] if self._sigma_obs_per_output else 1.0
-        sigma_group = self._sigma_group_per_output[0] if self._sigma_group_per_output else 1.0
-        total_variance = param_std ** 2 + sigma_obs + sigma_group
-        total_std = np.sqrt(total_variance)
+        for out_col in range(self._n_outputs):
+            global_model = self._global_models[out_col]
+            mean_col, param_std_col = global_model.predict(X_scaled, return_std=True)
 
-        return mean_pred, total_std
+            sigma_obs   = (self._sigma_obs_per_output[out_col]
+                           if self._sigma_obs_per_output else 1.0)
+            sigma_group = (self._sigma_group_per_output[out_col]
+                           if self._sigma_group_per_output else 1.0)
+            total_var = param_std_col ** 2 + sigma_obs + sigma_group
+
+            means[:, out_col] = mean_col
+            stds[:, out_col]  = np.sqrt(total_var)
+
+        if self._n_outputs == 1:
+            return means.ravel(), stds.ravel()
+        return means, stds
 
     def predict_posterior_samples(
         self, X: np.ndarray, n_samples: Optional[int] = None
@@ -376,12 +390,20 @@ class HierarchicalBayesForecaster(BaseForecaster):
 
         mean_pred, std_pred = self.predict_with_uncertainty(X)
 
-        # Draw samples: y ~ Normal(mean_pred, std_pred)
+        # Ensure 1-D for sampling (use first output when multi-output)
+        if mean_pred.ndim > 1:
+            mean_1d = mean_pred[:, 0]
+            std_1d  = std_pred[:, 0]
+        else:
+            mean_1d = mean_pred
+            std_1d  = std_pred
+
+        # Draw samples: y ~ Normal(mean, std)
         rng = np.random.RandomState(self.random_state)
         samples = np.zeros((n_samples, n_test))
         for s in range(n_samples):
-            noise = rng.randn(n_test) * std_pred
-            samples[s] = mean_pred + noise
+            noise = rng.randn(n_test) * std_1d
+            samples[s] = mean_1d + noise
 
         return samples
 

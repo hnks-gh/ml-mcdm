@@ -67,10 +67,16 @@ class TemporalStabilityValidator:
         
         # Calculate cosine similarity
         cos_sim = self._cosine_similarity(w1, w2)
-        
-        # Calculate Pearson correlation
-        corr = np.corrcoef(w1, w2)[0, 1] if len(w1) > 1 else 1.0
-        
+
+        # Calculate Spearman rank correlation — weights are compositional /
+        # ordinal in nature; Spearman is more appropriate than Pearson.
+        if len(w1) > 1:
+            from scipy.stats import spearmanr as _spearmanr
+            _corr_val, _ = _spearmanr(w1, w2)
+            corr = float(np.nan_to_num(_corr_val))
+        else:
+            corr = 1.0
+
         # Determine stability
         is_stable = cos_sim >= self.threshold
         

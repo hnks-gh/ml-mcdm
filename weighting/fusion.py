@@ -143,14 +143,23 @@ class GameTheoryWeightCombination:
         """
         Solve cooperative game via Lagrange multipliers to find Nash
         equilibrium coefficients.
-        
-        Minimizes the combined L2-distance objective:
-            L = ‖α₁W_A + α₂W_B − W_A‖² + ‖α₁W_A + α₂W_B − W_B‖²
-        
-        This yields the linear system:
+
+        Each group minimises the L2-distance between the fused vector W*
+        and *its own* group super-weight vector (Ding & Shi, 2005, Eq. 9):
+
+            min_{α} ‖α₁W_A + α₂W_B − W_A‖²   (Group A objective)
+            min_{α} ‖α₁W_A + α₂W_B − W_B‖²   (Group B objective)
+
+        Setting the gradients of each objective to zero and solving
+        simultaneously yields the 2×2 linear system:
+
             ⎡ W_A·W_A   W_A·W_B ⎤ ⎡α₁⎤   ⎡ W_A·W_A ⎤
             ⎣ W_B·W_A   W_B·W_B ⎦ ⎣α₂⎦ = ⎣ W_B·W_B ⎦
-        
+
+        where · denotes the dot product.  The RHS is [d_AA, d_BB], *not*
+        the average [(d_AA+d_AB)/2, (d_AB+d_BB)/2]; the latter always
+        produces the trivial solution α = (0.5, 0.5).
+
         where · denotes the dot product (scalar).
         
         Parameters
@@ -181,15 +190,19 @@ class GameTheoryWeightCombination:
         dot_AA = np.dot(W_A, W_A)
         dot_AB = np.dot(W_A, W_B)
         dot_BB = np.dot(W_B, W_B)
-        
+
         A_matrix = np.array([
             [dot_AA, dot_AB],
             [dot_AB, dot_BB]
         ])
-        
-        # Corrected RHS: b = [(dot_AA + dot_AB)/2, (dot_AB + dot_BB)/2]
-        # Previously was: b = [dot_AA, dot_BB] which is WRONG
-        b_vector = np.array([dot_AA + dot_AB, dot_AB + dot_BB]) / 2.0
+
+        # Correct RHS per Ding & Shi (2005, Eq. 9):
+        #   Row 1 comes from Group A's ∇=0: 2α₁(W_A·W_A) + 2α₂(W_A·W_B) = 2(W_A·W_A)
+        #   Row 2 comes from Group B's ∇=0: 2α₁(W_A·W_B) + 2α₂(W_B·W_B) = 2(W_B·W_B)
+        # Dividing both sides by 2 gives b = [d_AA, d_BB].
+        # NOTE: b = [(d_AA+d_AB)/2, (d_AB+d_BB)/2] is WRONG — it always
+        #       yields the trivial solution α = (0.5, 0.5).
+        b_vector = np.array([dot_AA, dot_BB])
         
         # Solve A @ α = b
         cond_number = np.linalg.cond(A_matrix)
@@ -224,7 +237,7 @@ class GameTheoryWeightCombination:
                 "W_B·W_B": float(dot_BB),
             },
             "system_matrix": A_matrix.tolist(),
-            "system_rhs": b_vector.tolist(),
+            "system_rhs": b_vector.tolist(),  # [d_AA, d_BB] per Ding & Shi (2005)
             "alpha_raw": alpha_raw.tolist(),
             "alpha_final": alpha_final.tolist(),
             "condition_number": float(cond_number),

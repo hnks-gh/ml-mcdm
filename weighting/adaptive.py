@@ -106,9 +106,10 @@ class AdaptiveWeightCalculator:
         original_criteria = criteria_data.columns.tolist()
         
         # Step 1: Identify and exclude alternatives with all zeros
-        row_sums = criteria_data.sum(axis=1)
-        valid_rows = row_sums > 0
-        
+        # Use .any(axis=1) instead of sum() > 0 so that rows with negative
+        # values that cancel out are NOT incorrectly excluded.
+        valid_rows = (criteria_data != 0).any(axis=1)
+
         included_alternatives = [alternatives[i] for i, v in enumerate(valid_rows) if v]
         excluded_alternatives = [alternatives[i] for i, v in enumerate(valid_rows) if not v]
         
@@ -122,9 +123,9 @@ class AdaptiveWeightCalculator:
         filtered_data = criteria_data[valid_rows].copy()
         
         # Step 2: Identify and exclude criteria with all zeros
-        col_sums = filtered_data.sum(axis=0)
-        valid_cols = col_sums > 0
-        
+        # Same reasoning: use .any(axis=0) to correctly handle negative data.
+        valid_cols = (filtered_data != 0).any(axis=0)
+
         included_criteria = [c for c, v in zip(original_criteria, valid_cols) if v]
         excluded_criteria = [c for c, v in zip(original_criteria, valid_cols) if not v]
         

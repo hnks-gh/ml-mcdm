@@ -124,16 +124,31 @@ class IFS_VIKOR:
         ranks_Q = Q.rank(ascending=True).astype(int)
         ranks_S.name, ranks_R.name, ranks_Q.name = 'Rank_S', 'Rank_R', 'Rank_Q'
 
-        # Compromise set
+        # Compromise set with C1 and C2 conditions (Opricovic & Tzeng, 2004)
         n = len(alternatives)
         threshold = 1.0 / (n - 1) if n > 1 else 0
         sorted_q = Q.sort_values()
-        compromise = [sorted_q.index[0]]
-        for idx in sorted_q.index[1:]:
-            if sorted_q[idx] - sorted_q.iloc[0] <= threshold:
-                compromise.append(idx)
-            else:
-                break
+        a1 = sorted_q.index[0]
+
+        # C1: Acceptable advantage — gap to 2nd-best ≥ DQ = 1/(n-1)
+        c1_ok = (n <= 1) or (sorted_q.iloc[1] - sorted_q.iloc[0] >= threshold)
+
+        # C2: Acceptable stability — a1 must also rank 1st by S or by R
+        c2_ok = (ranks_S[a1] == 1) or (ranks_R[a1] == 1)
+
+        if c1_ok and c2_ok:
+            compromise = [a1]
+        elif not c1_ok:
+            # Several alternatives within acceptable advantage range
+            compromise = [a1]
+            for idx in sorted_q.index[1:]:
+                if sorted_q[idx] - sorted_q.iloc[0] < threshold:
+                    compromise.append(idx)
+                else:
+                    break
+        else:
+            # C1 holds but C2 fails: extend to best-by-S and best-by-R
+            compromise = list(dict.fromkeys([a1, S.idxmin(), R.idxmin()]))
 
         return IFS_VIKORResult(
             S=S, R=R, Q=Q,

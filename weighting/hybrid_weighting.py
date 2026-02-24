@@ -352,8 +352,11 @@ class HybridWeightingPipeline:
                 'split_point': _stab.split_point,
             }
         
-        logger.info(f"Step 5: Stability — cosine={stability['cosine_similarity']:.4f}, "
-                    f"pearson={stability['pearson_correlation']:.4f}")
+        cos_v  = stability.get('cosine_similarity')
+        pear_v = stability.get('pearson_correlation')
+        cos_str  = f"{cos_v:.4f}"  if cos_v  is not None else "N/A"
+        pear_str = f"{pear_v:.4f}" if pear_v is not None else "N/A"
+        logger.info(f"Step 5: Stability — cosine={cos_str}, pearson={pear_str}")
 
         # Build result dictionary
         weights_dict = {col: float(W_final[j])

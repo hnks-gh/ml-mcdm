@@ -260,7 +260,10 @@ class VIKORCalculator:
             compromise_set = [alt for alt in sorted_alts 
                             if Q[alt] - Q[a1] < DQ]
         else:
-            compromise_set = [a1, a2]
+            # C1 holds but C2 fails: include a1, best-by-S, and best-by-R
+            best_s = S.idxmin()
+            best_r = R.idxmin()
+            compromise_set = list(dict.fromkeys([a1, best_s, best_r]))
         
         return advantage, stability, compromise_set
 

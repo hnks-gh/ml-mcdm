@@ -74,10 +74,15 @@ class IFS_COPRAS:
         alternatives = ifs_matrix.alternatives
         w = resolve_weights(weights, criteria)
 
-        # Score matrix
+        # Score matrix  (IFN score = μ − ν ∈ [−1, 1])
         score_df = ifs_matrix.to_score_matrix()
 
-        # Normalise scores to [0, 1] for COPRAS sum-normalisation
+        # Shift to [0, 1] before COPRAS sum-normalisation.
+        # IFN score ∈ [−1, 1]; shifting removes negatives so that S⁺ and S⁻
+        # are non-negative and COPRAS significance arithmetic is valid.
+        score_df = (score_df + 1) / 2  # now ∈ [0, 1]
+
+        # Normalise scores for COPRAS sum-normalisation
         col_sums = score_df.abs().sum(axis=0)
         col_sums[col_sums == 0] = 1
         norm = score_df / col_sums

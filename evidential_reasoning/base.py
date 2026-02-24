@@ -18,7 +18,9 @@ The ER combination rule aggregates L attributes with weights w_i:
     m̂_I(H_n) = K × [∏_{i=1}^{L} (w_i β_{n,i} + 1 - w_i Σ_j β_{j,i})
                       - ∏_{i=1}^{L} (1 - w_i Σ_j β_{j,i})]
 
-    K = [1 - ∏_{i=1}^{L} (1 - w_i Σ_j β_{j,i})]⁻¹       (1)
+    K = [Σ_n ∏_{i=1}^{L} A_{n,i} − (N−1) B]⁻¹            (1)
+    where A_{n,i} = w_i β_{n,i} + 1 − w_i Σ_j β_{j,i}
+          B       = ∏_{i=1}^{L} (1 − w_i Σ_j β_{j,i})
 
 Unassigned belief mass:
     m̂_I(H) = K × ∏_{i=1}^{L} (1 - w_i)                   (2a)
@@ -209,10 +211,11 @@ class EvidentialReasoningEngine:
         prod_B = np.prod(B)            # scalar — ∏_i B_i
         prod_C = np.prod(C)            # scalar — ∏_i C_i
 
-        # K  (normalisation constant)
-        denom = 1.0 - prod_B
+        # K  (normalisation constant) — Yang & Xu (2002) Eq. (9)
+        # K = 1 / [Σ_n prod_A_n − (N−1) prod_B]
+        denom = np.sum(prod_A) - (N - 1) * prod_B
         if abs(denom) < 1e-15:
-            # Degenerate case: all evidence is fully unassigned
+            # Degenerate case: all belief masses cancel (vacuous evidence)
             return BeliefDistribution(self.grades, np.zeros(N))
         K = 1.0 / denom
 

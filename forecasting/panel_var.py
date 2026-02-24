@@ -157,20 +157,21 @@ class PanelVARForecaster(BaseForecaster):
         return np.hstack(parts)
 
     def _select_lag_order(
-        self, X: np.ndarray, y: np.ndarray
+        self, X: np.ndarray, y: np.ndarray,
+        entity_indices: Optional[np.ndarray] = None,
     ) -> int:
         """
         Select optimal lag order using information criteria.
 
         For each candidate lag order *p* in ``1 .. max_lags``:
-          1. Build a proper lag matrix ``[X_t, X_{t-1}, ..., X_{t-p}]``.
+          1. Build a proper lag matrix per entity (no cross-entity leakage).
           2. Fit a Ridge model and compute residual sum of squares.
-          3. Evaluate AIC or BIC (accounting for the extra parameters
-             introduced by each additional lag).
+          3. Evaluate AIC or BIC.
 
         Args:
             X: Feature matrix (may include fixed-effect dummies).
             y: Target values.
+            entity_indices: Optional entity IDs (enables per-entity lag build).
 
         Returns:
             Optimal number of lags.
@@ -185,11 +186,28 @@ class PanelVARForecaster(BaseForecaster):
 
         for lag in range(1, min(self.max_lags + 1, 4)):
             try:
-                X_lag = self._build_lag_matrix(X, lag)
-                y_lag = y_target[lag:]          # align y with the lagged rows
-                n_samples = X_lag.shape[0]
+                if entity_indices is not None:
+                    # Build pep-entity lag matrices to avoid cross-entity
+                    # boundary contamination during IC evaluation.
+                    X_parts, y_parts = [], []
+                    for ent in np.unique(entity_indices):
+                        mask = entity_indices == ent
+                        X_ent = X[mask]
+                        y_ent = y_target[mask]
+                        if X_ent.shape[0] <= lag:
+                            continue
+                        X_parts.append(self._build_lag_matrix(X_ent, lag))
+                        y_parts.append(y_ent[lag:])
+                    if not X_parts:
+                        continue
+                    X_lag = np.vstack(X_parts)
+                    y_lag = np.concatenate(y_parts)
+                else:
+                    X_lag = self._build_lag_matrix(X, lag)
+                    y_lag = y_target[lag:]
 
-                if n_samples < lag + 2:         # too few rows left
+                n_samples = X_lag.shape[0]
+                if n_samples < lag + 2:
                     continue
 
                 model = Ridge(alpha=self.alpha, random_state=self.random_state)
@@ -197,7 +215,7 @@ class PanelVARForecaster(BaseForecaster):
                 y_pred = model.predict(X_lag)
 
                 rss = np.sum((y_lag - y_pred) ** 2)
-                k = X_lag.shape[1]              # number of parameters
+                k = X_lag.shape[1]
 
                 if self.lag_selection == "aic":
                     ic = n_samples * np.log(rss / n_samples + 1e-10) + 2 * k
@@ -251,22 +269,47 @@ class PanelVARForecaster(BaseForecaster):
         # Build panel features with fixed effects
         X_panel = self._build_panel_features(X, entity_indices=entity_indices)
 
-        # Select optimal lag order
-        self.selected_lags_ = self._select_lag_order(X_panel, y)
+        # Select optimal lag order (entity-aware to avoid boundary contamination)
+        self.selected_lags_ = self._select_lag_order(
+            X_panel, y, entity_indices=entity_indices
+        )
 
-        # Build lag-augmented feature matrix and align targets accordingly.
-        # _build_lag_matrix drops the first `selected_lags_` rows (no prior history),
-        # so y must be trimmed to match.
+        # Build lag-augmented feature matrix per entity to avoid cross-entity
+        # boundary contamination (lag of entity[i+1] row 0 must not include
+        # entity[i] last rows).
         if self.selected_lags_ > 0:
-            X_fit = self._build_lag_matrix(X_panel, self.selected_lags_)
-            y_fit = y[self.selected_lags_:]
+            if entity_indices is not None:
+                X_parts, y_parts = [], []
+                for ent in np.unique(entity_indices):
+                    mask = entity_indices == ent
+                    X_ent = X_panel[mask]
+                    y_ent = y[mask]
+                    if X_ent.shape[0] <= self.selected_lags_:
+                        continue   # entity too short to produce any lag rows
+                    X_parts.append(self._build_lag_matrix(X_ent, self.selected_lags_))
+                    y_parts.append(y_ent[self.selected_lags_:])
+                if X_parts:
+                    X_fit = np.vstack(X_parts)
+                    y_fit = np.vstack(y_parts)
+                else:            # fallback: no entity had enough rows
+                    X_fit = self._build_lag_matrix(X_panel, self.selected_lags_)
+                    y_fit = y[self.selected_lags_:]
+            else:
+                X_fit = self._build_lag_matrix(X_panel, self.selected_lags_)
+                y_fit = y[self.selected_lags_:]
         else:
             X_fit = X_panel
             y_fit = y
 
-        # Store the tail of training panel features to provide lag history
-        # during prediction on new (shorter) sequences.
-        self._X_panel_tail_ = X_panel[-max(self.selected_lags_, 1):]
+        # Store per-entity training tails so that predict() can prepend the
+        # correct lag history for each entity without cross-entity leakage.
+        if entity_indices is not None:
+            self._X_panel_tail_ = {
+                ent: X_panel[entity_indices == ent][-max(self.selected_lags_, 1):]
+                for ent in np.unique(entity_indices)
+            }
+        else:
+            self._X_panel_tail_ = X_panel[-max(self.selected_lags_, 1):]
 
         # Fit one model per output dimension
         all_importances = []
@@ -318,13 +361,48 @@ class PanelVARForecaster(BaseForecaster):
         X_panel = self._build_panel_features(X, entity_indices=entity_indices)
 
         # Build lag-augmented features for prediction.
-        # Prepend the stored training tail so even single-row prediction
-        # has access to the requisite lag history.
+        # Use per-entity tails to avoid cross-entity boundary contamination.
         if self.selected_lags_ > 0:
-            tail = self._X_panel_tail_[-self.selected_lags_:]
-            X_extended = np.vstack([tail, X_panel])
-            X_lagged = self._build_lag_matrix(X_extended, self.selected_lags_)
-            # After lag building, we get exactly X_panel.shape[0] rows back
+            if entity_indices is not None and isinstance(self._X_panel_tail_, dict):
+                X_parts: List[np.ndarray] = []
+                row_positions: List[np.ndarray] = []
+                for ent in np.unique(entity_indices):
+                    ent_mask = np.where(entity_indices == ent)[0]
+                    X_ent = X_panel[ent_mask]
+                    tail = self._X_panel_tail_.get(ent)
+                    if tail is not None and len(tail) >= self.selected_lags_:
+                        tail_rows = tail[-self.selected_lags_:]
+                        X_extended = np.vstack([tail_rows, X_ent])
+                        X_parts.append(
+                            self._build_lag_matrix(X_extended, self.selected_lags_)
+                        )
+                    else:
+                        # Insufficient history: zero-pad lag columns
+                        n_lag_feats = X_panel.shape[1] * (1 + self.selected_lags_)
+                        X_parts.append(np.zeros((len(X_ent), n_lag_feats)))
+                    row_positions.append(ent_mask)
+                # Reassemble rows in their original order
+                stacked = np.vstack(X_parts)
+                original_positions = np.concatenate(row_positions)
+                inv_order = np.argsort(original_positions)
+                X_lagged = stacked[inv_order]
+            else:
+                if isinstance(self._X_panel_tail_, dict):
+                    # Fitted with entity_indices but predict() called without:
+                    # zero-pad lag columns to preserve sample count.
+                    # (population-level / reference-entity predictions)
+                    n_lag_feats = X_panel.shape[1] * (1 + self.selected_lags_)
+                    X_lagged = np.zeros((X_panel.shape[0], n_lag_feats))
+                    X_lagged[:, : X_panel.shape[1]] = X_panel
+                else:
+                    tail_arr = (
+                        self._X_panel_tail_
+                        if isinstance(self._X_panel_tail_, np.ndarray)
+                        else np.empty((0, X_panel.shape[1]))
+                    )
+                    tail_rows = tail_arr[-self.selected_lags_:]
+                    X_extended = np.vstack([tail_rows, X_panel])
+                    X_lagged = self._build_lag_matrix(X_extended, self.selected_lags_)
         else:
             X_lagged = X_panel
 

@@ -450,22 +450,26 @@ class Validator:
             if cosine_sim is not None:
                 return float(np.clip(cosine_sim, 0.0, 1.0))
         
-        return 0.90
-    
+        # No usable stability evidence found — return 0.0 so that it does
+        # not artificially inflate the overall validity score.
+        return 0.0
+
     def _validate_weight_method_agreement(
         self,
         weights: Dict[str, Any]
     ) -> float:
         """Validate agreement among the four weighting methods.
-        
+
         Compares entropy, critic, merec, std_dev weight arrays using
         pairwise Spearman correlation.
         """
         method_keys = ['entropy', 'critic', 'merec', 'std_dev']
         available = {k: weights[k] for k in method_keys if k in weights}
-        
+
         if len(available) < 2:
-            return 0.85
+            # Not enough methods to compute agreement — return 0.0 rather
+            # than a fabricated 0.85 that would inflate validity scores.
+            return 0.0
         
         from scipy.stats import spearmanr
         
@@ -481,9 +485,10 @@ class Validator:
         
         if correlations:
             return float(np.mean(correlations))
-        
-        return 0.85
-    
+
+        # All pairwise comparisons produced NaN — return 0.0, not 0.85.
+        return 0.0
+
     def _get_weight_confidence_intervals(
         self,
         weights: Dict[str, Any]

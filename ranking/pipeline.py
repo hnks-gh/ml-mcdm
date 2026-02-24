@@ -614,7 +614,7 @@ class HierarchicalRankingPipeline:
 
         # IFS-SAW
         try:
-            calc = IFS_SAW()
+            calc = IFS_SAW(cost_criteria=cost_criteria)
             r = calc.calculate(ifs_matrix, weights)
             results['IFS_SAW'] = {
                 'scores': r.scores, 'ranks': r.ranks, 'higher_better': True

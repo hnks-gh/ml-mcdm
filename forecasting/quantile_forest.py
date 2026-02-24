@@ -297,15 +297,18 @@ class QuantileRandomForestForecaster(BaseForecaster):
         Get comprehensive distributional summary for predictions.
 
         Returns:
-            Dictionary with keys: 'mean', 'median', 'std',
-            'q05', 'q10', 'q25', 'q50', 'q75', 'q90', 'q95'
+            Dictionary with keys: 'mean' (RF conditional mean), 'median'
+            (QRF conditional median), 'std', 'q05', 'q10', 'q25', 'q50',
+            'q75', 'q90', 'q95'
         """
-        point_pred = self.predict(X)
+        median_pred   = self.predict(X)        # conditional median
+        mean_pred     = self.predict_mean(X)   # conditional mean (RF average)
         quantile_preds = self.predict_quantiles(X)
-        uncertainty = self.predict_uncertainty(X)
+        uncertainty   = self.predict_uncertainty(X)
 
         return {
-            "mean": point_pred,
-            "std": uncertainty,
+            "mean":   mean_pred,
+            "median": median_pred,
+            "std":    uncertainty,
             **{f"q{int(q * 100):02d}": v for q, v in quantile_preds.items()},
         }

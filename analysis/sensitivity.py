@@ -441,8 +441,9 @@ class SensitivityAnalysis:
         _hier_mc = panel_data.hierarchy
         _alts_mc = list(panel_data.provinces)
 
-        # Monte Carlo simulations
-        n_sims = min(self.n_simulations, 100)
+        # Monte Carlo simulations — honour the user-specified count in full.
+        # The old `min(..., 100)` silently discarded 90% of requested simulations.
+        n_sims = max(1, self.n_simulations)
         simulated_rankings = np.zeros((n_sims, n_provinces))
         
         if self.use_parallel:
@@ -473,7 +474,10 @@ class SensitivityAnalysis:
                             panel_data, perts_mc_par, target_year=base_year
                         )
                         return sim_idx, perturbed_result.final_ranking.rank().values
-                except Exception:
+                except Exception as _e:
+                    import logging as _log
+                    _log.getLogger('ml_mcdm').debug(
+                        'MC sim %d failed: %s', sim_idx, _e)
                     return sim_idx, base_ranking  # Fallback to base
             
             with ThreadPoolExecutor(max_workers=self.n_jobs) as executor:
@@ -482,16 +486,19 @@ class SensitivityAnalysis:
                     sim_idx, ranking = future.result()
                     simulated_rankings[sim_idx] = ranking
         else:
-            # Sequential execution (original code)
+            # Sequential execution
+            _n_failures = 0
+            import logging as _log_seq
+            _logger_seq = _log_seq.getLogger('ml_mcdm')
             for sim in range(n_sims):
                 perturbation = 1 + self.rng.uniform(
-                    -self.perturbation_range, 
-                    self.perturbation_range, 
+                    -self.perturbation_range,
+                    self.perturbation_range,
                     len(weights['fused'])
                 )
                 perturbed_weights = weights['fused'] * perturbation
                 perturbed_weights = perturbed_weights / perturbed_weights.sum()
-                
+
                 try:
                     perts_mc_seq = self._weights_to_dict(weights, perturbed_weights)
                     if _can_fast_mc:
@@ -507,8 +514,21 @@ class SensitivityAnalysis:
                             panel_data, perts_mc_seq, target_year=base_year
                         )
                         simulated_rankings[sim] = perturbed_result.final_ranking.rank().values
-                except Exception:
+                except Exception as _exc:
+                    _n_failures += 1
+                    _logger_seq.debug('MC sim %d failed: %s', sim, _exc)
                     simulated_rankings[sim] = base_ranking  # Fallback to base
+
+            if _n_failures > 0:
+                _failure_rate = _n_failures / n_sims
+                if _failure_rate > 0.20:
+                    import warnings as _w
+                    _w.warn(
+                        f'MC simulation: {_n_failures}/{n_sims} runs failed '
+                        f'({_failure_rate:.0%}). Results may be unreliable. '
+                        'Enable DEBUG logging for details.',
+                        RuntimeWarning, stacklevel=2,
+                    )
         
         # Calculate rank stability per province
         rank_stability = {}
@@ -561,14 +581,16 @@ class SensitivityAnalysis:
         if len(year_rankings) < 2:
             return {}, {}
         
-        # Year-to-year rank correlation
+        # Year-to-year rank correlation — use Spearman because the inputs
+        # are rank vectors (ordinal data), not interval/ratio measurements.
+        from scipy.stats import spearmanr
         temporal_stability = {}
         sorted_years = sorted(year_rankings.keys())
-        
+
         for i in range(len(sorted_years) - 1):
             y1, y2 = sorted_years[i], sorted_years[i + 1]
-            corr = np.corrcoef(year_rankings[y1], year_rankings[y2])[0, 1]
-            temporal_stability[f"{y1}-{y2}"] = corr
+            corr, _ = spearmanr(year_rankings[y1], year_rankings[y2])
+            temporal_stability[f"{y1}-{y2}"] = float(np.nan_to_num(corr))
         
         # Province-level rank volatility over time
         temporal_volatility = {}

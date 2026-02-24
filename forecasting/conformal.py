@@ -301,10 +301,13 @@ class ConformalPredictor:
             covered = residuals[t] <= self._q_hat
             error_indicator = 0.0 if covered else 1.0
 
-            # Update adaptive miscoverage rate
+            # Update adaptive miscoverage rate (Gibbs & Candès, 2021, Eq. 3).
+            # Gradient step: α_{t+1} = α_t + γ(α − error_t)
+            # When covered (error=0): α_t grows  → quantile tightens.
+            # When missed  (error=1): α_t shrinks → quantile widens.
+            # (γ is the step size, not an exponential-smoothing weight.)
             self._aci_alpha_t = (
-                self.gamma * self._aci_alpha_t
-                + (1 - self.gamma) * error_indicator
+                self._aci_alpha_t + self.gamma * (self.alpha - error_indicator)
             )
             self._aci_alpha_t = np.clip(self._aci_alpha_t, 0.001, 0.999)
 

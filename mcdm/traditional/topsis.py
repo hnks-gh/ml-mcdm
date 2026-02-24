@@ -154,7 +154,10 @@ class TOPSISCalculator:
         d_neg = self._calculate_distance(weighted_df, anti_ideal)
         
         # Step 5: Calculate closeness coefficient
-        scores = d_neg / (d_pos + d_neg + 1e-10)
+        # When d_pos = d_neg = 0 (alternative equals both ideal and anti-ideal),
+        # assign 0.5 as a neutral score rather than 0 (the 1e-10 guard gives 0).
+        denom = d_pos + d_neg
+        scores = np.where(denom > 1e-14, d_neg / denom, 0.5)
         scores = pd.Series(scores, index=data.index, name='TOPSIS_Score')
         
         # Step 6: Rank

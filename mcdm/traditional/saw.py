@@ -150,8 +150,16 @@ class SAWCalculator:
             norm = np.zeros_like(X)
             for j, col in enumerate(data.columns):
                 if col in self.cost_criteria:
-                    min_v = X[:, j].min()
-                    norm[:, j] = min_v / X[:, j] if min_v > 0 else 0
+                    col_min = X[:, j].min()
+                    if col_min > 0:
+                        # Standard inversion: n_ij = min_j / x_ij
+                        norm[:, j] = col_min / X[:, j]
+                    else:
+                        # min is 0: min/x fails; use (max−x)/max instead
+                        col_max = X[:, j].max()
+                        if col_max > 0:
+                            norm[:, j] = (col_max - X[:, j]) / col_max
+                        # else: all-zero column → leave as zeros
                 else:
                     norm[:, j] = X[:, j] / max_v[j]
             return norm
@@ -162,12 +170,14 @@ class SAWCalculator:
                 col_vals = X[:, j]
                 if col in self.cost_criteria:
                     # Cost criteria: invert so that smaller raw values get a
-                    # larger normalised score, then divide by the sum of
-                    # inverted values to keep the column in [0, 1].
-                    with np.errstate(divide='ignore', invalid='ignore'):
-                        inv = np.where(col_vals > 0, 1.0 / col_vals, 0.0)
+                    # larger normalised score.  Replace zeros with ε so that
+                    # a zero-cost value correctly receives the highest score
+                    # (1/ε ≫ others) instead of a zero score (via old guard).
+                    safe_vals = np.maximum(col_vals, 1e-10)
+                    inv = 1.0 / safe_vals
                     denom = inv.sum()
-                    norm[:, j] = inv / denom if denom > 0 else inv
+                    norm[:, j] = (inv / denom if denom > 0
+                                  else np.ones(len(safe_vals)) / len(safe_vals))
                 else:
                     denom = col_vals.sum()
                     norm[:, j] = col_vals / (denom if denom != 0 else 1.0)

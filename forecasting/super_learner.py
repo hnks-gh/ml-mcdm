@@ -62,6 +62,87 @@ def _silence_warnings(func):
     return wrapper
 
 
+class _PanelTemporalSplit:
+    """
+    Panel-aware temporal cross-validation splitter.
+
+    Unlike ``TimeSeriesSplit`` (which splits on the absolute row position in
+    the stacked panel), this splitter identifies the temporal position of
+    each row *within its entity* and produces folds that respect temporal
+    order for every entity simultaneously.
+
+    For each fold k:
+      * **train**: rows whose within-entity time position is in ``[0, cut_k)``
+      * **val**  : rows whose within-entity time position is in
+                   ``[cut_k, cut_{k+1})``
+
+    This guarantees that no entity's future leaks into training data and
+    that every entity contributes both train and validation rows.
+
+    Parameters
+    ----------
+    n_splits : int
+        Number of CV folds (≥ 2).
+    """
+
+    def __init__(self, n_splits: int = 5):
+        self.n_splits = n_splits
+
+    def split(
+        self,
+        X: np.ndarray,
+        entity_indices: Optional[np.ndarray] = None,
+    ):
+        """
+        Yield ``(train_idx, val_idx)`` pairs.
+
+        Parameters
+        ----------
+        X : ndarray  (n_samples, n_features)
+        entity_indices : ndarray of shape (n_samples,), optional
+            Entity/group ID for each row.  When *None* the splitter falls
+            back to a standard ``TimeSeriesSplit``.
+        """
+        if entity_indices is None:
+            yield from TimeSeriesSplit(n_splits=self.n_splits).split(X)
+            return
+
+        unique_entities = np.unique(entity_indices)
+        # Rows for each entity in their original (assumed temporal) order
+        entity_rows: Dict[Any, np.ndarray] = {
+            ent: np.where(entity_indices == ent)[0]
+            for ent in unique_entities
+        }
+
+        # Use the minimum entity length so every entity can contribute
+        T = min(len(rows) for rows in entity_rows.values())
+        if T < 2:
+            yield from TimeSeriesSplit(n_splits=self.n_splits).split(X)
+            return
+
+        # Reserve at least 1 time step as the initial training window
+        min_train_T = max(1, T // (self.n_splits + 1))
+        fold_size = max(1, (T - min_train_T) // self.n_splits)
+
+        for fold in range(self.n_splits):
+            cut = min_train_T + fold * fold_size
+            val_end = min(cut + fold_size, T)
+            if cut >= T:
+                break
+
+            train_idx = np.concatenate(
+                [rows[:cut] for rows in entity_rows.values()]
+            )
+            val_idx = np.concatenate(
+                [rows[cut:val_end] for rows in entity_rows.values()]
+            )
+
+            if len(train_idx) == 0 or len(val_idx) == 0:
+                continue
+
+            yield np.sort(train_idx), np.sort(val_idx)
+
+
 class SuperLearner:
     """
     Super Learner meta-ensemble combining multiple base forecasters.
@@ -159,7 +240,9 @@ class SuperLearner:
         # ============================================================
         # Stage 1: Generate out-of-fold predictions
         # ============================================================
-        tscv = TimeSeriesSplit(n_splits=self.n_cv_folds)
+        # Panel-aware temporal split: each fold's validation rows are
+        # temporally later than training rows *for every entity*.
+        tscv = _PanelTemporalSplit(n_splits=self.n_cv_folds)
 
         # OOF prediction storage: (n_samples, n_models * n_outputs)
         oof_predictions = np.full(
@@ -167,7 +250,9 @@ class SuperLearner:
         )
         self._cv_scores = {name: [] for name in self.base_models}
 
-        for fold_idx, (train_idx, val_idx) in enumerate(tscv.split(X)):
+        for fold_idx, (train_idx, val_idx) in enumerate(
+            tscv.split(X, entity_indices=entity_indices)
+        ):
             X_train_cv, X_val_cv = X[train_idx], X[val_idx]
             y_train_cv, y_val_cv = y[train_idx], y[val_idx]
 
@@ -268,6 +353,15 @@ class SuperLearner:
         else:
             model.fit(X, y)
 
+    @staticmethod
+    def _predict_model(model, X, entity_indices=None):
+        """Call predict on a base model, forwarding entity_indices when supported."""
+        import inspect
+        sig = inspect.signature(model.predict)
+        if 'entity_indices' in sig.parameters and entity_indices is not None:
+            return model.predict(X, entity_indices=entity_indices)
+        return model.predict(X)
+
     def _fit_meta_learner(self, oof_X: np.ndarray, oof_y: np.ndarray):
         """Fit the second-level meta-learner on OOF predictions."""
         # Fit per output column, average weights
@@ -348,8 +442,15 @@ class SuperLearner:
                     np.ones(len(self.base_models)) / len(self.base_models)
                 )
 
-        # Average coefficients across outputs
-        avg_coefs = np.mean(all_coefs, axis=0)
+        # Normalize each per-output coefficient vector to sum to 1 before
+        # averaging so that outputs whose prediction scale is larger do not
+        # dominate the final meta-weights.
+        normed_coefs = []
+        for c in all_coefs:
+            s = float(np.sum(c))
+            normed_coefs.append(c / s if s > 1e-15
+                                else np.ones(len(c)) / len(c))
+        avg_coefs = np.mean(normed_coefs, axis=0)
 
         # Normalize to sum to 1
         if self.normalize_weights:
@@ -371,7 +472,7 @@ class SuperLearner:
             return {name: s / total for name, s in scores.items()}
         return {name: 1.0 / len(scores) for name in scores}
 
-    def predict(self, X: np.ndarray) -> np.ndarray:
+    def predict(self, X: np.ndarray, entity_indices: Optional[np.ndarray] = None) -> np.ndarray:
         """
         Make predictions using the Super Learner ensemble.
 
@@ -379,6 +480,7 @@ class SuperLearner:
 
         Args:
             X: Feature matrix of shape (n_samples, n_features)
+            entity_indices: Optional entity group IDs for panel-aware models
 
         Returns:
             Predictions of shape (n_samples,) or (n_samples, n_outputs)
@@ -391,7 +493,7 @@ class SuperLearner:
 
         for name, model in self._fitted_base_models.items():
             try:
-                pred = model.predict(X)
+                pred = self._predict_model(model, X, entity_indices)
                 if pred.ndim == 1:
                     pred = pred.reshape(-1, 1)
                 all_predictions.append(pred)

@@ -402,17 +402,71 @@ class ModifiedEDAS(EDASCalculator):
                  data: pd.DataFrame,
                  weights: Union[Dict[str, float], WeightResult, None] = None
                  ) -> EDASResult:
-        """Calculate Modified EDAS with robust reference solution."""
-        if self.use_trimmed_mean:
-            # Override average solution with trimmed mean
-            original_data = data.copy()
-            result = super().calculate(original_data, weights)
+        """Calculate Modified EDAS with trimmed-mean reference solution.
 
-            # Recalculate average solution using trimmed mean
-            trimmed_avg = {}
-            for col in data.columns:
-                trimmed_avg[col] = stats.trim_mean(data[col].values, self.trim_percentage)
-            result.average_solution = pd.Series(trimmed_avg)
-            return result
+        When ``use_trimmed_mean=True`` the average solution used for
+        PDA/NDA computation is the α-trimmed mean rather than the arithmetic
+        mean, making the method robust to outliers.  PDA and NDA are
+        **re-computed from scratch** using this reference so the result is
+        genuinely different, not merely a cosmetic relabelling.
+        """
+        if not self.use_trimmed_mean:
+            return super().calculate(data, weights)
 
-        return super().calculate(data, weights)
+        # ---- weights (same logic as parent) ----
+        if weights is None:
+            from weighting import EntropyWeightCalculator
+            weights = EntropyWeightCalculator().calculate(data).weights
+        elif isinstance(weights, WeightResult):
+            weights = weights.weights
+        weights = {col: weights.get(col, 1.0 / len(data.columns))
+                   for col in data.columns}
+
+        benefit_criteria = (
+            self.benefit_criteria if self.benefit_criteria is not None
+            else [col for col in data.columns if col not in self.cost_criteria]
+        )
+
+        # ---- robust average solution (trimmed mean) ----
+        average_solution = pd.Series({
+            col: stats.trim_mean(data[col].values, self.trim_percentage)
+            for col in data.columns
+        })
+
+        # ---- PDA / NDA computed from trimmed reference ----
+        PDA = pd.DataFrame(index=data.index, columns=data.columns, dtype=float)
+        NDA = pd.DataFrame(index=data.index, columns=data.columns, dtype=float)
+
+        for col in data.columns:
+            av = average_solution[col]
+            abs_av = max(abs(float(av)), 1e-10)
+            if col in benefit_criteria:
+                PDA[col] = np.maximum(0, data[col] - av) / abs_av
+                NDA[col] = np.maximum(0, av - data[col]) / abs_av
+            else:
+                PDA[col] = np.maximum(0, av - data[col]) / abs_av
+                NDA[col] = np.maximum(0, data[col] - av) / abs_av
+
+        SP = sum(weights[col] * PDA[col] for col in data.columns)
+        SN = sum(weights[col] * NDA[col] for col in data.columns)
+        SP.name = 'SP'
+        SN.name = 'SN'
+
+        SP_max = SP.max()
+        SN_max = SN.max()
+        NSP = SP / SP_max if SP_max > 0 else pd.Series(0.0, index=data.index)
+        NSN = 1 - (SN / SN_max) if SN_max > 0 else pd.Series(1.0, index=data.index)
+        NSP.name = 'NSP'
+        NSN.name = 'NSN'
+
+        AS = (NSP + NSN) / 2
+        AS.name = 'AS'
+        ranks = AS.rank(ascending=False).astype(int)
+        ranks.name = 'Rank'
+
+        return EDASResult(
+            PDA=PDA, NDA=NDA, SP=SP, SN=SN,
+            NSP=NSP, NSN=NSN, AS=AS, ranks=ranks,
+            average_solution=average_solution,
+            weights=weights,
+        )

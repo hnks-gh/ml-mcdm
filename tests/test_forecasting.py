@@ -327,8 +327,16 @@ class TestHierarchicalBayes:
         model = HierarchicalBayesForecaster(n_em_iterations=5, random_state=42)
         model.fit(X, y, group_indices=entity_indices)
         mean, std = model.predict_with_uncertainty(X)
-        assert mean.shape == (X.shape[0],)
-        assert std.shape == (X.shape[0],)
+        # Phase 4: predict_with_uncertainty() is multi-output aware.
+        # For a k-output model it returns (n, k); for single-output (n,).
+        n = X.shape[0]
+        k = y.shape[1] if y.ndim > 1 else 1
+        if k > 1:
+            assert mean.shape == (n, k), f"Expected ({n}, {k}), got {mean.shape}"
+            assert std.shape == (n, k), f"Expected ({n}, {k}), got {std.shape}"
+        else:
+            assert mean.shape == (n,)
+            assert std.shape == (n,)
         assert np.all(std > 0)
 
 

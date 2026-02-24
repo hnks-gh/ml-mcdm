@@ -4,25 +4,42 @@ MEREC (Method based on Removal Effects of Criteria) weight calculator.
 
 Measures criterion importance by impact of removal on overall performance.
 Reference: Keshavarz-Ghorabaee et al. (2021), Symmetry, 13(4), 525.
+
+Normalization:
+    Benefit criterion j:  n_ij = min_i(x_ij) / x_ij
+    Cost    criterion j:  n_ij = x_ij         / max_i(x_ij)
+Values are clipped to [epsilon, 1].  This ratio-based normalization
+preserves rank-order relationships and matches the published method;
+it differs from a plain min-max shift.
 """
 
 import numpy as np
 import pandas as pd
+from typing import List, Optional
 from .base import WeightResult
 
 
 class MERECWeightCalculator:
     """
     MEREC weight calculator.
-    
+
     Parameters
     ----------
     epsilon : float, default=1e-10
         Numerical stability constant.
+    cost_criteria : list of str, optional
+        Names of criteria where *lower* values are preferred (cost type).
+        All other criteria are treated as benefit type.
+        Defaults to an empty list (all benefit).
     """
-    
-    def __init__(self, epsilon: float = 1e-10):
+
+    def __init__(
+        self,
+        epsilon: float = 1e-10,
+        cost_criteria: Optional[List[str]] = None,
+    ):
         self.epsilon = epsilon
+        self.cost_criteria: List[str] = list(cost_criteria or [])
     
     def calculate(self, data: pd.DataFrame,
                   sample_weights: 'np.ndarray | None' = None) -> WeightResult:
@@ -75,8 +92,8 @@ class MERECWeightCalculator:
         else:
             w = np.full(n_alternatives, 1.0 / n_alternatives)
         
-        # Step 1: Min-Max Normalization to [0, 1]
-        X_norm = self._normalize(data.values)
+        # Step 1: Ratio normalization per Keshavarz-Ghorabaee et al. (2021)
+        X_norm = self._normalize(data.values, columns)
         
         # Step 2: Calculate overall performance with all criteria
         S_overall = self._calculate_performance(X_norm)
@@ -116,19 +133,34 @@ class MERECWeightCalculator:
             }
         )
     
-    def _normalize(self, X: np.ndarray) -> np.ndarray:
-        """Min-max normalization to [epsilon, 1]."""
-        X_min = X.min(axis=0)
-        X_max = X.max(axis=0)
-        
-        denominator = X_max - X_min
-        denominator[denominator < self.epsilon] = self.epsilon
-        
-        # Normalize to [0, 1] then shift to [epsilon, 1]
-        X_norm = (X - X_min) / denominator
-        X_norm = X_norm * (1 - self.epsilon) + self.epsilon
-        
-        return X_norm
+    def _normalize(self, X: np.ndarray, columns: list) -> np.ndarray:
+        """
+        Ratio-based normalization per Keshavarz-Ghorabaee et al. (2021).
+
+        For each criterion j:
+          - Benefit: n_ij = min_i(x_ij) / x_ij
+          - Cost:    n_ij = x_ij        / max_i(x_ij)
+
+        Values are clipped to [epsilon, 1] to stay in the valid log domain.
+        """
+        X_norm = np.empty_like(X, dtype=float)
+        for j, col in enumerate(columns):
+            col_vals = X[:, j]
+            if col in self.cost_criteria:
+                # cost: smaller is better → n_ij = x_ij / max
+                col_max = col_vals.max()
+                denom = col_max if col_max > self.epsilon else self.epsilon
+                X_norm[:, j] = col_vals / denom
+            else:
+                # benefit: larger is better → n_ij = min / x_ij
+                col_min = col_vals.min()
+                safe_col = np.where(col_vals > self.epsilon, col_vals, self.epsilon)
+                X_norm[:, j] = (
+                    col_min / safe_col
+                    if col_min > self.epsilon
+                    else self.epsilon / safe_col
+                )
+        return np.clip(X_norm, self.epsilon, 1.0)
     
     def _calculate_performance(self, X_norm: np.ndarray) -> np.ndarray:
         """Calculate overall performance: S_i = ln(1 + (1/n)Σ|ln(x_ij)|)."""
