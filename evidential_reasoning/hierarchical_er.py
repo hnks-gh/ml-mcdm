@@ -4,7 +4,7 @@ Hierarchical Evidential Reasoning for MCDM Ensemble
 =====================================================
 
 Two-stage ER aggregation that respects the hierarchical criterion
-structure (28 subcriteria → 8 criteria → final score).
+structure (29 subcriteria → 8 criteria → final score).
 
 Architecture
 ------------

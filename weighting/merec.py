@@ -80,6 +80,12 @@ class MERECWeightCalculator:
         
         n_alternatives, n_criteria = data.shape
         columns = data.columns.tolist()
+
+        # Impute any NaN cells with the column mean before computing weights.
+        # Upstream callers should pre-impute, but this is a defensive guard.
+        data = data.copy()
+        if data.isnull().any().any():
+            data = data.fillna(data.mean())
         
         # Validate / default observation weights
         if sample_weights is not None:

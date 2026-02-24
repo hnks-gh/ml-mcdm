@@ -37,7 +37,7 @@ class HybridWeightingPipeline:
     
     Parameters
     ----------
-    bootstrap_iterations : int, default=999
+    bootstrap_iterations : int, default=1000
         Number of Bayesian Bootstrap iterations for uncertainty quantification.
     stability_threshold : float, default=0.95
         Minimum cosine similarity for temporal stability (split-half test).
@@ -74,7 +74,7 @@ class HybridWeightingPipeline:
     >>> 
     >>> # Initialize pipeline with GTWC fusion
     >>> pipeline = HybridWeightingPipeline(
-    >>>     bootstrap_iterations=999
+    >>>     bootstrap_iterations=1000
     >>> )
     >>> 
     >>> # Calculate weights
@@ -125,7 +125,7 @@ class HybridWeightingPipeline:
           - W* = α₁·W_GroupA + α₂·W_GroupB
     
     4. **Bayesian Bootstrap:** Quantify uncertainty via Dirichlet resampling
-       (999 iterations)
+       (1000 iterations)
     
     5. **Temporal Stability:** Split-half validation ensures weights are
        structural (not time-dependent)
@@ -147,7 +147,7 @@ class HybridWeightingPipeline:
 
     def __init__(
         self,
-        bootstrap_iterations: int = 999,
+        bootstrap_iterations: int = 1000,
         stability_threshold: float = 0.95,
         epsilon: float = 1e-10,
         seed: int = 42,
@@ -155,7 +155,7 @@ class HybridWeightingPipeline:
         """
         Parameters
         ----------
-        bootstrap_iterations : int, default=999
+        bootstrap_iterations : int, default=1000
             Number of Bayesian bootstrap iterations for uncertainty quantification.
         stability_threshold : float, default=0.95
             Minimum required stability score (0-1) for validation.
@@ -226,6 +226,25 @@ class HybridWeightingPipeline:
         # ── Step 1: Global Min-Max Normalization ──
         X_norm = global_min_max_normalize(X_raw, epsilon=self.epsilon)
         logger.info("Step 1: Global normalization complete")
+
+        # Impute any remaining NaN cells (missing observations) with the
+        # column mean of non-NaN normalised values.  Column-mean imputation
+        # is neutral: the imputed rows add zero discriminatory information
+        # per column, which is the conservative choice when the true value
+        # is unknown.  This must be done BEFORE the weight calculators,
+        # none of which are designed to handle NaN inputs.
+        nan_mask = np.isnan(X_norm)
+        if nan_mask.any():
+            col_means = np.nanmean(X_norm, axis=0)
+            nan_rows, nan_cols = np.where(nan_mask)
+            X_norm[nan_rows, nan_cols] = col_means[nan_cols]
+            n_imputed = int(nan_mask.sum())
+            n_affected_cols = int(nan_mask.any(axis=0).sum())
+            logger.info(
+                f"Step 1: Imputed {n_imputed} missing cells "
+                f"({n_affected_cols}/{X_norm.shape[1]} criteria affected) "
+                f"with per-column normalised mean"
+            )
 
         # ── Step 2: Calculate Individual Weight Vectors ──
         X_df = pd.DataFrame(X_norm, columns=criteria_cols)

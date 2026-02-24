@@ -274,7 +274,7 @@ class SensitivityAnalysis:
             'simulated_rankings': perturbation_results,
             'mean_rank': perturbation_results.mean(axis=0),
             'std_rank': perturbation_results.std(axis=0),
-            'rank_range': perturbation_results.ptp(axis=0),
+            'rank_range': perturbation_results.max(axis=0) - perturbation_results.min(axis=0),
         }
         
         return SensitivityResult(

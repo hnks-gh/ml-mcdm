@@ -1,29 +1,30 @@
 Variable_Code,Variable_Name,Criteria_Name,Criteria_Code
-SC01,Civic Knowledge,Participation,C01
-SC02,Opportunities for Participation in Elections,Participation,C01
-SC03,Quality of Village Head Elections,Participation,C01
-SC04,Voluntary Contributions,Participation,C01
-SC05,Access to Information,Transparency of Local Decision-making,C02
-SC06,Poverty List Transparency,Transparency of Local Decision-making,C02
-SC07,Communal Budget Transparency,Transparency of Local Decision-making,C02
-SC08,Transparent Land-Use Plan/Price Frames,Transparency of Local Decision-making,C02
-SC09,Interactions With Local Authorities,Vertical Accountability,C03
-SC10,Governments Responsive to Citizen Appeals,Vertical Accountability,C03
-SC11,Access to Justice Services,Vertical Accountability,C03
-SC12,Limits on Corruption in Local Governments,Control of Corruption in the Public Sector,C04
-SC13,Limits on Corruption in Service Delivery,Control of Corruption in the Public Sector,C04
-SC14,Equity in State Employment,Control of Corruption in the Public Sector,C04
-SC15,Willingness to Fight Corruption,Control of Corruption in the Public Sector,C04
-SC16,Certification Procedures,Public Administrative Procedures,C05
-SC17,Land Title Procedures,Public Administrative Procedures,C05
-SC18,Personal Procedures,Public Administrative Procedures,C05
-SC19,Public Healthcare,Public Service Delivery,C06
-SC20,Primary Education,Public Service Delivery,C06
-SC21,Basic Infrastructure,Public Service Delivery,C06
-SC22,Law and Order,Public Service Delivery,C06
-SC23,Environmental Protection,Environmental Governance,C07
-SC24,Quality of Air,Environmental Governance,C07
-SC25,Quality of Water,Environmental Governance,C07
-SC26,Access to E-Government Portals,E-Governance,C08
-SC27,Access to the Internet,E-Governance,C08
-SC28,E-Responsiveness of Provincial Authorities,E-Governance,C08
+SC11,Civic Knowledge,Participation,C01
+SC12,Opportunities for Participation in Elections,Participation,C01
+SC13,Quality of Village Head Elections,Participation,C01
+SC14,Voluntary Contributions,Participation,C01
+SC21,Access to Information,Transparency of Local Decision-making,C02
+SC22,Poverty List Transparency,Transparency of Local Decision-making,C02
+SC23,Communal Budget Transparency,Transparency of Local Decision-making,C02
+SC24,Transparent Land-Use Plan/Price Frames,Transparency of Local Decision-making,C02
+SC31,Interactions With Local Authorities,Vertical Accountability,C03
+SC32,Governments Responsive to Citizen Appeals,Vertical Accountability,C03
+SC33,Access to Justice Services,Vertical Accountability,C03
+SC41,Limits on Corruption in Local Governments,Control of Corruption in the Public Sector,C04
+SC42,Limits on Corruption in Service Delivery,Control of Corruption in the Public Sector,C04
+SC43,Equity in State Employment,Control of Corruption in the Public Sector,C04
+SC44,Willingness to Fight Corruption,Control of Corruption in the Public Sector,C04
+SC51,Certification Procedures,Public Administrative Procedures,C05
+SC52,Construction Permits,Public Administrative Procedures,C05
+SC53,Land Title Procedures,Public Administrative Procedures,C05
+SC54,Personal Procedures,Public Administrative Procedures,C05
+SC61,Public Healthcare,Public Service Delivery,C06
+SC62,Primary Education,Public Service Delivery,C06
+SC63,Basic Infrastructure,Public Service Delivery,C06
+SC64,Law and Order,Public Service Delivery,C06
+SC71,Environmental Protection,Environmental Governance,C07
+SC72,Quality of Air,Environmental Governance,C07
+SC73,Quality of Water,Environmental Governance,C07
+SC81,Access to E-Government Portals,E-Governance,C08
+SC82,Access to the Internet,E-Governance,C08
+SC83,E-Responsiveness of Provincial Authorities,E-Governance,C08

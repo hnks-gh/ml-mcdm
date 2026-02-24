@@ -68,9 +68,9 @@ def global_min_max_normalize(
       method in multicriteria decision-making. Technological and Economic
       Development of Economy, 16(2), 159-172.
     """
-    # Compute global min/max for each criterion
-    col_min = X.min(axis=0)
-    col_max = X.max(axis=0)
+    # Compute global min/max for each criterion (NaN-aware: missing cells are ignored)
+    col_min = np.nanmin(X, axis=0)
+    col_max = np.nanmax(X, axis=0)
     
     # Handle constant columns (where min == max)
     denom = col_max - col_min
@@ -138,8 +138,9 @@ class GlobalNormalizer:
         self : GlobalNormalizer
             Fitted normalizer instance.
         """
-        self.col_min_ = X.min(axis=0)
-        self.col_max_ = X.max(axis=0)
+        # NaN-aware: missing cells are ignored when computing statistics
+        self.col_min_ = np.nanmin(X, axis=0)
+        self.col_max_ = np.nanmax(X, axis=0)
         self.is_fitted_ = True
         return self
     

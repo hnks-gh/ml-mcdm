@@ -106,6 +106,11 @@ class CRITICWeightCalculator:
             raise TypeError(f"Non-numeric columns found: {non_numeric}")
         
         n = len(data)
+        # Impute any NaN cells with the column mean before computing weights.
+        # Upstream callers should pre-impute, but this is a defensive guard.
+        data = data.copy()
+        if data.isnull().any().any():
+            data = data.fillna(data.mean())
         X = data.values  # (n, p)
         columns = data.columns.tolist()
         

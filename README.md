@@ -31,7 +31,7 @@ This framework combines state-of-the-art Multi-Criteria Decision Making (MCDM) m
 ### ⚖️ Objective Weight Calculation
 - **4 Complementary Methods**: Entropy, CRITIC, MEREC, Standard Deviation
 - **Game Theory Combination**: Intra-group hybridization + cooperative optimization
-- **Uncertainty Quantification**: Bayesian Bootstrap (999 iterations)
+- **Uncertainty Quantification**: Bayesian Bootstrap (1000 iterations)
 - **Temporal Stability**: Split-half validation
 
 ### 🤖 Machine Learning Forecasting
@@ -266,7 +266,7 @@ Combines 4 weighting methods through:
    W^* = α_1 \cdot W_{\text{GroupA}} + α_2 \cdot W_{\text{GroupB}}
    $$
 
-4. **Bayesian Bootstrap:** 999 iterations for uncertainty quantification
+4. **Bayesian Bootstrap:** 1000 iterations for uncertainty quantification
 
 ---
 
@@ -293,7 +293,7 @@ distribution-free uncertainty intervals.
 | `weights_analysis.csv` | Weight derivation details |
 | `forecast_feature_importance.csv` | Aggregated from 6 forecast models (optional) |
 | `forecast_cv_metrics.csv` | Cross-validation performance (optional) |
-| **`sensitivity_subcriteria.csv`** | **28 subcriteria sensitivity scores** |
+| **`sensitivity_subcriteria.csv`** | **29 subcriteria sensitivity scores** |
 | **`sensitivity_criteria.csv`** | **8 criteria sensitivity scores** |
 | **`temporal_stability.csv`** | **Year-to-year rank correlations** |
 | **`top_n_stability.csv`** | **Top-N ranking stability metrics** |

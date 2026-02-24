@@ -99,7 +99,8 @@ class RankingPlotter(BasePlotter):
         )
         cm = plt.colormaps['viridis']
         bin_centers = 0.5 * (bins[:-1] + bins[1:])
-        rng = np.ptp(bin_centers) if np.ptp(bin_centers) > 0 else 1
+        _ptp = bin_centers.max() - bin_centers.min()
+        rng = _ptp if _ptp > 0 else 1
         col = (bin_centers - bin_centers.min()) / rng
         for c, p in zip(col, patches):
             p.set_facecolor(cm(c))

@@ -1,10 +1,16 @@
 # -*- coding: utf-8 -*-
-"""Adaptive weighting with zero handling.
+"""Adaptive weighting with missing-data (NaN) handling.
 
 Provides weight calculation that:
-1. Excludes provinces with zero values from calculations
-2. Excludes criteria/subcriteria with zero values from calculations
-3. Recalculates weights dynamically based on available data
+1. Excludes provinces with all-NaN values from calculations
+2. Excludes criteria/subcriteria where every province is NaN from calculations
+3. Imputes remaining partial NaN cells with the column mean before weight calculation
+4. Recalculates weights dynamically based on available data
+
+Notes
+-----
+The dataset uses NaN (not zero) to represent missing observations.  A value of
+exactly 0.0 is a legitimate governance score and is NEVER excluded.
 """
 
 import numpy as np
@@ -24,23 +30,25 @@ from .fusion import GameTheoryWeightCombination
 class AdaptiveWeightResult(WeightResult):
     """Extended weight result with adaptive calculation metadata."""
     included_alternatives: List[str]  # Provinces included in calculation
-    excluded_alternatives: List[str]  # Provinces excluded (zeros)
+    excluded_alternatives: List[str]  # Provinces excluded (all NaN across all criteria)
     included_criteria: List[str]  # Criteria included in calculation
-    excluded_criteria: List[str]  # Criteria excluded (all zeros)
+    excluded_criteria: List[str]  # Criteria excluded (all NaN across all provinces)
     n_included: int  # Number of alternatives included
     n_excluded: int  # Number of alternatives excluded
 
 
 class AdaptiveWeightCalculator:
     """
-    Adaptive weight calculator that handles zeros in data.
-    
-    Key features:
-    - Automatically excludes provinces with all-zero data
-    - Excludes criteria where all provinces have zero
-    - Recalculates weights based on available data only
-    - Preserves weight normalization (sum to 1)
-    
+    Adaptive weight calculator that handles missing data (NaN) in the decision matrix.
+
+    Key features
+    ------------
+    - Automatically excludes provinces with *all-NaN* data across every criterion
+    - Excludes criteria where *every* province is NaN
+    - Imputes remaining partial NaN cells with the column mean (preserves variance)
+    - Recalculates weights based on the cleaned, complete sub-matrix
+    - Preserves weight normalisation (sum to 1)
+
     Parameters
     ----------
     method : str
@@ -105,40 +113,45 @@ class AdaptiveWeightCalculator:
         
         original_criteria = criteria_data.columns.tolist()
         
-        # Step 1: Identify and exclude alternatives with all zeros
-        # Use .any(axis=1) instead of sum() > 0 so that rows with negative
-        # values that cancel out are NOT incorrectly excluded.
-        valid_rows = (criteria_data != 0).any(axis=1)
+        # Step 1: Identify and exclude alternatives where ALL criteria are NaN.
+        # NOTE: In pandas, (NaN != 0) evaluates to True, so the old
+        # `!= 0` check incorrectly passed all-NaN rows.  Use notna() instead.
+        valid_rows = criteria_data.notna().any(axis=1)
 
         included_alternatives = [alternatives[i] for i, v in enumerate(valid_rows) if v]
         excluded_alternatives = [alternatives[i] for i, v in enumerate(valid_rows) if not v]
-        
+
         if sum(valid_rows) < self.min_alternatives:
             raise ValueError(
-                f"Insufficient alternatives after zero exclusion: "
+                f"Insufficient alternatives after missing-data exclusion: "
                 f"{sum(valid_rows)} < {self.min_alternatives}"
             )
-        
+
         # Filter data to valid rows
         filtered_data = criteria_data[valid_rows].copy()
-        
-        # Step 2: Identify and exclude criteria with all zeros
-        # Same reasoning: use .any(axis=0) to correctly handle negative data.
-        valid_cols = (filtered_data != 0).any(axis=0)
+
+        # Step 2: Identify and exclude criteria where ALL alternatives are NaN.
+        valid_cols = filtered_data.notna().any(axis=0)
 
         included_criteria = [c for c, v in zip(original_criteria, valid_cols) if v]
         excluded_criteria = [c for c, v in zip(original_criteria, valid_cols) if not v]
-        
+
         if sum(valid_cols) < self.min_criteria:
             raise ValueError(
-                f"Insufficient criteria after zero exclusion: "
+                f"Insufficient criteria after missing-data exclusion: "
                 f"{sum(valid_cols)} < {self.min_criteria}"
             )
-        
+
         # Filter data to valid columns
-        filtered_data = filtered_data.loc[:, valid_cols]
-        
-        # Step 3: Calculate weights on filtered data
+        filtered_data = filtered_data.loc[:, valid_cols].copy()
+
+        # Step 2b: Impute remaining partial NaN cells with column mean.
+        # Column-mean imputation preserves each criterion's central tendency
+        # without artificially reducing its variance.
+        col_means = filtered_data.mean(skipna=True)
+        filtered_data = filtered_data.fillna(col_means)
+
+        # Step 3: Calculate weights on the cleaned, complete sub-matrix
         if self.method == "entropy":
             base_result = self.entropy_calc.calculate(filtered_data)
         elif self.method == "critic":
@@ -178,6 +191,7 @@ class AdaptiveWeightCalculator:
                     "original_criteria": len(original_criteria),
                     "included_criteria": len(included_criteria),
                     "excluded_criteria": len(excluded_criteria),
+                    "note": "excluded = all-NaN; partial NaN filled with column mean",
                 }
             },
             included_alternatives=included_alternatives,
@@ -253,12 +267,14 @@ def calculate_adaptive_weights(
 class WeightCalculator:
     """
     Weight calculator for hierarchical data structure.
-    
+
     Calculates weights at each level:
     - Subcriteria weights (for each criterion)
     - Criteria weights (for final aggregation)
-    
-    Both levels use adaptive zero handling.
+
+    Both levels use adaptive NaN-aware handling:
+    - All-NaN rows/columns are excluded
+    - Partial NaN cells are imputed with the column mean
     """
     
     def __init__(self, method: str = "hybrid", epsilon: float = 1e-10):

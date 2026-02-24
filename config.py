@@ -109,7 +109,7 @@ class PanelDataConfig:
     year_col: str = "Year"
 
     # Hierarchy
-    n_subcriteria: int = 28
+    n_subcriteria: int = 29
     n_criteria: int = 8
     subcriteria_prefix: str = "SC"
     criteria_prefix: str = "C"
@@ -122,10 +122,22 @@ class PanelDataConfig:
     def n_observations(self) -> int:
         return self.n_provinces * self.n_years
 
+    # Number of sub-criteria per criterion, in C01..C08 order.
+    # C01:4, C02:4, C03:3, C04:4, C05:4, C06:4, C07:3, C08:3  → 29 total
+    _subcriteria_per_criterion: List[int] = field(
+        default_factory=lambda: [4, 4, 3, 4, 4, 4, 3, 3],
+        init=False,
+        repr=False,
+    )
+
     @property
     def subcriteria_cols(self) -> List[str]:
-        return [f"{self.subcriteria_prefix}{i+1:02d}"
-                for i in range(self.n_subcriteria)]
+        """Return SC codes in dataset order: SC11–SC14, SC21–SC24, …, SC81–SC83."""
+        codes: List[str] = []
+        for crit_idx, n_sub in enumerate(self._subcriteria_per_criterion, start=1):
+            for sub_idx in range(1, n_sub + 1):
+                codes.append(f"{self.subcriteria_prefix}{crit_idx}{sub_idx}")
+        return codes
 
     @property
     def criteria_cols(self) -> List[str]:
@@ -203,7 +215,7 @@ class WeightingConfig:
     4. Bayesian Bootstrap uncertainty quantification
     5. Split-half temporal stability verification
     """
-    bootstrap_iterations: int = 29
+    bootstrap_iterations: int = 1000
     stability_threshold: float = 0.95
     epsilon: float = 1e-10
 
@@ -350,7 +362,7 @@ class Config:
             f"{'='*72}\n\n"
             f"  PANEL DATA\n"
             f"    Provinces       : {self.panel.n_provinces}\n"
-            f"    Subcriteria     : {self.panel.n_subcriteria}  (SC01-SC28)\n"
+            f"    Subcriteria     : {self.panel.n_subcriteria}  (SC11-SC83)\n"
             f"    Criteria        : {self.panel.n_criteria}  (C01-C08)\n"
             f"    Years           : {self.panel.years[0]}-{self.panel.years[-1]}"
             f"  ({self.panel.n_years} years)\n"

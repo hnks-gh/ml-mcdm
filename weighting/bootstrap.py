@@ -18,7 +18,7 @@ def bayesian_bootstrap_weights(
     X_norm: np.ndarray,
     criteria_cols: List[str],
     weight_calculator: Callable[..., np.ndarray],
-    n_iterations: int = 999,
+    n_iterations: int = 1000,
     seed: int = 42,
     epsilon: float = 1e-10
 ) -> Dict:
@@ -40,7 +40,7 @@ def bayesian_bootstrap_weights(
         Function with signature
         ``(X_df, criteria_cols, sample_weights=None) -> np.ndarray``.
         *sample_weights* is a 1-D array of observation weights summing to 1.
-    n_iterations : int, default=999
+    n_iterations : int, default=1000
         Number of bootstrap iterations. Odd number to avoid interpolation
         at percentiles (2.5%, 97.5%).
     seed : int, default=42
@@ -85,30 +85,6 @@ def bayesian_bootstrap_weights(
     - Odd number avoids interpolation at 2.5th and 97.5th percentiles
     - Standard practice for percentile-based credible intervals
     - Provides stable posterior statistics (Davison & Hinkley, 1997)
-    
-    Examples
-    --------
-    >>> import numpy as np
-    >>> import pandas as pd
-    >>> from weighting.bootstrap import bayesian_bootstrap_weights
-    >>> 
-    >>> # Define weight calculator (must accept sample_weights kwarg)
-    >>> def my_weight_calculator(X_df, criteria_cols, sample_weights=None):
-    >>>     # Your weight calculation logic here
-    >>>     return np.array([0.3, 0.5, 0.2])
-    >>> 
-    >>> # Sample data
-    >>> X_norm = np.random.rand(100, 3)
-    >>> criteria = ['C1', 'C2', 'C3']
-    >>> 
-    >>> # Run bootstrap
-    >>> results = bayesian_bootstrap_weights(
-    >>>     X_norm, criteria, my_weight_calculator, n_iterations=999
-    >>> )
-    >>> 
-    >>> print("Final weights:", results['mean_weights'])
-    >>> print("Uncertainty:", results['std_weights'])
-    >>> print("95% CI:", results['ci_lower'], "-", results['ci_upper'])
     
     References
     ----------
@@ -196,7 +172,7 @@ class BayesianBootstrap:
     
     Parameters
     ----------
-    n_iterations : int, default=999
+    n_iterations : int, default=1000
         Number of bootstrap iterations.
     seed : int, default=42
         Random seed for reproducibility.
@@ -205,13 +181,13 @@ class BayesianBootstrap:
     
     Examples
     --------
-    >>> bootstrap = BayesianBootstrap(n_iterations=999, seed=42)
+    >>> bootstrap = BayesianBootstrap(n_iterations=1000, seed=42)
     >>> results = bootstrap.run(X_norm, criteria_cols, weight_calculator)
     """
     
     def __init__(
         self,
-        n_iterations: int = 999,
+        n_iterations: int = 1000,
         seed: int = 42,
         epsilon: float = 1e-10
     ):

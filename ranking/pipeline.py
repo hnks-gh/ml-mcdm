@@ -353,27 +353,39 @@ class HierarchicalRankingPipeline:
         original_criteria = df.columns.tolist()
         original_alternatives = alternatives
         
-        # ===== ADAPTIVE ZERO HANDLING =====
-        # Step 1: Exclude provinces (alternatives) with all-zero data
-        row_sums = df.sum(axis=1)
-        valid_rows = row_sums > 0
+        # ===== ADAPTIVE MISSING-DATA HANDLING =====
+        # Step 1: Exclude provinces where ALL sub-criteria are NaN.
+        # NOTE: The dataset uses NaN (not zero) for missing observations.
+        # Checking `sum > 0` is unreliable for NaN data because pandas
+        # sum() returns 0 for all-NaN rows (min_count default).  Using
+        # notna().any() is explicit and correct.
+        valid_rows = df.notna().any(axis=1)
         df = df[valid_rows].copy()
         alternatives = [alt for alt, valid in zip(alternatives, valid_rows) if valid]
-        
-        # Step 2: Exclude subcriteria with all-zero values
-        col_sums = df.sum(axis=0)
-        valid_cols = col_sums > 0
+
+        # Step 2: Exclude sub-criteria columns where every province is NaN.
+        valid_cols = df.notna().any(axis=0)
         df = df.loc[:, valid_cols].copy()
-        
-        excluded_alternatives = [alt for alt, valid in zip(original_alternatives, valid_rows) if not valid]
-        excluded_criteria = [c for c, valid in zip(original_criteria, valid_cols) if not valid]
-        
-        if len(excluded_alternatives) > 0:
-            logger.info(f"    → Excluded {len(excluded_alternatives)} provinces with zero data: "
-                       f"{', '.join(excluded_alternatives[:5])}{'...' if len(excluded_alternatives) > 5 else ''}")
-        if len(excluded_criteria) > 0:
-            logger.info(f"    → Excluded {len(excluded_criteria)} zero-valued subcriteria: "
-                       f"{', '.join(excluded_criteria)}")
+
+        excluded_alternatives = [
+            alt for alt, valid in zip(original_alternatives, valid_rows) if not valid
+        ]
+        excluded_criteria = [
+            c for c, valid in zip(original_criteria, valid_cols) if not valid
+        ]
+
+        if excluded_alternatives:
+            logger.info(
+                f"    → Excluded {len(excluded_alternatives)} provinces with "
+                f"all-NaN data: "
+                f"{', '.join(excluded_alternatives[:5])}"
+                f"{'...' if len(excluded_alternatives) > 5 else ''}"
+            )
+        if excluded_criteria:
+            logger.info(
+                f"    → Excluded {len(excluded_criteria)} all-NaN sub-criteria: "
+                f"{', '.join(excluded_criteria)}"
+            )
         
         # Update related data structures
         if len(df) < 2 or len(df.columns) < 1:
@@ -706,21 +718,31 @@ class HierarchicalRankingPipeline:
         df: pd.DataFrame,
         cost_criteria: Optional[List[str]] = None,
     ) -> pd.DataFrame:
-        """Min-max normalize to [0, 1]. Cost criteria are inverted."""
+        """Min-max normalize to [0, 1].  Cost criteria are inverted.
+
+        NaN cells (partially missing observations) are filled with 0.5 after
+        normalisation so that downstream MCDM algorithms receive a complete,
+        numeric matrix.  The neutral mid-point value avoids biasing the
+        ranking in either direction for missing sub-criterion scores.
+        """
         result = df.copy().astype(float)
         cost_criteria = cost_criteria or []
 
         for col in result.columns:
-            col_min = result[col].min()
+            col_min = result[col].min()          # pandas skips NaN by default
             col_max = result[col].max()
             rng = col_max - col_min
 
             if rng < 1e-12:
-                result[col] = 0.5  # constant column
+                result[col] = 0.5  # constant (or all-NaN) column
             elif col in cost_criteria:
                 result[col] = (col_max - result[col]) / rng
             else:
                 result[col] = (result[col] - col_min) / rng
+
+        # Fill any NaN cells (partially missing rows) with the neutral 0.5
+        # so all MCDM algorithms receive a fully numeric matrix.
+        result = result.fillna(0.5)
 
         return result
 

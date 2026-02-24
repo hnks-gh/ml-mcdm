@@ -382,6 +382,11 @@ class UnifiedForecaster:
                 return pred[:, self._col]
             # Forward other attributes (e.g. fit) untouched
             def __getattr__(self, name: str):
+                # Guard against infinite recursion during copy.deepcopy:
+                # deepcopy creates a blank instance before populating __dict__;
+                # accessing self._model before it exists re-enters __getattr__.
+                if name in ("_model", "_col"):
+                    raise AttributeError(name)
                 return getattr(self._model, name)
 
         try:

@@ -36,7 +36,7 @@ Step 3: Game Theory Weight Combination (GTWC)
       └── W* = α₁·W_GroupA + α₂·W_GroupB
   ↓
 Step 4: Bayesian Bootstrap (uncertainty quantification)
-  ├── Dirichlet resampling (999 iterations)
+  ├── Dirichlet resampling (1000 iterations)
   ├── Re-compute Steps 2-3 on each sample
   └── Calculate posterior statistics
   ↓
@@ -65,7 +65,7 @@ x_normalized = (x - min_global) / (max_global - min_global) + ε
 - **Global normalization** uses min/max across ALL time periods (not per-year)
 - Preserves growth/decline patterns over the 14-year span
 - Epsilon shift (ε = 1e-10) ensures strictly positive values for logarithmic operations
-- Applied to entire N × p matrix: (882 observations × 28 sub-criteria)
+- Applied to entire N × p matrix: (882 observations × 29 sub-criteria)
 
 **Why Global?**
 - Year-by-year normalization would erase temporal trends
@@ -405,7 +405,7 @@ class GameTheoryWeightCombination:
 #### **Algorithm**
 
 ```
-For each iteration b = 1, ..., B (default B=999):
+For each iteration b = 1, ..., B (default B=1000):
 
   1. Draw Dirichlet weights:
      g_i ~ Exponential(1) for i = 1, ..., N
@@ -616,7 +616,7 @@ details = {
     
     # Bootstrap statistics
     'bootstrap': {
-        'iterations': 999,
+        'iterations': 1000,
         'mean_weights': {criterion: float, ...},  # Final output
         'std_weights': {criterion: float, ...},   # Uncertainty
         'ci_lower_2_5': {criterion: float, ...},  # 95% CI lower
@@ -652,7 +652,7 @@ details = {
 
 **With Bayesian Bootstrap (B iterations):**
 - **Total: O(B × N × p²)**
-- For B=199, N=882, p=28: ~15M operations
+- For B=199, N=882, p=29: ~15M operations
 - **Runtime:** ~30 seconds on modern CPU
 
 **Stability verification:**
@@ -667,7 +667,7 @@ details = {
 @dataclass
 class WeightingConfig:
     # Bayesian Bootstrap
-    bootstrap_iterations: int = 999
+    bootstrap_iterations: int = 1000
     # Odd number → no interpolation at percentiles
     # 999 provides robust 95% CIs (Efron & Tibshirani, 1993)
     

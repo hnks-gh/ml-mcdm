@@ -671,7 +671,7 @@ $$
 def rank(panel_data, weights_dict, target_year):
     # Prepare data structures
     alternatives = panel_data.provinces
-    hierarchy = panel_data.hierarchy  # 28 subcrit → 8 crit
+    hierarchy = panel_data.hierarchy  # 29 subcrit → 8 crit
     
     # Stage 1: For each of 8 criteria
     for criterion_id in criteria:

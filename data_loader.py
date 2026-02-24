@@ -1,11 +1,19 @@
 # -*- coding: utf-8 -*-
-"""Panel data loading with hierarchical structure and adaptive zero handling.
+"""Panel data loading with hierarchical structure and NaN-aware missing-data handling.
 
 This module handles:
 1. Loading multiple CSV files (one per year) from the data folder
 2. Hierarchical structure: Subcriteria → Criteria → Final Score
-3. Adaptive zero handling: Excludes provinces/subcriteria with 0 values from calculations
+3. Missing-data handling: Excludes provinces/sub-criteria with all-NaN values;
+   composites are computed from the available (non-NaN) values only.
 4. Composite calculation at each hierarchy level
+
+Notes
+-----
+The dataset uses NaN (not zero) to represent missing observations.  A value of
+exactly 0.0 is treated as a legitimate governance score.  All missing-data
+detection therefore relies on ``pd.notna()`` / ``pd.isnull()`` rather than
+comparisons against zero.
 """
 
 import numpy as np
@@ -25,10 +33,10 @@ except ImportError:
 @dataclass
 class HierarchyMapping:
     """Mapping between subcriteria and criteria."""
-    subcriteria_to_criteria: Dict[str, str]  # SC01 -> C01
-    criteria_to_subcriteria: Dict[str, List[str]]  # C01 -> [SC01, SC02, SC03, SC04]
+    subcriteria_to_criteria: Dict[str, str]  # SC11 -> C01
+    criteria_to_subcriteria: Dict[str, List[str]]  # C01 -> [SC11, SC12, SC13, SC14]
     criteria_names: Dict[str, str]  # C01 -> "Participation"
-    subcriteria_names: Dict[str, str]  # SC01 -> "Civic Knowledge"
+    subcriteria_names: Dict[str, str]  # SC11 -> "Civic Knowledge"
     
     @property
     def all_subcriteria(self) -> List[str]:
@@ -263,8 +271,10 @@ class DataLoader:
             subcriteria_cols = [c for c in hierarchy.all_subcriteria if c in df_year.columns]
             df_sub = df_year[['Year', 'Province'] + subcriteria_cols].copy()
             
-            # Track availability
-            provinces_with_data = df_sub[df_sub[subcriteria_cols].sum(axis=1) > 0]['Province'].tolist()
+            # Track availability — a province has data if ANY sub-criterion is non-NaN
+            provinces_with_data = df_sub[
+                df_sub[subcriteria_cols].notna().any(axis=1)
+            ]['Province'].tolist()
             availability['province_by_year'][year] = provinces_with_data
             
             # Calculate criteria from subcriteria (adaptive - exclude zeros)
@@ -284,15 +294,17 @@ class DataLoader:
                 
                 for idx, row in df_sub.iterrows():
                     province = row['Province']
-                    sub_values = [row[sc] for sc in available_subcrit if sc in row.index]
-                    non_zero_values = [v for v in sub_values if v > 0]
-                    
-                    if non_zero_values:
-                        criterion_score = np.mean(non_zero_values)
+                    # Use only non-NaN (present) sub-criteria values
+                    sub_values = [row[sc] for sc in available_subcrit]
+                    valid_values = [v for v in sub_values if pd.notna(v)]
+
+                    if valid_values:
+                        criterion_score = float(np.mean(valid_values))
                         provinces_with_criterion.append(province)
                     else:
+                        # All sub-criteria NaN for this criterion → mark as 0.0
                         criterion_score = 0.0
-                    
+
                     criterion_scores.append(criterion_score)
                 
                 criteria_values[criterion] = pd.Series(criterion_scores, index=df_sub.index)
@@ -311,9 +323,13 @@ class DataLoader:
             final_scores = []
             
             for idx, row in df_criteria.iterrows():
-                crit_values = [row[c] for c in hierarchy.all_criteria if c in df_criteria.columns]
-                non_zero_criteria = [v for v in crit_values if v > 0]
-                final_scores.append(np.mean(non_zero_criteria) if non_zero_criteria else 0.0)
+                crit_values = [row[c] for c in hierarchy.all_criteria
+                               if c in df_criteria.columns]
+                # Criteria scores of 0.0 indicate all-NaN at sub-criteria level;
+                # only aggregate over criteria that have real data (score > 0)
+                active_criteria = [v for v in crit_values if v > 0]
+                final_scores.append(float(np.mean(active_criteria))
+                                    if active_criteria else 0.0)
             
             # Create final score DataFrame
             df_final = pd.DataFrame({

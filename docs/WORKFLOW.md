@@ -24,7 +24,7 @@ The ML-MCDM pipeline analyzes panel data (entities × time periods × criteria) 
 - **12 MCDM Methods**: 6 Traditional + 6 IFS variants (TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS, SAW)
 - **Two-Stage Aggregation**: Within-criterion ER → Global ER
 - **GTWC Weighting**: Game Theory Weight Combination (Entropy + CRITIC + MEREC + SD)
-- **Bayesian Bootstrap**: 999 iterations for weight uncertainty quantification
+- **Bayesian Bootstrap**: 1000 iterations for weight uncertainty quantification
 - **ML Forecasting**: 6-model ensemble + Super Learner + Conformal Prediction
 - **Temporal Stability**: Split-half validation for robustness
 
@@ -47,13 +47,13 @@ The ML-MCDM pipeline analyzes panel data (entities × time periods × criteria) 
 │                                                                          │
 │  Phase 1: Data Loading                                                  │
 │  ┌──────────────────────────────────────────────────────────┐           │
-│  │ Yearly CSVs → PanelData (63 provinces × 14 years × 28)  │           │
+│  │ Yearly CSVs → PanelData (63 provinces × 14 years × 29)  │           │
 │  └────────────────────────┬─────────────────────────────────┘           │
 │                           │                                              │
 │  Phase 2: Weight Calculation                                            │
 │  ┌──────────────────────────────────────────────────────────┐           │
 │  │ GTWC: Entropy + CRITIC + MEREC + SD                     │           │
-│  │ → Game Theory Combination → Bayesian Bootstrap (999)    │           │
+│  │ → Game Theory Combination → Bayesian Bootstrap (1000)    │           │
 │  └────────────────────────┬─────────────────────────────────┘           │
 │                           │                                              │
 │  Phase 3: Hierarchical Ranking (IFS + ER)                               │
@@ -119,24 +119,24 @@ The ML-MCDM pipeline analyzes panel data (entities × time periods × criteria) 
 **Data Structure:**
 ```
 PanelData
-├── long: DataFrame         # Long format (Year, Province, C01...C28)
+├── long: DataFrame         # Long format (Year, Province, C01...C29)
 ├── wide: Dict[year, DataFrame]  # Province × Subcriteria per year
 ├── cross_section: Dict[year, DataFrame]
 ├── provinces: List[str]    # Entity identifiers (63 provinces + city)
 ├── years: List[int]        # Time periods (2011-2024, 14 years)
 ├── criteria: List[str]     # Criterion groups (C01-C08, 8 criteria)
-└── subcriteria: List[str]  # Subcriteria names (28 subcriteria)
+└── subcriteria: List[str]  # Subcriteria names (29 subcriteria)
 ```
 
 **Processing:**
 - Loads each year's CSV independently
 - Validates province codes (63 entities including cities)
-- Maps 28 subcriteria to 8 hierarchical criteria using codebook
+- Maps 29 subcriteria to 8 hierarchical criteria using codebook
 - Handles missing values via forward-fill
 - Constructs long-format panel for temporal analysis
 
 **Validation:**
-- Shape: (63 provinces × 14 years × 28 subcriteria) = 24696 observations
+- Shape: (63 provinces × 14 years × 29 subcriteria) = 24696 observations
 - All values normalized to [0, 1] range
 - No duplicate province-year combinations
 
@@ -171,7 +171,7 @@ PanelData
    W^* = \alpha_1 \cdot W_{\text{GroupA}} + \alpha_2 \cdot W_{\text{GroupB}}
    $$
 
-**Bayesian Bootstrap (999 iterations):**
+**Bayesian Bootstrap (1000 iterations):**
 - Uncertainty quantification via Dirichlet resampling
 - 95% confidence intervals for each criterion weight
 - Cosine similarity validation (should be > 0.95)
@@ -347,7 +347,7 @@ result/
 │   │
 │   ├── feature_importance.csv         # Aggregated from 6 forecast models (if enabled)
 │   │
-│   ├── sensitivity_subcriteria.csv    # Subcriteria sensitivity (28 scores)
+│   ├── sensitivity_subcriteria.csv    # Subcriteria sensitivity (29 scores)
 │   ├── sensitivity_criteria.csv       # Criteria sensitivity (8 scores)
 │   ├── temporal_stability.csv         # Year-to-year correlations
 │   ├── top_n_stability.csv            # Top-N ranking stability
@@ -401,7 +401,7 @@ print(f"Robustness: {result.analysis['sensitivity'].overall_robustness:.4f}")
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `bootstrap_iterations` | 999 | Bayesian bootstrap for weight uncertainty |
+| `bootstrap_iterations` | 1000 | Bayesian bootstrap for weight uncertainty |
 | `cv_folds` | 3 | Time-series CV folds for forecasting |
 | `n_simulations` | 1000 | Monte Carlo sensitivity simulations |
 | `random_state` | 42 | Reproducibility seed |
@@ -415,7 +415,7 @@ print(f"Robustness: {result.analysis['sensitivity'].overall_robustness:.4f}")
 
 | Component | Time | Notes |
 |-----------|------|-------|
-| Weighting | ~90s | Bootstrap (999 iterations) |
+| Weighting | ~90s | Bootstrap (1000 iterations) |
 | Ranking | ~10s | 12 MCDM + 2-stage ER |
 | ML Forecasting | ~15s | 6 models + Super Learner |
 | Sensitivity Analysis | ~20s | Monte Carlo (1000 sims) |
@@ -445,20 +445,20 @@ print(f"Robustness: {result.analysis['sensitivity'].overall_robustness:.4f}")
 ======================================================================
   Provinces         : 63
   Years             : 2011-2024 (14 years)
-  Subcriteria       : 28
+  Subcriteria       : 29
   Criteria          : 8
   MCDM methods      : 12 (6 traditional + 6 IFS)
-  Bootstrap iters   : 999
+  Bootstrap iters   : 1000
   Sensitivity sims  : 1000
   Output            : result/
 ======================================================================
 
 ▶ Phase 1/7: Data Loading
-  Loaded 63 provinces × 14 years × 28 subcriteria
+  Loaded 63 provinces × 14 years × 29 subcriteria
   ✓ Completed in 0.91s
 
 ▶ Phase 2/7: Weight Calculation
-  GTWC: Entropy + CRITIC + MEREC + SD with 29 bootstrap
+  GTWC: Entropy + CRITIC + MEREC + SD with 1000 bootstrap
   Weights: [0.142, 0.118, 0.095, 0.158, 0.127, 0.109, 0.132, 0.119]
   Cosine similarity: 0.9915 (stable)
   ✓ Completed in 19.51s
