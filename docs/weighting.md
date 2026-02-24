@@ -36,7 +36,7 @@ Step 3: Game Theory Weight Combination (GTWC)
       └── W* = α₁·W_GroupA + α₂·W_GroupB
   ↓
 Step 4: Bayesian Bootstrap (uncertainty quantification)
-  ├── Dirichlet resampling (1000 iterations)
+  ├── Dirichlet resampling (200 iterations)
   ├── Re-compute Steps 2-3 on each sample
   └── Calculate posterior statistics
   ↓
@@ -405,7 +405,7 @@ class GameTheoryWeightCombination:
 #### **Algorithm**
 
 ```
-For each iteration b = 1, ..., B (default B=1000):
+For each iteration b = 1, ..., B (default B=200):
 
   1. Draw Dirichlet weights:
      g_i ~ Exponential(1) for i = 1, ..., N
@@ -616,7 +616,7 @@ details = {
     
     # Bootstrap statistics
     'bootstrap': {
-        'iterations': 1000,
+        'iterations': 200,
         'mean_weights': {criterion: float, ...},  # Final output
         'std_weights': {criterion: float, ...},   # Uncertainty
         'ci_lower_2_5': {criterion: float, ...},  # 95% CI lower
@@ -667,7 +667,7 @@ details = {
 @dataclass
 class WeightingConfig:
     # Bayesian Bootstrap
-    bootstrap_iterations: int = 1000
+    bootstrap_iterations: int = 200
     # Odd number → no interpolation at percentiles
     # 999 provides robust 95% CIs (Efron & Tibshirani, 1993)
     

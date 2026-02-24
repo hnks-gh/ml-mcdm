@@ -117,8 +117,14 @@ class EntropyWeightCalculator:
         data_valid = data.copy()
         # Impute any NaN cells with the column mean before computing weights.
         # Upstream callers should pre-impute, but this is a defensive guard.
+        # For columns that are entirely NaN (e.g., temporal split-half with
+        # missing early-year data), data.mean() returns NaN and fillna(NaN)
+        # is a no-op.  Fall back to epsilon so those columns carry no
+        # information content (they receive zero weight via max entropy).
         if data_valid.isnull().any().any():
-            data_valid = data_valid.fillna(data_valid.mean())
+            _col_means = data_valid.mean()
+            _col_means = _col_means.fillna(self.epsilon)  # all-NaN col fallback
+            data_valid = data_valid.fillna(_col_means)
         for col in data_valid.columns:
             if data_valid[col].min() < 0:
                 data_valid[col] = data_valid[col] - data_valid[col].min() + self.epsilon

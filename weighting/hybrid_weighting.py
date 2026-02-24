@@ -37,7 +37,7 @@ class HybridWeightingPipeline:
     
     Parameters
     ----------
-    bootstrap_iterations : int, default=1000
+    bootstrap_iterations : int, default=200
         Number of Bayesian Bootstrap iterations for uncertainty quantification.
     stability_threshold : float, default=0.95
         Minimum cosine similarity for temporal stability (split-half test).
@@ -58,44 +58,6 @@ class HybridWeightingPipeline:
         Standard deviation-based weighting.
     gtwc : GameTheoryWeightCombination
         Game Theory Weight Combination for Nash equilibrium fusion.
-    
-    Examples
-    --------
-    >>> import pandas as pd
-    >>> from weighting import HybridWeightingPipeline
-    >>> 
-    >>> # Panel data: long format with entity, time, and criteria
-    >>> panel_data = pd.DataFrame({
-    >>>     'Year': [2020, 2020, 2021, 2021],
-    >>>     'Province': ['A', 'B', 'A', 'B'],
-    >>>     'C1': [1.0, 2.0, 1.5, 2.5],
-    >>>     'C2': [10.0, 20.0, 15.0, 25.0],
-    >>> })
-    >>> 
-    >>> # Initialize pipeline with GTWC fusion
-    >>> pipeline = HybridWeightingPipeline(
-    >>>     bootstrap_iterations=1000
-    >>> )
-    >>> 
-    >>> # Calculate weights
-    >>> result = pipeline.calculate(
-    >>>     panel_data,
-    >>>     entity_col='Province',
-    >>>     time_col='Year',
-    >>>     criteria_cols=['C1', 'C2']
-    >>> )
-    >>> 
-    >>> # Access final weights
-    >>> print(result.weights)  # {'C1': 0.xx, 'C2': 0.xx}
-    >>> 
-    >>> # Check GTWC coefficients
-    >>> print(result.details['fusion']['game_theory_coefficients'])
-    >>> 
-    >>> # Check uncertainty
-    >>> print(result.details['bootstrap']['std_weights'])
-    >>> 
-    >>> # Verify stability
-    >>> print(result.details['stability']['is_stable'])
     
     Notes
     -----
@@ -147,7 +109,7 @@ class HybridWeightingPipeline:
 
     def __init__(
         self,
-        bootstrap_iterations: int = 1000,
+        bootstrap_iterations: int = 200,
         stability_threshold: float = 0.95,
         epsilon: float = 1e-10,
         seed: int = 42,
@@ -155,8 +117,10 @@ class HybridWeightingPipeline:
         """
         Parameters
         ----------
-        bootstrap_iterations : int, default=1000
+        bootstrap_iterations : int, default=200
             Number of Bayesian bootstrap iterations for uncertainty quantification.
+            The loop also exits early once the posterior mean weights converge,
+            so the actual iteration count is often lower.
         stability_threshold : float, default=0.95
             Minimum required stability score (0-1) for validation.
         epsilon : float, default=1e-10
@@ -233,17 +197,23 @@ class HybridWeightingPipeline:
         # per column, which is the conservative choice when the true value
         # is unknown.  This must be done BEFORE the weight calculators,
         # none of which are designed to handle NaN inputs.
+        # For wholly-missing columns (all-NaN across the entire panel) the
+        # column mean is also NaN; fall back to epsilon so those columns
+        # carry no information content and receive near-zero weight.
         nan_mask = np.isnan(X_norm)
         if nan_mask.any():
             col_means = np.nanmean(X_norm, axis=0)
+            col_means = np.where(np.isnan(col_means), self.epsilon, col_means)  # all-NaN fallback
             nan_rows, nan_cols = np.where(nan_mask)
             X_norm[nan_rows, nan_cols] = col_means[nan_cols]
             n_imputed = int(nan_mask.sum())
             n_affected_cols = int(nan_mask.any(axis=0).sum())
+            n_all_nan_cols = int(np.isnan(np.nanmean(X_norm, axis=0)).sum() == 0
+                                 and nan_mask.all(axis=0).sum())
             logger.info(
                 f"Step 1: Imputed {n_imputed} missing cells "
                 f"({n_affected_cols}/{X_norm.shape[1]} criteria affected) "
-                f"with per-column normalised mean"
+                f"with per-column normalised mean (epsilon fallback for all-NaN cols)"
             )
 
         # ── Step 2: Calculate Individual Weight Vectors ──
@@ -294,7 +264,7 @@ class HybridWeightingPipeline:
         def compute_fused_weights(X_df: pd.DataFrame, cols: List[str],
                                   sample_weights: 'np.ndarray | None' = None) -> np.ndarray:
             """Helper: compute fused weights for bootstrap using GTWC.
-            
+
             Parameters
             ----------
             X_df : pd.DataFrame
@@ -306,12 +276,23 @@ class HybridWeightingPipeline:
                 Bootstrap loop.  Passed through to each weight calculator
                 so that weighted statistics are computed without discrete
                 resampling.
+
+            IMPORTANT: call each calculator exactly ONCE and cache the
+            result before extracting per-criterion weights.  The list
+            comprehension ``[calc.calculate(...).weights[c] for c in cols]``
+            would call ``calculate()`` once PER CRITERION (29×) instead of
+            once per method, inflating cost by a factor of n_criteria.
             """
-            W_e = np.array([self.entropy_calc.calculate(X_df, sample_weights=sample_weights).weights[c] for c in cols])
-            W_c = np.array([self.critic_calc.calculate(X_df, sample_weights=sample_weights).weights[c] for c in cols])
-            W_m = np.array([self.merec_calc.calculate(X_df, sample_weights=sample_weights).weights[c] for c in cols])
-            W_s = np.array([self.sd_calc.calculate(X_df, sample_weights=sample_weights).weights[c] for c in cols])
-            
+            _e = self.entropy_calc.calculate(X_df, sample_weights=sample_weights)
+            _c = self.critic_calc.calculate(X_df, sample_weights=sample_weights)
+            _m = self.merec_calc.calculate(X_df, sample_weights=sample_weights)
+            _s = self.sd_calc.calculate(X_df, sample_weights=sample_weights)
+
+            W_e = np.array([_e.weights[c] for c in cols])
+            W_c = np.array([_c.weights[c] for c in cols])
+            W_m = np.array([_m.weights[c] for c in cols])
+            W_s = np.array([_s.weights[c] for c in cols])
+
             wv = {'entropy': W_e, 'critic': W_c, 'merec': W_m, 'std_dev': W_s}
             W_fused, _ = self.gtwc.combine(wv)
             return W_fused
@@ -348,9 +329,25 @@ class HybridWeightingPipeline:
             stability_df = panel_data[[time_col] + criteria_cols].copy()
 
             def compute_weights_from_df(df_half):
-                """Helper: normalize subset and compute fused weights."""
+                """Helper: normalize subset and compute fused weights.
+
+                Applies NaN-safe column-mean imputation (with an epsilon
+                fallback for columns that are wholly absent in this temporal
+                half) so that the weight calculators always receive a
+                fully-numeric matrix — even when early-year halves contain
+                columns that were never measured (e.g. SC71–SC83 pre-2018).
+                """
                 X_half = df_half[criteria_cols].values.astype(float)
                 X_half_norm = global_min_max_normalize(X_half, epsilon=self.epsilon)
+                # NaN-safe imputation: col mean, falling back to epsilon for
+                # columns that are entirely NaN in this half-panel.
+                nan_mask_h = np.isnan(X_half_norm)
+                if nan_mask_h.any():
+                    col_means_h = np.nanmean(X_half_norm, axis=0)
+                    col_means_h = np.where(np.isnan(col_means_h),
+                                           self.epsilon, col_means_h)
+                    r, c = np.where(nan_mask_h)
+                    X_half_norm[r, c] = col_means_h[c]
                 X_half_df = pd.DataFrame(X_half_norm, columns=criteria_cols)
                 return compute_fused_weights(X_half_df, criteria_cols)
 

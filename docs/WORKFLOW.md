@@ -24,7 +24,7 @@ The ML-MCDM pipeline analyzes panel data (entities × time periods × criteria) 
 - **12 MCDM Methods**: 6 Traditional + 6 IFS variants (TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS, SAW)
 - **Two-Stage Aggregation**: Within-criterion ER → Global ER
 - **GTWC Weighting**: Game Theory Weight Combination (Entropy + CRITIC + MEREC + SD)
-- **Bayesian Bootstrap**: 1000 iterations for weight uncertainty quantification
+- **Bayesian Bootstrap**: 200 iterations for weight uncertainty quantification
 - **ML Forecasting**: 6-model ensemble + Super Learner + Conformal Prediction
 - **Temporal Stability**: Split-half validation for robustness
 
@@ -53,7 +53,7 @@ The ML-MCDM pipeline analyzes panel data (entities × time periods × criteria) 
 │  Phase 2: Weight Calculation                                            │
 │  ┌──────────────────────────────────────────────────────────┐           │
 │  │ GTWC: Entropy + CRITIC + MEREC + SD                     │           │
-│  │ → Game Theory Combination → Bayesian Bootstrap (1000)    │           │
+│  │ → Game Theory Combination → Bayesian Bootstrap (200)    │           │
 │  └────────────────────────┬─────────────────────────────────┘           │
 │                           │                                              │
 │  Phase 3: Hierarchical Ranking (IFS + ER)                               │
@@ -171,7 +171,7 @@ PanelData
    W^* = \alpha_1 \cdot W_{\text{GroupA}} + \alpha_2 \cdot W_{\text{GroupB}}
    $$
 
-**Bayesian Bootstrap (1000 iterations):**
+**Bayesian Bootstrap (200) iterations):**
 - Uncertainty quantification via Dirichlet resampling
 - 95% confidence intervals for each criterion weight
 - Cosine similarity validation (should be > 0.95)
@@ -401,7 +401,7 @@ print(f"Robustness: {result.analysis['sensitivity'].overall_robustness:.4f}")
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `bootstrap_iterations` | 1000 | Bayesian bootstrap for weight uncertainty |
+| `bootstrap_iterations` | 200 | Bayesian bootstrap for weight uncertainty |
 | `cv_folds` | 3 | Time-series CV folds for forecasting |
 | `n_simulations` | 1000 | Monte Carlo sensitivity simulations |
 | `random_state` | 42 | Reproducibility seed |
@@ -415,7 +415,7 @@ print(f"Robustness: {result.analysis['sensitivity'].overall_robustness:.4f}")
 
 | Component | Time | Notes |
 |-----------|------|-------|
-| Weighting | ~90s | Bootstrap (1000 iterations) |
+| Weighting | ~90s | Bootstrap (200 iterations) |
 | Ranking | ~10s | 12 MCDM + 2-stage ER |
 | ML Forecasting | ~15s | 6 models + Super Learner |
 | Sensitivity Analysis | ~20s | Monte Carlo (1000 sims) |
@@ -448,7 +448,7 @@ print(f"Robustness: {result.analysis['sensitivity'].overall_robustness:.4f}")
   Subcriteria       : 29
   Criteria          : 8
   MCDM methods      : 12 (6 traditional + 6 IFS)
-  Bootstrap iters   : 1000
+  Bootstrap iters   : 200
   Sensitivity sims  : 1000
   Output            : result/
 ======================================================================
@@ -458,7 +458,7 @@ print(f"Robustness: {result.analysis['sensitivity'].overall_robustness:.4f}")
   ✓ Completed in 0.91s
 
 ▶ Phase 2/7: Weight Calculation
-  GTWC: Entropy + CRITIC + MEREC + SD with 1000 bootstrap
+  GTWC: Entropy + CRITIC + MEREC + SD with 200 bootstrap
   Weights: [0.142, 0.118, 0.095, 0.158, 0.127, 0.109, 0.132, 0.119]
   Cosine similarity: 0.9915 (stable)
   ✓ Completed in 19.51s

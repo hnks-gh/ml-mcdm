@@ -108,9 +108,12 @@ class CRITICWeightCalculator:
         n = len(data)
         # Impute any NaN cells with the column mean before computing weights.
         # Upstream callers should pre-impute, but this is a defensive guard.
+        # For wholly-missing columns fall back to epsilon (avoids NaN std/corr).
         data = data.copy()
         if data.isnull().any().any():
-            data = data.fillna(data.mean())
+            _col_means = data.mean()
+            _col_means = _col_means.fillna(self.epsilon)  # all-NaN col fallback
+            data = data.fillna(_col_means)
         X = data.values  # (n, p)
         columns = data.columns.tolist()
         

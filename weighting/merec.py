@@ -83,9 +83,15 @@ class MERECWeightCalculator:
 
         # Impute any NaN cells with the column mean before computing weights.
         # Upstream callers should pre-impute, but this is a defensive guard.
+        # For wholly-missing columns fall back to epsilon so that the ratio
+        # normalisation in _normalize produces 1.0 (|ln 1| = 0), giving that
+        # column zero removal effect and therefore zero weight — which is the
+        # correct behaviour when no data exists for that criterion.
         data = data.copy()
         if data.isnull().any().any():
-            data = data.fillna(data.mean())
+            _col_means = data.mean()
+            _col_means = _col_means.fillna(self.epsilon)  # all-NaN col fallback
+            data = data.fillna(_col_means)
         
         # Validate / default observation weights
         if sample_weights is not None:

@@ -215,7 +215,10 @@ class WeightingConfig:
     4. Bayesian Bootstrap uncertainty quantification
     5. Split-half temporal stability verification
     """
-    bootstrap_iterations: int = 1000
+    # 200 iterations is statistically sound for 95 % credible intervals on
+    # this panel size.  The bootstrap also has convergence-based early
+    # stopping, so it typically terminates well before the cap.
+    bootstrap_iterations: int = 200
     stability_threshold: float = 0.95
     epsilon: float = 1e-10
 

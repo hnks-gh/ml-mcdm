@@ -71,14 +71,23 @@ def global_min_max_normalize(
     # Compute global min/max for each criterion (NaN-aware: missing cells are ignored)
     col_min = np.nanmin(X, axis=0)
     col_max = np.nanmax(X, axis=0)
-    
-    # Handle constant columns (where min == max)
+
+    # Handle all-NaN columns: nanmin/nanmax return NaN for columns where every
+    # observation is missing.  Replace NaN col_min with 0 so that the
+    # subtraction (X - col_min) does not propagate a spurious NaN into
+    # the output for rows that happen to have a real value.
+    all_nan_cols = np.isnan(col_min)          # True for fully-missing criteria
+    col_min = np.where(all_nan_cols, 0.0, col_min)
+    col_max = np.where(all_nan_cols, epsilon, col_max)
+
+    # Handle constant columns (where min == max) and residual NaN denom
     denom = col_max - col_min
+    denom = np.where(np.isnan(denom), epsilon, denom)  # Safety: remaining NaN
     denom[denom < epsilon] = epsilon
-    
+
     # Normalize to [0, 1] and add epsilon shift
     X_norm = (X - col_min) / denom + epsilon
-    
+
     return X_norm
 
 
@@ -141,6 +150,10 @@ class GlobalNormalizer:
         # NaN-aware: missing cells are ignored when computing statistics
         self.col_min_ = np.nanmin(X, axis=0)
         self.col_max_ = np.nanmax(X, axis=0)
+        # Guard all-NaN columns
+        all_nan = np.isnan(self.col_min_)
+        self.col_min_ = np.where(all_nan, 0.0, self.col_min_)
+        self.col_max_ = np.where(all_nan, self.epsilon, self.col_max_)
         self.is_fitted_ = True
         return self
     
@@ -169,11 +182,12 @@ class GlobalNormalizer:
         
         # Handle constant columns
         denom = self.col_max_ - self.col_min_
+        denom = np.where(np.isnan(denom), self.epsilon, denom)  # residual NaN guard
         denom[denom < self.epsilon] = self.epsilon
-        
+
         # Apply fitted transformation
         X_norm = (X - self.col_min_) / denom + self.epsilon
-        
+
         return X_norm
     
     def fit_transform(self, X: np.ndarray) -> np.ndarray:
