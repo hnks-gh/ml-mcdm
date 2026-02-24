@@ -191,30 +191,30 @@ class HybridWeightingPipeline:
         X_norm = global_min_max_normalize(X_raw, epsilon=self.epsilon)
         logger.info("Step 1: Global normalization complete")
 
-        # Impute any remaining NaN cells (missing observations) with the
-        # column mean of non-NaN normalised values.  Column-mean imputation
-        # is neutral: the imputed rows add zero discriminatory information
-        # per column, which is the conservative choice when the true value
-        # is unknown.  This must be done BEFORE the weight calculators,
-        # none of which are designed to handle NaN inputs.
-        # For wholly-missing columns (all-NaN across the entire panel) the
-        # column mean is also NaN; fall back to epsilon so those columns
-        # carry no information content and receive near-zero weight.
+        # Guard against NaN propagation.
+        # Under the dynamic-exclusion regime, callers in pipeline.py pre-filter
+        # province-year rows that have any missing SC before calling this method,
+        # so X_norm should be NaN-free.  If NaN still appear (e.g. direct calls
+        # with raw data), log a prominent warning and apply column-mean fallback
+        # so downstream weight calculators (none of which accept NaN) do not
+        # raise.  This is a safety net — not a substitute for clean input data.
         nan_mask = np.isnan(X_norm)
         if nan_mask.any():
+            n_imputed       = int(nan_mask.sum())
+            n_affected_cols = int(nan_mask.any(axis=0).sum())
+            logger.warning(
+                f"Step 1: Received {n_imputed} NaN cells across "
+                f"{n_affected_cols}/{X_norm.shape[1]} sub-criteria. "
+                f"Input data should be pre-cleaned (NaN rows dropped) before "
+                f"calling HybridWeightingPipeline. "
+                f"Applying per-column mean fallback for numerical stability — "
+                f"imputed cells carry zero discriminating weight."
+            )
             col_means = np.nanmean(X_norm, axis=0)
-            col_means = np.where(np.isnan(col_means), self.epsilon, col_means)  # all-NaN fallback
+            # Wholly-NaN columns: fall back to epsilon so they receive ~0 weight
+            col_means = np.where(np.isnan(col_means), self.epsilon, col_means)
             nan_rows, nan_cols = np.where(nan_mask)
             X_norm[nan_rows, nan_cols] = col_means[nan_cols]
-            n_imputed = int(nan_mask.sum())
-            n_affected_cols = int(nan_mask.any(axis=0).sum())
-            n_all_nan_cols = int(np.isnan(np.nanmean(X_norm, axis=0)).sum() == 0
-                                 and nan_mask.all(axis=0).sum())
-            logger.info(
-                f"Step 1: Imputed {n_imputed} missing cells "
-                f"({n_affected_cols}/{X_norm.shape[1]} criteria affected) "
-                f"with per-column normalised mean (epsilon fallback for all-NaN cols)"
-            )
 
         # ── Step 2: Calculate Individual Weight Vectors ──
         X_df = pd.DataFrame(X_norm, columns=criteria_cols)

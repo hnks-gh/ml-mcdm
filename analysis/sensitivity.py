@@ -309,19 +309,30 @@ class SensitivityAnalysis:
         _precomp = getattr(base_er_result, 'criterion_method_scores', None)
         _can_fast = (_precomp is not None) and hasattr(ranking_pipeline, 'rank_fast')
         _hier = panel_data.hierarchy
-        _alts = list(panel_data.provinces)
+        # Use year-context active provinces (dynamic exclusion): only provinces
+        # that have valid data in the base year participate in sensitivity analysis.
+        _base_ctx = getattr(panel_data, 'year_contexts', {}).get(base_year)
+        _alts = (
+            list(_base_ctx.active_provinces)
+            if _base_ctx is not None
+            else list(panel_data.provinces)
+        )
+        _n_alts = len(_alts)
 
         # Criteria-level sensitivity
         criteria_sens = {}
         fused_weights = weights['fused']
         criteria = panel_data.hierarchy.all_criteria
-        
+        # Use the active subcriteria list (same ordering as fused_weights array)
+        active_subcriteria_list = weights['subcriteria']
+        active_sc_index = {sc: j for j, sc in enumerate(active_subcriteria_list)}
+
         for i, criterion in enumerate(criteria):
-            # Find subcriteria for this criterion
+            # Find indices within `active_subcriteria_list` for this criterion
             subcrit_indices = []
-            for j, sub in enumerate(panel_data.hierarchy.all_subcriteria):
-                if panel_data.hierarchy.subcriteria_to_criteria.get(sub) == criterion:
-                    subcrit_indices.append(j)
+            for sub in panel_data.hierarchy.criteria_to_subcriteria.get(criterion, []):
+                if sub in active_sc_index:
+                    subcrit_indices.append(active_sc_index[sub])
             
             if not subcrit_indices:
                 continue
@@ -365,7 +376,7 @@ class SensitivityAnalysis:
                     continue
             
             if rank_changes:
-                criteria_sens[criterion] = np.mean(rank_changes) / len(panel_data.provinces)
+                criteria_sens[criterion] = np.mean(rank_changes) / max(_n_alts, 1)
             else:
                 criteria_sens[criterion] = 0.0
         
@@ -375,8 +386,11 @@ class SensitivityAnalysis:
             criteria_sens = {k: v / max_sens for k, v in criteria_sens.items()}
         
         # Subcriteria-level sensitivity (one-at-a-time)
+        # Use weights['subcriteria'] — the globally-active subset after
+        # dynamic exclusion in the weighting pipeline — not the full
+        # hierarchy list which may include all-NaN sub-criteria.
         subcriteria_sens = {}
-        subcriteria = panel_data.hierarchy.all_subcriteria
+        subcriteria = weights['subcriteria']
         
         for i, subcriterion in enumerate(subcriteria):
             rank_changes = []
@@ -412,7 +426,7 @@ class SensitivityAnalysis:
                     continue
             
             if rank_changes:
-                subcriteria_sens[subcriterion] = np.mean(rank_changes) / len(panel_data.provinces)
+                subcriteria_sens[subcriterion] = np.mean(rank_changes) / max(_n_alts, 1)
             else:
                 subcriteria_sens[subcriterion] = 0.0
         
@@ -429,17 +443,23 @@ class SensitivityAnalysis:
                               weights: Dict) -> Tuple[Dict, Dict, np.ndarray]:
         """Monte Carlo simulation with simultaneous weight perturbations (parallelized)."""
         base_year = max(panel_data.years)
-        n_provinces = len(panel_data.provinces)
-        
+        # Dynamic exclusion: use only active provinces for the base year
+        _mc_ctx    = getattr(panel_data, 'year_contexts', {}).get(base_year)
+        _alts_mc   = (
+            list(_mc_ctx.active_provinces)
+            if _mc_ctx is not None
+            else list(panel_data.provinces)
+        )
+        n_provinces = len(_alts_mc)
+
         # Get base ranking
         base_result = ranking_pipeline.rank(panel_data, self._weights_to_dict(weights), target_year=base_year)
         base_ranking = base_result.final_ranking.rank().values
 
         # Precompute MCDM scores for fast ER-only reruns
-        _precomp_mc = getattr(base_result, 'criterion_method_scores', None)
+        _precomp_mc  = getattr(base_result, 'criterion_method_scores', None)
         _can_fast_mc = (_precomp_mc is not None) and hasattr(ranking_pipeline, 'rank_fast')
-        _hier_mc = panel_data.hierarchy
-        _alts_mc = list(panel_data.provinces)
+        _hier_mc     = panel_data.hierarchy
 
         # Monte Carlo simulations — honour the user-specified count in full.
         # The old `min(..., 100)` silently discarded 90% of requested simulations.
@@ -530,16 +550,16 @@ class SensitivityAnalysis:
                         RuntimeWarning, stacklevel=2,
                     )
         
-        # Calculate rank stability per province
+        # Calculate rank stability per province (over active provinces only)
         rank_stability = {}
-        for i, province in enumerate(panel_data.provinces):
+        for i, province in enumerate(_alts_mc):
             ranks = simulated_rankings[:, i]
-            
-            # Stability = 1 - (normalized std deviation)
-            max_std = n_provinces / 2
+
+            # Stability = 1 - (normalised std dev)
+            max_std   = max(n_provinces / 2, 1)
             actual_std = ranks.std()
-            stability = max(0, 1 - actual_std / max_std)
-            
+            stability  = max(0.0, 1.0 - actual_std / max_std)
+
             rank_stability[province] = stability
         
         # Top-N stability
@@ -567,43 +587,93 @@ class SensitivityAnalysis:
         if len(years) < 3:
             return {}, {}
         
-        # Get rankings for multiple years (subsample for efficiency)
-        year_rankings = {}
+        # Get rankings for multiple years (subsample for efficiency).
+        # Store the full final_ranking Series (indexed by province) so we can
+        # later align to the common-province intersection before computing
+        # Spearman correlations — different active-province counts per year
+        # would otherwise cause dimension mismatches in spearmanr().
+        year_ranking_series: Dict[int, pd.Series] = {}
         sample_years = years[-5:] if len(years) > 5 else years
-        
+
         for year in sample_years:
             try:
-                result = ranking_pipeline.rank(panel_data, self._weights_to_dict(weights), target_year=year)
-                year_rankings[year] = result.final_ranking.rank().values
+                result = ranking_pipeline.rank(
+                    panel_data, self._weights_to_dict(weights), target_year=year
+                )
+                year_ranking_series[year] = result.final_ranking  # pd.Series
             except Exception:
                 continue
-        
-        if len(year_rankings) < 2:
+
+        if len(year_ranking_series) < 2:
             return {}, {}
-        
-        # Year-to-year rank correlation — use Spearman because the inputs
-        # are rank vectors (ordinal data), not interval/ratio measurements.
+
+        sorted_years = sorted(year_ranking_series.keys())
+
+        # ------------------------------------------------------------------
+        # Compute common-province intersection first — used for both the
+        # Spearman correlation (size alignment) and volatility analysis.
+        # ------------------------------------------------------------------
+        common_provinces = None
+        for yr in sorted_years:
+            ctx_yr = getattr(panel_data, 'year_contexts', {}).get(yr)
+            yr_provs = (
+                set(ctx_yr.active_provinces)
+                if ctx_yr is not None
+                else set(panel_data.provinces)
+            )
+            common_provinces = (
+                yr_provs if common_provinces is None
+                else common_provinces & yr_provs
+            )
+        common_provinces = sorted(common_provinces or panel_data.provinces)
+
+        # Helper: map a Series to a fixed province list (NaN for absent)
+        def _reindex_ranking(ranking_series: pd.Series,
+                             target_provinces: List[str]) -> np.ndarray:
+            """Reindex a ranking Series to a fixed province list."""
+            return np.array([
+                float(ranking_series.get(p, np.nan))
+                for p in target_provinces
+            ])
+
+        # Build aligned rank arrays once, reused for both correlation and volatility
+        aligned_rankings: Dict[int, np.ndarray] = {
+            yr: _reindex_ranking(year_ranking_series[yr], common_provinces)
+            for yr in sorted_years
+        }
+
+        # Year-to-year rank correlation — Spearman on common-province-aligned
+        # arrays so both inputs always have identical length.
         from scipy.stats import spearmanr
         temporal_stability = {}
-        sorted_years = sorted(year_rankings.keys())
-
         for i in range(len(sorted_years) - 1):
             y1, y2 = sorted_years[i], sorted_years[i + 1]
-            corr, _ = spearmanr(year_rankings[y1], year_rankings[y2])
+            a1 = aligned_rankings[y1]
+            a2 = aligned_rankings[y2]
+            # Mask provinces missing in either year
+            valid_mask = ~(np.isnan(a1) | np.isnan(a2))
+            if valid_mask.sum() >= 3:
+                corr, _ = spearmanr(a1[valid_mask], a2[valid_mask])
+            else:
+                corr = 0.0
             temporal_stability[f"{y1}-{y2}"] = float(np.nan_to_num(corr))
-        
+
         # Province-level rank volatility over time
         temporal_volatility = {}
-        ranking_matrix = np.array([year_rankings[y] for y in sorted_years])
-        
-        for i, province in enumerate(panel_data.provinces):
-            province_ranks = ranking_matrix[:, i]
-            volatility = province_ranks.std()
-            
-            # Normalize by max possible volatility
-            max_volatility = len(panel_data.provinces) / 2
-            temporal_volatility[province] = volatility / max_volatility
-        
+        ranking_matrix = np.array(
+            [aligned_rankings.get(yr, np.full(len(common_provinces), np.nan))
+             for yr in sorted_years]
+        )
+        max_volatility = max(len(common_provinces) / 2, 1)
+        for i, province in enumerate(common_provinces):
+            prov_ranks = ranking_matrix[:, i]
+            valid_ranks = prov_ranks[~np.isnan(prov_ranks)]
+            if len(valid_ranks) >= 2:
+                volatility = valid_ranks.std() / max_volatility
+            else:
+                volatility = 0.0
+            temporal_volatility[province] = float(volatility)
+
         return temporal_stability, temporal_volatility
     
     def _ifs_uncertainty_sensitivity(self,
@@ -633,14 +703,19 @@ class SensitivityAnalysis:
         import logging
         _logger = logging.getLogger('ml_mcdm')
 
-        base_year = max(panel_data.years)
-        n_provinces = len(panel_data.provinces)
+        base_year    = max(panel_data.years)
+        _ifs_ctx     = getattr(panel_data, 'year_contexts', {}).get(base_year)
+        n_provinces  = len(
+            _ifs_ctx.active_provinces
+            if _ifs_ctx is not None
+            else panel_data.provinces
+        )
         n_sims = min(self.n_simulations, 15)  # cap for cost
-        delta = self.ifs_perturbation  # default 0.10
+        delta  = self.ifs_perturbation  # default 0.10
 
         # ── Obtain base ranking & base IFS matrices ──
         try:
-            base_result = ranking_pipeline.rank(
+            base_result  = ranking_pipeline.rank(
                 panel_data, self._weights_to_dict(weights), target_year=base_year)
             base_ranking = base_result.final_ranking.rank().values
         except Exception as e:
@@ -648,32 +723,28 @@ class SensitivityAnalysis:
                             "returning zero sensitivity.")
             return 0.0, 0.0
 
-        # Build base IFS matrices per criterion (same logic as the
-        # ranking pipeline uses internally).
+        # Build base IFS matrices per criterion using clean criterion matrices
         from mcdm.ifs.base import IFSDecisionMatrix
-        hierarchy = panel_data.hierarchy
-        current_data = panel_data.subcriteria_cross_section[base_year]
+        hierarchy      = panel_data.hierarchy
         historical_std = ranking_pipeline._compute_historical_std(panel_data)
-        global_range = ranking_pipeline._compute_global_range(panel_data)
+        global_range   = ranking_pipeline._compute_global_range(panel_data)
 
         base_ifs: Dict[str, IFSDecisionMatrix] = {}
         for crit_id in sorted(hierarchy.all_criteria):
-            subcrit_cols = hierarchy.criteria_to_subcriteria.get(crit_id, [])
-            subcrit_cols = [sc for sc in subcrit_cols if sc in current_data.columns]
-            if not subcrit_cols:
+            # Use get_criterion_matrix for NaN-free data (respects YearContext)
+            df_crit = panel_data.get_criterion_matrix(base_year, crit_id)
+            if df_crit.empty:
                 continue
-
-            df_crit = current_data[subcrit_cols].copy()
-            cost_local = [c for c in subcrit_cols
-                          if c in ranking_pipeline.cost_criteria]
-            df_norm = ranking_pipeline._minmax_normalize(
+            subcrit_cols = df_crit.columns.tolist()
+            cost_local   = [c for c in subcrit_cols
+                            if c in ranking_pipeline.cost_criteria]
+            df_norm      = ranking_pipeline._minmax_normalize(
                 df_crit, cost_criteria=cost_local)
             std_crit = (historical_std[subcrit_cols].copy()
                         if all(sc in historical_std.columns
                                for sc in subcrit_cols)
-                        else pd.DataFrame(0.0,
-                                          index=panel_data.provinces,
-                                          columns=subcrit_cols))
+                        else pd.DataFrame(
+                            0.0, index=df_crit.index, columns=subcrit_cols))
             range_crit = (global_range[subcrit_cols]
                           if all(sc in global_range.index
                                  for sc in subcrit_cols)

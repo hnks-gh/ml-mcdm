@@ -170,18 +170,21 @@ class HierarchicalRankingPipeline:
         """
         Execute the full two-stage hierarchical ranking.
 
+        Dynamic exclusion: the ``YearContext`` stored inside *panel_data*
+        dictates which provinces and sub-criteria are treated as *existing*
+        for *target_year*.  Missing entities are completely absent from the
+        ranking — they are not assigned placeholder scores.
+
         Parameters
         ----------
         panel_data : PanelData
-            Hierarchical panel dataset.
+            Hierarchical panel dataset (must contain ``year_contexts``).
         subcriteria_weights : dict
-            {SC01: 0.035, SC02: 0.041, …} — fused subcriteria weights.
+            {SC_code: weight} — fused sub-criteria weights from GTWC.
         target_year : int, optional
             Year to rank (default: latest year).
         ifs_overrides : dict, optional
-            {criterion_id: IFSDecisionMatrix} — pre-built (e.g. perturbed)
-            IFS matrices to use *instead* of constructing from temporal
-            variance.  Used by sensitivity analysis.
+            Pre-built IFS matrices for sensitivity analysis.
 
         Returns
         -------
@@ -190,72 +193,145 @@ class HierarchicalRankingPipeline:
         if target_year is None:
             target_year = max(panel_data.years)
 
-        hierarchy = panel_data.hierarchy
-        alternatives = panel_data.provinces
-
-        logger.info(f"Hierarchical ranking for year {target_year}")
-        logger.info(f"  {len(alternatives)} alternatives, "
-                    f"{len(hierarchy.all_criteria)} criteria groups, "
-                    f"12 MCDM methods")
+        hierarchy   = panel_data.hierarchy
 
         # ------------------------------------------------------------------
-        # Derive criterion-level weights (sum subcriteria weights per group)
+        # Determine active alternatives via YearContext
         # ------------------------------------------------------------------
-        criterion_weights, group_subcrit_weights = self._derive_hierarchical_weights(
-            subcriteria_weights, hierarchy
+        ctx = panel_data.year_contexts.get(target_year)
+        if ctx is not None:
+            alternatives = ctx.active_provinces   # only active provinces
+            logger.info(
+                f"Hierarchical ranking for year {target_year} — "
+                f"YearContext active: "
+                f"{len(alternatives)} provinces, "
+                f"{len(ctx.active_subcriteria)} sub-criteria, "
+                f"{len(ctx.active_criteria)} criteria"
+            )
+            if ctx.excluded_provinces:
+                logger.info(
+                    f"  Excluded provinces ({len(ctx.excluded_provinces)}): "
+                    f"{', '.join(ctx.excluded_provinces)}"
+                )
+            if ctx.excluded_subcriteria:
+                logger.info(
+                    f"  Excluded sub-criteria ({len(ctx.excluded_subcriteria)}): "
+                    f"{', '.join(ctx.excluded_subcriteria)}"
+                )
+            # Filter subcriteria_weights to only year-active SCs so that
+            # missing SCs do not inflate criterion-level weights
+            active_sc_weights = {
+                sc: w for sc, w in subcriteria_weights.items()
+                if sc in ctx.active_subcriteria
+            }
+        else:
+            alternatives      = panel_data.provinces
+            active_sc_weights = subcriteria_weights
+            logger.info(
+                f"Hierarchical ranking for year {target_year} "
+                f"(no YearContext — using full province list)"
+            )
+
+        logger.info(
+            f"  {len(alternatives)} alternatives, "
+            f"{len(hierarchy.all_criteria)} criteria groups (pre-exclusion), "
+            f"12 MCDM methods"
         )
 
         # ------------------------------------------------------------------
-        # Prepare data
+        # Derive criterion-level weights from year-active SC weights
         # ------------------------------------------------------------------
-        current_data = panel_data.subcriteria_cross_section[target_year]
+        criterion_weights, group_subcrit_weights = self._derive_hierarchical_weights(
+            active_sc_weights, hierarchy, ctx=ctx
+        )
+
+        # ------------------------------------------------------------------
+        # Prepare shared data
+        # ------------------------------------------------------------------
+        current_data   = panel_data.subcriteria_cross_section[target_year]
         historical_std = self._compute_historical_std(panel_data)
-        global_range = self._compute_global_range(panel_data)
+        global_range   = self._compute_global_range(panel_data)
 
         # ------------------------------------------------------------------
         # Stage 1: Run 12 methods per criterion
         # ------------------------------------------------------------------
         all_method_scores: Dict[str, Dict[str, pd.Series]] = {}
-        all_method_ranks: Dict[str, Dict[str, pd.Series]] = {}
-        ifs_diagnostics: Dict[str, Any] = {}
+        all_method_ranks:  Dict[str, Dict[str, pd.Series]] = {}
+        ifs_diagnostics:   Dict[str, Any] = {}
 
         for crit_id in sorted(hierarchy.all_criteria):
-            subcrit_cols = hierarchy.criteria_to_subcriteria.get(crit_id, [])
-            subcrit_cols = [sc for sc in subcrit_cols if sc in current_data.columns]
+            # Determine active SCs and provinces for this criterion-year
+            if ctx is not None:
+                subcrit_cols     = ctx.criterion_subcriteria.get(crit_id, [])
+                crit_alternatives = ctx.criterion_alternatives.get(crit_id, [])
+            else:
+                subcrit_cols = [
+                    sc for sc in hierarchy.criteria_to_subcriteria.get(crit_id, [])
+                    if sc in current_data.columns
+                ]
+                crit_alternatives = alternatives
 
-            if len(subcrit_cols) == 0:
-                logger.warning(f"  {crit_id}: no subcriteria available, skipping")
+            if not subcrit_cols:
+                logger.warning(f"  {crit_id}: no active sub-criteria — skipped")
+                continue
+            if not crit_alternatives:
+                logger.warning(
+                    f"  {crit_id}: no provinces with complete data — skipped"
+                )
                 continue
 
-            logger.info(f"  {crit_id}: {len(subcrit_cols)} subcriteria "
-                       f"({', '.join(subcrit_cols)})")
+            logger.info(
+                f"  {crit_id}: {len(crit_alternatives)} provinces, "
+                f"{len(subcrit_cols)} sub-criteria "
+                f"({', '.join(subcrit_cols)})"
+            )
 
-            # Subcriteria-level weights for this group
+            # Obtain a clean (NaN-free) decision matrix for this criterion-year
+            if ctx is not None:
+                df_crit = panel_data.get_criterion_matrix(target_year, crit_id)
+            else:
+                df_crit = current_data[subcrit_cols].copy()
+                df_crit = df_crit.loc[
+                    [p for p in crit_alternatives if p in df_crit.index]
+                ]
+
+            if df_crit.empty:
+                logger.warning(f"  {crit_id}: empty decision matrix — skipped")
+                continue
+
             local_weights = group_subcrit_weights.get(crit_id, {})
 
-            # Extract data slices
-            df_crit = current_data[subcrit_cols].copy()
-            std_crit = historical_std[subcrit_cols].copy() if all(
-                sc in historical_std.columns for sc in subcrit_cols
-            ) else pd.DataFrame(0.0, index=alternatives, columns=subcrit_cols)
-            range_crit = global_range[subcrit_cols] if all(
-                sc in global_range.index for sc in subcrit_cols
-            ) else pd.Series(1.0, index=subcrit_cols)
+            std_crit = (
+                historical_std[subcrit_cols].copy()
+                if all(sc in historical_std.columns for sc in subcrit_cols)
+                else pd.DataFrame(
+                    0.0, index=df_crit.index, columns=subcrit_cols
+                )
+            )
+            range_crit = (
+                global_range[subcrit_cols]
+                if all(sc in global_range.index for sc in subcrit_cols)
+                else pd.Series(1.0, index=subcrit_cols)
+            )
 
-            # Run traditional + IFS methods
             ifs_override = (ifs_overrides or {}).get(crit_id)
             crit_scores, crit_ranks, ifs_diag = self._run_methods_for_criterion(
-                df_crit, std_crit, range_crit, local_weights, alternatives,
+                df_crit, std_crit, range_crit, local_weights,
+                df_crit.index.tolist(),   # only criterion-active provinces
                 ifs_matrix_override=ifs_override,
             )
 
             all_method_scores[crit_id] = crit_scores
-            all_method_ranks[crit_id] = crit_ranks
-            ifs_diagnostics[crit_id] = ifs_diag
+            all_method_ranks[crit_id]  = crit_ranks
+            ifs_diagnostics[crit_id]   = ifs_diag
 
         # ------------------------------------------------------------------
         # Stage 2: ER aggregation
         # ------------------------------------------------------------------
+        # The ER engine uses `.get(alt, 0.5)` for alternatives absent from a
+        # criterion's score Series — mapping to a uniform (max-uncertainty)
+        # belief distribution.  Only `alternatives` (active provinces) are
+        # ranked; fully excluded provinces never appear here.
         logger.info("  Running Evidential Reasoning aggregation...")
         er_result = self.er_aggregator.aggregate(
             method_scores=all_method_scores,
@@ -264,8 +340,12 @@ class HierarchicalRankingPipeline:
         )
 
         logger.info(f"  Kendall's W = {er_result.kendall_w:.4f}")
-        logger.info(f"  Top: {er_result.final_ranking.idxmin()} "
-                    f"(score={er_result.final_scores.max():.4f})")
+        if len(er_result.final_ranking) > 0:
+            best = er_result.final_scores.idxmax()
+            logger.info(
+                f"  Top: {best} "
+                f"(score={er_result.final_scores.max():.4f})"
+            )
 
         return HierarchicalRankingResult(
             er_result=er_result,
@@ -342,81 +422,55 @@ class HierarchicalRankingPipeline:
         ifs_matrix_override: Optional['IFSDecisionMatrix'] = None,
     ) -> Tuple[Dict[str, pd.Series], Dict[str, pd.Series], Dict]:
         """
-        Run 12 MCDM methods on subcriteria data for one criterion group.
+        Run 12 MCDM methods on a **clean** criterion-level decision matrix.
+
+        The matrix is guaranteed NaN-free by the caller (``rank()`` uses
+        :meth:`PanelData.get_criterion_matrix` which applies dynamic exclusion
+        via ``YearContext``).  No internal NaN filtering or province
+        back-filling is performed here.
 
         Returns
         -------
-        scores : {method_name: pd.Series}  (normalized to [0, 1])
-        ranks  : {method_name: pd.Series}
-        ifs_diag : sample IFS diagnostics
+        scores  : {method_name: pd.Series}  (normalised [0, 1])
+        ranks   : {method_name: pd.Series}
+        ifs_diag : diagnostics dict
         """
-        original_criteria = df.columns.tolist()
-        original_alternatives = alternatives
-        
-        # ===== ADAPTIVE MISSING-DATA HANDLING =====
-        # Step 1: Exclude provinces where ALL sub-criteria are NaN.
-        # NOTE: The dataset uses NaN (not zero) for missing observations.
-        # Checking `sum > 0` is unreliable for NaN data because pandas
-        # sum() returns 0 for all-NaN rows (min_count default).  Using
-        # notna().any() is explicit and correct.
-        valid_rows = df.notna().any(axis=1)
-        df = df[valid_rows].copy()
-        alternatives = [alt for alt, valid in zip(alternatives, valid_rows) if valid]
-
-        # Step 2: Exclude sub-criteria columns where every province is NaN.
-        valid_cols = df.notna().any(axis=0)
-        df = df.loc[:, valid_cols].copy()
-
-        excluded_alternatives = [
-            alt for alt, valid in zip(original_alternatives, valid_rows) if not valid
-        ]
-        excluded_criteria = [
-            c for c, valid in zip(original_criteria, valid_cols) if not valid
-        ]
-
-        if excluded_alternatives:
-            logger.info(
-                f"    → Excluded {len(excluded_alternatives)} provinces with "
-                f"all-NaN data: "
-                f"{', '.join(excluded_alternatives[:5])}"
-                f"{'...' if len(excluded_alternatives) > 5 else ''}"
-            )
-        if excluded_criteria:
-            logger.info(
-                f"    → Excluded {len(excluded_criteria)} all-NaN sub-criteria: "
-                f"{', '.join(excluded_criteria)}"
-            )
-        
-        # Update related data structures
-        if len(df) < 2 or len(df.columns) < 1:
-            logger.warning(f"    → Insufficient data after zero filtering: "
-                          f"{len(df)} provinces, {len(df.columns)} subcriteria. Skipping.")
-            # Return empty results for all original alternatives
-            empty_scores = {}
-            empty_ranks = {}
-            for method in self.ALL_METHODS:
-                empty_scores[method] = pd.Series(0.5, index=original_alternatives, name=method)
-                empty_ranks[method] = pd.Series(
-                    list(range(1, len(original_alternatives) + 1)), 
-                    index=original_alternatives, 
-                    name=f"{method}_Rank"
-                )
-            return empty_scores, empty_ranks, {}
-        
-        historical_std = historical_std.loc[df.index, df.columns]
-        global_range = global_range[df.columns]
-        subcrit_weights = {c: subcrit_weights.get(c, 1.0 / len(df.columns)) for c in df.columns}
-        
         criteria = df.columns.tolist()
         cost_local = [c for c in criteria if c in self.cost_criteria]
 
+        # Guard: need at least 2 rows and 1 column
+        if len(df) < 2 or len(df.columns) < 1:
+            logger.warning(
+                f"    Too few rows/cols ({len(df)} rows, "
+                f"{len(df.columns)} cols) — returning neutral scores."
+            )
+            neutral_scores = {}
+            neutral_ranks  = {}
+            for method in self.ALL_METHODS:
+                neutral_scores[method] = pd.Series(
+                    0.5, index=alternatives, name=method)
+                neutral_ranks[method]  = pd.Series(
+                    list(range(1, len(alternatives) + 1)),
+                    index=alternatives, name=f"{method}_Rank")
+            return neutral_scores, neutral_ranks, {}
+
+        # Align ancillary arrays to the (already-clean) df index/columns
+        historical_std = historical_std.reindex(
+            index=df.index, columns=df.columns
+        ).fillna(0.0)
+        global_range   = global_range.reindex(df.columns).fillna(1.0)
+        subcrit_weights = {
+            c: subcrit_weights.get(c, 1.0 / len(df.columns))
+            for c in df.columns
+        }
+
         scores: Dict[str, pd.Series] = {}
-        ranks: Dict[str, pd.Series] = {}
+        ranks:  Dict[str, pd.Series] = {}
 
         # ----- Normalize crisp data to [0, 1] via min-max -----
         df_norm = self._minmax_normalize(df, cost_criteria=cost_local)
 
-        # ----- Build IFS matrix from temporal variance (or use override) -----
+        # ----- Build IFS matrix from temporal variance (or override) -----
         if ifs_matrix_override is not None:
             ifs_matrix = ifs_matrix_override
         else:
@@ -427,8 +481,8 @@ class HierarchicalRankingPipeline:
                 spread_factor=self.ifs_spread_factor,
             )
 
-        # Sample diagnostics (first 3 alternatives × first 2 subcriteria)
-        ifs_diag = {}
+        # Sample diagnostics (first 3 alternatives × first 2 sub-criteria)
+        ifs_diag: Dict = {}
         for alt in alternatives[:3]:
             ifs_diag[alt] = {}
             for crit in criteria[:2]:
@@ -441,35 +495,18 @@ class HierarchicalRankingPipeline:
         # ===== TRADITIONAL METHODS =====
         trad_results = self._run_traditional(df_norm, subcrit_weights, cost_local)
         for name, res in trad_results.items():
-            s = self._normalize_scores(res['scores'], higher_is_better=res['higher_better'])
+            s = self._normalize_scores(
+                res['scores'], higher_is_better=res['higher_better'])
             scores[name] = s
-            ranks[name] = res['ranks']
+            ranks[name]  = res['ranks']
 
         # ===== IFS METHODS =====
         ifs_results = self._run_ifs(ifs_matrix, subcrit_weights, cost_local)
         for name, res in ifs_results.items():
-            s = self._normalize_scores(res['scores'], higher_is_better=res['higher_better'])
+            s = self._normalize_scores(
+                res['scores'], higher_is_better=res['higher_better'])
             scores[name] = s
-            ranks[name] = res['ranks']
-        
-        # ===== RESTORE EXCLUDED ALTERNATIVES =====
-        # Fill excluded provinces with median scores/ranks to avoid bias
-        if len(excluded_alternatives) > 0:
-            for method_name in scores.keys():
-                # Use median score for excluded provinces
-                median_score = scores[method_name].median()
-                for excluded_alt in excluded_alternatives:
-                    scores[method_name].loc[excluded_alt] = median_score
-                
-                # Assign median rank for excluded provinces
-                median_rank = int(np.ceil(len(original_alternatives) / 2))
-                for excluded_alt in excluded_alternatives:
-                    ranks[method_name].loc[excluded_alt] = median_rank
-            
-            # Reindex to original alternatives order
-            for method_name in scores.keys():
-                scores[method_name] = scores[method_name].reindex(original_alternatives)
-                ranks[method_name] = ranks[method_name].reindex(original_alternatives)
+            ranks[name]  = res['ranks']
 
         return scores, ranks, ifs_diag
 
@@ -644,46 +681,64 @@ class HierarchicalRankingPipeline:
         self,
         subcriteria_weights: Dict[str, float],
         hierarchy: HierarchyMapping,
+        ctx=None,                       # YearContext | None
     ) -> Tuple[Dict[str, float], Dict[str, Dict[str, float]]]:
         """
-        Derive criterion-level and within-group subcriteria weights.
+        Derive criterion-level and within-group sub-criteria weights.
 
-        Criterion weight = sum of subcriteria weights in the group.
-        Within-group weights = subcriteria weight / criterion weight.
+        Only sub-criteria that are *active* for the target year (per ``ctx``)
+        contribute to their parent criterion's weight.  Excluded SCs are
+        silently omitted so the criterion weight reflects the information
+        actually available for the year.
+
+        Criterion weight  = Σ(active SC weights in group)
+        Within-group weight = SC weight / criterion weight
 
         Parameters
         ----------
         subcriteria_weights : dict
-            {SC01: w, SC02: w, …}
+            {SC_code: weight} — year-filtered fused weights.
         hierarchy : HierarchyMapping
+        ctx : YearContext or None
+            When provided, only ``ctx.criterion_subcriteria[crit_id]`` SCs
+            are included per criterion.
 
         Returns
         -------
-        criterion_weights : {C01: w, …}
-        group_weights : {C01: {SC01: w_local, …}, …}
+        criterion_weights : {C01: w, …}   (normalised to sum 1)
+        group_weights     : {C01: {SC01: w_local, …}, …}
         """
-        criterion_weights = {}
-        group_weights = {}
+        criterion_weights: Dict[str, float] = {}
+        group_weights:     Dict[str, Dict[str, float]] = {}
 
-        for crit_id, subcrit_list in hierarchy.criteria_to_subcriteria.items():
+        for crit_id in hierarchy.all_criteria:
+            # Use year-specific SC list if context available, else full list
+            if ctx is not None:
+                subcrit_list = ctx.criterion_subcriteria.get(crit_id, [])
+            else:
+                subcrit_list = hierarchy.criteria_to_subcriteria[crit_id]
+
             group_w = sum(subcriteria_weights.get(sc, 0.0) for sc in subcrit_list)
             criterion_weights[crit_id] = group_w
 
-            # Normalize within-group
-            local = {}
+            # Normalise within-group
+            local: Dict[str, float] = {}
             for sc in subcrit_list:
                 w_sc = subcriteria_weights.get(sc, 0.0)
-                local[sc] = w_sc / group_w if group_w > 0 else 1.0 / len(subcrit_list)
+                local[sc] = w_sc / group_w if group_w > 0 else 1.0 / max(len(subcrit_list), 1)
             group_weights[crit_id] = local
 
-        # Normalize criterion weights to sum to 1
+        # Normalise criterion weights to sum to 1
         total = sum(criterion_weights.values())
         if total > 0:
             criterion_weights = {k: v / total for k, v in criterion_weights.items()}
 
-        logger.info(f"  Criterion weights: " +
-                   ", ".join(f"{k}={v:.3f}" for k, v in sorted(criterion_weights.items())))
-
+        logger.info(
+            "  Criterion weights: "
+            + ", ".join(
+                f"{k}={v:.3f}" for k, v in sorted(criterion_weights.items())
+            )
+        )
         return criterion_weights, group_weights
 
     # ==================================================================

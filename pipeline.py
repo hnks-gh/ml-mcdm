@@ -243,9 +243,18 @@ class MLMCDMPipeline:
 
 
             # Build result object
-            subcriteria = weights['subcriteria']
-            latest_year = max(panel_data.years)
-            decision_matrix = panel_data.subcriteria_cross_section[latest_year][subcriteria].values
+            subcriteria  = weights['subcriteria']   # already filtered to active SCs
+            latest_year  = max(panel_data.years)
+            latest_ctx   = panel_data.year_contexts.get(latest_year)
+            # Use the latest year's active provinces for the decision matrix
+            if latest_ctx is not None:
+                active_provs = latest_ctx.active_provinces
+            else:
+                active_provs = panel_data.provinces
+            cs = panel_data.subcriteria_cross_section[latest_year]
+            avail_scs = [sc for sc in subcriteria if sc in cs.columns]
+            avail_provs = [p for p in active_provs if p in cs.index]
+            decision_matrix = cs.loc[avail_provs, avail_scs].values
 
             return PipelineResult(
                 panel_data=panel_data,
@@ -286,11 +295,64 @@ class MLMCDMPipeline:
     # -----------------------------------------------------------------
 
     def _calculate_weights(self, panel_data: PanelData) -> Dict[str, Any]:
-        """Run GTWC hybrid weighting on the full panel."""
+        """Run GTWC hybrid weighting on the full panel.
+
+        Dynamic exclusion rules applied **before** weighting:
+
+        1. Sub-criteria columns that are all-NaN across the *entire* panel are
+           dropped from the weight calculation (they carry no information).
+        2. Province-year observations (rows) where **any** active SC is NaN are
+           dropped.  This ensures every weight method sees only complete,
+           validated observations — no imputation, no made-up data.
+
+        The resulting weight vector spans only *active* sub-criteria.
+        """
         from .weighting import HybridWeightingPipeline
 
         subcriteria = panel_data.hierarchy.all_subcriteria
         panel_df = panel_data.subcriteria_long.copy()
+
+        # ------------------------------------------------------------------
+        # Dynamic exclusion — Step 1: drop globally-inactive sub-criteria
+        # ------------------------------------------------------------------
+        active_scs = [sc for sc in subcriteria
+                      if sc in panel_df.columns and panel_df[sc].notna().any()]
+        dropped_scs = [sc for sc in subcriteria if sc not in active_scs]
+        if dropped_scs:
+            self.logger.info(
+                f"  Weighting: {len(dropped_scs)} sub-criteria excluded "
+                f"(all-NaN across full panel): {dropped_scs}"
+            )
+        subcriteria = active_scs  # restrict to active
+
+        # ------------------------------------------------------------------
+        # Dynamic exclusion — Step 2: drop incomplete province-year rows
+        # ------------------------------------------------------------------
+        valid_rows = panel_df[subcriteria].notna().all(axis=1)
+        n_dropped = int((~valid_rows).sum())
+        if n_dropped > 0:
+            dropped_prov_years = (
+                panel_df.loc[~valid_rows, ['Year', 'Province']]
+                .drop_duplicates()
+            )
+            # Summarise dropped observations per year for the log
+            by_year = (
+                dropped_prov_years.groupby('Year')['Province']
+                .apply(list)
+                .to_dict()
+            )
+            self.logger.info(
+                f"  Weighting: {n_dropped} observations excluded "
+                f"({len(dropped_prov_years)} unique province-year pairs) "
+                f"because at least one SC is missing"
+            )
+            for yr, provs in sorted(by_year.items()):
+                self.logger.info(
+                    f"    {yr}: {len(provs)} province(s) skipped "
+                    f"({', '.join(provs[:5])}"
+                    f"{'…' if len(provs) > 5 else ''})"
+                )
+        panel_df = panel_df[valid_rows].copy()
 
         self.logger.info("GTWC weighting pipeline")
         self.logger.info(
@@ -317,10 +379,10 @@ class MLMCDMPipeline:
         # Extract individual method weights
         indiv = result.details["individual_weights"]
         entropy_w = np.array([indiv["entropy"][c] for c in subcriteria])
-        critic_w = np.array([indiv["critic"][c] for c in subcriteria])
-        merec_w = np.array([indiv["merec"][c] for c in subcriteria])
-        stddev_w = np.array([indiv["std_dev"][c] for c in subcriteria])
-        fused_w = np.array([result.weights[c] for c in subcriteria])
+        critic_w  = np.array([indiv["critic"][c]   for c in subcriteria])
+        merec_w   = np.array([indiv["merec"][c]     for c in subcriteria])
+        stddev_w  = np.array([indiv["std_dev"][c]   for c in subcriteria])
+        fused_w   = np.array([result.weights[c]     for c in subcriteria])
 
         self.logger.info(f"  Entropy  : [{entropy_w.min():.4f}, {entropy_w.max():.4f}]")
         self.logger.info(f"  CRITIC   : [{critic_w.min():.4f}, {critic_w.max():.4f}]")
@@ -354,14 +416,14 @@ class MLMCDMPipeline:
         fused_dict = {sc: result.weights[sc] for sc in subcriteria}
 
         return {
-            'entropy': entropy_w,
-            'critic': critic_w,
-            'merec': merec_w,
-            'std_dev': stddev_w,
-            'fused': fused_w,
+            'entropy':    entropy_w,
+            'critic':     critic_w,
+            'merec':      merec_w,
+            'std_dev':    stddev_w,
+            'fused':      fused_w,
             'fused_dict': fused_dict,
             'subcriteria': subcriteria,
-            'details': result.details,
+            'details':    result.details,
         }
 
     # -----------------------------------------------------------------

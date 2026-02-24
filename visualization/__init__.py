@@ -176,7 +176,13 @@ class VisualizationOrchestrator:
             if path:
                 count += 1
 
-        provinces = panel_data.provinces
+        # Use the active province list from the result's index so that
+        # dynamically-excluded provinces never appear in figures.
+        provinces = (
+            list(ranking_result.final_scores.index)
+            if hasattr(ranking_result.final_scores, 'index')
+            else list(panel_data.provinces)
+        )
         scores = np.asarray(
             ranking_result.final_scores.values
             if hasattr(ranking_result.final_scores, 'values')

@@ -61,7 +61,14 @@ class ReportWriter:
             if hasattr(ranking_result.final_ranking, 'values')
             else ranking_result.final_ranking, dtype=int)
         order = np.argsort(ranks_arr)
-        n_prov = len(panel_data.provinces)
+        # Use the ranked province list from the result itself so that
+        # dynamically-excluded provinces are not present in output tables.
+        _active_provs: List[str] = (
+            list(ranking_result.final_scores.index)
+            if hasattr(ranking_result.final_scores, 'index')
+            else list(panel_data.provinces)
+        )
+        n_prov = len(_active_provs)
         n_years = len(panel_data.years)
         fused = np.asarray(weights['fused'])
         subcriteria = weights['subcriteria']
@@ -133,7 +140,7 @@ class ReportWriter:
         L.append('| ---: | :--- | ---: |')
         for i in range(min(5, n_prov)):
             idx = order[i]
-            L.append(f'| {i+1} | {panel_data.provinces[idx]} | {scores_arr[idx]:.4f} |')
+            L.append(f'| {i+1} | {_active_provs[idx]} | {scores_arr[idx]:.4f} |')
         L.append('')
 
         # Bottom 5
@@ -143,7 +150,7 @@ class ReportWriter:
         L.append('| ---: | :--- | ---: |')
         for i in range(min(5, n_prov)):
             idx = order[-(i + 1)]
-            L.append(f'| {n_prov - i} | {panel_data.provinces[idx]} | {scores_arr[idx]:.4f} |')
+            L.append(f'| {n_prov - i} | {_active_provs[idx]} | {scores_arr[idx]:.4f} |')
         L.append('')
 
         L.append(f"- **Kendall's $W$ (concordance):** {ranking_result.kendall_w:.4f}")
@@ -282,7 +289,7 @@ class ReportWriter:
             z = (s - mean_s) / std_s
             pct = (n_prov - r + 1) / n_prov * 100
             q = 'Q1' if pct >= 75 else ('Q2' if pct >= 50 else ('Q3' if pct >= 25 else 'Q4'))
-            L.append(f'| {r} | {panel_data.provinces[idx]} | {s:.4f} | {z:+.3f} | {q} |')
+            L.append(f'| {r} | {_active_provs[idx]} | {s:.4f} | {z:+.3f} | {q} |')
         L.append('')
 
         # Score distribution
@@ -343,8 +350,14 @@ class ReportWriter:
             ]
             avg = np.mean(all_sc, axis=0)
             top3 = np.argsort(avg)[-3:][::-1]
+            # Resolve province names from the criterion's own series index
+            _crit_provs: List[str] = (
+                list(list(method_scores.values())[0].index)
+                if method_scores and hasattr(list(method_scores.values())[0], 'index')
+                else _active_provs
+            )
             L.append(f'**{crit_id}** — top 3: '
-                     + ', '.join(f'{panel_data.provinces[i]} ({avg[i]:.4f})' for i in top3))
+                     + ', '.join(f'{_crit_provs[i]} ({avg[i]:.4f})' for i in top3))
         L.append('')
 
         # ============================================================
@@ -382,7 +395,7 @@ class ReportWriter:
             L.append('| Province | Count | Frequency |')
             L.append('| :--- | ---: | ---: |')
             for idx, count in all_top5.most_common(10):
-                L.append(f'| {panel_data.provinces[idx]} | {count} | {count/total:.1%} |')
+                L.append(f'| {_active_provs[idx]} | {count} | {count/total:.1%} |')
             L.append('')
         except Exception as _exc:
             _logger.debug('section skipped: %s', _exc)

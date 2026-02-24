@@ -98,8 +98,16 @@ class CsvWriter:
         scores = ranking_result.final_scores
         ranks = ranking_result.final_ranking
 
+        # Use the active province list from the result's index so that
+        # dynamically-excluded provinces are never written to output.
+        active_provinces = (
+            list(scores.index)
+            if hasattr(scores, 'index')
+            else provinces
+        )
+
         df = pd.DataFrame({
-            'Province': provinces,
+            'Province': active_provinces,
             'ER_Score': np.asarray(scores.values if hasattr(scores, 'values') else scores),
             'ER_Rank': np.asarray(ranks.values if hasattr(ranks, 'values') else ranks, dtype=int),
         })
@@ -143,13 +151,20 @@ class CsvWriter:
     ) -> Dict[str, str]:
         saved = {}
         for crit_id, method_scores in ranking_result.criterion_method_scores.items():
-            score_df = pd.DataFrame(index=provinces)
-            rank_df = pd.DataFrame(index=provinces)
+            # Resolve per-criterion active province list from the first series' index
+            _first = next(iter(method_scores.values()), None)
+            crit_provinces = (
+                list(_first.index)
+                if _first is not None and hasattr(_first, 'index')
+                else provinces
+            )
+            score_df = pd.DataFrame(index=crit_provinces)
+            rank_df = pd.DataFrame(index=crit_provinces)
 
             for method, series in method_scores.items():
                 vals = series.values if hasattr(series, 'values') else np.asarray(series)
                 score_df[f'{method}_Score'] = vals
-                rank_df[f'{method}_Rank'] = pd.Series(vals, index=provinces).rank(
+                rank_df[f'{method}_Rank'] = pd.Series(vals, index=crit_provinces).rank(
                     ascending=False, method='min').astype(int)
 
             score_cols = list(score_df.columns)
@@ -177,14 +192,27 @@ class CsvWriter:
 
     def save_rank_comparison(self, ranking_result: Any,
                              provinces: List[str]) -> str:
+        # The final ranking's province list is the authoritative active set.
+        active_provinces = (
+            list(ranking_result.final_ranking.index)
+            if hasattr(ranking_result.final_ranking, 'index')
+            else provinces
+        )
+
         all_ranks = {}
         for crit_id, method_ranks in ranking_result.criterion_method_ranks.items():
             for method, ranks_series in method_ranks.items():
                 col = f'{crit_id}_{method}'
-                vals = ranks_series.values if hasattr(ranks_series, 'values') else np.asarray(ranks_series)
+                if hasattr(ranks_series, 'reindex'):
+                    # Reindex to the global active province list so that
+                    # provinces absent from this criterion's active subset
+                    # are represented as NaN rather than sizing mismatches.
+                    vals = ranks_series.reindex(active_provinces).values
+                else:
+                    vals = np.asarray(ranks_series)
                 all_ranks[col] = vals
 
-        df = pd.DataFrame(all_ranks, index=provinces)
+        df = pd.DataFrame(all_ranks, index=active_provinces)
         df.index.name = 'Province'
 
         df['Mean_Rank'] = df.mean(axis=1).round(2)
@@ -192,8 +220,8 @@ class CsvWriter:
         df['StdDev_Rank'] = df.std(axis=1).round(2)
         summary = ['Mean_Rank', 'Median_Rank', 'StdDev_Rank']
         base = df.drop(columns=summary, errors='ignore')
-        df['Best_Rank'] = base.min(axis=1).astype(int)
-        df['Worst_Rank'] = base.max(axis=1).astype(int)
+        df['Best_Rank'] = base.min(axis=1)
+        df['Worst_Rank'] = base.max(axis=1)
         df['Rank_Range'] = df['Worst_Rank'] - df['Best_Rank']
 
         return self._save_csv(df, 'mcdm_rank_comparison.csv', float_fmt='%.0f')
