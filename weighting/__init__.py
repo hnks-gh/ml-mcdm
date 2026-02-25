@@ -5,8 +5,12 @@ Weighting Methods Module
 Objective weight calculation methods for MCDM:
 
 **Primary Pipeline:**
-- HybridWeightingPipeline: 4-method hybrid (Entropy + CRITIC + MEREC + SD)
-  → Game Theory Weight Combination (GTWC) + Bayesian Bootstrap + Stability
+- HybridWeightingCalculator: Two-level hierarchical MC ensemble
+  (Entropy + CRITIC blend, Beta-distributed) with tuning + stability check.
+
+**Legacy (deprecated, kept for standalone use):**
+- HybridWeightingPipeline: 4-method GTWC pipeline (Entropy + CRITIC + MEREC + SD)
+  No longer called by the main pipeline.
 
 **Adaptive Weighting:**
 - AdaptiveWeightCalculator: Adaptive weight calculation with zero handling
@@ -29,7 +33,7 @@ Objective weight calculation methods for MCDM:
 - temporal_stability_verification: Temporal stability validation
 """
 
-from .hybrid_weighting import HybridWeightingPipeline
+from .hybrid_weighting import HybridWeightingCalculator, HybridWeightingPipeline
 from .entropy import EntropyWeightCalculator
 from .critic import CRITICWeightCalculator
 from .merec import MERECWeightCalculator
@@ -50,8 +54,11 @@ __all__ = [
     # Core result types
     'WeightResult',
     'AdaptiveWeightResult',
-    
+
     # Primary pipeline
+    'HybridWeightingCalculator',
+
+    # Legacy pipeline (deprecated)
     'HybridWeightingPipeline',
     
     # Adaptive weighting

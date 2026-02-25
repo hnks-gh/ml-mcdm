@@ -3,6 +3,7 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
+
 name = "ml-mcdm"
 version = "4.0.0"
 description = "Advanced Machine Learning Enhanced Multi-Criteria Decision Making Framework with 10 MCDM Methods, Time-Series Forecasting, and Robust Ensemble Aggregation"
@@ -31,7 +32,7 @@ keywords = [
     "rank aggregation",
 ]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Science/Research",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
@@ -48,53 +49,56 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 
+# Core dependencies
 dependencies = [
-    "numpy>=1.21.0,<3.0.0",
-    "pandas>=1.3.0,<4.0.0",
-    "scipy>=1.7.0,<2.0.0",
-    "scikit-learn>=1.0.0,<3.0.0",
-    "matplotlib>=3.4.0,<4.0.0",
-    "seaborn>=0.11.0,<1.0.0",
-    "typing-extensions>=4.0.0",
-    "joblib>=1.0.0",
-    "tqdm>=4.0.0",
-    "packaging>=21.0.0",
-    "pillow>=8.0.0",
-    "openpyxl>=3.0.0",
-    "statsmodels>=0.13.0",
+    "numpy>=1.21.0",  # Core numerical library
+    "pandas>=1.3.0",  # Data manipulation
+    "scipy>=1.7.0",   # Scientific computing
+    "scikit-learn>=1.0.0",  # ML algorithms
+    "matplotlib>=3.4.0",    # Plotting
+    "seaborn>=0.11.0",      # Statistical plots
+    "typing-extensions>=4.0.0",    # Typing support
+    "joblib>=1.0.0",               # Parallel processing
+    "tqdm>=4.0.0",                 # Progress bars
+    "packaging>=21.0.0",           # Package utilities
+    "pillow>=8.0.0",               # Image processing
+    "openpyxl>=3.0.0",             # Excel support
+    "statsmodels>=0.13.0",         # Statistical models
 ]
 
 [project.optional-dependencies]
+
+# Optional extras for flexibility
 dev = [
-    "pytest>=8.0.0",
-    "pytest-cov>=4.1.0",
-    "pytest-xdist>=3.5.0",
-    "black>=24.0.0",
-    "flake8>=7.0.0",
-    "isort>=5.13.0",
-    "mypy>=1.8.0",
-    "pylint>=3.0.0",
+    "pytest>=8.0.0",         # Testing framework
+    "pytest-cov>=4.1.0",     # Coverage
+    "pytest-xdist>=3.5.0",   # Parallel testing
+    "black>=24.0.0",         # Code formatting
+    "flake8>=7.0.0",         # Linting
+    "isort>=5.13.0",         # Import sorting
+    "mypy>=1.8.0",           # Type checking
+    "pylint>=3.0.0",         # Static analysis
 ]
 ml = [
-    "tensorflow>=2.10.0,<2.22.0",
-    "keras>=2.10.0,<2.22.0",
-    "xgboost>=1.7.0,<3.0.0",
-    "lightgbm>=3.3.0,<5.0.0",
+    "tensorflow>=2.10.0",  # Deep learning
+    "keras>=2.10.0",       # Neural networks
+    "xgboost>=1.7.0",      # Gradient boosting
+    "lightgbm>=3.3.0",     # LightGBM
 ]
 analysis = [
-    "shap>=0.42.0",
-    "plotly>=5.0.0",
-    "jupyter>=1.0.0",
-    "ipykernel>=6.0.0",
-    "pillow>=8.0.0",
-    "openpyxl>=3.0.0",
-    "statsmodels>=0.13.0",
-    "tqdm>=4.0.0",
-    "joblib>=1.0.0",
+    "shap>=0.42.0",                # Explainability
+    "plotly>=5.0.0",               # Interactive plots
+    "jupyter>=1.0.0",              # Notebooks
+    "ipykernel>=6.0.0",            # Jupyter kernel
+    "pillow>=8.0.0",               # Image processing
+    "openpyxl>=3.0.0",             # Excel support
+    "statsmodels>=0.13.0",         # Statistical models
+    "tqdm>=4.0.0",                 # Progress bars
+    "joblib>=1.0.0",               # Parallel processing
 ]
 forecasting = [
-    "optuna>=3.0.0,<5.0.0",
-    "mapie>=0.6.0,<1.0.0",
+    "optuna>=3.0.0",        # Hyperparameter optimization
+    "mapie>=0.6.0",         # Conformal prediction
 ]
 all = [
     "ml-mcdm[dev,ml,analysis,forecasting]",
@@ -107,10 +111,14 @@ Repository = "https://github.com/hnks-gh/ml-mcdm"
 Issues = "https://github.com/hnks-gh/ml-mcdm/issues"
 Changelog = "https://github.com/hnks-gh/ml-mcdm/blob/main/CHANGELOG.md"
 
+# Add more URLs if needed
+
 [tool.setuptools]
 packages = ["ml_mcdm"]
 package-dir = {"ml_mcdm" = "."}
 zip-safe = false
+
+# Include additional package data
 
 [tool.setuptools.package-data]
 "ml_mcdm" = ["*.csv", "*.json", "*.md", "*.txt", "*.yaml", "*.yml"]
@@ -121,25 +129,22 @@ target-version = ['py38', 'py39', 'py310', 'py311', 'py312']
 include = '\.pyi?$'
 extend-exclude = '''
 /(
-  # directories
-  \.eggs
-  | \.git
-  | \.hg
-  | \.mypy_cache
-  | \.tox
-  | \.venv
-  | _build
-  | buck-out
-  | build
-  | dist
-  | outputs
+    # directories
+    \.eggs
+    | \.git
+    | \.hg
+    | \.mypy_cache
+    | \.tox
+    | \.venv
+    | _build
+    | buck-out
+    | build
+    | dist
+    | outputs
 )/
 '''
 
 [tool.isort]
-profile = "black"
-line_length = 100
-multi_line_output = 3
 include_trailing_comma = true
 force_grid_wrap = 0
 use_parentheses = true

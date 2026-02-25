@@ -414,21 +414,46 @@ class Validator:
         weights: Dict[str, Any]
     ) -> float:
         """Validate temporal stability of weights across years.
-        
-        Uses the 'details' dict from the weighting pipeline which contains
-        bootstrap and stability information.
+
+        Reads from the new ``HybridWeightingCalculator`` details structure:
+        - ``details.stability.cosine_similarity``  (primary)
+        - ``details.level2.mc_diagnostics.cv_weights``  (fallback: 1 - mean_cv)
+        Also handles the legacy ``details.bootstrap`` structure for backward compat.
         """
         if not hasattr(panel_data, 'years') or len(panel_data.years) < 2:
             return 1.0
-        
+
         details = weights.get('details', {})
-        
-        # Check bootstrap-based stability from the weighting pipeline
+
+        # ── New structure: stability dict from HybridWeightingCalculator ──
+        stability_info = details.get('stability', {})
+        cosine_sim = stability_info.get('cosine_similarity')
+        if cosine_sim is not None:
+            return float(np.clip(cosine_sim, 0.0, 1.0))
+
+        # ── New structure: Level 2 MC CV-based stability ───────────────────
+        l2_diag = details.get('level2', {}).get('mc_diagnostics', {})
+        if l2_diag:
+            cv_weights = l2_diag.get('cv_weights', {})
+            if cv_weights:
+                mean_cv = float(np.mean(list(cv_weights.values())))
+                return float(np.clip(1.0 - mean_cv, 0.0, 1.0))
+            std_weights = l2_diag.get('std_weights', {})
+            mean_weights = l2_diag.get('mean_weights', {})
+            if std_weights and mean_weights:
+                cvs = [
+                    std_weights[k] / mean_weights[k]
+                    for k in std_weights
+                    if mean_weights.get(k, 0) > 1e-10
+                ]
+                if cvs:
+                    return float(np.clip(1.0 - np.mean(cvs), 0.0, 1.0))
+
+        # ── Legacy structure: bootstrap dict from HybridWeightingPipeline ─
         bootstrap_info = details.get('bootstrap', {})
         if bootstrap_info:
             std_weights = bootstrap_info.get('std_weights', {})
             if std_weights:
-                # Mean coefficient of variation across subcriteria
                 subcriteria = weights.get('subcriteria', [])
                 fused = weights.get('fused', np.array([]))
                 if len(fused) > 0 and len(subcriteria) > 0:
@@ -439,54 +464,53 @@ class Validator:
                         if w > 1e-10:
                             cvs.append(s / w)
                     if cvs:
-                        mean_cv = np.mean(cvs)
-                        # Stability = 1 - mean_cv, clipped to [0, 1]
-                        return float(np.clip(1.0 - mean_cv, 0.0, 1.0))
-        
-        # Check cosine similarity from stability info
-        stability_info = details.get('stability', {})
-        if stability_info:
-            cosine_sim = stability_info.get('cosine_similarity', None)
-            if cosine_sim is not None:
-                return float(np.clip(cosine_sim, 0.0, 1.0))
-        
-        # No usable stability evidence found — return 0.0 so that it does
-        # not artificially inflate the overall validity score.
+                        return float(np.clip(1.0 - np.mean(cvs), 0.0, 1.0))
+
         return 0.0
 
     def _validate_weight_method_agreement(
         self,
         weights: Dict[str, Any]
     ) -> float:
-        """Validate agreement among the four weighting methods.
+        """Validate internal weight agreement.
 
-        Compares entropy, critic, merec, std_dev weight arrays using
-        pairwise Spearman correlation.
+        For the new ``HybridWeightingCalculator`` (single two-method blend),
+        uses mean 1 - CV across Level 2 criterion weights as an agreement proxy.
+
+        Falls back to pairwise Spearman correlation for the legacy
+        ``HybridWeightingPipeline`` four-method case.
         """
+        details = weights.get('details', {})
+
+        # ── New structure: use Level 2 CV as agreement proxy ──────────────
+        l2_diag = details.get('level2', {}).get('mc_diagnostics', {})
+        if l2_diag:
+            cv_weights = l2_diag.get('cv_weights', {})
+            if cv_weights:
+                mean_cv = float(np.mean(list(cv_weights.values())))
+                # High agreement = low CV; map [0, ∞) → [0, 1]
+                return float(np.clip(1.0 - mean_cv, 0.0, 1.0))
+
+        # ── Legacy: pairwise Spearman across four method arrays ────────────
         method_keys = ['entropy', 'critic', 'merec', 'std_dev']
-        available = {k: weights[k] for k in method_keys if k in weights}
+        available = {
+            k: np.asarray(weights[k])
+            for k in method_keys
+            if k in weights and len(np.asarray(weights[k])) > 2
+        }
+        if len(available) >= 2:
+            from scipy.stats import spearmanr
+            arrs = list(available.values())
+            correlations = []
+            for i in range(len(arrs)):
+                for j in range(i + 1, len(arrs)):
+                    if len(arrs[i]) == len(arrs[j]):
+                        corr, _ = spearmanr(arrs[i], arrs[j])
+                        if not np.isnan(corr):
+                            correlations.append(corr)
+            if correlations:
+                return float(np.mean(correlations))
 
-        if len(available) < 2:
-            # Not enough methods to compute agreement — return 0.0 rather
-            # than a fabricated 0.85 that would inflate validity scores.
-            return 0.0
-        
-        from scipy.stats import spearmanr
-        
-        weight_arrays = [np.asarray(w) for w in available.values()]
-        
-        correlations = []
-        for i in range(len(weight_arrays)):
-            for j in range(i + 1, len(weight_arrays)):
-                if len(weight_arrays[i]) == len(weight_arrays[j]) and len(weight_arrays[i]) > 2:
-                    corr, _ = spearmanr(weight_arrays[i], weight_arrays[j])
-                    if not np.isnan(corr):
-                        correlations.append(corr)
-        
-        if correlations:
-            return float(np.mean(correlations))
-
-        # All pairwise comparisons produced NaN — return 0.0, not 0.85.
         return 0.0
 
     def _get_weight_confidence_intervals(
@@ -494,33 +518,57 @@ class Validator:
         weights: Dict[str, Any]
     ) -> Dict[str, Tuple[float, float]]:
         """Get bootstrap confidence intervals for weights.
-        
-        Extracts CI from the weighting pipeline's bootstrap details.
+
+        Reads from new ``HybridWeightingCalculator`` details:
+        ``details.level2.mc_diagnostics.ci_lower_2_5`` /
+        ``ci_upper_97_5``.
+
+        Falls back to the legacy ``details.bootstrap`` structure, then to
+        a ±1.96σ approximation from std_weights.
         """
-        ci = {}
-        
+        ci: Dict[str, Tuple[float, float]] = {}
         details = weights.get('details', {})
+
+        # ── New structure: Level 2 MC credible intervals ───────────────────
+        l2_diag = details.get('level2', {}).get('mc_diagnostics', {})
+        ci_lo = l2_diag.get('ci_lower_2_5', {})
+        ci_hi = l2_diag.get('ci_upper_97_5', {})
+        if ci_lo and ci_hi:
+            for ck in ci_lo:
+                if ck in ci_hi:
+                    ci[ck] = (float(ci_lo[ck]), float(ci_hi[ck]))
+            # Also try to get SC-level CIs from Level 1
+            for l1_group in details.get('level1', {}).values():
+                mc = l1_group.get('mc_diagnostics', {})
+                sc_lo = mc.get('ci_lower_2_5', {})
+                sc_hi = mc.get('ci_upper_97_5', {})
+                for sc in sc_lo:
+                    if sc in sc_hi:
+                        ci[sc] = (float(sc_lo[sc]), float(sc_hi[sc]))
+            if ci:
+                return ci
+
+        # ── Legacy: bootstrap dict from HybridWeightingPipeline ───────────
         bootstrap_info = details.get('bootstrap', {})
-        
-        # Check for pre-computed CI in bootstrap details
-        ci_info = bootstrap_info.get('ci_95', {})
-        if ci_info:
-            for sc, (lo, hi) in ci_info.items():
-                ci[sc] = (float(lo), float(hi))
-            return ci
-        
-        # Compute from std_weights + fused if CI not pre-computed
-        std_weights = bootstrap_info.get('std_weights', {})
-        subcriteria = weights.get('subcriteria', [])
-        fused = weights.get('fused', np.array([]))
-        
-        if std_weights and len(fused) > 0:
-            for i, sc in enumerate(subcriteria):
-                if i < len(fused):
-                    w = fused[i]
-                    s = std_weights.get(sc, 0)
-                    ci[sc] = (float(w - 1.96 * s), float(w + 1.96 * s))
-        
+        if bootstrap_info:
+            b_lo = bootstrap_info.get('ci_lower_2_5', {})
+            b_hi = bootstrap_info.get('ci_upper_97_5', {})
+            if b_lo and b_hi:
+                for sc in b_lo:
+                    if sc in b_hi:
+                        ci[sc] = (float(b_lo[sc]), float(b_hi[sc]))
+                return ci
+            # ±1.96σ fallback
+            std_weights = bootstrap_info.get('std_weights', {})
+            subcriteria = weights.get('subcriteria', [])
+            fused = weights.get('fused', np.array([]))
+            if std_weights and len(fused) > 0:
+                for i, sc in enumerate(subcriteria):
+                    if i < len(fused):
+                        w = float(fused[i])
+                        s = float(std_weights.get(sc, 0))
+                        ci[sc] = (w - 1.96 * s, w + 1.96 * s)
+
         return ci
     
     def _validate_forecast_cv(

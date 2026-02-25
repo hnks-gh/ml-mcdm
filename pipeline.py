@@ -67,13 +67,10 @@ class PipelineResult:
     panel_data: PanelData
     decision_matrix: np.ndarray
 
-    # Weights
-    entropy_weights: np.ndarray
-    critic_weights: np.ndarray
-    merec_weights: np.ndarray
-    std_dev_weights: np.ndarray
-    fused_weights: np.ndarray
-    weight_details: Dict[str, Any]
+    # Weights (new — two-level hierarchical MC ensemble)
+    sc_weights: np.ndarray               # global SC weights array (p,)
+    criterion_weights_dict: Dict[str, float]  # {C01..C08: float}, sums to 1
+    weight_details: Dict[str, Any]       # full WeightResult.details dict
 
     # Hierarchical Ranking (IFS + ER)
     ranking_result: HierarchicalRankingResult
@@ -83,6 +80,9 @@ class PipelineResult:
 
     # Analysis
     sensitivity_result: Any = None
+
+    # MC diagnostics (Level 2 mc_diagnostics from weight_details)
+    mc_ensemble_diagnostics: Optional[Dict] = None
 
     # Meta
     execution_time: float = 0.0
@@ -95,7 +95,7 @@ class PipelineResult:
         return pd.DataFrame({
             'Province': self.ranking_result.final_ranking.index,
             'ER_Score': self.ranking_result.final_scores.values,
-            'ER_Rank': self.ranking_result.final_ranking.values,
+            'ER_Rank':  self.ranking_result.final_ranking.values,
         }).sort_values('ER_Rank').reset_index(drop=True)
 
 
@@ -171,7 +171,7 @@ class MLMCDMPipeline:
                           f'{panel_data.n_subcriteria} subcriteria')
 
             # Phase 2: Weight Calculation
-            with self.console.phase('Weight Calculation (GTWC)') as ph:
+            with self.console.phase('Weight Calculation (Hybrid Weighting)') as ph:
                 weights = self._calculate_weights(panel_data)
 
             # Phase 3: Hierarchical Ranking (12 MCDM methods + ER)
@@ -257,19 +257,21 @@ class MLMCDMPipeline:
             decision_matrix = cs.loc[avail_provs, avail_scs].values
 
             return PipelineResult(
-                panel_data=panel_data,
-                decision_matrix=decision_matrix,
-                entropy_weights=weights['entropy'],
-                critic_weights=weights['critic'],
-                merec_weights=weights['merec'],
-                std_dev_weights=weights['std_dev'],
-                fused_weights=weights['fused'],
-                weight_details=weights.get('details', {}),
-                ranking_result=ranking_result,
-                forecast_result=forecast_result,
-                sensitivity_result=analysis_results.get('sensitivity'),
-                execution_time=execution_time,
-                config=self.config,
+                panel_data              = panel_data,
+                decision_matrix         = decision_matrix,
+                sc_weights              = weights['sc_array'],
+                criterion_weights_dict  = weights['criterion_weights'],
+                weight_details          = weights.get('details', {}),
+                ranking_result          = ranking_result,
+                forecast_result         = forecast_result,
+                sensitivity_result      = analysis_results.get('sensitivity'),
+                mc_ensemble_diagnostics = (
+                    weights.get('details', {})
+                    .get('level2', {})
+                    .get('mc_diagnostics')
+                ),
+                execution_time  = execution_time,
+                config          = self.config,
             )
         finally:
             # Always flush & close the debug log — even if a phase raises
@@ -295,135 +297,129 @@ class MLMCDMPipeline:
     # -----------------------------------------------------------------
 
     def _calculate_weights(self, panel_data: PanelData) -> Dict[str, Any]:
-        """Run GTWC hybrid weighting on the full panel.
+        """Run two-level hierarchical hybrid weighting on the full panel.
 
         Dynamic exclusion rules applied **before** weighting:
 
         1. Sub-criteria columns that are all-NaN across the *entire* panel are
-           dropped from the weight calculation (they carry no information).
-        2. Province-year observations (rows) where **any** active SC is NaN are
-           dropped.  This ensures every weight method sees only complete,
-           validated observations — no imputation, no made-up data.
+           dropped (``HybridWeightingCalculator`` also guards internally).
+        2. Province-year rows where **any** active SC is NaN are dropped.
 
         The resulting weight vector spans only *active* sub-criteria.
         """
-        from .weighting import HybridWeightingPipeline
+        from .weighting import HybridWeightingCalculator
 
         subcriteria = panel_data.hierarchy.all_subcriteria
-        panel_df = panel_data.subcriteria_long.copy()
+        panel_df    = panel_data.subcriteria_long.copy()
 
-        # ------------------------------------------------------------------
-        # Dynamic exclusion — Step 1: drop globally-inactive sub-criteria
-        # ------------------------------------------------------------------
-        active_scs = [sc for sc in subcriteria
-                      if sc in panel_df.columns and panel_df[sc].notna().any()]
+        # ── Dynamic exclusion Step 1: drop all-NaN sub-criteria ──────────
+        active_scs  = [sc for sc in subcriteria
+                       if sc in panel_df.columns and panel_df[sc].notna().any()]
         dropped_scs = [sc for sc in subcriteria if sc not in active_scs]
         if dropped_scs:
             self.logger.info(
-                f"  Weighting: {len(dropped_scs)} sub-criteria excluded "
-                f"(all-NaN across full panel): {dropped_scs}"
+                "  Weighting: %d sub-criteria excluded (all-NaN): %s",
+                len(dropped_scs), dropped_scs,
             )
-        subcriteria = active_scs  # restrict to active
+        subcriteria = active_scs
 
-        # ------------------------------------------------------------------
-        # Dynamic exclusion — Step 2: drop incomplete province-year rows
-        # ------------------------------------------------------------------
+        # ── Dynamic exclusion Step 2: drop incomplete province-year rows ──
         valid_rows = panel_df[subcriteria].notna().all(axis=1)
-        n_dropped = int((~valid_rows).sum())
+        n_dropped  = int((~valid_rows).sum())
         if n_dropped > 0:
             dropped_prov_years = (
-                panel_df.loc[~valid_rows, ['Year', 'Province']]
-                .drop_duplicates()
+                panel_df.loc[~valid_rows, ['Year', 'Province']].drop_duplicates()
             )
-            # Summarise dropped observations per year for the log
             by_year = (
                 dropped_prov_years.groupby('Year')['Province']
-                .apply(list)
-                .to_dict()
+                .apply(list).to_dict()
             )
             self.logger.info(
-                f"  Weighting: {n_dropped} observations excluded "
-                f"({len(dropped_prov_years)} unique province-year pairs) "
-                f"because at least one SC is missing"
+                "  Weighting: %d observations excluded (%d unique prov-year pairs)",
+                n_dropped, len(dropped_prov_years),
             )
             for yr, provs in sorted(by_year.items()):
                 self.logger.info(
-                    f"    {yr}: {len(provs)} province(s) skipped "
-                    f"({', '.join(provs[:5])}"
-                    f"{'…' if len(provs) > 5 else ''})"
+                    "    %d: %d province(s) skipped (%s%s)",
+                    yr, len(provs), ', '.join(provs[:5]),
+                    '\u2026' if len(provs) > 5 else '',
                 )
         panel_df = panel_df[valid_rows].copy()
 
-        self.logger.info("GTWC weighting pipeline")
+        # ── Build active criteria_groups ──────────────────────────────────
+        active_groups: Dict[str, Any] = {}
+        for crit_id, sc_list in panel_data.hierarchy.criteria_to_subcriteria.items():
+            active = [sc for sc in sc_list if sc in subcriteria]
+            if active:
+                active_groups[crit_id] = active
+
         self.logger.info(
-            f"  Panel: {len(panel_df)} obs "
-            f"({len(panel_data.years)} yr x "
-            f"{len(panel_data.provinces)} prov x "
-            f"{len(subcriteria)} sub)"
+            "Hybrid Weighting (MC Ensemble): %d obs, %d active SCs, %d criterion groups",
+            len(panel_df), len(subcriteria), len(active_groups),
         )
 
-        calc = HybridWeightingPipeline(
-            bootstrap_iterations=self.config.weighting.bootstrap_iterations,
-            stability_threshold=self.config.weighting.stability_threshold,
-            epsilon=self.config.weighting.epsilon,
-            seed=self.config.random.seed,
-        )
-
+        calc   = HybridWeightingCalculator(config=self.config.weighting)
         result = calc.calculate(
-            panel_df,
-            entity_col='Province',
-            time_col='Year',
-            criteria_cols=subcriteria,
+            panel_df        = panel_df,
+            criteria_groups = active_groups,
+            entity_col      = 'Province',
+            time_col        = 'Year',
         )
 
-        # Extract individual method weights
-        indiv = result.details["individual_weights"]
-        entropy_w = np.array([indiv["entropy"][c] for c in subcriteria])
-        critic_w  = np.array([indiv["critic"][c]   for c in subcriteria])
-        merec_w   = np.array([indiv["merec"][c]     for c in subcriteria])
-        stddev_w  = np.array([indiv["std_dev"][c]   for c in subcriteria])
-        fused_w   = np.array([result.weights[c]     for c in subcriteria])
+        # ── Extract weights ───────────────────────────────────────────────
+        global_sc_weights = result.details['global_sc_weights']
+        criterion_weights = result.details['level2']['criterion_weights']
+        sc_arr = np.array([global_sc_weights.get(sc, 0.0) for sc in subcriteria])
 
-        self.logger.info(f"  Entropy  : [{entropy_w.min():.4f}, {entropy_w.max():.4f}]")
-        self.logger.info(f"  CRITIC   : [{critic_w.min():.4f}, {critic_w.max():.4f}]")
-        self.logger.info(f"  MEREC    : [{merec_w.min():.4f}, {merec_w.max():.4f}]")
-        self.logger.info(f"  StdDev   : [{stddev_w.min():.4f}, {stddev_w.max():.4f}]")
-        self.logger.info(f"  Fused    : [{fused_w.min():.4f}, {fused_w.max():.4f}]")
-
-        # Reliability & stability
-        fusion_info = result.details.get("fusion", {})
-        rel = fusion_info.get("reliability_scores", {})
-        if rel:
-            self.logger.info("  Reliability: " +
-                             ", ".join(f"{k}={v:.4f}" for k, v in rel.items()))
-
-        stab = result.details.get("stability", {})
-        if stab:
+        self.logger.info(
+            "  Global SC weights: [%.4f, %.4f]", sc_arr.min(), sc_arr.max()
+        )
+        self.logger.info(
+            "  Criterion weights: %s",
+            ', '.join(f"{k}={v:.3f}" for k, v in sorted(criterion_weights.items())),
+        )
+        l2_diag = result.details.get('level2', {}).get('mc_diagnostics', {})
+        if l2_diag:
             self.logger.info(
-                f"  Stability: cos={stab.get('cosine_similarity', 0):.4f}, "
-                f"pearson={stab.get('pearson_correlation', 0):.4f}, "
-                f"stable={stab.get('is_stable', 'N/A')}"
+                "  Level 2 Kendall \u03c4=%.4f, W=%.4f",
+                l2_diag.get('avg_kendall_tau', 0),
+                l2_diag.get('kendall_w', 0),
+            )
+        stab = result.details.get('stability', {})
+        if stab.get('is_stable') is not None:
+            self.logger.info(
+                "  Stability: cosine=%.4f, stable=%s",
+                stab.get('cosine_similarity', 0), stab.get('is_stable'),
             )
 
-        boot = result.details.get("bootstrap", {})
-        if boot:
-            mean_std = np.mean([boot["std_weights"][c] for c in subcriteria])
-            self.logger.info(
-                f"  Bootstrap ({boot.get('iterations', '?')} iters): "
-                f"mean σ_w = {mean_std:.6f}"
-            )
-
-        fused_dict = {sc: result.weights[sc] for sc in subcriteria}
+        # ── Backward-compat aliases (for sensitivity.py / visualization) ──
+        l1 = result.details.get('level1', {})
+        entropy_bc = np.zeros(len(subcriteria))
+        critic_bc  = np.zeros(len(subcriteria))
+        for j, sc in enumerate(subcriteria):
+            for crit_id, sc_list in active_groups.items():
+                if sc in sc_list:
+                    mw = (l1.get(crit_id, {})
+                            .get('mc_diagnostics', {})
+                            .get('mean_weights', {}))
+                    entropy_bc[j] = mw.get(sc, 0.0)
+                    critic_bc[j]  = mw.get(sc, 0.0)
+                    break
 
         return {
-            'entropy':    entropy_w,
-            'critic':     critic_w,
-            'merec':      merec_w,
-            'std_dev':    stddev_w,
-            'fused':      fused_w,
-            'fused_dict': fused_dict,
-            'subcriteria': subcriteria,
-            'details':    result.details,
+            # Primary keys
+            'global_sc_weights': global_sc_weights,
+            'criterion_weights': criterion_weights,
+            'sc_array':          sc_arr,
+            'subcriteria':       subcriteria,
+            'details':           result.details,
+            # Backward-compat aliases
+            'fused':             sc_arr,
+            'fused_dict':        global_sc_weights,
+            'entropy':           entropy_bc,
+            'critic':            critic_bc,
+            'merec':             np.array([]),
+            'std_dev':           np.array([]),
         }
 
     # -----------------------------------------------------------------
@@ -441,8 +437,9 @@ class MLMCDMPipeline:
             ifs_spread_factor=self.config.ifs.spread_factor,
         )
         return pipeline.rank(
-            panel_data=panel_data,
-            subcriteria_weights=weights['fused_dict'],
+            panel_data          = panel_data,
+            subcriteria_weights = weights['global_sc_weights'],
+            criterion_weights   = weights['criterion_weights'],
         )
 
     # -----------------------------------------------------------------

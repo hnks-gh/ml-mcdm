@@ -205,22 +205,53 @@ class IFSConfig:
 
 @dataclass
 class WeightingConfig:
-    """Robust Global Hybrid Weighting (GTWC) configuration.
+    """Hybrid Weighting (Monte Carlo Entropy–CRITIC Ensemble) configuration.
 
-    Pipeline steps
-    --------------
-    1. Global Min–Max Normalisation
-    2. Entropy / CRITIC / MEREC / Std-Dev weight vectors
-    3. Game-Theory Weight Combination (cooperative Nash equilibrium)
-    4. Bayesian Bootstrap uncertainty quantification
-    5. Split-half temporal stability verification
+    Two-level hierarchical design
+    ─────────────────────────────
+    Level 1 : MC ensemble on each of 8 criterion groups (m × n_k matrices)
+              → local SC weights summing to 1 within each group
+    Level 2 : MC ensemble on criterion composite matrix (m × 8)
+              → criterion weights summing to 1 globally
+    Global  : global_SC_weight = local_SC_weight × criterion_weight
+
+    Blend formula (primary — linear):
+        w^(s) = β^(s)·w_E^(s) + (1−β^(s))·w_C^(s),  β^(s) ~ Beta(α_a, α_b)
+    Fallback (multiplicative, silent):
+        w_j^(s) ∝ w_{E,j}^(s) · w_{C,j}^(s)
     """
-    # 200 iterations is statistically sound for 95 % credible intervals on
-    # this panel size.  The bootstrap also has convergence-based early
-    # stopping, so it typically terminates well before the cap.
-    bootstrap_iterations: int = 200
+    # ── Core MC parameters ──────────────────────────────────────────────
+    mc_n_simulations:       int   = 2000   # N: inference iterations per level
+    mc_n_tuning_simulations: int  = 500    # N_tune: per grid-point simulations
+
+    # ── Beta blending prior ─────────────────────────────────────────────
+    beta_a: float = 1.0    # α_a (Entropy side); Beta(1,1) = Uniform(0,1)
+    beta_b: float = 1.0    # α_b (CRITIC side)
+
+    # ── Data perturbation ───────────────────────────────────────────────
+    noise_sigma_scale: float = 0.02   # σ_scale: fraction of column std
+    boot_fraction:     float = 1.0    # province resample ratio
+
+    # ── Tuning ──────────────────────────────────────────────────────────
+    perform_tuning:      bool  = True
+    use_bayesian_tuning: bool  = False   # requires scikit-optimize
+    tuning_objective: Literal[
+        "avg_kendall_tau",
+        "avg_spearman_rho",
+        "top_k_rank_var",
+    ] = "avg_kendall_tau"
+    top_k_stability: int = 10
+
+    # ── Stability verification ───────────────────────────────────────────
     stability_threshold: float = 0.95
-    epsilon: float = 1e-10
+
+    # ── Convergence ─────────────────────────────────────────────────────
+    convergence_tolerance:    float = 5e-5
+    conv_min_iters_fraction:  float = 1.0 / 6   # start after N//6 iters
+
+    # ── Numerics ────────────────────────────────────────────────────────
+    epsilon: float    = 1e-10
+    seed:    Optional[int] = None   # RandomState seed; None = non-reproducible
 
 
 # =========================================================================

@@ -166,6 +166,7 @@ class HierarchicalRankingPipeline:
         subcriteria_weights: Dict[str, float],
         target_year: Optional[int] = None,
         ifs_overrides: Optional[Dict[str, 'IFSDecisionMatrix']] = None,
+        criterion_weights: Optional[Dict[str, float]] = None,
     ) -> HierarchicalRankingResult:
         """
         Execute the full two-stage hierarchical ranking.
@@ -242,7 +243,8 @@ class HierarchicalRankingPipeline:
         # Derive criterion-level weights from year-active SC weights
         # ------------------------------------------------------------------
         criterion_weights, group_subcrit_weights = self._derive_hierarchical_weights(
-            active_sc_weights, hierarchy, ctx=ctx
+            active_sc_weights, hierarchy, ctx=ctx,
+            criterion_weights_override=criterion_weights,
         )
 
         # ------------------------------------------------------------------
@@ -364,6 +366,7 @@ class HierarchicalRankingPipeline:
         subcriteria_weights: Dict[str, float],
         hierarchy: 'HierarchyMapping',
         alternatives: List[str],
+        criterion_weights: Optional[Dict[str, float]] = None,
     ) -> 'HierarchicalERResult':
         """
         Lightweight ER-only re-ranking using precomputed MCDM scores.
@@ -393,19 +396,27 @@ class HierarchicalRankingPipeline:
             ER aggregation result with the perturbed weights.
         """
         # Derive criterion-level weights inline (no info logging to avoid spam)
-        criterion_weights: Dict[str, float] = {}
-        for crit_id, subcrit_list in hierarchy.criteria_to_subcriteria.items():
-            criterion_weights[crit_id] = sum(
-                subcriteria_weights.get(sc, 0.0) for sc in subcrit_list
-            )
-        total = sum(criterion_weights.values())
-        if total > 0:
-            criterion_weights = {k: v / total for k, v in criterion_weights.items()}
+        if criterion_weights is not None:
+            # Use externally computed weights directly (from Level 2 MC ensemble)
+            crit_w = {k: criterion_weights.get(k, 0.0)
+                      for k in hierarchy.criteria_to_subcriteria}
+            total = sum(crit_w.values())
+            if total > 0:
+                crit_w = {k: v / total for k, v in crit_w.items()}
+        else:
+            crit_w = {}
+            for crit_id, subcrit_list in hierarchy.criteria_to_subcriteria.items():
+                crit_w[crit_id] = sum(
+                    subcriteria_weights.get(sc, 0.0) for sc in subcrit_list
+                )
+            total = sum(crit_w.values())
+            if total > 0:
+                crit_w = {k: v / total for k, v in crit_w.items()}
 
         return self.er_aggregator.aggregate(
-            method_scores=precomputed_scores,
-            criterion_weights=criterion_weights,
-            alternatives=alternatives,
+            method_scores      = precomputed_scores,
+            criterion_weights  = crit_w,
+            alternatives       = alternatives,
         )
 
     # ==================================================================
@@ -681,27 +692,31 @@ class HierarchicalRankingPipeline:
         self,
         subcriteria_weights: Dict[str, float],
         hierarchy: HierarchyMapping,
-        ctx=None,                       # YearContext | None
+        ctx=None,                            # YearContext | None
+        criterion_weights_override: Optional[Dict[str, float]] = None,
     ) -> Tuple[Dict[str, float], Dict[str, Dict[str, float]]]:
         """
         Derive criterion-level and within-group sub-criteria weights.
 
-        Only sub-criteria that are *active* for the target year (per ``ctx``)
-        contribute to their parent criterion's weight.  Excluded SCs are
-        silently omitted so the criterion weight reflects the information
-        actually available for the year.
+        When ``criterion_weights_override`` is provided (supplied externally
+        by ``HybridWeightingCalculator`` Level 2), those values are used
+        directly for criterion-level weights.  The within-group normalization
+        is always derived from the year-active ``subcriteria_weights``.
 
-        Criterion weight  = Σ(active SC weights in group)
-        Within-group weight = SC weight / criterion weight
+        Criterion weight  = Σ(active SC weights in group)   [or override]
+        Within-group weight = SC weight / group_total
 
         Parameters
         ----------
         subcriteria_weights : dict
-            {SC_code: weight} — year-filtered fused weights.
+            {SC_code: weight} — year-filtered global SC weights.
         hierarchy : HierarchyMapping
         ctx : YearContext or None
-            When provided, only ``ctx.criterion_subcriteria[crit_id]`` SCs
-            are included per criterion.
+        criterion_weights_override : dict, optional
+            Pre-computed criterion weights from Level 2 MC ensemble.
+            When provided, summation-based derivation is skipped for the
+            criterion level, but within-group normalisation still uses
+            ``subcriteria_weights``.
 
         Returns
         -------
@@ -712,20 +727,30 @@ class HierarchicalRankingPipeline:
         group_weights:     Dict[str, Dict[str, float]] = {}
 
         for crit_id in hierarchy.all_criteria:
-            # Use year-specific SC list if context available, else full list
             if ctx is not None:
                 subcrit_list = ctx.criterion_subcriteria.get(crit_id, [])
             else:
                 subcrit_list = hierarchy.criteria_to_subcriteria[crit_id]
 
             group_w = sum(subcriteria_weights.get(sc, 0.0) for sc in subcrit_list)
-            criterion_weights[crit_id] = group_w
 
-            # Normalise within-group
+            # Criterion weight: use override when available
+            if criterion_weights_override is not None:
+                criterion_weights[crit_id] = criterion_weights_override.get(
+                    crit_id, group_w
+                )
+            else:
+                criterion_weights[crit_id] = group_w
+
+            # Within-group normalisation always from subcriteria_weights
             local: Dict[str, float] = {}
             for sc in subcrit_list:
                 w_sc = subcriteria_weights.get(sc, 0.0)
-                local[sc] = w_sc / group_w if group_w > 0 else 1.0 / max(len(subcrit_list), 1)
+                local[sc] = (
+                    w_sc / group_w
+                    if group_w > 0
+                    else 1.0 / max(len(subcrit_list), 1)
+                )
             group_weights[crit_id] = local
 
         # Normalise criterion weights to sum to 1
