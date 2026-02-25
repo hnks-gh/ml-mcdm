@@ -25,11 +25,13 @@ import pytest
 def _mock_weights(n: int = 4):
     """Return a minimal 'weights' dict as expected by SensitivityAnalysis."""
     subcriteria = [f"S{i}" for i in range(n)]
-    fused = np.ones(n) / n
+    w = np.ones(n) / n
     return {
-        "fused": fused.copy(),
-        "fused_dict": dict(zip(subcriteria, fused)),
+        "global_sc_weights": dict(zip(subcriteria, w)),
+        "sc_array": w.copy(),
         "subcriteria": subcriteria,
+        "criterion_weights": {},
+        "details": {},
     }
 
 

@@ -6,7 +6,7 @@ ML-MCDM Pipeline Orchestrator
 Seven-phase production pipeline:
 
   Phase 1  Data Loading
-  Phase 2  Weight Calculation       (GTWC + Bayesian Bootstrap)
+  Phase 2  Weight Calculation       (Hybrid Weighting — two-level MC Ensemble)
   Phase 3  Hierarchical Ranking     (12 MCDM + two-stage ER)
   Phase 4  ML Forecasting           (6 models + Super Learner + Conformal)
   Phase 5  Sensitivity Analysis     (Hierarchical multi-level robustness)
@@ -109,7 +109,7 @@ class MLMCDMPipeline:
 
     Integrates
     ----------
-    * Robust Global Hybrid Weighting (Entropy + CRITIC + MEREC + SD)
+    * Two-Level Hybrid Weighting (Entropy + CRITIC MC Ensemble)
     * 12 MCDM methods per criterion group:
         Traditional : TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS, SAW
         IFS         : IFS-TOPSIS, IFS-VIKOR, IFS-PROMETHEE, IFS-COPRAS,
@@ -392,34 +392,12 @@ class MLMCDMPipeline:
                 stab.get('cosine_similarity', 0), stab.get('is_stable'),
             )
 
-        # ── Backward-compat aliases (for sensitivity.py / visualization) ──
-        l1 = result.details.get('level1', {})
-        entropy_bc = np.zeros(len(subcriteria))
-        critic_bc  = np.zeros(len(subcriteria))
-        for j, sc in enumerate(subcriteria):
-            for crit_id, sc_list in active_groups.items():
-                if sc in sc_list:
-                    mw = (l1.get(crit_id, {})
-                            .get('mc_diagnostics', {})
-                            .get('mean_weights', {}))
-                    entropy_bc[j] = mw.get(sc, 0.0)
-                    critic_bc[j]  = mw.get(sc, 0.0)
-                    break
-
         return {
-            # Primary keys
             'global_sc_weights': global_sc_weights,
             'criterion_weights': criterion_weights,
             'sc_array':          sc_arr,
             'subcriteria':       subcriteria,
             'details':           result.details,
-            # Backward-compat aliases
-            'fused':             sc_arr,
-            'fused_dict':        global_sc_weights,
-            'entropy':           entropy_bc,
-            'critic':            critic_bc,
-            'merec':             np.array([]),
-            'std_dev':           np.array([]),
         }
 
     # -----------------------------------------------------------------

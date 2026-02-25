@@ -47,7 +47,7 @@ from weighting import (
     CRITICWeightCalculator,
     MERECWeightCalculator,
     StandardDeviationWeightCalculator,
-    HybridWeightingPipeline,
+    HybridWeightingCalculator,
     WeightResult
 )
 
@@ -62,7 +62,7 @@ __all__ = [
     'CRITICWeightCalculator',
     'MERECWeightCalculator',
     'StandardDeviationWeightCalculator',
-    'HybridWeightingPipeline',
+    'HybridWeightingCalculator',
     'WeightResult',
     
     # Traditional MCDM

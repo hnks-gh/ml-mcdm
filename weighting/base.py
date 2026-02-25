@@ -61,9 +61,10 @@ def calculate_weights(data: pd.DataFrame, method: str = "robust_global") -> Weig
     elif method == "std_dev":
         return StandardDeviationWeightCalculator().calculate(data)
     elif method in ("robust_global", "ensemble", "hybrid"):
-        from .hybrid_weighting import HybridWeightingPipeline
-        calc = HybridWeightingPipeline()
-        return calc.calculate(data)
+        raise ValueError(
+            f"Method '{method}' requires panel data and criteria_groups. "
+            "Use HybridWeightingCalculator directly."
+        )
     elif method == "equal":
         cols = data.columns.tolist()
         w = 1.0 / len(cols)

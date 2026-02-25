@@ -51,10 +51,7 @@ class OutputOrchestrator:
         subcriteria = weights['subcriteria']
 
         # 1. Weights
-        self.csv.save_weights(
-            {k: weights[k] for k in ('entropy', 'critic', 'merec', 'std_dev', 'fused')},
-            subcriteria,
-        )
+        self.csv.save_weights(weights, subcriteria)
         logger.info('Saved: weights_analysis.csv')
 
         # 2. Rankings

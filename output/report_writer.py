@@ -70,7 +70,7 @@ class ReportWriter:
         )
         n_prov = len(_active_provs)
         n_years = len(panel_data.years)
-        fused = np.asarray(weights['fused'])
+        fused = np.asarray(weights['sc_array'])
         subcriteria = weights['subcriteria']
         sens = analysis_results.get('sensitivity')
 
@@ -206,53 +206,74 @@ class ReportWriter:
         L.append('# 3. Objective Weight Derivation')
         L.append('')
         L.append(
-            'Subcriteria weights are determined through four independent objective '
-            'weighting procedures, each exploiting a distinct property of the '
-            'decision matrix.  The individual vectors are fused using a '
-            'reliability-weighted Bayesian bootstrap scheme.'
+            'Subcriteria weights are derived through a two-level hierarchical Monte Carlo '
+            'ensemble that blends Shannon Entropy and CRITIC via a Beta-distributed mixing '
+            'coefficient.  Level 1 produces local SC weights within each criterion group; '
+            'Level 2 determines criterion-level weights from a composite matrix.  '
+            'Global SC weights are the product of local and criterion weights, re-normalised '
+            'to the simplex.'
         )
         L.append('')
-        L.append('The Shannon entropy of a weight vector $\\mathbf{w}$ is:')
+        L.append('The global weight of subcriteria $j$ in criterion group $C_k$ is:')
         L.append('')
-        L.append('$$H(\\mathbf{w}) = -\\sum_{j=1}^{m} w_j \\ln w_j$$')
+        L.append(
+            r'$$w_j = \frac{u_j^{(k)} \cdot v_k}{'
+            r'\sum_{k^{\prime}} \sum_{j^{\prime} \in C_{k^{\prime}}} u_{j^{\prime}}^{(k^{\prime})} v_{k^{\prime}}}$$'
+        )
+        L.append('')
+        L.append('where $u_j^{(k)}$ is the Level-1 local SC weight and $v_k$ is the Level-2 criterion weight.')
         L.append('')
 
-        # Weight table
-        L.append('**Table 3. Subcriteria weights by method and fused weights.**')
+        # Hybrid weighting table — global SC weights with MC diagnostics
+        details = weights.get('details', {})
+        l1_diag = details.get('level1', {})
+        crit_w  = weights.get('criterion_weights', {})
+        L.append('**Table 3. Subcriteria global weights (Hybrid MC Ensemble).**')
         L.append('')
-        L.append('| Subcriteria | Entropy | CRITIC | MEREC | Std Dev | Fused |')
-        L.append('| :--- | ---: | ---: | ---: | ---: | ---: |')
-        for i, sc in enumerate(subcriteria):
+        L.append('| Subcriteria | Criterion | Criterion Weight | Local Weight | Global Weight | MC Std | MC CV |')
+        L.append('| :--- | :--- | ---: | ---: | ---: | ---: | ---: |')
+        sc_to_crit = {}
+        for cid, cdata in l1_diag.items():
+            for sc in cdata.get('local_sc_weights', {}):
+                sc_to_crit[sc] = cid
+        for sc in subcriteria:
+            cid = sc_to_crit.get(sc, '')
+            local_w   = l1_diag.get(cid, {}).get('local_sc_weights', {}).get(sc, 0.0)
+            mc_diag   = l1_diag.get(cid, {}).get('mc_diagnostics', {})
+            mc_std    = mc_diag.get('std_weights', {}).get(sc, 0.0)
+            mc_cv     = mc_diag.get('cv_weights',  {}).get(sc, 0.0)
+            gw        = weights['global_sc_weights'].get(sc, 0.0)
+            v_k       = crit_w.get(cid, 0.0)
             L.append(
-                f'| {sc} | {weights["entropy"][i]:.4f} | {weights["critic"][i]:.4f} '
-                f'| {weights["merec"][i]:.4f} | {weights["std_dev"][i]:.4f} '
-                f'| {weights["fused"][i]:.4f} |')
+                f'| {sc} | {cid} | {v_k:.4f} | {local_w:.4f} | {gw:.4f} | {mc_std:.4f} | {mc_cv:.4f} |'
+            )
         L.append('')
 
-        L.append(f'- **Sum of fused weights:** {fused.sum():.6f}')
+        L.append(f'- **Sum of global weights:** {fused.sum():.6f}')
         L.append(f'- **Max weight:** {fused.max():.6f} ({subcriteria[np.argmax(fused)]})')
         L.append(f'- **Min weight:** {fused.min():.6f} ({subcriteria[np.argmin(fused)]})')
-        L.append(f'- **Shannon entropy $H(\\mathbf{{w}})$:** {-np.sum(fused * np.log(fused + 1e-12)):.4f}')
+        L.append(f'- **Shannon entropy $H(\\mathbf{{{{w}}}})$:** {-np.sum(fused * np.log(fused + 1e-12)):.4f}')
         L.append('')
 
-        # Correlation matrix
-        try:
-            method_weights = np.column_stack([
-                weights['entropy'], weights['critic'],
-                weights['merec'], weights['std_dev'],
-            ])
-            corr = np.corrcoef(method_weights.T)
-            labels = ['Entropy', 'CRITIC', 'MEREC', 'Std Dev']
-            L.append('**Table 4. Pearson correlation matrix of weight vectors.**')
+        # Level 2 MC diagnostics summary
+        l2_diag = details.get('level2', {}).get('mc_diagnostics', {})
+        if l2_diag:
+            L.append('**Table 4. Level-2 criterion weights (MC diagnostics).**')
             L.append('')
-            L.append('| | ' + ' | '.join(labels) + ' |')
-            L.append('| :--- |' + ' ---: |' * 4)
-            for i, ml in enumerate(labels):
-                row = ' | '.join(f'{corr[i, j]:.3f}' for j in range(4))
-                L.append(f'| {ml} | {row} |')
+            L.append('| Criterion | Weight | MC Mean | MC Std | 95% CI Lower | 95% CI Upper |')
+            L.append('| :--- | ---: | ---: | ---: | ---: | ---: |')
+            for cid, v_k in sorted(crit_w.items()):
+                mc_mean = l2_diag.get('mean_weights',   {}).get(cid, v_k)
+                mc_std  = l2_diag.get('std_weights',    {}).get(cid, 0.0)
+                ci_lo   = l2_diag.get('ci_lower_2_5',  {}).get(cid, 0.0)
+                ci_hi   = l2_diag.get('ci_upper_97_5', {}).get(cid, 0.0)
+                L.append(f'| {cid} | {v_k:.4f} | {mc_mean:.4f} | {mc_std:.4f} | {ci_lo:.4f} | {ci_hi:.4f} |')
             L.append('')
-        except Exception as _exc:
-            _logger.debug('section skipped: %s', _exc)
+            tau = l2_diag.get('avg_kendall_tau', 0)
+            kw  = l2_diag.get('kendall_w', 0)
+            L.append(f'- **Level-2 Avg Kendall τ:** {tau:.4f}')
+            L.append(f"- **Level-2 Kendall's W:** {kw:.4f}")
+            L.append('')
 
         # ============================================================
         # 4. ER Ranking

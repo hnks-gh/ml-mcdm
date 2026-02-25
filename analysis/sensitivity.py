@@ -199,7 +199,7 @@ class SensitivityAnalysis:
         subcriteria = weights['subcriteria']
         if perturbed_array is not None:
             return dict(zip(subcriteria, perturbed_array))
-        return weights['fused_dict']
+        return weights['global_sc_weights']
 
     @_silence_warnings
     def analyze_full_pipeline(self,
@@ -321,7 +321,7 @@ class SensitivityAnalysis:
 
         # Criteria-level sensitivity
         criteria_sens = {}
-        fused_weights = weights['fused']
+        fused_weights = weights['sc_array']
         criteria = panel_data.hierarchy.all_criteria
         # Use the active subcriteria list (same ordering as fused_weights array)
         active_subcriteria_list = weights['subcriteria']
@@ -474,9 +474,9 @@ class SensitivityAnalysis:
                 perturbation = 1 + rng.uniform(
                     -self.perturbation_range,
                     self.perturbation_range,
-                    len(weights['fused'])
+                    len(weights['sc_array'])
                 )
-                perturbed_weights = weights['fused'] * perturbation
+                perturbed_weights = weights['sc_array'] * perturbation
                 perturbed_weights = perturbed_weights / perturbed_weights.sum()
                 perts_mc_par = self._weights_to_dict(weights, perturbed_weights)
 
@@ -514,9 +514,9 @@ class SensitivityAnalysis:
                 perturbation = 1 + self.rng.uniform(
                     -self.perturbation_range,
                     self.perturbation_range,
-                    len(weights['fused'])
+                    len(weights['sc_array'])
                 )
-                perturbed_weights = weights['fused'] * perturbation
+                perturbed_weights = weights['sc_array'] * perturbation
                 perturbed_weights = perturbed_weights / perturbed_weights.sum()
 
                 try:

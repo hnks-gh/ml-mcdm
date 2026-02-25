@@ -200,13 +200,26 @@ class VisualizationOrchestrator:
         _inc(self.ranking.plot_score_distribution(scores))
 
         # ── Weights ───────────────────────────────────────────────
-        w_dict = {
-            'Entropy': weights['entropy'],
-            'CRITIC': weights['critic'],
-            'MEREC': weights['merec'],
-            'Std Dev': weights['std_dev'],
-            'Fused': weights['fused'],
+        sc_arr = weights['sc_array']
+        # Build per-criterion mean-weight view from Level 1 diagnostics
+        w_dict: Dict[str, np.ndarray] = {'Hybrid Weighting': sc_arr}
+        l1 = weights.get('details', {}).get('level1', {})
+        crit_groups = {
+            crit_id: data.get('local_sc_weights', {})
+            for crit_id, data in l1.items()
         }
+        if crit_groups:
+            # Build a local-weight array for an "Entropy+CRITIC blend" reference
+            local_arr = np.array([
+                next(
+                    (crit_groups[cid].get(sc, 0.0) for cid, lw in crit_groups.items() if sc in lw),
+                    0.0,
+                )
+                for sc in subcriteria
+            ])
+            if local_arr.sum() > 0:
+                local_arr = local_arr / local_arr.sum()
+            w_dict['Level-1 Local'] = local_arr
         _inc(self.weighting.plot_weights_comparison(w_dict, subcriteria))
         _inc(self.weighting.plot_weight_radar(w_dict, subcriteria))
         _inc(self.weighting.plot_weight_heatmap(w_dict, subcriteria))
@@ -376,7 +389,7 @@ class VisualizationOrchestrator:
             _inc(self.summary.plot_executive_dashboard({
                 'kpis': kpis,
                 'top_10': top10,
-                'fused_weights': weights['fused'],
+                'fused_weights': weights['sc_array'],
                 'subcriteria_names': subcriteria,
                 'robustness_text': rob_text,
             }))

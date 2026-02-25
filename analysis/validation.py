@@ -415,10 +415,9 @@ class Validator:
     ) -> float:
         """Validate temporal stability of weights across years.
 
-        Reads from the new ``HybridWeightingCalculator`` details structure:
+        Reads from ``HybridWeightingCalculator`` details structure:
         - ``details.stability.cosine_similarity``  (primary)
         - ``details.level2.mc_diagnostics.cv_weights``  (fallback: 1 - mean_cv)
-        Also handles the legacy ``details.bootstrap`` structure for backward compat.
         """
         if not hasattr(panel_data, 'years') or len(panel_data.years) < 2:
             return 1.0
@@ -449,40 +448,16 @@ class Validator:
                 if cvs:
                     return float(np.clip(1.0 - np.mean(cvs), 0.0, 1.0))
 
-        # ── Legacy structure: bootstrap dict from HybridWeightingPipeline ─
-        bootstrap_info = details.get('bootstrap', {})
-        if bootstrap_info:
-            std_weights = bootstrap_info.get('std_weights', {})
-            if std_weights:
-                subcriteria = weights.get('subcriteria', [])
-                fused = weights.get('fused', np.array([]))
-                if len(fused) > 0 and len(subcriteria) > 0:
-                    cvs = []
-                    for i, sc in enumerate(subcriteria):
-                        w = fused[i] if i < len(fused) else 0
-                        s = std_weights.get(sc, 0)
-                        if w > 1e-10:
-                            cvs.append(s / w)
-                    if cvs:
-                        return float(np.clip(1.0 - np.mean(cvs), 0.0, 1.0))
-
         return 0.0
 
     def _validate_weight_method_agreement(
         self,
         weights: Dict[str, Any]
     ) -> float:
-        """Validate internal weight agreement.
-
-        For the new ``HybridWeightingCalculator`` (single two-method blend),
-        uses mean 1 - CV across Level 2 criterion weights as an agreement proxy.
-
-        Falls back to pairwise Spearman correlation for the legacy
-        ``HybridWeightingPipeline`` four-method case.
-        """
+        """Validate internal weight agreement via mean 1−CV of Level 2 criterion weights."""
         details = weights.get('details', {})
 
-        # ── New structure: use Level 2 CV as agreement proxy ──────────────
+        # ── Use Level 2 CV as agreement proxy ────────────────────────────
         l2_diag = details.get('level2', {}).get('mc_diagnostics', {})
         if l2_diag:
             cv_weights = l2_diag.get('cv_weights', {})
@@ -491,40 +466,16 @@ class Validator:
                 # High agreement = low CV; map [0, ∞) → [0, 1]
                 return float(np.clip(1.0 - mean_cv, 0.0, 1.0))
 
-        # ── Legacy: pairwise Spearman across four method arrays ────────────
-        method_keys = ['entropy', 'critic', 'merec', 'std_dev']
-        available = {
-            k: np.asarray(weights[k])
-            for k in method_keys
-            if k in weights and len(np.asarray(weights[k])) > 2
-        }
-        if len(available) >= 2:
-            from scipy.stats import spearmanr
-            arrs = list(available.values())
-            correlations = []
-            for i in range(len(arrs)):
-                for j in range(i + 1, len(arrs)):
-                    if len(arrs[i]) == len(arrs[j]):
-                        corr, _ = spearmanr(arrs[i], arrs[j])
-                        if not np.isnan(corr):
-                            correlations.append(corr)
-            if correlations:
-                return float(np.mean(correlations))
-
         return 0.0
 
     def _get_weight_confidence_intervals(
         self,
         weights: Dict[str, Any]
     ) -> Dict[str, Tuple[float, float]]:
-        """Get bootstrap confidence intervals for weights.
+        """Get MC credible intervals for weights.
 
-        Reads from new ``HybridWeightingCalculator`` details:
-        ``details.level2.mc_diagnostics.ci_lower_2_5`` /
-        ``ci_upper_97_5``.
-
-        Falls back to the legacy ``details.bootstrap`` structure, then to
-        a ±1.96σ approximation from std_weights.
+        Reads ``details.level2.mc_diagnostics.ci_lower_2_5 / ci_upper_97_5``
+        and ``details.level1.<group>.mc_diagnostics.ci_lower_2_5 / ci_upper_97_5``.
         """
         ci: Dict[str, Tuple[float, float]] = {}
         details = weights.get('details', {})
@@ -547,27 +498,6 @@ class Validator:
                         ci[sc] = (float(sc_lo[sc]), float(sc_hi[sc]))
             if ci:
                 return ci
-
-        # ── Legacy: bootstrap dict from HybridWeightingPipeline ───────────
-        bootstrap_info = details.get('bootstrap', {})
-        if bootstrap_info:
-            b_lo = bootstrap_info.get('ci_lower_2_5', {})
-            b_hi = bootstrap_info.get('ci_upper_97_5', {})
-            if b_lo and b_hi:
-                for sc in b_lo:
-                    if sc in b_hi:
-                        ci[sc] = (float(b_lo[sc]), float(b_hi[sc]))
-                return ci
-            # ±1.96σ fallback
-            std_weights = bootstrap_info.get('std_weights', {})
-            subcriteria = weights.get('subcriteria', [])
-            fused = weights.get('fused', np.array([]))
-            if std_weights and len(fused) > 0:
-                for i, sc in enumerate(subcriteria):
-                    if i < len(fused):
-                        w = float(fused[i])
-                        s = float(std_weights.get(sc, 0))
-                        ci[sc] = (w - 1.96 * s, w + 1.96 * s)
 
         return ci
     

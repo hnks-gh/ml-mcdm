@@ -6,11 +6,9 @@ Unit tests for analysis/validation.py and weighting/validation.py
 Covers the Phase 5 bug-fixes:
   - M9:  Spearman rank correlation used in TemporalStabilityValidator
   - M11: _validate_weight_temporal_stability returns 0.0 (not 0.90) when
-         no bootstrap/stability evidence is present
-  - M11: _validate_weight_method_agreement returns 0.0 (not 0.85) when
-         fewer than 2 weighting methods are available
-  - M11: _validate_weight_method_agreement returns 0.0 (not 0.85) when
-         all pairwise Spearman correlations are NaN
+         no stability evidence (cosine_similarity / mc_diagnostics) is present
+  - M11: _validate_weight_method_agreement returns 1 - mean_cv using
+         Level-2 MC diagnostics; returns 0.0 when no diagnostics available
 
 Also covers TOPSIS/SAW/VIKOR fixes via edge-case assertions:
   - M3:  TOPSIS degenerate case (all identical rows) returns 0.5 scores
@@ -42,20 +40,20 @@ def _make_weights(methods: list[str] = ("entropy", "critic", "merec", "std_dev")
                   n_criteria: int = 4,
                   seed: int = 0) -> dict:
     """
-    Return a weights dict as produced by the real weighting pipeline.
-    Each method key maps to a normalised weight array.
+    Return a minimal weights dict for validator unit tests.
+    Uses the new HybridWeightingCalculator structure with 'details', 'subcriteria',
+    'global_sc_weights', 'sc_array', and 'criterion_weights'.
     """
     rng = np.random.RandomState(seed)
-    w = {}
-    for i, m in enumerate(methods):
-        raw = rng.dirichlet(np.ones(n_criteria) * (i + 1))
-        w[m] = raw
+    raw = rng.dirichlet(np.ones(n_criteria))
     subcriteria = [f"S{i}" for i in range(n_criteria)]
-    w["subcriteria"] = subcriteria
-    w["fused"] = np.ones(n_criteria) / n_criteria
-    w["fused_dict"] = dict(zip(subcriteria, w["fused"]))
-    w["details"] = {}   # no bootstrap or stability info
-    return w
+    return {
+        "global_sc_weights": dict(zip(subcriteria, raw)),
+        "sc_array": raw.copy(),
+        "subcriteria": subcriteria,
+        "criterion_weights": {},
+        "details": {},   # no stability info — overridden per-test
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -116,33 +114,29 @@ class TestValidatorTemporalStability:
 
     def test_with_bootstrap_mean_cv_returns_stability(self):
         """
-        When bootstrap std_weights are provided, stability = 1 - mean_cv.
+        When Level-2 MC cv_weights are provided, stability = 1 - mean_cv.
         Craft a case with known CV and verify.
 
-        Note: all subcriteria with w > 1e-10 contribute to mean_cv,
-        even those with std=0 (giving cv=0).
+        Note: all criteria contribute equally to mean_cv.
         """
         validator = Validator()
         panel = _MinimalPanel(n_years=3)
         weights = _make_weights()
-        # S0: w=0.5, std=0.05 → cv=0.10
-        # S1: w=0.2, std=0.04 → cv=0.20
-        # S2: w=0.2, std=0.00 → cv=0.00  (w > 1e-10 → included)
-        # S3: w=0.1, std=0.00 → cv=0.00  (w > 1e-10 → included)
+        # cv_weights: S0→0.10, S1→0.20, S2→0.00, S3→0.00
         # mean_cv = (0.10 + 0.20 + 0.00 + 0.00) / 4 = 0.075
         # stability = 1 - 0.075 = 0.925
-        fused = np.array([0.5, 0.2, 0.2, 0.1])
-        weights["fused"] = fused
-        weights["subcriteria"] = ["S0", "S1", "S2", "S3"]
         weights["details"] = {
-            "bootstrap": {
-                "std_weights": {"S0": 0.05, "S1": 0.04, "S2": 0.0, "S3": 0.0}
+            "level2": {
+                "mc_diagnostics": {
+                    "cv_weights": {
+                        "S0": 0.10, "S1": 0.20, "S2": 0.00, "S3": 0.00
+                    }
+                }
             }
         }
 
         result = validator._validate_weight_temporal_stability(panel, weights)
-        cvs = [0.05 / 0.5, 0.04 / 0.2, 0.0 / 0.2, 0.0 / 0.1]  # all 4 criteria
-        expected = float(np.clip(1.0 - np.mean(cvs), 0.0, 1.0))
+        expected = float(np.clip(1.0 - np.mean([0.10, 0.20, 0.00, 0.00]), 0.0, 1.0))
         assert abs(result - expected) < 1e-6, (
             f"Expected stability≈{expected:.4f}, got {result:.4f}"
         )
@@ -166,7 +160,7 @@ class TestValidatorTemporalStability:
 # ---------------------------------------------------------------------------
 
 class TestValidatorMethodAgreement:
-    """_validate_weight_method_agreement must return 0.0 for degenerate inputs."""
+    """_validate_weight_method_agreement uses Level-2 MC CV to measure agreement."""
 
     def test_single_method_returns_zero(self):
         """
@@ -206,61 +200,62 @@ class TestValidatorMethodAgreement:
             f"Expected 0.0 for all-constant weights (NaN Spearman), got {result}"
         )
 
-    def test_identical_methods_return_one(self):
+    def test_zero_cv_weights_return_one(self):
         """
-        Four identical non-constant weight vectors → Spearman = 1.0
-        for all pairs → mean = 1.0.
+        When all criterion cv_weights are zero → mean_cv = 0 → 1 - 0 = 1.0.
         """
         validator = Validator()
-        w = np.array([0.1, 0.4, 0.3, 0.2])
         weights = {
-            "entropy": w.copy(),
-            "std_dev": w.copy(),
-            "critic":  w.copy(),
-            "merec":   w.copy(),
+            "details": {
+                "level2": {
+                    "mc_diagnostics": {
+                        "cv_weights": {"C01": 0.0, "C02": 0.0, "C03": 0.0, "C04": 0.0}
+                    }
+                }
+            }
         }
 
         result = validator._validate_weight_method_agreement(weights)
         assert abs(result - 1.0) < 1e-6, (
-            f"Expected 1.0 for identical weight arrays, got {result}"
+            f"Expected 1.0 for zero CV weights, got {result}"
         )
 
-    def test_two_methods_with_known_correlation(self):
+    def test_known_cv_weights_return_expected_agreement(self):
         """
-        Two methods with exactly reversed weights → Spearman = -1.0.
+        Known cv_weights: mean_cv = (0.05 + 0.15) / 2 = 0.10
+        → agreement = 1 - 0.10 = 0.90.
         """
-        from scipy.stats import spearmanr
-
         validator = Validator()
-        w1 = np.array([0.4, 0.3, 0.2, 0.1])
-        w2 = w1[::-1].copy()  # reversed
-
-        weights = {"entropy": w1, "critic": w2}
-        result = validator._validate_weight_method_agreement(weights)
-
-        expected, _ = spearmanr(w1, w2)
-        assert abs(result - expected) < 1e-6, (
-            f"Expected Spearman ≈ {expected:.4f}, got {result:.4f}"
-        )
-
-    def test_similar_methods_give_positive_agreement(self):
-        """Four random but similar weight arrays → agreement > 0."""
-        validator = Validator()
-        rng = np.random.RandomState(5)
-        base = rng.dirichlet(np.ones(6))
         weights = {
-            "entropy": (base + rng.rand(6) * 0.01),
-            "std_dev": (base + rng.rand(6) * 0.01),
-            "critic":  (base + rng.rand(6) * 0.01),
-            "merec":   (base + rng.rand(6) * 0.01),
+            "details": {
+                "level2": {
+                    "mc_diagnostics": {
+                        "cv_weights": {"C01": 0.05, "C02": 0.15}
+                    }
+                }
+            }
         }
-        # normalise
-        for k in weights:
-            weights[k] = weights[k] / weights[k].sum()
+        result = validator._validate_weight_method_agreement(weights)
+        expected = 1.0 - (0.05 + 0.15) / 2  # = 0.90
+        assert abs(result - expected) < 1e-6, (
+            f"Expected {expected:.4f}, got {result:.4f}"
+        )
 
+    def test_low_cv_gives_positive_agreement(self):
+        """Low coefficient of variation in criterion weights → agreement > 0.5."""
+        validator = Validator()
+        weights = {
+            "details": {
+                "level2": {
+                    "mc_diagnostics": {
+                        "cv_weights": {"C01": 0.03, "C02": 0.05, "C03": 0.04, "C04": 0.06}
+                    }
+                }
+            }
+        }
         result = validator._validate_weight_method_agreement(weights)
         assert result > 0.5, (
-            f"Expected positive agreement (>0.5) for near-identical arrays, got {result}"
+            f"Expected positive agreement (>0.5) for low-CV weights, got {result}"
         )
 
     def test_two_methods_with_length_two_returns_zero(self):

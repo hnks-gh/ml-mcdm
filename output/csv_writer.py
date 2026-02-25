@@ -57,36 +57,69 @@ class CsvWriter:
     #  1. WEIGHTS
     # ==================================================================
 
-    def save_weights(self, weights_dict: Dict[str, np.ndarray],
+    def save_weights(self, weights: Dict[str, Any],
                      subcriteria: List[str]) -> str:
-        df = pd.DataFrame({'Subcriteria': subcriteria})
+        """Save hybrid weighting results to weights_analysis.csv."""
+        global_sc_w  = weights.get('global_sc_weights', {})
+        criterion_w  = weights.get('criterion_weights', {})
+        sc_arr       = np.asarray(weights.get('sc_array', [global_sc_w.get(sc, 0.0) for sc in subcriteria]))
+        details      = weights.get('details', {})
+        l1           = details.get('level1', {})
 
-        method_names = ['entropy', 'critic', 'merec', 'std_dev', 'fused']
-        display_names = ['Entropy', 'CRITIC', 'MEREC', 'StdDev', 'Fused']
+        # Build per-SC lookup for Level 1 diagnostics
+        sc_to_crit: Dict[str, str] = {}
+        for crit_id, sc_list in {
+            cid: data.get('local_sc_weights', {}).keys()
+            for cid, data in l1.items()
+        }.items():
+            for sc in sc_list:
+                sc_to_crit[sc] = crit_id
 
-        for mname, dname in zip(method_names, display_names):
-            df[dname] = np.asarray(weights_dict[mname])
+        rows = []
+        for i, sc in enumerate(subcriteria):
+            crit_id = sc_to_crit.get(sc, '')
+            l1_entry = l1.get(crit_id, {})
+            local_w  = l1_entry.get('local_sc_weights', {})
+            mc       = l1_entry.get('mc_diagnostics', {})
+            row = {
+                'Subcriteria':    sc,
+                'Criterion':      crit_id,
+                'Global_Weight':  float(global_sc_w.get(sc, sc_arr[i] if i < len(sc_arr) else 0.0)),
+                'Criterion_Weight': float(criterion_w.get(crit_id, 0.0)),
+                'Local_SC_Weight': float(local_w.get(sc, 0.0)),
+                'MC_Mean':        float(mc.get('mean_weights', {}).get(sc, 0.0)),
+                'MC_Std':         float(mc.get('std_weights', {}).get(sc, 0.0)),
+                'MC_CV':          float(mc.get('cv_weights', {}).get(sc, 0.0)),
+                'CI_Lower_2_5':   float(mc.get('ci_lower_2_5', {}).get(sc, 0.0)),
+                'CI_Upper_97_5':  float(mc.get('ci_upper_97_5', {}).get(sc, 0.0)),
+            }
+            rows.append(row)
 
-        for mname, dname in zip(method_names, display_names):
-            w = np.asarray(weights_dict[mname])
-            df[f'Rank_{dname}'] = pd.Series(w).rank(ascending=False, method='min').astype(int).values
+        df = pd.DataFrame(rows).set_index('Subcriteria')
+        df['Rank_Global'] = df['Global_Weight'].rank(ascending=False, method='min').astype(int)
 
-        weight_matrix = np.column_stack([
-            np.asarray(weights_dict[m]) for m in method_names[:4]
-        ])
-        df['Mean_4Methods'] = weight_matrix.mean(axis=1)
-        df['Median_4Methods'] = np.median(weight_matrix, axis=1)
-        df['StdDev_4Methods'] = weight_matrix.std(axis=1)
-        df['CV_4Methods'] = np.where(
-            df['Mean_4Methods'] > 0,
-            df['StdDev_4Methods'] / df['Mean_4Methods'], 0)
-        df['Min_4Methods'] = weight_matrix.min(axis=1)
-        df['Max_4Methods'] = weight_matrix.max(axis=1)
-        df['Range_4Methods'] = df['Max_4Methods'] - df['Min_4Methods']
-        df['Fused_vs_Mean_Diff'] = np.abs(
-            np.asarray(weights_dict['fused']) - df['Mean_4Methods'].values)
+        # Append criterion-level summary rows at the bottom
+        crit_rows = []
+        for crit_id, v in sorted(criterion_w.items()):
+            l2_diag = details.get('level2', {}).get('mc_diagnostics', {})
+            crit_rows.append({
+                'Subcriteria': f'[CRITERION] {crit_id}',
+                'Criterion': crit_id,
+                'Global_Weight': float(v),
+                'Criterion_Weight': float(v),
+                'Local_SC_Weight': float(v),
+                'MC_Mean': float(l2_diag.get('mean_weights', {}).get(crit_id, v)),
+                'MC_Std':  float(l2_diag.get('std_weights', {}).get(crit_id, 0.0)),
+                'MC_CV':   float(l2_diag.get('cv_weights', {}).get(crit_id, 0.0)),
+                'CI_Lower_2_5':  float(l2_diag.get('ci_lower_2_5', {}).get(crit_id, 0.0)),
+                'CI_Upper_97_5': float(l2_diag.get('ci_upper_97_5', {}).get(crit_id, 0.0)),
+                'Rank_Global': 0,
+            })
 
-        df = df.set_index('Subcriteria')
+        if crit_rows:
+            crit_df = pd.DataFrame(crit_rows).set_index('Subcriteria')
+            df = pd.concat([df, crit_df])
+
         return self._save_csv(df, 'weights_analysis.csv')
 
     # ==================================================================
