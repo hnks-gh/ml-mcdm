@@ -461,22 +461,6 @@ class CsvWriter:
         except Exception as _exc:
             _logger.debug('section skipped: %s', _exc)
 
-        # IFS sensitivity
-        try:
-            ifs_data = {
-                'Parameter': ['Membership (μ)', 'Non-membership (ν)'],
-                'Sensitivity': [
-                    getattr(sens, 'ifs_membership_sensitivity', 0),
-                    getattr(sens, 'ifs_nonmembership_sensitivity', 0),
-                ],
-            }
-            df = pd.DataFrame(ifs_data).set_index('Parameter')
-            df['Interpretation'] = df['Sensitivity'].apply(
-                lambda x: 'High' if x > 0.1 else ('Medium' if x > 0.05 else 'Low'))
-            saved['ifs'] = self._save_csv(df, 'sensitivity_ifs.csv', float_fmt='%.6f')
-        except Exception as _exc:
-            _logger.debug('section skipped: %s', _exc)
-
         # Summary JSON
         try:
             robustness = {
@@ -485,8 +469,6 @@ class CsvWriter:
                 'n_criteria_analyzed': len(getattr(sens, 'criteria_sensitivity', {})),
                 'n_subcriteria_analyzed': len(getattr(sens, 'subcriteria_sensitivity', {})),
                 'n_provinces_stability': len(getattr(sens, 'rank_stability', {})),
-                'ifs_membership_sensitivity': getattr(sens, 'ifs_membership_sensitivity', 0),
-                'ifs_nonmembership_sensitivity': getattr(sens, 'ifs_nonmembership_sensitivity', 0),
                 'top_n_stability': getattr(sens, 'top_n_stability', {}),
             }
             saved['summary'] = self._save_json(robustness, 'sensitivity_summary.json')

@@ -3,9 +3,8 @@
 Hierarchical Ranking Pipeline
 ==============================
 
-Two-stage ranking system that runs 12 MCDM methods (6 traditional +
-6 IFS) within each criterion group, then aggregates results using
-Evidential Reasoning.
+Two-stage ranking system that runs 6 traditional MCDM methods within each
+criterion group, then aggregates results using Evidential Reasoning.
 
 Architecture
 ------------
@@ -13,19 +12,17 @@ Stage 1 — Within-Criterion Ranking
     For each criterion C_k (k = 1…8):
         • Extract subcriteria data for C_k.
         • Build crisp decision matrix → run 6 traditional methods.
-        • Build IFS decision matrix (temporal variance) → run 6 IFS methods.
-        • Normalize all 12 method scores to [0, 1].
+        • Normalize all 6 method scores to [0, 1].
 
 Stage 2 — Global Aggregation via Evidential Reasoning
     • Convert method scores to belief distributions (5 grades).
-    • Stage 1 ER: combine 12 methods per criterion.
+    • Stage 1 ER: combine 6 methods per criterion.
     • Stage 2 ER: combine 8 criterion beliefs with criterion weights.
     • Final ranking from average utility of fused belief.
 
 References
 ----------
-[1] Atanassov, K.T. (1986). Intuitionistic Fuzzy Sets.
-[2] Yang, J.B. & Xu, D.L. (2002). Evidential Reasoning algorithm.
+[1] Yang, J.B. & Xu, D.L. (2002). Evidential Reasoning algorithm.
 """
 
 import numpy as np
@@ -40,11 +37,6 @@ from mcdm.traditional import (
     COPRASCalculator, EDASCalculator,
 )
 from mcdm.traditional.saw import SAWCalculator
-from mcdm.ifs import (
-    IFN, IFSDecisionMatrix,
-    IFS_SAW, IFS_TOPSIS, IFS_VIKOR,
-    IFS_PROMETHEE, IFS_COPRAS, IFS_EDAS,
-)
 from evidential_reasoning import (
     HierarchicalEvidentialReasoning, HierarchicalERResult,
     BeliefDistribution, EvidentialReasoningEngine,
@@ -59,8 +51,7 @@ logger = logging.getLogger('ml_mcdm')
 
 @dataclass
 class HierarchicalRankingResult:
-    """
-    Result container for the full hierarchical ranking pipeline.
+    """Container for the result of :class:`HierarchicalRankingPipeline`.
 
     Attributes
     ----------
@@ -74,10 +65,8 @@ class HierarchicalRankingResult:
         {criterion: float} — weights fed to Stage 2.
     subcriteria_weights_used : dict
         {criterion: {subcrit: float}} — subcriteria weights within each group.
-    ifs_diagnostics : dict
-        {criterion: {alt: {subcrit: IFN}}} — sample IFS values for inspection.
     methods_used : list
-        Names of the 12 MCDM methods.
+        Names of the 6 traditional MCDM methods.
     target_year : int
         Year for which ranking was computed.
     """
@@ -87,7 +76,6 @@ class HierarchicalRankingResult:
     criterion_method_ranks: Dict[str, Dict[str, pd.Series]]
     criterion_weights_used: Dict[str, float]
     subcriteria_weights_used: Dict[str, Dict[str, float]]
-    ifs_diagnostics: Dict[str, Any]
     methods_used: List[str]
     target_year: int
 
@@ -118,7 +106,7 @@ class HierarchicalRankingResult:
 class HierarchicalRankingPipeline:
     """
     Orchestrates two-stage hierarchical ranking
-    (12 MCDM methods + Evidential Reasoning).
+    (6 traditional MCDM methods + Evidential Reasoning).
 
     Parameters
     ----------
@@ -127,27 +115,21 @@ class HierarchicalRankingPipeline:
     method_weight_scheme : str
         How to weight method contributions in Stage 1 ER:
         ``'equal'`` or ``'rank_performance'``.
-    ifs_spread_factor : float
-        Multiplier on temporal σ for IFS hesitancy construction.
     cost_criteria : list, optional
         Subcriteria codes where lower values are preferred.
     """
 
     TRADITIONAL_METHODS = ['TOPSIS', 'VIKOR', 'PROMETHEE', 'COPRAS', 'EDAS', 'SAW']
-    IFS_METHODS = ['IFS_TOPSIS', 'IFS_VIKOR', 'IFS_PROMETHEE',
-                   'IFS_COPRAS', 'IFS_EDAS', 'IFS_SAW']
-    ALL_METHODS = TRADITIONAL_METHODS + IFS_METHODS
+    ALL_METHODS = TRADITIONAL_METHODS
 
     def __init__(
         self,
         n_grades: int = 5,
         method_weight_scheme: str = 'equal',
-        ifs_spread_factor: float = 1.0,
         cost_criteria: Optional[List[str]] = None,
     ):
         self.n_grades = n_grades
         self.method_weight_scheme = method_weight_scheme
-        self.ifs_spread_factor = ifs_spread_factor
         self.cost_criteria = cost_criteria or []
 
         # Initialise ER aggregator
@@ -165,7 +147,6 @@ class HierarchicalRankingPipeline:
         panel_data: PanelData,
         subcriteria_weights: Dict[str, float],
         target_year: Optional[int] = None,
-        ifs_overrides: Optional[Dict[str, 'IFSDecisionMatrix']] = None,
         criterion_weights: Optional[Dict[str, float]] = None,
     ) -> HierarchicalRankingResult:
         """
@@ -184,8 +165,6 @@ class HierarchicalRankingPipeline:
             {SC_code: weight} — fused sub-criteria weights from GTWC.
         target_year : int, optional
             Year to rank (default: latest year).
-        ifs_overrides : dict, optional
-            Pre-built IFS matrices for sensitivity analysis.
 
         Returns
         -------
@@ -236,7 +215,7 @@ class HierarchicalRankingPipeline:
         logger.info(
             f"  {len(alternatives)} alternatives, "
             f"{len(hierarchy.all_criteria)} criteria groups (pre-exclusion), "
-            f"12 MCDM methods"
+            f"6 MCDM methods"
         )
 
         # ------------------------------------------------------------------
@@ -251,15 +230,12 @@ class HierarchicalRankingPipeline:
         # Prepare shared data
         # ------------------------------------------------------------------
         current_data   = panel_data.subcriteria_cross_section[target_year]
-        historical_std = self._compute_historical_std(panel_data)
-        global_range   = self._compute_global_range(panel_data)
 
         # ------------------------------------------------------------------
-        # Stage 1: Run 12 methods per criterion
+        # Stage 1: Run 6 methods per criterion
         # ------------------------------------------------------------------
         all_method_scores: Dict[str, Dict[str, pd.Series]] = {}
         all_method_ranks:  Dict[str, Dict[str, pd.Series]] = {}
-        ifs_diagnostics:   Dict[str, Any] = {}
 
         for crit_id in sorted(hierarchy.all_criteria):
             # Determine active SCs and provinces for this criterion-year
@@ -303,29 +279,13 @@ class HierarchicalRankingPipeline:
 
             local_weights = group_subcrit_weights.get(crit_id, {})
 
-            std_crit = (
-                historical_std[subcrit_cols].copy()
-                if all(sc in historical_std.columns for sc in subcrit_cols)
-                else pd.DataFrame(
-                    0.0, index=df_crit.index, columns=subcrit_cols
-                )
-            )
-            range_crit = (
-                global_range[subcrit_cols]
-                if all(sc in global_range.index for sc in subcrit_cols)
-                else pd.Series(1.0, index=subcrit_cols)
-            )
-
-            ifs_override = (ifs_overrides or {}).get(crit_id)
-            crit_scores, crit_ranks, ifs_diag = self._run_methods_for_criterion(
-                df_crit, std_crit, range_crit, local_weights,
-                df_crit.index.tolist(),   # only criterion-active provinces
-                ifs_matrix_override=ifs_override,
+            crit_scores, crit_ranks = self._run_methods_for_criterion(
+                df_crit, local_weights,
+                df_crit.index.tolist(),
             )
 
             all_method_scores[crit_id] = crit_scores
             all_method_ranks[crit_id]  = crit_ranks
-            ifs_diagnostics[crit_id]   = ifs_diag
 
         # ------------------------------------------------------------------
         # Stage 2: ER aggregation
@@ -355,7 +315,6 @@ class HierarchicalRankingPipeline:
             criterion_method_ranks=all_method_ranks,
             criterion_weights_used=criterion_weights,
             subcriteria_weights_used=group_subcrit_weights,
-            ifs_diagnostics=ifs_diagnostics,
             methods_used=self.ALL_METHODS,
             target_year=target_year,
         )
@@ -371,7 +330,7 @@ class HierarchicalRankingPipeline:
         """
         Lightweight ER-only re-ranking using precomputed MCDM scores.
 
-        Skips ALL 12 MCDM method computations and re-runs only the ER
+        Skips ALL 6 MCDM method computations and re-runs only the ER
         aggregation step with new criterion weights derived from
         *subcriteria_weights*.  Yields ~50-100x speedup over
         :meth:`rank` for sensitivity-analysis weight perturbations
@@ -426,14 +385,11 @@ class HierarchicalRankingPipeline:
     def _run_methods_for_criterion(
         self,
         df: pd.DataFrame,
-        historical_std: pd.DataFrame,
-        global_range: pd.Series,
         subcrit_weights: Dict[str, float],
         alternatives: List[str],
-        ifs_matrix_override: Optional['IFSDecisionMatrix'] = None,
-    ) -> Tuple[Dict[str, pd.Series], Dict[str, pd.Series], Dict]:
+    ) -> Tuple[Dict[str, pd.Series], Dict[str, pd.Series]]:
         """
-        Run 12 MCDM methods on a **clean** criterion-level decision matrix.
+        Run 6 traditional MCDM methods on a **clean** criterion-level decision matrix.
 
         The matrix is guaranteed NaN-free by the caller (``rank()`` uses
         :meth:`PanelData.get_criterion_matrix` which applies dynamic exclusion
@@ -444,7 +400,6 @@ class HierarchicalRankingPipeline:
         -------
         scores  : {method_name: pd.Series}  (normalised [0, 1])
         ranks   : {method_name: pd.Series}
-        ifs_diag : diagnostics dict
         """
         criteria = df.columns.tolist()
         cost_local = [c for c in criteria if c in self.cost_criteria]
@@ -463,13 +418,8 @@ class HierarchicalRankingPipeline:
                 neutral_ranks[method]  = pd.Series(
                     list(range(1, len(alternatives) + 1)),
                     index=alternatives, name=f"{method}_Rank")
-            return neutral_scores, neutral_ranks, {}
+            return neutral_scores, neutral_ranks
 
-        # Align ancillary arrays to the (already-clean) df index/columns
-        historical_std = historical_std.reindex(
-            index=df.index, columns=df.columns
-        ).fillna(0.0)
-        global_range   = global_range.reindex(df.columns).fillna(1.0)
         subcrit_weights = {
             c: subcrit_weights.get(c, 1.0 / len(df.columns))
             for c in df.columns
@@ -481,28 +431,6 @@ class HierarchicalRankingPipeline:
         # ----- Normalize crisp data to [0, 1] via min-max -----
         df_norm = self._minmax_normalize(df, cost_criteria=cost_local)
 
-        # ----- Build IFS matrix from temporal variance (or override) -----
-        if ifs_matrix_override is not None:
-            ifs_matrix = ifs_matrix_override
-        else:
-            ifs_matrix = IFSDecisionMatrix.from_temporal_variance(
-                current_data=df_norm,
-                historical_std=historical_std,
-                global_range=global_range,
-                spread_factor=self.ifs_spread_factor,
-            )
-
-        # Sample diagnostics (first 3 alternatives × first 2 sub-criteria)
-        ifs_diag: Dict = {}
-        for alt in alternatives[:3]:
-            ifs_diag[alt] = {}
-            for crit in criteria[:2]:
-                if alt in ifs_matrix.matrix and crit in ifs_matrix.matrix[alt]:
-                    ifn = ifs_matrix.get(alt, crit)
-                    ifs_diag[alt][crit] = {
-                        'mu': ifn.mu, 'nu': ifn.nu, 'pi': ifn.pi
-                    }
-
         # ===== TRADITIONAL METHODS =====
         trad_results = self._run_traditional(df_norm, subcrit_weights, cost_local)
         for name, res in trad_results.items():
@@ -511,15 +439,7 @@ class HierarchicalRankingPipeline:
             scores[name] = s
             ranks[name]  = res['ranks']
 
-        # ===== IFS METHODS =====
-        ifs_results = self._run_ifs(ifs_matrix, subcrit_weights, cost_local)
-        for name, res in ifs_results.items():
-            s = self._normalize_scores(
-                res['scores'], higher_is_better=res['higher_better'])
-            scores[name] = s
-            ranks[name]  = res['ranks']
-
-        return scores, ranks, ifs_diag
+        return scores, ranks
 
     # ------------------------------------------------------------------
     # Traditional method runners
@@ -606,84 +526,6 @@ class HierarchicalRankingPipeline:
 
         return results
 
-    # ------------------------------------------------------------------
-    # IFS method runners
-    # ------------------------------------------------------------------
-
-    def _run_ifs(
-        self,
-        ifs_matrix: IFSDecisionMatrix,
-        weights: Dict[str, float],
-        cost_criteria: List[str],
-    ) -> Dict[str, Dict]:
-        """Run 6 IFS-MCDM methods. Returns raw scores + ranks."""
-        results = {}
-
-        # IFS-TOPSIS
-        try:
-            calc = IFS_TOPSIS(distance_metric='normalized_euclidean',
-                              cost_criteria=cost_criteria)
-            r = calc.calculate(ifs_matrix, weights)
-            results['IFS_TOPSIS'] = {
-                'scores': r.scores, 'ranks': r.ranks, 'higher_better': True
-            }
-        except Exception as e:
-            logger.warning(f"    IFS_TOPSIS failed: {e}")
-
-        # IFS-VIKOR
-        try:
-            calc = IFS_VIKOR(v=0.5, cost_criteria=cost_criteria)
-            r = calc.calculate(ifs_matrix, weights)
-            results['IFS_VIKOR'] = {
-                'scores': r.Q, 'ranks': r.ranks_Q, 'higher_better': False
-            }
-        except Exception as e:
-            logger.warning(f"    IFS_VIKOR failed: {e}")
-
-        # IFS-PROMETHEE
-        try:
-            calc = IFS_PROMETHEE(preference_threshold=0.3,
-                                 cost_criteria=cost_criteria)
-            r = calc.calculate(ifs_matrix, weights)
-            results['IFS_PROMETHEE'] = {
-                'scores': r.phi_net, 'ranks': r.ranks, 'higher_better': True
-            }
-        except Exception as e:
-            logger.warning(f"    IFS_PROMETHEE failed: {e}")
-
-        # IFS-COPRAS
-        try:
-            calc = IFS_COPRAS(cost_criteria=cost_criteria)
-            r = calc.calculate(ifs_matrix, weights)
-            results['IFS_COPRAS'] = {
-                'scores': r.utility_degree, 'ranks': r.ranks,
-                'higher_better': True
-            }
-        except Exception as e:
-            logger.warning(f"    IFS_COPRAS failed: {e}")
-
-        # IFS-EDAS
-        try:
-            calc = IFS_EDAS(cost_criteria=cost_criteria)
-            r = calc.calculate(ifs_matrix, weights)
-            results['IFS_EDAS'] = {
-                'scores': r.AS, 'ranks': r.ranks, 'higher_better': True
-            }
-        except Exception as e:
-            logger.warning(f"    IFS_EDAS failed: {e}")
-
-        # IFS-SAW
-        try:
-            calc = IFS_SAW(cost_criteria=cost_criteria)
-            r = calc.calculate(ifs_matrix, weights)
-            results['IFS_SAW'] = {
-                'scores': r.scores, 'ranks': r.ranks, 'higher_better': True
-            }
-        except Exception as e:
-            logger.warning(f"    IFS_SAW failed: {e}")
-
-        return results
-
     # ==================================================================
     # Weight derivation
     # ==================================================================
@@ -767,31 +609,8 @@ class HierarchicalRankingPipeline:
         return criterion_weights, group_weights
 
     # ==================================================================
-    # Data preparation helpers
+    # Normalization helpers
     # ==================================================================
-
-    def _compute_historical_std(self, panel_data: PanelData) -> pd.DataFrame:
-        """Compute per-province, per-subcriterion std across years."""
-        frames = []
-        for year in panel_data.years:
-            df = panel_data.subcriteria_cross_section[year]
-            df = df.copy()
-            df['_year'] = year
-            frames.append(df)
-
-        all_data = pd.concat(frames)
-        subcrit_cols = [c for c in all_data.columns if c != '_year']
-        return all_data.groupby(all_data.index)[subcrit_cols].std().fillna(0.0)
-
-    def _compute_global_range(self, panel_data: PanelData) -> pd.Series:
-        """Compute per-subcriterion range across all years and provinces."""
-        frames = []
-        for year in panel_data.years:
-            frames.append(panel_data.subcriteria_cross_section[year])
-
-        all_data = pd.concat(frames)
-        subcrit_cols = all_data.columns.tolist()
-        return all_data[subcrit_cols].max() - all_data[subcrit_cols].min()
 
     @staticmethod
     def _minmax_normalize(

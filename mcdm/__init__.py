@@ -4,19 +4,16 @@ from typing import Dict
 Multi-Criteria Decision Making Module
 =====================================
 
-Comprehensive MCDM methods including traditional and IFS variants.
+Traditional crisp MCDM methods.
 
 Submodules
 ----------
 traditional
     Traditional MCDM methods: TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS, SAW
-ifs
-    Intuitionistic Fuzzy Set MCDM methods (Atanassov, 1986)
 
 Usage
 -----
 >>> from mcdm.traditional import TOPSISCalculator, VIKORCalculator, SAWCalculator
->>> from mcdm.ifs import IFS_TOPSIS, IFS_VIKOR
 >>> from weighting import EntropyWeightCalculator, CRITICWeightCalculator
 """
 
@@ -28,17 +25,6 @@ from .traditional import (
     COPRASCalculator, COPRASResult,
     EDASCalculator, EDASResult,
     SAWCalculator, SAWResult,
-)
-
-# Import from IFS submodule
-from .ifs import (
-    IFN, IFSDecisionMatrix,
-    IFS_SAW, IFS_SAWResult,
-    IFS_TOPSIS, IFS_TOPSISResult,
-    IFS_VIKOR, IFS_VIKORResult,
-    IFS_PROMETHEE, IFS_PROMETHEEResult,
-    IFS_COPRAS, IFS_COPRASResult,
-    IFS_EDAS, IFS_EDASResult,
 )
 
 # Import weighting methods from weighting module
@@ -53,10 +39,6 @@ from weighting import (
 
 
 __all__ = [
-    # IFS base
-    'IFN',
-    'IFSDecisionMatrix',
-    
     # Weights
     'EntropyWeightCalculator',
     'CRITICWeightCalculator',
@@ -73,46 +55,23 @@ __all__ = [
     'EDASCalculator', 'EDASResult',
     'SAWCalculator', 'SAWResult',
     
-    # IFS MCDM
-    'IFS_SAW', 'IFS_SAWResult',
-    'IFS_TOPSIS', 'IFS_TOPSISResult',
-    'IFS_VIKOR', 'IFS_VIKORResult',
-    'IFS_PROMETHEE', 'IFS_PROMETHEEResult',
-    'IFS_COPRAS', 'IFS_COPRASResult',
-    'IFS_EDAS', 'IFS_EDASResult',
 ]
 
 
-# Convenience function to get all MCDM calculators
-def get_all_calculators(ifs: bool = False) -> Dict[str, type]:
+def get_all_calculators() -> Dict[str, type]:
     """
-    Get dictionary of all MCDM calculators.
-    
-    Parameters
-    ----------
-    ifs : bool, default=False
-        If True, returns IFS versions; if False, returns traditional
-    
+    Get dictionary of all traditional MCDM calculators.
+
     Returns
     -------
     Dict[str, class]
-        Dictionary of calculator classes
+        Dictionary of calculator classes keyed by method name.
     """
-    if ifs:
-        return {
-            'saw': IFS_SAW,
-            'topsis': IFS_TOPSIS,
-            'vikor': IFS_VIKOR,
-            'promethee': IFS_PROMETHEE,
-            'copras': IFS_COPRAS,
-            'edas': IFS_EDAS,
-        }
-    else:
-        return {
-            'saw': SAWCalculator,
-            'topsis': TOPSISCalculator,
-            'vikor': VIKORCalculator,
-            'promethee': PROMETHEECalculator,
-            'copras': COPRASCalculator,
-            'edas': EDASCalculator,
-        }
+    return {
+        'saw': SAWCalculator,
+        'topsis': TOPSISCalculator,
+        'vikor': VIKORCalculator,
+        'promethee': PROMETHEECalculator,
+        'copras': COPRASCalculator,
+        'edas': EDASCalculator,
+    }

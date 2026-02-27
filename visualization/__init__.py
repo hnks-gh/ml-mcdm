@@ -104,9 +104,6 @@ class VisualizationOrchestrator:
     def plot_rank_volatility(self, *a, **kw):
         return self.sensitivity.plot_rank_volatility(*a, **kw)
 
-    def plot_ifs_sensitivity(self, *a, **kw):
-        return self.sensitivity.plot_ifs_sensitivity(*a, **kw)
-
     def plot_er_uncertainty(self, *a, **kw):
         return self.sensitivity.plot_er_uncertainty(*a, **kw)
 
@@ -269,19 +266,12 @@ class VisualizationOrchestrator:
                 _inc(self.sensitivity.plot_rank_volatility(
                     sens.rank_stability,
                 ))
-            if hasattr(sens, 'ifs_membership_sensitivity'):
-                _inc(self.sensitivity.plot_ifs_sensitivity(
-                    sens.ifs_membership_sensitivity,
-                    getattr(sens, 'ifs_nonmembership_sensitivity', 0),
-                ))
             if hasattr(sens, 'overall_robustness'):
                 _inc(self.sensitivity.plot_robustness_summary(
                     sens.overall_robustness,
                     getattr(sens, 'confidence_level', 0.95),
                     getattr(sens, 'criteria_sensitivity', {}),
                     getattr(sens, 'top_n_stability', {}),
-                    getattr(sens, 'ifs_membership_sensitivity', 0),
-                    getattr(sens, 'ifs_nonmembership_sensitivity', 0),
                 ))
 
         # ER uncertainty
@@ -381,10 +371,6 @@ class VisualizationOrchestrator:
                     f'Overall Robustness : {sens.overall_robustness:.4f}\n'
                     f'Confidence Level   : '
                     f'{getattr(sens, "confidence_level", 0.95):.0%}\n'
-                    f'IFS mu Sensitivity : '
-                    f'{getattr(sens, "ifs_membership_sensitivity", 0):.4f}\n'
-                    f'IFS nu Sensitivity : '
-                    f'{getattr(sens, "ifs_nonmembership_sensitivity", 0):.4f}\n'
                 )
             _inc(self.summary.plot_executive_dashboard({
                 'kpis': kpis,

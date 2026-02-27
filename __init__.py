@@ -7,8 +7,8 @@ A comprehensive framework for MCDM analysis with ML-powered forecasting.
 
 Architecture
 ------------
-IFS-MCDM + Evidential Reasoning (Yang & Xu, 2002) two-stage hierarchy:
-  Stage 1: Within each of 8 criteria, combine 12 method scores via ER
+Traditional MCDM + Evidential Reasoning (Yang & Xu, 2002) two-stage hierarchy:
+  Stage 1: Within each of 8 criteria, combine 6 traditional method scores via ER
   Stage 2: Combine 8 criterion beliefs via ER with criterion weights
 
 Package Structure
@@ -30,11 +30,6 @@ ml-mcdm/
 │   │   ├── edas.py
 │   │   └── saw.py      # Simple Additive Weighting
 │   │
-│   └── ifs/            # IFS MCDM methods (Atanassov, 1986)
-│       ├── base.py     # IFN, IFSDecisionMatrix
-│       ├── topsis.py   # IFS-TOPSIS
-│       ├── vikor.py    # IFS-VIKOR
-│       └── ...
 │
 ├── forecasting/        # ML forecasting methods (experimental)
 │   ├── tree_ensemble.py   # GB, RF, ExtraTrees

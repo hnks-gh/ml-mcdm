@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-Production Validation for IFS+ER+Forecasting Pipeline
-======================================================
+Production Validation for Traditional MCDM + ER + Forecasting Pipeline
+======================================================================
 
-Production-grade validation for hierarchical MCDM system with IFS,
-ER aggregation, and ML forecasting.
+Production-grade validation for hierarchical MCDM system with
+ER aggregation and ML forecasting.
 
 Validation Components:
 1. Ranking Consistency
@@ -12,22 +12,17 @@ Validation Components:
    - ER aggregation quality metrics
    - Belief distribution validation
 
-2. IFS Parameter Validation
-   - Membership/non-membership consistency
-   - Hesitancy degree bounds checking
-   - IFS transformation correctness
-
-3. Weight Scheme Validation
+2. Weight Scheme Validation
    - Temporal stability of weights
    - Bootstrap confidence intervals
    - Method agreement (Entropy, CRITIC, MEREC, StdDev)
 
-4. Forecast Validation
+3. Forecast Validation
    - Temporal cross-validation (expanding window)
    - Prediction interval coverage
    - Out-of-sample performance
 
-5. End-to-End Pipeline Validation
+4. End-to-End Pipeline Validation
    - Full pipeline consistency checks
    - Multi-year robustness
    - Rank preservation under perturbation
@@ -61,10 +56,6 @@ class ValidationResult:
     # Hierarchical consistency
     cross_level_consistency: Dict[str, float]  # Subcriteria-criteria-final agreement
     er_aggregation_quality: float              # ER belief distribution quality
-    
-    # IFS validation
-    ifs_consistency: Dict[str, bool]           # IFS parameter constraints
-    ifs_hesitancy_valid: bool                  # Hesitancy degree checks
     
     # Weight validation
     weight_temporal_stability: float           # Weight stability across years
@@ -101,19 +92,6 @@ class ValidationResult:
         
         lines.extend([
             f"\n{'-'*70}",
-            "IFS VALIDATION",
-            f"{'-'*70}",
-            f"  Hesitancy bounds valid: {'YES' if self.ifs_hesitancy_valid else 'NO'}",
-        ])
-        
-        failed_ifs = [k for k, v in self.ifs_consistency.items() if not v]
-        if failed_ifs:
-            lines.append(f"  Failed IFS checks: {', '.join(failed_ifs)}")
-        else:
-            lines.append("  All IFS constraints satisfied")
-        
-        lines.extend([
-            f"\n{'-'*70}",
             "WEIGHT VALIDATION",
             f"{'-'*70}",
             f"  Temporal stability: {self.weight_temporal_stability:.4f}",
@@ -147,18 +125,16 @@ class ValidationResult:
 
 class Validator:
     """
-    Comprehensive validator for IFS+ER+Forecasting pipeline.
+    Comprehensive validator for traditional MCDM + ER + Forecasting pipeline.
     
     Validates all pipeline components:
     - Multi-level structure integrity
-    - IFS parameter correctness
     - Weight scheme robustness
     - Forecast quality
     - End-to-end consistency
     """
     
     def __init__(self,
-                 ifs_tolerance: float = 1e-6,
                  consistency_threshold: float = 0.7,
                  stability_threshold: float = 0.85):
         """
@@ -166,14 +142,11 @@ class Validator:
         
         Parameters
         ----------
-        ifs_tolerance : float, default=1e-6
-            Tolerance for IFS constraint violations
         consistency_threshold : float, default=0.7
             Minimum correlation for cross-level consistency
         stability_threshold : float, default=0.85
             Minimum temporal stability for weights
         """
-        self.ifs_tolerance = ifs_tolerance
         self.consistency_threshold = consistency_threshold
         self.stability_threshold = stability_threshold
     
@@ -214,12 +187,7 @@ class Validator:
         # 2. Validate ER aggregation
         er_quality = self._validate_er_aggregation(ranking_result)
         
-        # 3. Validate IFS parameters
-        ifs_consistency, ifs_hesitancy_valid = self._validate_ifs_parameters(
-            ranking_result
-        )
-        
-        # 4. Validate weight scheme
+        # 3. Validate weight scheme
         weight_stability = self._validate_weight_temporal_stability(
             panel_data, weights
         )
@@ -249,14 +217,10 @@ class Validator:
                 f"Weight method agreement ({weight_agreement:.3f}) below threshold ({self.consistency_threshold})"
             )
         
-        if not ifs_hesitancy_valid:
-            warnings_list.append("IFS hesitancy degree bounds violated")
-        
         # Compute overall validity
         validity_components = [
             np.mean(list(cross_level_consistency.values())) if cross_level_consistency else 0.0,
             er_quality,
-            1.0 if ifs_hesitancy_valid else 0.0,
             weight_stability,
             weight_agreement,
         ]
@@ -264,15 +228,12 @@ class Validator:
         overall_validity = np.mean(validity_components)
         validation_passed = (
             overall_validity >= self.consistency_threshold and
-            ifs_hesitancy_valid and
             len(warnings_list) < 3
         )
         
         return ValidationResult(
             cross_level_consistency=cross_level_consistency,
             er_aggregation_quality=er_quality,
-            ifs_consistency=ifs_consistency,
-            ifs_hesitancy_valid=ifs_hesitancy_valid,
             weight_temporal_stability=weight_stability,
             weight_method_agreement=weight_agreement,
             weight_bootstrap_ci=weight_ci,
@@ -354,60 +315,7 @@ class Validator:
         
         quality = (float(in_range) + float(spread) + range_usage) / 3.0
         return quality
-    
-    def _validate_ifs_parameters(
-        self,
-        ranking_result
-    ) -> Tuple[Dict[str, bool], bool]:
-        """Validate IFS parameters (μ + ν ≤ 1, 0 ≤ π ≤ 1).
-        
-        Uses ifs_diagnostics from HierarchicalRankingResult, which maps
-        criterion → {alternative → {subcrit → IFN}}.
-        """
-        ifs_checks = {}
-        
-        if not hasattr(ranking_result, 'ifs_diagnostics'):
-            # No diagnostic data available — nothing to invalidate
-            return {}, True
-        
-        ifs_diag = ranking_result.ifs_diagnostics
-        if not ifs_diag:
-            return {}, True
-        
-        try:
-            overall_valid = True
-            hesitancy_valid = True
-            
-            for crit_id, crit_diag in ifs_diag.items():
-                if not isinstance(crit_diag, dict):
-                    continue
-                # crit_diag may contain IFS matrix objects or sample IFNs
-                # Check any IFN objects found
-                for alt_key, alt_data in crit_diag.items():
-                    if isinstance(alt_data, dict):
-                        for sub_key, ifn in alt_data.items():
-                            if hasattr(ifn, 'mu') and hasattr(ifn, 'nu'):
-                                mu, nu = ifn.mu, ifn.nu
-                                pi = 1 - mu - nu
-                                sum_ok = (mu + nu) <= 1 + self.ifs_tolerance
-                                hesit_ok = (-self.ifs_tolerance <= pi <= 1 + self.ifs_tolerance)
-                                
-                                if not sum_ok:
-                                    ifs_checks[f'{crit_id}_{alt_key}_{sub_key}_sum'] = False
-                                    overall_valid = False
-                                if not hesit_ok:
-                                    ifs_checks[f'{crit_id}_{alt_key}_{sub_key}_hesitancy'] = False
-                                    hesitancy_valid = False
-            
-            if not ifs_checks:
-                ifs_checks['default'] = True
-            
-            return ifs_checks, hesitancy_valid
-        
-        except Exception as _exc:
-            _logger.warning('IFS parameter validation failed: %s', _exc)
-            return {}, False
-    
+
     def _validate_weight_temporal_stability(
         self,
         panel_data,

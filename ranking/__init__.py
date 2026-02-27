@@ -3,7 +3,7 @@
 Hierarchical Ranking Pipeline
 ==============================
 
-Two-stage ranking system using IFS-MCDM + Evidential Reasoning.
+Two-stage ranking system using traditional MCDM + Evidential Reasoning.
 """
 
 from .pipeline import HierarchicalRankingPipeline, HierarchicalRankingResult

@@ -10,9 +10,9 @@ Architecture
 ------------
 Stage 1 — **Within-Criterion Aggregation**
     For each criterion C_k  (k = 1 … 8):
-        • Collect 12 MCDM method scores (6 traditional + 6 IFS).
+        • Collect 6 traditional MCDM method scores.
         • Convert each method score to a belief distribution.
-        • Combine 12 beliefs using ER with equal method weights.
+        • Combine 6 beliefs using ER with equal method weights.
         → Produces one criterion-level belief per province.
 
 Stage 2 — **Global Aggregation**

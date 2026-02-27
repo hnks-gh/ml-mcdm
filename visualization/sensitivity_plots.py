@@ -4,7 +4,7 @@ Sensitivity & Robustness Plots (fig09–fig15, fig25)
 ====================================================
 
 Figures for sensitivity analysis: tornado charts, subcriteria bars,
-top-N stability, temporal stability, rank volatility, IFS sensitivity,
+top-N stability, temporal stability, rank volatility,
 ER uncertainty distribution, and the composite robustness summary.
 """
 
@@ -225,45 +225,6 @@ class SensitivityPlotter(BasePlotter):
         return self._save(fig, save_name)
 
     # ==================================================================
-    #  FIG 14 – IFS Sensitivity (comparative bar)
-    # ==================================================================
-
-    def plot_ifs_sensitivity(
-        self,
-        mu_sens: float,
-        nu_sens: float,
-        save_name: str = 'fig14_ifs_sensitivity.png',
-    ) -> Optional[str]:
-        if not HAS_MATPLOTLIB:
-            return None
-
-        fig, ax = plt.subplots(figsize=(10, 7))
-
-        categories = ['Membership (μ)', 'Non-Membership (ν)']
-        values = [mu_sens, nu_sens]
-        colors = [PALETTE['royal_blue'], PALETTE['magenta']]
-
-        bars = ax.bar(categories, values, color=colors, edgecolor='black',
-                      linewidth=0.8, width=0.45, zorder=2)
-        for bar, v in zip(bars, values):
-            ax.text(bar.get_x() + bar.get_width() / 2, v + 0.005,
-                    f'{v:.4f}', ha='center', fontsize=14, fontweight='bold')
-
-        ax.set_ylabel('Sensitivity Index')
-        ax.set_title('IFS Uncertainty Sensitivity Analysis', pad=12)
-        ax.set_ylim(0, max(values) * 1.25 if max(values) > 0 else 1)
-
-        interpretation = (
-            'Low sensitivity — robust' if max(values) < 0.2
-            else 'Moderate sensitivity' if max(values) < 0.5
-            else 'High sensitivity — caution'
-        )
-        ax.text(0.97, 0.97, interpretation, transform=ax.transAxes,
-                ha='right', va='top', fontsize=10,
-                bbox=dict(boxstyle='round,pad=0.4', fc='lightyellow', ec='#CCCCCC'))
-        return self._save(fig, save_name)
-
-    # ==================================================================
     #  FIG 15 – ER Uncertainty Distribution
     # ==================================================================
 
@@ -317,8 +278,6 @@ class SensitivityPlotter(BasePlotter):
         confidence_level: float,
         criteria_sens: Dict[str, float],
         top_n_stab: Dict[int, float],
-        mu_sens: float,
-        nu_sens: float,
         save_name: str = 'fig25_robustness_summary.png',
     ) -> Optional[str]:
         if not HAS_MATPLOTLIB or FancyBboxPatch is None:
@@ -387,18 +346,20 @@ class SensitivityPlotter(BasePlotter):
             ax.set_title('Ranking Stability', fontsize=12)
             ax.axhline(0.8, ls=':', color='gray', lw=1)
 
-        # Panel 4: IFS sensitivity
+        # Panel 4: summary stats
         ax = axes[1, 1]
-        bars = ax.bar(
-            ['Membership (μ)', 'Non-Member. (ν)'], [mu_sens, nu_sens],
-            color=[PALETTE['royal_blue'], PALETTE['magenta']],
-            edgecolor='black', lw=0.7, width=0.5,
-        )
-        for bar, v in zip(bars, [mu_sens, nu_sens]):
-            ax.text(bar.get_x() + bar.get_width() / 2, v + 0.005,
-                    f'{v:.4f}', ha='center', fontsize=12, fontweight='bold')
-        ax.set_ylabel('Sensitivity')
-        ax.set_title('IFS Uncertainty Sensitivity', fontsize=12)
+        ax.axis('off')
+        n_crit = len(criteria_sens)
+        mean_s = float(np.mean(list(criteria_sens.values()))) if criteria_sens else 0.0
+        lines_ = [
+            f'Criteria analysed : {n_crit}',
+            f'Mean sensitivity  : {mean_s:.4f}',
+            f'Confidence level  : {confidence_level:.0%}',
+        ]
+        ax.text(0.5, 0.55, '\n'.join(lines_), ha='center', va='center',
+                fontsize=12, transform=ax.transAxes,
+                bbox=dict(boxstyle='round,pad=0.5', fc='#F5F5F5', ec='#BBBBBB'))
+        ax.set_title('Key Metrics', fontsize=12)
 
         fig.suptitle('Robustness & Sensitivity Summary', fontsize=15, y=1.01)
         plt.tight_layout()

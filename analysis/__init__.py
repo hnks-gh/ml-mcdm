@@ -8,16 +8,14 @@ Production-grade validation and sensitivity analysis for MCDM rankings and ML mo
 Components
 ----------
 Sensitivity Analysis (PRODUCTION-READY)
-    State-of-the-art hierarchical sensitivity for IFS+ER+Forecasting pipeline
+    State-of-the-art hierarchical sensitivity for traditional MCDM + ER + Forecasting pipeline
     - Multi-level analysis (subcriteria → criteria → final)
-    - IFS membership/non-membership uncertainty
     - Temporal stability across years
     - Forecast robustness testing
     
 Validation (PRODUCTION-READY)
-    Comprehensive validation for hierarchical IFS+ER pipeline
+    Comprehensive validation for hierarchical MCDM + ER pipeline
     - Cross-level consistency checking
-    - IFS parameter validation
     - Weight scheme robustness
     - Forecast quality metrics
     - End-to-end pipeline validation

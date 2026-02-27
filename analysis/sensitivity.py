@@ -3,11 +3,11 @@
 Enhanced Sensitivity Analysis for ML-MCDM Framework
 ====================================================
 
-State-of-the-art sensitivity analysis tailored for the hierarchical IFS+ER+Forecasting pipeline.
+State-of-the-art sensitivity analysis tailored for the hierarchical
+traditional MCDM + ER + Forecasting pipeline.
 
 Features:
 - Hierarchical sensitivity (subcriteria → criteria → final ER aggregation)
-- IFS uncertainty analysis (membership/non-membership perturbation)
 - Temporal stability analysis across years
 - Forecast prediction robustness
 - Multi-level Monte Carlo simulation
@@ -49,10 +49,6 @@ class SensitivityResult:
     # Temporal analysis
     temporal_stability: Dict[str, float]        # Year-to-year rank correlation
     temporal_rank_volatility: Dict[str, float]  # Province rank volatility over time
-    
-    # IFS-specific sensitivity
-    ifs_membership_sensitivity: float           # Sensitivity to μ perturbation
-    ifs_nonmembership_sensitivity: float        # Sensitivity to ν perturbation
     
     # Forecast robustness
     forecast_sensitivity: Optional[Dict[str, float]] = None  # Feature importance stability
@@ -96,15 +92,6 @@ class SensitivityResult:
             for sub, sens in sorted_sub[:10]:
                 lines.append(f"  {sub}: {sens:.4f}")
         
-        # IFS sensitivity
-        lines.extend([
-            f"\n{'-'*70}",
-            "IFS UNCERTAINTY SENSITIVITY",
-            f"{'-'*70}",
-            f"  Membership (μ) perturbation:     {self.ifs_membership_sensitivity:.4f}",
-            f"  Non-membership (ν) perturbation: {self.ifs_nonmembership_sensitivity:.4f}",
-        ])
-        
         # Temporal stability
         if self.temporal_stability:
             lines.extend([
@@ -143,11 +130,10 @@ class SensitivityResult:
 
 class SensitivityAnalysis:
     """
-    State-of-the-art sensitivity analysis for hierarchical IFS+ER MCDM system.
+    State-of-the-art sensitivity analysis for hierarchical MCDM system.
     
     This analyzer understands the full pipeline structure:
     - Subcriteria → Criteria → Final ER aggregation
-    - IFS membership/non-membership uncertainty
     - Temporal panel data structure
     - ML forecasting stability
     """
@@ -155,12 +141,11 @@ class SensitivityAnalysis:
     def __init__(self,
                  n_simulations: int = 1000,
                  perturbation_range: float = 0.15,
-                 ifs_perturbation: float = 0.10,
                  confidence_level: float = 0.95,
                  seed: int = 42,
                  n_jobs: int = -1):
         """
-        Initialize enhanced sensitivity analyzer.
+        Initialize sensitivity analyzer.
         
         Parameters
         ----------
@@ -168,8 +153,6 @@ class SensitivityAnalysis:
             Number of Monte Carlo simulations
         perturbation_range : float
             Maximum weight perturbation (±15% default)
-        ifs_perturbation : float
-            IFS membership/non-membership perturbation (±10% default)
         confidence_level : float
             Confidence level for statistical tests
         seed : int
@@ -179,7 +162,6 @@ class SensitivityAnalysis:
         """
         self.n_simulations = n_simulations
         self.perturbation_range = perturbation_range
-        self.ifs_perturbation = ifs_perturbation
         self.confidence_level = confidence_level
         self.seed = seed
         self.rng = np.random.RandomState(seed)
@@ -254,12 +236,7 @@ class SensitivityAnalysis:
             panel_data, ranking_pipeline, weights
         )
         
-        # 4. IFS sensitivity
-        ifs_mu_sens, ifs_nu_sens = self._ifs_uncertainty_sensitivity(
-            panel_data, ranking_pipeline, weights
-        )
-        
-        # 5. Forecast sensitivity (if available)
+        # 4. Forecast sensitivity (if available)
         forecast_sens = None
         if forecast_result is not None:
             forecast_sens = self._forecast_robustness(forecast_result)
@@ -284,8 +261,6 @@ class SensitivityAnalysis:
             top_n_stability=top_n_stability,
             temporal_stability=temporal_stability,
             temporal_rank_volatility=temporal_volatility,
-            ifs_membership_sensitivity=ifs_mu_sens,
-            ifs_nonmembership_sensitivity=ifs_nu_sens,
             forecast_sensitivity=forecast_sens,
             overall_robustness=overall_robustness,
             confidence_level=self.confidence_level,
@@ -675,192 +650,7 @@ class SensitivityAnalysis:
             temporal_volatility[province] = float(volatility)
 
         return temporal_stability, temporal_volatility
-    
-    def _ifs_uncertainty_sensitivity(self,
-                                     panel_data: Any,
-                                     ranking_pipeline: Any,
-                                     weights: Dict) -> Tuple[float, float]:
-        """
-        Test sensitivity to IFS membership/non-membership uncertainty.
 
-        Performs Monte Carlo perturbation of the IFS decision matrices
-        and measures the resulting rank displacement.
-
-        For each simulation:
-        1. Build the base IFS matrices (one per criterion group).
-        2. Perturb μ values by U(-δ_μ, δ_μ) → re-rank → record displacement.
-        3. Perturb ν values by U(-δ_ν, δ_ν) → re-rank → record displacement.
-
-        Sensitivity = mean(|Δrank|) / n_provinces, normalised to [0, 1].
-
-        Returns
-        -------
-        mu_sensitivity : float
-            Normalised mean rank displacement under μ perturbation.
-        nu_sensitivity : float
-            Normalised mean rank displacement under ν perturbation.
-        """
-        import logging
-        _logger = logging.getLogger('ml_mcdm')
-
-        base_year    = max(panel_data.years)
-        _ifs_ctx     = getattr(panel_data, 'year_contexts', {}).get(base_year)
-        n_provinces  = len(
-            _ifs_ctx.active_provinces
-            if _ifs_ctx is not None
-            else panel_data.provinces
-        )
-        n_sims = min(self.n_simulations, 15)  # cap for cost
-        delta  = self.ifs_perturbation  # default 0.10
-
-        # ── Obtain base ranking & base IFS matrices ──
-        try:
-            base_result  = ranking_pipeline.rank(
-                panel_data, self._weights_to_dict(weights), target_year=base_year)
-            base_ranking = base_result.final_ranking.rank().values
-        except Exception as e:
-            _logger.warning(f"IFS sensitivity: base ranking failed ({e}), "
-                            "returning zero sensitivity.")
-            return 0.0, 0.0
-
-        # Build base IFS matrices per criterion using clean criterion matrices
-        from mcdm.ifs.base import IFSDecisionMatrix
-        hierarchy      = panel_data.hierarchy
-        historical_std = ranking_pipeline._compute_historical_std(panel_data)
-        global_range   = ranking_pipeline._compute_global_range(panel_data)
-
-        base_ifs: Dict[str, IFSDecisionMatrix] = {}
-        for crit_id in sorted(hierarchy.all_criteria):
-            # Use get_criterion_matrix for NaN-free data (respects YearContext)
-            df_crit = panel_data.get_criterion_matrix(base_year, crit_id)
-            if df_crit.empty:
-                continue
-            subcrit_cols = df_crit.columns.tolist()
-            cost_local   = [c for c in subcrit_cols
-                            if c in ranking_pipeline.cost_criteria]
-            df_norm      = ranking_pipeline._minmax_normalize(
-                df_crit, cost_criteria=cost_local)
-            std_crit = (historical_std[subcrit_cols].copy()
-                        if all(sc in historical_std.columns
-                               for sc in subcrit_cols)
-                        else pd.DataFrame(
-                            0.0, index=df_crit.index, columns=subcrit_cols))
-            range_crit = (global_range[subcrit_cols]
-                          if all(sc in global_range.index
-                                 for sc in subcrit_cols)
-                          else pd.Series(1.0, index=subcrit_cols))
-
-            base_ifs[crit_id] = IFSDecisionMatrix.from_temporal_variance(
-                current_data=df_norm,
-                historical_std=std_crit,
-                global_range=range_crit,
-                spread_factor=ranking_pipeline.ifs_spread_factor,
-            )
-
-        if not base_ifs:
-            _logger.warning("IFS sensitivity: no IFS matrices built.")
-            return 0.0, 0.0
-
-        # ── Monte Carlo: μ perturbation (parallelized) ──
-        mu_displacements: List[float] = []
-        
-        if self.use_parallel:
-            def run_mu_sim(sim_idx):
-                rng = np.random.RandomState(self.seed + sim_idx)
-                overrides = {
-                    cid: mat.perturb(delta_mu=delta, delta_nu=0.0, rng=rng)
-                    for cid, mat in base_ifs.items()
-                }
-                try:
-                    res = ranking_pipeline.rank(
-                        panel_data, self._weights_to_dict(weights),
-                        target_year=base_year,
-                        ifs_overrides=overrides)
-                    new_ranking = res.final_ranking.rank().values
-                    return np.mean(np.abs(new_ranking - base_ranking))
-                except Exception:
-                    return None
-            
-            with ThreadPoolExecutor(max_workers=self.n_jobs) as executor:
-                futures = [executor.submit(run_mu_sim, i) for i in range(n_sims)]
-                for future in as_completed(futures):
-                    result = future.result()
-                    if result is not None:
-                        mu_displacements.append(result)
-        else:
-            for sim_idx in range(n_sims):
-                rng = np.random.RandomState(self.seed + sim_idx)
-                overrides = {
-                    cid: mat.perturb(delta_mu=delta, delta_nu=0.0, rng=rng)
-                    for cid, mat in base_ifs.items()
-                }
-                try:
-                    res = ranking_pipeline.rank(
-                        panel_data, self._weights_to_dict(weights),
-                        target_year=base_year,
-                        ifs_overrides=overrides)
-                    new_ranking = res.final_ranking.rank().values
-                    mu_displacements.append(
-                        np.mean(np.abs(new_ranking - base_ranking)))
-                except Exception:
-                    continue
-
-        # ── Monte Carlo: ν perturbation (parallelized) ──
-        nu_displacements: List[float] = []
-        
-        if self.use_parallel:
-            def run_nu_sim(sim_idx):
-                rng = np.random.RandomState(self.seed + sim_idx + 1000)  # Different seed offset
-                overrides = {
-                    cid: mat.perturb(delta_mu=0.0, delta_nu=delta, rng=rng)
-                    for cid, mat in base_ifs.items()
-                }
-                try:
-                    res = ranking_pipeline.rank(
-                        panel_data, self._weights_to_dict(weights),
-                        target_year=base_year,
-                        ifs_overrides=overrides)
-                    new_ranking = res.final_ranking.rank().values
-                    return np.mean(np.abs(new_ranking - base_ranking))
-                except Exception:
-                    return None
-            
-            with ThreadPoolExecutor(max_workers=self.n_jobs) as executor:
-                futures = [executor.submit(run_nu_sim, i) for i in range(n_sims)]
-                for future in as_completed(futures):
-                    result = future.result()
-                    if result is not None:
-                        nu_displacements.append(result)
-        else:
-            for sim_idx in range(n_sims):
-                rng = np.random.RandomState(self.seed + sim_idx + 1000)
-                overrides = {
-                    cid: mat.perturb(delta_mu=0.0, delta_nu=delta, rng=rng)
-                    for cid, mat in base_ifs.items()
-                }
-                try:
-                    res = ranking_pipeline.rank(
-                        panel_data, self._weights_to_dict(weights),
-                        target_year=base_year,
-                        ifs_overrides=overrides)
-                    new_ranking = res.final_ranking.rank().values
-                    nu_displacements.append(
-                        np.mean(np.abs(new_ranking - base_ranking)))
-                except Exception:
-                    continue
-
-        # Normalise: displacement / (n_provinces / 2)  → [0, 1]
-        max_disp = n_provinces / 2.0
-        mu_sensitivity = (float(np.mean(mu_displacements)) / max_disp
-                          if mu_displacements else 0.0)
-        nu_sensitivity = (float(np.mean(nu_displacements)) / max_disp
-                          if nu_displacements else 0.0)
-
-        _logger.info(f"IFS sensitivity ({n_sims} sims): "
-                     f"μ={mu_sensitivity:.4f}, ν={nu_sensitivity:.4f}")
-
-        return mu_sensitivity, nu_sensitivity
-    
     def _forecast_robustness(self, forecast_result: Any) -> Dict[str, float]:
         """Analyze forecast feature importance stability via bootstrap resampling.
         

@@ -77,7 +77,7 @@ class ReportWriter:
         # ── Front Matter ─────────────────────────────────────────
         L.append('---')
         L.append('title: "Multi-Criteria Decision Analysis of Vietnamese Provincial Competitiveness"')
-        L.append('subtitle: "An Integrated IFS-Evidential Reasoning Approach with Machine-Learning Forecasting"')
+        L.append('subtitle: "A Traditional MCDM + Evidential Reasoning Approach with Machine-Learning Forecasting"')
         L.append(f'date: "{datetime.now().strftime("%Y-%m-%d")}"')
         L.append('---')
         L.append('')
@@ -119,8 +119,7 @@ class ReportWriter:
             f'**{min(panel_data.years)}–{max(panel_data.years)}** ({n_years} years). '
             f'The analytical framework integrates {panel_data.n_subcriteria} subcriteria '
             f'organised into {panel_data.n_criteria} criteria groups, evaluated through '
-            f'{len(ranking_result.methods_used)} MCDM methods comprising both classical '
-            f'and Intuitionistic Fuzzy Set (IFS) variants.'
+            f'{len(ranking_result.methods_used)} classical MCDM methods.'
         )
         L.append('')
         L.append(
@@ -484,23 +483,9 @@ class ReportWriter:
                     L.append(f'| {pair} | {corr:.4f} | {s_} |')
                 L.append('')
 
-            # 7.5 IFS
-            L.append('## 7.5 IFS Membership Parameter Sensitivity')
-            L.append('')
-            L.append(
-                'The IFS membership $\\mu$ and non-membership $\\nu$ satisfy '
-                '$0 \\le \\mu + \\nu \\le 1$ with hesitancy $\\pi = 1 - \\mu - \\nu$.'
-            )
-            L.append('')
-            L.append(f'- **Membership ($\\mu$) sensitivity:** '
-                     f'{getattr(sens, "ifs_membership_sensitivity", 0):.4f}')
-            L.append(f'- **Non-membership ($\\nu$) sensitivity:** '
-                     f'{getattr(sens, "ifs_nonmembership_sensitivity", 0):.4f}')
-            L.append('')
-
-            # 7.6 Province stability
+            # 7.5 Province stability
             if hasattr(sens, 'rank_stability') and sens.rank_stability:
-                L.append('## 7.6 Provincial Rank Stability')
+                L.append('## 7.5 Provincial Rank Stability')
                 L.append('')
                 sorted_stab = sorted(sens.rank_stability.items(), key=lambda x: x[1])
 
@@ -674,8 +659,8 @@ class ReportWriter:
         L.append('## 10.2 MCDM Methods')
         L.append('')
         L.append(
-            'Twelve methods: six classical (TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS, SAW) '
-            'and six IFS extensions. All share the same normalized decision matrix and weight vector.'
+            'Six classical methods: TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS, SAW. '
+            'All share the same normalized decision matrix and weight vector.'
         )
         L.append('')
 
@@ -688,16 +673,7 @@ class ReportWriter:
         )
         L.append('')
 
-        L.append('## 10.4 Intuitionistic Fuzzy Sets')
-        L.append('')
-        L.append(
-            'IFS (Atanassov, 1986) extends classical fuzzy sets with a non-membership '
-            'function $\\nu$, introducing hesitancy $\\pi = 1 - \\mu - \\nu$ that captures '
-            'epistemic uncertainty.'
-        )
-        L.append('')
-
-        L.append('## 10.5 Machine-Learning Forecasting')
+        L.append('## 10.4 Machine-Learning Forecasting')
         L.append('')
         L.append(
             'Super Learner (van der Laan, Polley & Hubbard, 2007) constructs an optimal '

@@ -7,7 +7,7 @@ Seven-phase production pipeline:
 
   Phase 1  Data Loading
   Phase 2  Weight Calculation       (Hybrid Weighting — two-level MC Ensemble)
-  Phase 3  Hierarchical Ranking     (12 MCDM + two-stage ER)
+  Phase 3  Hierarchical Ranking     (6 traditional MCDM + two-stage ER)
   Phase 4  ML Forecasting           (6 models + Super Learner + Conformal)
   Phase 5  Sensitivity Analysis     (Hierarchical multi-level robustness)
   Phase 6  Visualization            (high-resolution figures)
@@ -72,7 +72,7 @@ class PipelineResult:
     criterion_weights_dict: Dict[str, float]  # {C01..C08: float}, sums to 1
     weight_details: Dict[str, Any]       # full WeightResult.details dict
 
-    # Hierarchical Ranking (IFS + ER)
+    # Hierarchical Ranking (Traditional MCDM + ER)
     ranking_result: HierarchicalRankingResult
 
     # ML Forecasting (UnifiedForecaster)
@@ -110,10 +110,8 @@ class MLMCDMPipeline:
     Integrates
     ----------
     * Two-Level Hybrid Weighting (Entropy + CRITIC MC Ensemble)
-    * 12 MCDM methods per criterion group:
-        Traditional : TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS, SAW
-        IFS         : IFS-TOPSIS, IFS-VIKOR, IFS-PROMETHEE, IFS-COPRAS,
-                      IFS-EDAS, IFS-SAW
+    * 6 traditional MCDM methods per criterion group:
+        TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS, SAW
     * Two-stage Evidential Reasoning aggregation (Yang & Xu, 2002)
     * ML Forecasting: 6-model ensemble + Super Learner (optional)
     * Hierarchical sensitivity analysis
@@ -161,7 +159,7 @@ class MLMCDMPipeline:
 
         try:
             self.console.banner('ML-MCDM Panel Data Analysis Pipeline',
-                                subtitle='IFS + ER + ML Forecasting')
+                                subtitle='Traditional MCDM + ER + ML Forecasting')
 
             # Phase 1: Data Loading
             with self.console.phase('Data Loading') as ph:
@@ -174,8 +172,8 @@ class MLMCDMPipeline:
             with self.console.phase('Weight Calculation (Hybrid Weighting)') as ph:
                 weights = self._calculate_weights(panel_data)
 
-            # Phase 3: Hierarchical Ranking (12 MCDM methods + ER)
-            with self.console.phase('Hierarchical Ranking (IFS + ER)') as ph:
+            # Phase 3: Hierarchical Ranking (6 MCDM methods + ER)
+            with self.console.phase('Hierarchical Ranking (Traditional MCDM + ER)') as ph:
                 ranking_result = self._run_hierarchical_ranking(panel_data, weights)
 
             # Phase 4: ML Forecasting (6 models + Super Learner + Conformal)
@@ -410,9 +408,8 @@ class MLMCDMPipeline:
         weights: Dict[str, Any],
     ) -> HierarchicalRankingResult:
         pipeline = HierarchicalRankingPipeline(
-            n_grades=self.config.ifs.n_grades,
+            n_grades=self.config.er.n_grades,
             method_weight_scheme=self.config.er.method_weight_scheme,
-            ifs_spread_factor=self.config.ifs.spread_factor,
         )
         return pipeline.rank(
             panel_data          = panel_data,
@@ -497,23 +494,20 @@ class MLMCDMPipeline:
         - Subcriteria weight perturbations
         - Criteria weight perturbations  
         - Temporal stability across years
-        - IFS uncertainty sensitivity
         - Forecast robustness (if available)
         """
         self.logger.info("Running hierarchical sensitivity analysis")
         
         # Create ranking pipeline instance for re-running with perturbed weights
         ranking_pipeline = HierarchicalRankingPipeline(
-            n_grades=self.config.ifs.n_grades,
+            n_grades=self.config.er.n_grades,
             method_weight_scheme=self.config.er.method_weight_scheme,
-            ifs_spread_factor=self.config.ifs.spread_factor,
         )
         
         # Run sensitivity analysis
         analyzer = SensitivityAnalysis(
             n_simulations=self.config.validation.n_simulations,
             perturbation_range=0.15,  # ±15% weight perturbation
-            ifs_perturbation=0.10,     # ±10% IFS uncertainty
             seed=self.config.random.seed
         )
         
@@ -543,10 +537,7 @@ class MLMCDMPipeline:
         self.logger.info(
             f"  Top-5 stability: {sens_result.top_n_stability.get(5, 0):.1%}"
         )
-        self.logger.info(
-            f"  IFS sensitivity: μ={sens_result.ifs_membership_sensitivity:.4f}, "
-            f"ν={sens_result.ifs_nonmembership_sensitivity:.4f}"
-        )
+
         
         return {'sensitivity': sens_result}
     
@@ -589,8 +580,6 @@ class MLMCDMPipeline:
             'temporal_stability': 'Temporal stability across years',
             'top_n_stability': 'Top-N ranking stability',
             'rank_stability': 'Province-level rank stability',
-            'ifs_membership_sensitivity': 'IFS membership sensitivity',
-            'ifs_nonmembership_sensitivity': 'IFS non-membership sensitivity',
             'overall_robustness': 'Overall robustness score',
         }
         

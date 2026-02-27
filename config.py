@@ -14,7 +14,6 @@ Configuration Groups
 - RandomConfig             — reproducibility seeds
 - TOPSISConfig             — TOPSIS method parameters
 - VIKORConfig              — VIKOR compromise parameter
-- IFSConfig                — Intuitionistic Fuzzy Set parameters
 - WeightingConfig          — GTWC + Bayesian Bootstrap
 - EvidentialReasoningConfig— two-stage ER aggregation
 - ForecastConfig           — ML forecasting ensemble settings
@@ -181,24 +180,6 @@ class VIKORConfig:
     v: float = 0.5
 
 
-@dataclass
-class IFSConfig:
-    """Intuitionistic Fuzzy Set configuration (Atanassov, 1986).
-
-    Parameters
-    ----------
-    spread_factor : float
-        Controls mapping of temporal σ to IFS hesitancy π.
-    n_grades : int
-        Linguistic assessment grades for ER belief distributions.
-    use_temporal_variance : bool
-        Derive hesitancy from inter-annual variance.
-    """
-    spread_factor: float = 1.0
-    n_grades: int = 5
-    use_temporal_variance: bool = True
-
-
 # =========================================================================
 # Weighting Configuration
 # =========================================================================
@@ -262,7 +243,7 @@ class WeightingConfig:
 class EvidentialReasoningConfig:
     """Two-stage ER aggregation (Yang & Xu, 2002).
 
-    Stage 1 — Within each criterion, combine 12 MCDM method scores.
+    Stage 1 — Within each criterion, combine 6 traditional MCDM method scores.
     Stage 2 — Combine 8 criterion beliefs with criterion weights.
     """
     n_grades: int = 5
@@ -270,9 +251,6 @@ class EvidentialReasoningConfig:
     base_methods: List[str] = field(default_factory=lambda: [
         # Traditional
         "topsis", "vikor", "promethee", "copras", "edas", "saw",
-        # IFS
-        "ifs_topsis", "ifs_vikor", "ifs_promethee",
-        "ifs_copras", "ifs_edas", "ifs_saw",
     ])
 
 
@@ -346,7 +324,6 @@ class Config:
     # MCDM
     topsis: TOPSISConfig = field(default_factory=TOPSISConfig)
     vikor: VIKORConfig = field(default_factory=VIKORConfig)
-    ifs: IFSConfig = field(default_factory=IFSConfig)
 
     # Weighting
     weighting: WeightingConfig = field(default_factory=WeightingConfig)
@@ -403,9 +380,7 @@ class Config:
             f"    Observations    : {self.panel.n_observations}\n\n"
             f"  MCDM METHODS\n"
             f"    TOPSIS norm     : {self.topsis.normalization.value}\n"
-            f"    VIKOR v         : {self.vikor.v}\n"
-            f"    IFS spread      : {self.ifs.spread_factor}\n"
-            f"    IFS grades      : {self.ifs.n_grades}\n\n"
+            f"    VIKOR v         : {self.vikor.v}\n\n"
             f"  WEIGHTING\n"
             f"    Strategy        : GTWC (Entropy+CRITIC+MEREC+SD)\n"
             f"    Bootstrap iters : {self.weighting.bootstrap_iterations}\n"
