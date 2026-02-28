@@ -146,8 +146,12 @@ class MLMCDMPipeline:
 
     def _setup_output_directory(self) -> None:
         out = Path(self.config.output_dir)
-        for sub in ('figures', 'results', 'reports', 'logs'):
-            (out / sub).mkdir(parents=True, exist_ok=True)
+        phases = ('weighting', 'ranking', 'mcdm', 'forecasting', 'sensitivity', 'summary')
+        for top in ('figures', 'csv', 'reports', 'logs'):
+            (out / top).mkdir(parents=True, exist_ok=True)
+        for phase in phases:
+            (out / 'figures' / phase).mkdir(parents=True, exist_ok=True)
+            (out / 'csv' / phase).mkdir(parents=True, exist_ok=True)
 
     # -----------------------------------------------------------------
     # Main entry point
@@ -301,7 +305,15 @@ class MLMCDMPipeline:
 
         1. Sub-criteria columns that are all-NaN across the *entire* panel are
            dropped (``HybridWeightingCalculator`` also guards internally).
-        2. Province-year rows where **any** active SC is NaN are dropped.
+        2. Province-year rows where **any** *year-active* SC is NaN are
+           dropped.  A SC is year-active if it has ≥1 valid value for that
+           specific year (per ``YearContext``).  Rows from years with
+           structural Type-1 SC gaps (e.g. SC71-SC83 absent 2011-2017, SC52
+           absent 2021-2024) are **kept** — those rows carry NaN only for the
+           absent SCs, which the downstream Entropy/CRITIC calculators handle
+           via column-mean imputation.  Using a naïve global
+           ``notna().all()`` across all 29 SCs would reduce the effective
+           weighting panel to ~2 years and severely bias the weights.
 
         The resulting weight vector spans only *active* sub-criteria.
         """
@@ -321,8 +333,26 @@ class MLMCDMPipeline:
             )
         subcriteria = active_scs
 
-        # ── Dynamic exclusion Step 2: drop incomplete province-year rows ──
-        valid_rows = panel_df[subcriteria].notna().all(axis=1)
+        # ── Dynamic exclusion Step 2: year-aware valid rows ───────────────
+        # Each row is valid if the SCs that are *active in its year*
+        # (per YearContext) are all non-NaN.  This preserves entire yearly
+        # cohorts from years with structural Type-1 SC gaps (e.g. SC71-SC83
+        # absent 2011-2017, SC52 absent 2021-2024) that a naïve global
+        # notna().all() across all 29 SCs would incorrectly discard,
+        # reducing the effective panel to only ~2 years.
+        year_ctxs = panel_data.year_contexts
+        if year_ctxs:
+            valid_rows = pd.Series(False, index=panel_df.index)
+            for _yr, _ctx in year_ctxs.items():
+                _yr_mask   = panel_df['Year'] == _yr
+                _yr_active = [sc for sc in _ctx.active_subcriteria
+                              if sc in panel_df.columns]
+                if _yr_active:
+                    _yr_valid  = panel_df.loc[_yr_mask, _yr_active].notna().all(axis=1)
+                    valid_rows |= _yr_mask & _yr_valid
+        else:
+            # Fallback: no YearContext available (should not occur in normal use)
+            valid_rows = panel_df[subcriteria].notna().all(axis=1)
         n_dropped  = int((~valid_rows).sum())
         if n_dropped > 0:
             dropped_prov_years = (

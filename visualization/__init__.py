@@ -40,12 +40,13 @@ class VisualizationOrchestrator:
 
     def __init__(self, output_dir: str = 'result/figures', dpi: int = 300):
         self.output_dir = output_dir
-        self.ranking = RankingPlotter(output_dir, dpi)
-        self.weighting = WeightingPlotter(output_dir, dpi)
-        self.mcdm = MCDMPlotter(output_dir, dpi)
-        self.sensitivity = SensitivityPlotter(output_dir, dpi)
-        self.forecast = ForecastPlotter(output_dir, dpi)
-        self.summary = SummaryPlotter(output_dir, dpi)
+        # Each plotter writes into its own phase subfolder
+        self.ranking = RankingPlotter(f'{output_dir}/ranking', dpi)
+        self.weighting = WeightingPlotter(f'{output_dir}/weighting', dpi)
+        self.mcdm = MCDMPlotter(f'{output_dir}/mcdm', dpi)
+        self.sensitivity = SensitivityPlotter(f'{output_dir}/sensitivity', dpi)
+        self.forecast = ForecastPlotter(f'{output_dir}/forecasting', dpi)
+        self.summary = SummaryPlotter(f'{output_dir}/summary', dpi)
         self._plotters = [
             self.ranking, self.weighting, self.mcdm,
             self.sensitivity, self.forecast, self.summary,

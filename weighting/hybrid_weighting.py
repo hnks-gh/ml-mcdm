@@ -130,11 +130,25 @@ class HybridWeightingCalculator:
                 active_groups[crit_id] = active
         criteria_groups = active_groups
 
-        # Drop rows where any active SC is NaN
-        all_sc_cols    = [sc for scs in criteria_groups.values() for sc in scs]
-        criterion_ids  = list(criteria_groups.keys())
-        valid_rows     = panel_df[all_sc_cols].notna().all(axis=1)
-        panel_df       = panel_df[valid_rows].copy().reset_index(drop=True)
+        # Drop rows where any *year-active* SC is NaN — year-aware so that
+        # rows from years with structural Type-1 gaps (SC71-SC83 absent in
+        # 2011-2017, SC52 absent in 2021-2024) are not discarded.  For each
+        # calendar year in the panel, only SCs that have ≥1 valid observation
+        # in *that* year are required to be non-NaN; the absent SCs produce
+        # NaN cells that the downstream Entropy/CRITIC column-mean imputation
+        # guards handle cleanly.
+        all_sc_cols   = [sc for scs in criteria_groups.values() for sc in scs]
+        criterion_ids = list(criteria_groups.keys())
+        if time_col in panel_df.columns:
+            valid_rows = pd.Series(False, index=panel_df.index)
+            for _yr, _yr_grp in panel_df.groupby(time_col):
+                _yr_act  = [sc for sc in all_sc_cols if _yr_grp[sc].notna().any()]
+                if _yr_act:
+                    _yr_valid = _yr_grp[_yr_act].notna().all(axis=1)
+                    valid_rows.loc[_yr_grp.index] |= _yr_valid
+        else:
+            valid_rows = panel_df[all_sc_cols].notna().all(axis=1)
+        panel_df = panel_df[valid_rows].copy().reset_index(drop=True)
 
         logger.info(
             "HybridWeightingCalculator: %d obs, %d sub-crit across %d groups",

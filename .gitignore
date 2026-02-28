@@ -75,8 +75,8 @@ venv.bak/
 *.tmp
 
 # Output files (keep directory structure with .gitkeep)
-result/results/*
-result/figures/*
+result/csv/**/*
+result/figures/**/*
 result/logs/*
 result/reports/*
 !result/**/.gitkeep

@@ -5,7 +5,14 @@ CSV & JSON Data Writer for ML-MCDM Pipeline
 
 All structured numerical output (weights, rankings, scores, forecasts,
 sensitivity analysis) is persisted through this single writer class.
-Every file lands in ``result/results/``.
+Files are organised under ``result/csv/<phase>/``:
+
+  - weighting/   — weights_analysis.csv, criterion_weights.csv
+  - ranking/     — final_rankings.csv, prediction_uncertainty_er.csv
+  - mcdm/        — mcdm_scores_*.csv, mcdm_rank_comparison.csv
+  - forecasting/ — forecast_*, model_*, feature_importance, cv scores
+  - sensitivity/ — sensitivity_*.csv, sensitivity_summary.json
+  - summary/     — data_summary_statistics.csv, execution/config JSON
 """
 
 from __future__ import annotations
@@ -22,11 +29,19 @@ _logger = logging.getLogger(__name__)
 
 
 class CsvWriter:
-    """Write CSV / JSON result files into ``<base_dir>/results/``."""
+    """Write CSV / JSON result files into ``<base_dir>/csv/<phase>/``."""
+
+    # Canonical phase names
+    PHASES = ('weighting', 'ranking', 'mcdm', 'forecasting', 'sensitivity', 'summary')
 
     def __init__(self, base_output_dir: str = 'result'):
-        self.results_dir = Path(base_output_dir) / 'results'
-        self.results_dir.mkdir(parents=True, exist_ok=True)
+        self.csv_dir = Path(base_output_dir) / 'csv'
+        # Create one subdirectory per phase
+        for phase in self.PHASES:
+            (self.csv_dir / phase).mkdir(parents=True, exist_ok=True)
+            setattr(self, f'{phase}_dir', self.csv_dir / phase)
+        # Backward-compat alias
+        self.results_dir = self.csv_dir
         self._saved_files: List[str] = []
 
     # ------------------------------------------------------------------
@@ -39,13 +54,17 @@ class CsvWriter:
         return s
 
     def _save_csv(self, df: pd.DataFrame, name: str,
+                  directory: Optional[Path] = None,
                   float_fmt: str = '%.6f', **kwargs) -> str:
-        path = self.results_dir / name
+        d = directory if directory is not None else self.csv_dir
+        path = d / name
         df.to_csv(path, float_format=float_fmt, **kwargs)
         return self._record(path)
 
-    def _save_json(self, obj: Any, name: str) -> str:
-        path = self.results_dir / name
+    def _save_json(self, obj: Any, name: str,
+                   directory: Optional[Path] = None) -> str:
+        d = directory if directory is not None else self.csv_dir
+        path = d / name
         with open(path, 'w', encoding='utf-8') as f:
             json.dump(obj, f, indent=2, default=str, ensure_ascii=False)
         return self._record(path)
@@ -120,7 +139,8 @@ class CsvWriter:
             crit_df = pd.DataFrame(crit_rows).set_index('Subcriteria')
             df = pd.concat([df, crit_df])
 
-        return self._save_csv(df, 'weights_analysis.csv')
+        return self._save_csv(df, 'weights_analysis.csv',
+                                directory=self.weighting_dir)
 
     # ==================================================================
     #  2. RANKINGS
@@ -173,7 +193,8 @@ class CsvWriter:
         df = df.sort_values('ER_Rank').reset_index(drop=True)
         df.index = df.index + 1
         df.index.name = 'Position'
-        return self._save_csv(df, 'final_rankings.csv', float_fmt='%.4f')
+        return self._save_csv(df, 'final_rankings.csv', float_fmt='%.4f',
+                                directory=self.ranking_dir)
 
     # ==================================================================
     #  3. MCDM SCORES PER CRITERION
@@ -215,7 +236,8 @@ class CsvWriter:
             combined['Consensus_Rank'] = combined['Mean_Rank'].rank(method='min').astype(int)
 
             fname = f'mcdm_scores_{crit_id}.csv'
-            path = self._save_csv(combined, fname, float_fmt='%.4f')
+            path = self._save_csv(combined, fname, float_fmt='%.4f',
+                                   directory=self.mcdm_dir)
             saved[crit_id] = str(path)
         return saved
 
@@ -257,7 +279,8 @@ class CsvWriter:
         df['Worst_Rank'] = base.max(axis=1)
         df['Rank_Range'] = df['Worst_Rank'] - df['Best_Rank']
 
-        return self._save_csv(df, 'mcdm_rank_comparison.csv', float_fmt='%.0f')
+        return self._save_csv(df, 'mcdm_rank_comparison.csv', float_fmt='%.0f',
+                                directory=self.mcdm_dir)
 
     # ==================================================================
     #  5. FORECAST RESULTS
@@ -265,12 +288,14 @@ class CsvWriter:
 
     def save_forecast_results(self, forecast_result: Any) -> Dict[str, str]:
         saved = {}
+        _dir = self.forecasting_dir
 
         # Predictions
         try:
             preds = forecast_result.predictions
             if preds is not None and not preds.empty:
-                saved['predictions'] = self._save_csv(preds, 'forecast_predictions.csv', float_fmt='%.4f')
+                saved['predictions'] = self._save_csv(
+                    preds, 'forecast_predictions.csv', directory=_dir, float_fmt='%.4f')
         except Exception as _exc:
             _logger.debug('section skipped: %s', _exc)
 
@@ -290,7 +315,8 @@ class CsvWriter:
                             combined[f'{col}_width'] = upper[col] - lower[col]
                     combined.index.name = 'Entity'
                     saved['prediction_intervals'] = self._save_csv(
-                        combined, 'prediction_intervals.csv', float_fmt='%.4f')
+                        combined, 'prediction_intervals.csv',
+                        directory=_dir, float_fmt='%.4f')
         except Exception as _exc:
             _logger.debug('section skipped: %s', _exc)
 
@@ -305,7 +331,7 @@ class CsvWriter:
                 df['Rank'] = range(1, len(df) + 1)
                 df = df.set_index('Rank')
                 saved['model_contributions'] = self._save_csv(
-                    df, 'model_contributions.csv', float_fmt='%.6f')
+                    df, 'model_contributions.csv', directory=_dir, float_fmt='%.6f')
         except Exception as _exc:
             _logger.debug('section skipped: %s', _exc)
 
@@ -316,7 +342,7 @@ class CsvWriter:
                 rows = [{'Model': m, **metrics} for m, metrics in perf.items()]
                 df = pd.DataFrame(rows).set_index('Model')
                 saved['model_performance'] = self._save_csv(
-                    df, 'model_performance.csv', float_fmt='%.4f')
+                    df, 'model_performance.csv', directory=_dir, float_fmt='%.4f')
         except Exception as _exc:
             _logger.debug('section skipped: %s', _exc)
 
@@ -331,7 +357,7 @@ class CsvWriter:
                 imp_copy['Cumulative'] = imp_copy['Importance'].cumsum()
                 imp_copy['Rank'] = range(1, len(imp_copy) + 1)
                 saved['feature_importance'] = self._save_csv(
-                    imp_copy, 'feature_importance.csv', float_fmt='%.6f')
+                    imp_copy, 'feature_importance.csv', directory=_dir, float_fmt='%.6f')
         except Exception as _exc:
             _logger.debug('section skipped: %s', _exc)
 
@@ -348,7 +374,7 @@ class CsvWriter:
                 df = pd.DataFrame(rows).T
                 df.index.name = 'Model'
                 saved['cross_validation'] = self._save_csv(
-                    df, 'cross_validation_scores.csv', float_fmt='%.4f')
+                    df, 'cross_validation_scores.csv', directory=_dir, float_fmt='%.4f')
         except Exception as _exc:
             _logger.debug('section skipped: %s', _exc)
 
@@ -359,7 +385,8 @@ class CsvWriter:
                 df = pd.DataFrame([holdout])
                 df.index = ['Holdout']
                 df.index.name = 'Set'
-                saved['holdout'] = self._save_csv(df, 'holdout_performance.csv', float_fmt='%.4f')
+                saved['holdout'] = self._save_csv(
+                    df, 'holdout_performance.csv', directory=_dir, float_fmt='%.4f')
         except Exception as _exc:
             _logger.debug('section skipped: %s', _exc)
 
@@ -376,7 +403,8 @@ class CsvWriter:
                 },
                 'data_summary': forecast_result.data_summary,
             }
-            saved['summary'] = self._save_json(summary, 'forecast_summary.json')
+            saved['summary'] = self._save_json(summary, 'forecast_summary.json',
+                                               directory=_dir)
         except Exception as _exc:
             _logger.debug('section skipped: %s', _exc)
 
@@ -388,6 +416,7 @@ class CsvWriter:
 
     def save_analysis_results(self, analysis_results: Dict[str, Any]) -> Dict[str, str]:
         saved = {}
+        _dir = self.sensitivity_dir
         sens = analysis_results.get('sensitivity')
         if sens is None:
             return saved
@@ -403,7 +432,8 @@ class CsvWriter:
                 df['Rank'] = range(1, len(df) + 1)
                 df['Interpretation'] = df['Sensitivity'].apply(
                     lambda x: 'High' if x > 0.1 else ('Medium' if x > 0.05 else 'Low'))
-                saved['criteria'] = self._save_csv(df, 'sensitivity_criteria.csv', float_fmt='%.6f')
+                saved['criteria'] = self._save_csv(
+                    df, 'sensitivity_criteria.csv', directory=_dir, float_fmt='%.6f')
         except Exception as _exc:
             _logger.debug('section skipped: %s', _exc)
 
@@ -416,7 +446,8 @@ class CsvWriter:
                                        key=lambda x: x[1], reverse=True)
                 ]).set_index('Subcriteria')
                 df['Rank'] = range(1, len(df) + 1)
-                saved['subcriteria'] = self._save_csv(df, 'sensitivity_subcriteria.csv', float_fmt='%.6f')
+                saved['subcriteria'] = self._save_csv(
+                    df, 'sensitivity_subcriteria.csv', directory=_dir, float_fmt='%.6f')
         except Exception as _exc:
             _logger.debug('section skipped: %s', _exc)
 
@@ -433,7 +464,7 @@ class CsvWriter:
                     lambda x: 'Very Stable' if x > 0.9 else (
                         'Stable' if x > 0.7 else ('Moderate' if x > 0.5 else 'Volatile')))
                 saved['rank_stability'] = self._save_csv(
-                    df, 'sensitivity_rank_stability.csv', float_fmt='%.4f')
+                    df, 'sensitivity_rank_stability.csv', directory=_dir, float_fmt='%.4f')
         except Exception as _exc:
             _logger.debug('section skipped: %s', _exc)
 
@@ -444,7 +475,8 @@ class CsvWriter:
                     {'Top_N': f'Top-{n}', 'N': n, 'Stability': v}
                     for n, v in sorted(sens.top_n_stability.items())
                 ]).set_index('Top_N')
-                saved['top_n'] = self._save_csv(df, 'sensitivity_top_n_stability.csv', float_fmt='%.4f')
+                saved['top_n'] = self._save_csv(
+                    df, 'sensitivity_top_n_stability.csv', directory=_dir, float_fmt='%.4f')
         except Exception as _exc:
             _logger.debug('section skipped: %s', _exc)
 
@@ -457,7 +489,8 @@ class CsvWriter:
                 ]).set_index('Year_Pair')
                 df['Interpretation'] = df['Rank_Correlation'].apply(
                     lambda x: 'Strong' if x > 0.8 else ('Moderate' if x > 0.5 else 'Weak'))
-                saved['temporal'] = self._save_csv(df, 'sensitivity_temporal.csv', float_fmt='%.4f')
+                saved['temporal'] = self._save_csv(
+                    df, 'sensitivity_temporal.csv', directory=_dir, float_fmt='%.4f')
         except Exception as _exc:
             _logger.debug('section skipped: %s', _exc)
 
@@ -471,7 +504,8 @@ class CsvWriter:
                 'n_provinces_stability': len(getattr(sens, 'rank_stability', {})),
                 'top_n_stability': getattr(sens, 'top_n_stability', {}),
             }
-            saved['summary'] = self._save_json(robustness, 'sensitivity_summary.json')
+            saved['summary'] = self._save_json(robustness, 'sensitivity_summary.json',
+                                               directory=_dir)
         except Exception as _exc:
             _logger.debug('section skipped: %s', _exc)
 
@@ -486,7 +520,8 @@ class CsvWriter:
         try:
             unc = ranking_result.er_result.uncertainty.copy()
             unc.index.name = 'Province'
-            return self._save_csv(unc, 'prediction_uncertainty_er.csv', float_fmt='%.6f')
+            return self._save_csv(unc, 'prediction_uncertainty_er.csv',
+                                    directory=self.ranking_dir, float_fmt='%.6f')
         except Exception as _exc:
             _logger.debug('er_uncertainty skipped: %s', _exc)
             return None
@@ -505,7 +540,8 @@ class CsvWriter:
                                   summary['std'] / summary['mean'], 0)
         summary['IQR'] = summary['75%'] - summary['25%']
         summary.index.name = 'Subcriteria'
-        return self._save_csv(summary, 'data_summary_statistics.csv')
+        return self._save_csv(summary, 'data_summary_statistics.csv',
+                                directory=self.summary_dir)
 
     # ==================================================================
     #  9. CRITERION WEIGHTS (was bypassed in old pipeline.py)
@@ -513,7 +549,8 @@ class CsvWriter:
 
     def save_criterion_weights(self, criterion_weights: Dict[str, float]) -> str:
         df = pd.DataFrame([criterion_weights])
-        return self._save_csv(df, 'criterion_weights.csv', index=False)
+        return self._save_csv(df, 'criterion_weights.csv', index=False,
+                               directory=self.weighting_dir)
 
     # ==================================================================
     # 10. EXECUTION SUMMARY (was bypassed in old pipeline.py)
@@ -582,7 +619,8 @@ class CsvWriter:
                 _logger.debug('ranking summary skipped: %s', _exc)
                 summary['ranking'] = None
 
-        return self._save_json(summary, 'execution_summary.json')
+        return self._save_json(summary, 'execution_summary.json',
+                                directory=self.summary_dir)
 
     # ==================================================================
     # 11. CONFIG SNAPSHOT (was bypassed in old pipeline.py)
@@ -591,7 +629,8 @@ class CsvWriter:
     def save_config_snapshot(self, config: Any) -> Optional[str]:
         try:
             data = config.to_dict() if hasattr(config, 'to_dict') else {}
-            return self._save_json(data, 'config_snapshot.json')
+            return self._save_json(data, 'config_snapshot.json',
+                                   directory=self.summary_dir)
         except Exception as _exc:
             _logger.debug('config_snapshot skipped: %s', _exc)
             return None

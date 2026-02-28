@@ -81,8 +81,13 @@ class PathConfig:
         return self.output_dir / "reports"
 
     @property
+    def csv_dir(self) -> Path:
+        return self.output_dir / "csv"
+
+    # Keep old name as alias for backward compatibility
+    @property
     def results_dir(self) -> Path:
-        return self.output_dir / "results"
+        return self.csv_dir
 
     @property
     def logs_dir(self) -> Path:
@@ -90,8 +95,18 @@ class PathConfig:
 
     def ensure_directories(self) -> None:
         """Create every output directory if missing."""
-        for d in [self.data_dir, self.output_dir, self.figures_dir,
-                  self.reports_dir, self.results_dir, self.logs_dir]:
+        phases = ["weighting", "ranking", "mcdm", "forecasting", "sensitivity", "summary"]
+        dirs = [
+            self.data_dir, self.output_dir,
+            self.reports_dir, self.logs_dir,
+        ]
+        # figures phase subdirs
+        for phase in phases:
+            dirs.append(self.figures_dir / phase)
+        # csv phase subdirs
+        for phase in phases:
+            dirs.append(self.csv_dir / phase)
+        for d in dirs:
             d.mkdir(parents=True, exist_ok=True)
 
 

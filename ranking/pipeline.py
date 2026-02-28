@@ -3,7 +3,7 @@
 Hierarchical Ranking Pipeline
 ==============================
 
-Two-stage ranking system that runs 6 traditional MCDM methods within each
+Two-stage ranking system that runs 5 traditional MCDM methods within each
 criterion group, then aggregates results using Evidential Reasoning.
 
 Architecture
@@ -11,8 +11,8 @@ Architecture
 Stage 1 — Within-Criterion Ranking
     For each criterion C_k (k = 1…8):
         • Extract subcriteria data for C_k.
-        • Build crisp decision matrix → run 6 traditional methods.
-        • Normalize all 6 method scores to [0, 1].
+        • Build crisp decision matrix → run 5 traditional methods.
+        • Normalize all 5 method scores to [0, 1].
 
 Stage 2 — Global Aggregation via Evidential Reasoning
     • Convert method scores to belief distributions (5 grades).
@@ -36,7 +36,6 @@ from mcdm.traditional import (
     TOPSISCalculator, VIKORCalculator, PROMETHEECalculator,
     COPRASCalculator, EDASCalculator,
 )
-from mcdm.traditional.saw import SAWCalculator
 from evidential_reasoning import (
     HierarchicalEvidentialReasoning, HierarchicalERResult,
     BeliefDistribution, EvidentialReasoningEngine,
@@ -66,7 +65,7 @@ class HierarchicalRankingResult:
     subcriteria_weights_used : dict
         {criterion: {subcrit: float}} — subcriteria weights within each group.
     methods_used : list
-        Names of the 6 traditional MCDM methods.
+        Names of the 5 traditional MCDM methods.
     target_year : int
         Year for which ranking was computed.
     """
@@ -106,7 +105,7 @@ class HierarchicalRankingResult:
 class HierarchicalRankingPipeline:
     """
     Orchestrates two-stage hierarchical ranking
-    (6 traditional MCDM methods + Evidential Reasoning).
+    (5 traditional MCDM methods + Evidential Reasoning).
 
     Parameters
     ----------
@@ -119,7 +118,7 @@ class HierarchicalRankingPipeline:
         Subcriteria codes where lower values are preferred.
     """
 
-    TRADITIONAL_METHODS = ['TOPSIS', 'VIKOR', 'PROMETHEE', 'COPRAS', 'EDAS', 'SAW']
+    TRADITIONAL_METHODS = ['TOPSIS', 'VIKOR', 'PROMETHEE', 'COPRAS', 'EDAS']
     ALL_METHODS = TRADITIONAL_METHODS
 
     def __init__(
@@ -215,7 +214,7 @@ class HierarchicalRankingPipeline:
         logger.info(
             f"  {len(alternatives)} alternatives, "
             f"{len(hierarchy.all_criteria)} criteria groups (pre-exclusion), "
-            f"6 MCDM methods"
+            f"5 MCDM methods"
         )
 
         # ------------------------------------------------------------------
@@ -330,7 +329,7 @@ class HierarchicalRankingPipeline:
         """
         Lightweight ER-only re-ranking using precomputed MCDM scores.
 
-        Skips ALL 6 MCDM method computations and re-runs only the ER
+        Skips ALL 5 MCDM method computations and re-runs only the ER
         aggregation step with new criterion weights derived from
         *subcriteria_weights*.  Yields ~50-100x speedup over
         :meth:`rank` for sensitivity-analysis weight perturbations
@@ -389,7 +388,7 @@ class HierarchicalRankingPipeline:
         alternatives: List[str],
     ) -> Tuple[Dict[str, pd.Series], Dict[str, pd.Series]]:
         """
-        Run 6 traditional MCDM methods on a **clean** criterion-level decision matrix.
+        Run 5 traditional MCDM methods on a **clean** criterion-level decision matrix.
 
         The matrix is guaranteed NaN-free by the caller (``rank()`` uses
         :meth:`PanelData.get_criterion_matrix` which applies dynamic exclusion
@@ -451,7 +450,7 @@ class HierarchicalRankingPipeline:
         weights: Dict[str, float],
         cost_criteria: List[str],
     ) -> Dict[str, Dict]:
-        """Run 6 traditional MCDM methods. Returns raw scores + ranks."""
+        """Run 5 traditional MCDM methods. Returns raw scores + ranks."""
         results = {}
 
         # TOPSIS
@@ -512,17 +511,6 @@ class HierarchicalRankingPipeline:
             }
         except Exception as e:
             logger.warning(f"    EDAS failed: {e}")
-
-        # SAW
-        try:
-            saw = SAWCalculator(normalization='minmax',
-                                cost_criteria=cost_criteria)
-            r = saw.calculate(df, weights)
-            results['SAW'] = {
-                'scores': r.scores, 'ranks': r.ranks, 'higher_better': True
-            }
-        except Exception as e:
-            logger.warning(f"    SAW failed: {e}")
 
         return results
 
@@ -632,7 +620,7 @@ class HierarchicalRankingPipeline:
             col_max = result[col].max()
             rng = col_max - col_min
 
-            if rng < 1e-12:
+            if pd.isna(rng) or rng < 1e-12:
                 result[col] = 0.5  # constant (or all-NaN) column
             elif col in cost_criteria:
                 result[col] = (col_max - result[col]) / rng

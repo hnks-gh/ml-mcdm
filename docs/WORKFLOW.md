@@ -306,7 +306,7 @@ For **each of 8 criteria** (C01 through C08):
 4. `04_sensitivity_analysis.png` — Rank stability heatmap
 5. `05_forecast_feature_importance.png` — Aggregated feature importance (if forecasting enabled)
 
-**Output:** 5 PNG files in `result/figures/`
+**Output:** PNG files in `result/figures/<phase>/`
 
 ---
 
@@ -322,45 +322,70 @@ See [Output Structure](#4-output-structure) below.
 
 ```
 result/
-├── figures/                          # High-resolution visualizations (5 PNG files)
-│   ├── final_ranking_summary.png      # Top 20 provinces with ER utility
-│   ├── score_distribution.png         # Histogram + KDE
-│   ├── weights_comparison.png         # GTWC weights (8 criteria)
-│   ├── sensitivity_analysis.png       # Rank stability heatmap
-│   └── forecast_feature_importance.png # Aggregated from 6 models (optional)
+├── figures/                          # High-resolution visualizations, split by phase
+│   ├── ranking/
+│   │   ├── fig01_final_er_ranking.png
+│   │   └── fig02_score_distribution.png
+│   ├── weighting/
+│   │   ├── fig03_weights_comparison.png
+│   │   ├── fig04_weight_radar.png
+│   │   └── fig05_weight_heatmap.png
+│   ├── mcdm/
+│   │   ├── fig06_method_agreement.png
+│   │   ├── fig07_rank_parallel.png
+│   │   └── fig08_<C##>_scores.png    # one per criterion
+│   ├── sensitivity/
+│   │   ├── fig09_criteria_sensitivity.png
+│   │   ├── fig10_subcriteria_sensitivity.png
+│   │   ├── fig11_top_n_stability.png
+│   │   ├── fig12_temporal_stability.png
+│   │   ├── fig13_rank_volatility.png
+│   │   ├── fig15_er_uncertainty.png
+│   │   └── fig25_robustness_summary.png
+│   ├── forecasting/
+│   │   ├── fig18_feature_importance.png
+│   │   ├── fig19_model_weights.png
+│   │   ├── fig20_model_performance.png
+│   │   ├── fig21_cv_boxplots.png
+│   │   ├── fig22_prediction_intervals.png
+│   │   └── fig23_rank_change_bubble.png
+│   └── summary/
+│       └── fig24_executive_dashboard.png
 │
-├── results/                          # Numerical data (14 files)
-│   ├── final_rankings.csv             # Main output: rank + ER utility + province
-│   │
-│   ├── criterion_weights.csv          # GTWC weights with bootstrap CI
-│   ├── weights_analysis.csv           # 4-method breakdown + fusion details
-│   │
-│   ├── mcdm_scores_C01.csv            # 12-method scores for C_01
-│   ├── mcdm_scores_C02.csv            # ...
-│   ├── mcdm_scores_C03.csv
-│   ├── mcdm_scores_C04.csv
-│   ├── mcdm_scores_C05.csv
-│   ├── mcdm_scores_C06.csv
-│   ├── mcdm_scores_C07.csv
-│   ├── mcdm_scores_C08.csv            # 12-method scores for C_08
-│   ├── mcdm_rank_comparison.csv       # Rank comparison across all methods
-│   │
-│   ├── feature_importance.csv         # Aggregated from 6 forecast models (if enabled)
-│   │
-│   ├── sensitivity_subcriteria.csv    # Subcriteria sensitivity (29 scores)
-│   ├── sensitivity_criteria.csv       # Criteria sensitivity (8 scores)
-│   ├── temporal_stability.csv         # Year-to-year correlations
-│   ├── top_n_stability.csv            # Top-N ranking stability
-│   ├── ifs_sensitivity.csv            # IFS μ/ν uncertainty
-│   ├── robustness_summary.csv         # Overall robustness + confidence
-│   ├── prediction_uncertainty_er.csv  # IFS hesitancy degrees (π)
-│   │
-│   ├── data_summary_statistics.csv    # Descriptive stats
-│   ├── execution_summary.json         # Phase timings + metadata
-│   └── config_snapshot.json           # Full configuration (reproducibility)
+├── csv/                              # Numerical data, split by phase
+│   ├── weighting/
+│   │   ├── weights_analysis.csv       # Global + local weights with bootstrap CI
+│   │   └── criterion_weights.csv      # GTWC criterion-level weights
+│   ├── ranking/
+│   │   ├── final_rankings.csv         # Main output: rank + ER utility + province
+│   │   └── prediction_uncertainty_er.csv  # IFS hesitancy degrees (π)
+│   ├── mcdm/
+│   │   ├── mcdm_scores_C01.csv        # 12-method scores for C_01
+│   │   ├── ...                        # one file per criterion
+│   │   ├── mcdm_scores_C08.csv
+│   │   └── mcdm_rank_comparison.csv   # Cross-method rank comparison matrix
+│   ├── forecasting/
+│   │   ├── forecast_predictions.csv
+│   │   ├── forecast_summary.json
+│   │   ├── model_contributions.csv
+│   │   ├── model_performance.csv
+│   │   ├── feature_importance.csv
+│   │   ├── cross_validation_scores.csv
+│   │   └── prediction_intervals.csv
+│   ├── sensitivity/
+│   │   ├── sensitivity_criteria.csv
+│   │   ├── sensitivity_subcriteria.csv
+│   │   ├── sensitivity_rank_stability.csv
+│   │   ├── sensitivity_top_n_stability.csv
+│   │   ├── sensitivity_temporal.csv
+│   │   └── sensitivity_summary.json
+│   └── summary/
+│       ├── data_summary_statistics.csv
+│       ├── execution_summary.json
+│       └── config_snapshot.json
 │
 ├── reports/
-│   └── report.txt                     # Comprehensive text report
+│   └── report.md                      # Comprehensive Markdown report
 │
 └── logs/
     └── debug.log                      # Detailed execution trace (DEBUG level)
