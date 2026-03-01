@@ -9,6 +9,7 @@ base class shared by all phase-specific plotters.
 
 from __future__ import annotations
 
+import logging
 import numpy as np
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -28,6 +29,8 @@ try:
 except ImportError:
     HAS_MATPLOTLIB = False
     plt = None
+
+_logger = logging.getLogger(__name__)
 
 try:
     from scipy import stats as sp_stats
@@ -146,14 +149,18 @@ class BasePlotter:
             plt.close(fig)
             self.generated_figures.append(str(path))
             return str(path)
-        except Exception:
+        except Exception as _exc:
+            _logger.warning('savefig failed for %s (retrying at 150 dpi): %s',
+                            name, _exc)
             try:
                 path = self.output_dir / name
                 fig.savefig(path, dpi=150, bbox_inches='tight')
                 plt.close(fig)
                 self.generated_figures.append(str(path))
                 return str(path)
-            except Exception:
+            except Exception as _exc2:
+                _logger.warning('savefig retry also failed for %s: %s',
+                                name, _exc2)
                 plt.close(fig)
                 return None
 

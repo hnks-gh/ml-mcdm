@@ -1,7 +1,6 @@
 ﻿# Monte Carlo Entropy–CRITIC Ensemble Weighting Strategy
 
-**Status:** Design specification — finalized for implementation  
-**Replaces:** 4-method GTWC pipeline (Entropy + SD + CRITIC + MEREC + Game Theory + Bayesian Bootstrap)  
+**Status:** Production  
 **Scope:** Full two-level hierarchical weight calculation — Level 1: 29 SC local weights per criterion group; Level 2: 8 criterion global weights (63 provinces × 14 years)
 
 ---
@@ -51,7 +50,7 @@ For each hierarchical level, the ensemble:
 
 | Level | Weights Produced | Used In | Matrix Input |
 |---|---|---|---|
-| Level 1 | Local SC weights per group (sum to 1 within Ck) | Stage 1: 12 MCDM methods per criterion | m × n_k sub-criteria data for Ck |
+| Level 1 | Local SC weights per group (sum to 1 within Ck) | Stage 1: 5 MCDM methods per criterion | m × n_k sub-criteria data for Ck |
 | Level 2 | Criterion weights C01..C08 (sum to 1 globally) | Stage 2: Evidential Reasoning aggregation | m × 8 criterion composite matrix |
 
 ### 2.2 Data Context and Constraints
@@ -625,31 +624,33 @@ class WeightingConfig:
     seed: int | None = None             # RandomState seed for reproducibility
 ```
 
-> **Breaking changes from old `WeightingConfig`:**
-> - `bootstrap_iterations` removed (was an alias for `mc_n_simulations`).
-> - `blend_mode` field removed (blend is always linear-primary with auto multiplicative fallback; not configurable).
-> - `game_theory_*`, `merec_*`, `std_dev_*` fields removed (methods no longer in pipeline).
+> **Historical note:** Earlier versions of this project used a 4-method
+> Game Theory Weight Combination (GTWC) pipeline (Entropy + CRITIC +
+> MEREC + Standard Deviation). The pipeline was replaced with the current
+> two-method MC ensemble because GTWC's four-method fusion added complexity
+> without measurable ranking improvement, while the Beta-blended Entropy +
+> CRITIC ensemble provides full uncertainty quantification and is
+> hyperparameter-tuned end-to-end.
 
 ---
 
-## 11. Module Structure Changes
+## 11. Module Structure Reference
 
 | File | Action | Notes |
 |---|---|---|
-| `weighting/monte_carlo_ensemble.py` | **Create** | `MonteCarloEnsembleWeighting` class + `_run_mc_ensemble()` subroutine |
-| `weighting/__init__.py` | **Update** | Export `MonteCarloEnsembleWeighting`; update module docstring |
-| `weighting/hybrid_weighting.py` | **Keep (deprecated)** | `HybridWeightingPipeline` retained - importable for standalone use; not called by main pipeline |
-| `weighting/base.py` | **No change** | `WeightResult` contract unchanged |
-| `weighting/entropy.py` | **No change** | Used as-is in new ensemble |
-| `weighting/critic.py` | **No change** | Used as-is in new ensemble |
-| `weighting/merec.py` | **No change** | Importable; not called by main pipeline |
-| `weighting/standard_deviation.py` | **No change** | Importable; not called by main pipeline |
-| `weighting/bootstrap.py` | **No change** | Importable; not called by main pipeline |
-| `weighting/fusion.py` | **No change** | Importable; not called by main pipeline |
-| `config.py` | **Update** | Complete replacement of `WeightingConfig` (Section 10) |
-| `pipeline.py` | **Update** | Phase 2 calls `MonteCarloEnsembleWeighting`; weight extraction reads `details["global_sc_weights"]` and `details["level2"]["criterion_weights"]`; `PipelineResult` drops `merec_weights`/`std_dev_weights` |
-| `ranking/pipeline.py` | **Update** | `_derive_hierarchical_weights()` accepts externally computed criterion weights dict from `details["level2"]["criterion_weights"]` instead of re-deriving from SC weight sums |
-| `tests/test_weighting.py` | **Extend** | Add `TestMonteCarloEnsembleWeighting`: output shape, global simplex, Level 1 local simplex per group, Level 2 simplex, global = local × criterion product, determinism with seed, convergence, details schema |
+| `weighting/hybrid_weighting.py` | Primary pipeline | `HybridWeightingCalculator` — two-level MC ensemble |
+| `weighting/__init__.py` | Module entry point | Exports `HybridWeightingCalculator`, `EntropyWeightCalculator`, `CRITICWeightCalculator`, and utilities |
+| `weighting/base.py` | Base types | `WeightResult` dataclass; `calculate_weights` convenience function for `entropy` / `critic` / `equal` |
+| `weighting/entropy.py` | Base method | Shannon entropy weights; used by both the MC ensemble and `AdaptiveWeightCalculator` |
+| `weighting/critic.py` | Base method | CRITIC weights; used by both the MC ensemble and `AdaptiveWeightCalculator` |
+| `weighting/adaptive.py` | NaN-aware utility | `AdaptiveWeightCalculator` — excludes all-NaN rows/columns, imputes partial NaN; `'hybrid'` mode = geometric mean of Entropy + CRITIC |
+| `weighting/bootstrap.py` | Uncertainty | Bayesian bootstrap weight sampling |
+| `weighting/validation.py` | Stability | `temporal_stability_verification`; split-half cosine metric |
+| `weighting/normalization.py` | Normalization | `global_min_max_normalize`, `GlobalNormalizer` |
+| `config.py` | Configuration | `WeightingConfig` dataclass (see Section 10) |
+| `pipeline.py` | Orchestration | Calls `HybridWeightingCalculator`; reads `details["global_sc_weights"]` and `details["level2"]["criterion_weights"]` |
+| `ranking/pipeline.py` | Ranking | `_derive_hierarchical_weights()` uses externally supplied criterion weights from `details["level2"]["criterion_weights"]` |
+| `tests/test_weighting.py` | Tests | `TestHybridWeightingCalculator`, `TestEntropyWeightCalculator`, `TestCRITICWeightCalculator` |
 
 ---
 

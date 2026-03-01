@@ -1,14 +1,46 @@
 # -*- coding: utf-8 -*-
 """
-Hierarchical Ranking Pipeline
-==============================
+Ranking Package
+===============
 
-Two-stage ranking system using traditional MCDM + Evidential Reasoning.
+Two-stage hierarchical ranking pipeline combining 5 traditional MCDM methods
+with Evidential Reasoning (Yang & Xu, 2002).
+
+Modules
+-------
+pipeline
+    HierarchicalRankingPipeline — the main ranking orchestrator.
+topsis, vikor, promethee, copras, edas
+    Traditional MCDM method calculators.
+saw
+    Simple Additive Weighting (used as a fast surrogate in the MC ensemble).
 """
 
 from .pipeline import HierarchicalRankingPipeline, HierarchicalRankingResult
+from .topsis import TOPSISCalculator, TOPSISResult
+from .vikor import VIKORCalculator, VIKORResult, MultiPeriodVIKOR
+from .promethee import (
+    PROMETHEECalculator, PROMETHEEResult,
+    PreferenceFunction, MultiPeriodPROMETHEE,
+)
+from .copras import COPRASCalculator, COPRASResult
+from .edas import EDASCalculator, EDASResult
+from .saw import SAWCalculator, SAWResult
 
 __all__ = [
-    'HierarchicalRankingPipeline',
-    'HierarchicalRankingResult',
+    # Pipeline
+    "HierarchicalRankingPipeline", "HierarchicalRankingResult",
+    # TOPSIS
+    "TOPSISCalculator", "TOPSISResult",
+    # VIKOR
+    "VIKORCalculator", "VIKORResult", "MultiPeriodVIKOR",
+    # PROMETHEE
+    "PROMETHEECalculator", "PROMETHEEResult",
+    "PreferenceFunction", "MultiPeriodPROMETHEE",
+    # COPRAS
+    "COPRASCalculator", "COPRASResult",
+    # EDAS
+    "EDASCalculator", "EDASResult",
+    # SAW
+    "SAWCalculator", "SAWResult",
 ]

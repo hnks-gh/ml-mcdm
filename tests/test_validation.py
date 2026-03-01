@@ -36,7 +36,7 @@ class _MinimalPanel:
     # No other attributes needed for the weight-validation methods
 
 
-def _make_weights(methods: list[str] = ("entropy", "critic", "merec", "std_dev"),
+def _make_weights(methods: list[str] = ("entropy", "critic"),
                   n_criteria: int = 4,
                   seed: int = 0) -> dict:
     """
@@ -192,7 +192,6 @@ class TestValidatorMethodAgreement:
         weights = {
             "entropy": constant.copy(),
             "critic":  constant.copy(),
-            "merec":   constant.copy(),
         }
 
         result = validator._validate_weight_method_agreement(weights)
@@ -362,7 +361,7 @@ class TestTOPSISDegenerate:
     """M3 — TOPSIS degenerate case: all identical rows → score = 0.5 (not 0.0)."""
 
     def test_identical_rows_score_half(self):
-        from mcdm.traditional.topsis import TOPSISCalculator
+        from ranking.topsis import TOPSISCalculator
 
         dm = pd.DataFrame(
             {"C1": [0.5, 0.5, 0.5], "C2": [0.7, 0.7, 0.7]},
@@ -386,7 +385,7 @@ class TestSAWZeroCost:
         has value 0, normalization = (max - x) / max.
         The alternative with cost=0 should receive score 1 (best), not 0.
         """
-        from mcdm.traditional.saw import SAWCalculator
+        from ranking.saw import SAWCalculator
 
         dm = pd.DataFrame(
             {"benefit": [0.9, 0.5, 0.3], "cost": [0.0, 0.5, 0.8]},
@@ -405,7 +404,7 @@ class TestSAWZeroCost:
         With normalization='sum' and a cost column containing zero,
         replacing zeros with ε before inversion prevents divide-by-zero.
         """
-        from mcdm.traditional.saw import SAWCalculator
+        from ranking.saw import SAWCalculator
 
         dm = pd.DataFrame(
             {"C1": [0.8, 0.6], "C_cost": [0.0, 0.4]},
@@ -421,7 +420,7 @@ class TestVIKORCompromiseSetC2:
     """M2 — VIKOR compromise set must include best_by_S and best_by_R when C2 fails."""
 
     def test_compromise_set_is_subset_of_alternatives(self):
-        from mcdm.traditional.vikor import VIKORCalculator
+        from ranking.vikor import VIKORCalculator
 
         # Use an asymmetric dataset so C1/C2 conditions may not both hold
         dm = pd.DataFrame(
@@ -436,7 +435,7 @@ class TestVIKORCompromiseSetC2:
             assert alt in dm.index, f"Compromise set member {alt!r} not in alternatives"
 
     def test_compromise_set_non_empty(self):
-        from mcdm.traditional.vikor import VIKORCalculator
+        from ranking.vikor import VIKORCalculator
 
         dm = pd.DataFrame(
             {"C1": [0.9, 0.1, 0.5], "C2": [0.2, 0.9, 0.5]},
@@ -454,7 +453,7 @@ class TestModifiedEDASTrimmeanPath:
 
     def test_trimmed_mean_differs_from_regular_mean(self):
         """ModifiedEDAS(use_trimmed_mean=True) must use the trimmed path."""
-        from mcdm.traditional.edas import EDASCalculator, ModifiedEDAS
+        from ranking.edas import EDASCalculator, ModifiedEDAS
 
         rng = np.random.RandomState(7)
         data = rng.rand(10, 4) + 0.1
@@ -474,37 +473,6 @@ class TestModifiedEDASTrimmeanPath:
             "ModifiedEDAS trimmed-mean path returned same scores as regular EDAS "
             "— H3 fix may not be applied"
         )
-
-
-# ---------------------------------------------------------------------------
-# MEREC normalization regression (H4)
-# ---------------------------------------------------------------------------
-
-class TestMERECNormalization:
-    """H4 — MEREC uses ratio-based normalization, not min-max."""
-
-    def test_benefit_weight_sum_to_one(self):
-        """All-benefit MEREC weights must sum to 1."""
-        from weighting.merec import MERECWeightCalculator
-
-        dm = pd.DataFrame(
-            {"C1": [0.8, 0.6, 0.9, 0.4], "C2": [0.5, 0.7, 0.3, 0.6]},
-        )
-        calc = MERECWeightCalculator()
-        result = calc.calculate(dm)
-        assert abs(result.as_array.sum() - 1.0) < 1e-6
-
-    def test_cost_column_handled(self):
-        """MEREC with a cost criterion must not crash and weights sum to 1."""
-        from weighting.merec import MERECWeightCalculator
-
-        dm = pd.DataFrame(
-            {"C1": [0.8, 0.6, 0.9], "C_cost": [0.2, 0.5, 0.1]},
-        )
-        calc = MERECWeightCalculator(cost_criteria=["C_cost"])
-        result = calc.calculate(dm)
-        assert abs(result.as_array.sum() - 1.0) < 1e-6
-        assert (result.as_array >= 0).all()
 
 
 # ---------------------------------------------------------------------------

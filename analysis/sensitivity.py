@@ -20,7 +20,7 @@ from typing import Dict, List, Optional, Callable, Tuple, Any
 from dataclasses import dataclass, field
 import warnings
 import functools
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import multiprocessing
 
 
@@ -164,7 +164,7 @@ class SensitivityAnalysis:
         self.perturbation_range = perturbation_range
         self.confidence_level = confidence_level
         self.seed = seed
-        self.rng = np.random.RandomState(seed)
+        self.rng = np.random.default_rng(seed)
         
         # Determine number of parallel workers
         if n_jobs == -1:
@@ -219,7 +219,7 @@ class SensitivityAnalysis:
         else:
             _logger.info("Sensitivity analysis: Using sequential execution")
         
-        self.rng = np.random.RandomState(self.seed)  # Reset RNG
+        self.rng = np.random.default_rng(self.seed)  # Reset RNG
         
         # 1. Hierarchical weight sensitivity
         subcriteria_sens, criteria_sens = self._hierarchical_weight_sensitivity(
@@ -315,8 +315,10 @@ class SensitivityAnalysis:
             rank_changes = []
             
             # Perturb criterion weight (affects all its subcriteria)
+            # Use ≥30 perturbations per criterion for statistical power
+            # (audit fix M1: 5 samples had near-zero power for sensitivity indices).
             for delta in self.rng.uniform(-self.perturbation_range,
-                                          self.perturbation_range, 5):
+                                          self.perturbation_range, 30):
                 if abs(delta) < 0.01:
                     continue
 
@@ -370,8 +372,10 @@ class SensitivityAnalysis:
         for i, subcriterion in enumerate(subcriteria):
             rank_changes = []
 
+            # Use ≥30 perturbations per sub-criterion for statistical power
+            # (audit fix M1: 3 samples had near-zero power).
             for delta in self.rng.uniform(-self.perturbation_range,
-                                          self.perturbation_range, 3):
+                                          self.perturbation_range, 30):
                 if abs(delta) < 0.01:
                     continue
 
@@ -437,15 +441,13 @@ class SensitivityAnalysis:
         _hier_mc     = panel_data.hierarchy
 
         # Monte Carlo simulations — honour the user-specified count in full.
-        # The old `min(..., 100)` silently discarded 90% of requested simulations.
         n_sims = max(1, self.n_simulations)
-        simulated_rankings = np.zeros((n_sims, n_provinces))
         
         if self.use_parallel:
             # Parallel execution using ThreadPoolExecutor (better for I/O-bound tasks)
             def run_simulation(sim_idx):
                 # Create independent RNG for this simulation
-                rng = np.random.RandomState(self.seed + sim_idx)
+                rng = np.random.default_rng(self.seed + sim_idx)
                 perturbation = 1 + rng.uniform(
                     -self.perturbation_range,
                     self.perturbation_range,
@@ -473,18 +475,49 @@ class SensitivityAnalysis:
                     import logging as _log
                     _log.getLogger('ml_mcdm').debug(
                         'MC sim %d failed: %s', sim_idx, _e)
-                    return sim_idx, base_ranking  # Fallback to base
+                    return sim_idx, None  # Signal failure (audit fix H2)
             
+            _par_failures = 0
+            _par_successes = []
             with ThreadPoolExecutor(max_workers=self.n_jobs) as executor:
                 futures = {executor.submit(run_simulation, sim): sim for sim in range(n_sims)}
                 for future in as_completed(futures):
                     sim_idx, ranking = future.result()
-                    simulated_rankings[sim_idx] = ranking
+                    if ranking is not None:
+                        _par_successes.append((sim_idx, ranking))
+                    else:
+                        _par_failures += 1
+
+            # Rebuild simulated_rankings from successful runs only
+            # (audit fix H2: failed simulations no longer substitute base_ranking)
+            if _par_successes:
+                simulated_rankings = np.zeros((len(_par_successes), n_provinces))
+                for j, (_, ranking) in enumerate(_par_successes):
+                    simulated_rankings[j] = ranking
+            else:
+                simulated_rankings = base_ranking.reshape(1, -1)
+
+            if _par_failures > 0:
+                _failure_rate = _par_failures / n_sims
+                import logging as _log_par
+                _log_par.getLogger('ml_mcdm').warning(
+                    f'MC simulation: {_par_failures}/{n_sims} runs failed '
+                    f'({_failure_rate:.0%}). Failed runs excluded from statistics.'
+                )
+                if _failure_rate > 0.20:
+                    import warnings as _w2
+                    _w2.warn(
+                        f'MC simulation: {_par_failures}/{n_sims} runs failed '
+                        f'({_failure_rate:.0%}). Results may be unreliable. '
+                        'Enable DEBUG logging for details.',
+                        RuntimeWarning, stacklevel=2,
+                    )
         else:
             # Sequential execution
             _n_failures = 0
             import logging as _log_seq
             _logger_seq = _log_seq.getLogger('ml_mcdm')
+            _seq_successes = []
             for sim in range(n_sims):
                 perturbation = 1 + self.rng.uniform(
                     -self.perturbation_range,
@@ -503,19 +536,30 @@ class SensitivityAnalysis:
                             hierarchy=_hier_mc,
                             alternatives=_alts_mc,
                         )
-                        simulated_rankings[sim] = _er_seq.final_ranking.rank().values
+                        _seq_successes.append(_er_seq.final_ranking.rank().values)
                     else:
                         perturbed_result = ranking_pipeline.rank(
                             panel_data, perts_mc_seq, target_year=base_year
                         )
-                        simulated_rankings[sim] = perturbed_result.final_ranking.rank().values
+                        _seq_successes.append(perturbed_result.final_ranking.rank().values)
                 except Exception as _exc:
                     _n_failures += 1
                     _logger_seq.debug('MC sim %d failed: %s', sim, _exc)
-                    simulated_rankings[sim] = base_ranking  # Fallback to base
+                    # Do NOT fall back to base_ranking — it biases stability
+                    # upward (audit fix H2).  Failed simulations are excluded.
+
+            # Rebuild simulated_rankings from successful runs only
+            if _seq_successes:
+                simulated_rankings = np.vstack(_seq_successes)
+            else:
+                simulated_rankings = base_ranking.reshape(1, -1)
 
             if _n_failures > 0:
                 _failure_rate = _n_failures / n_sims
+                _logger_seq.warning(
+                    f'MC simulation: {_n_failures}/{n_sims} runs failed '
+                    f'({_failure_rate:.0%}). Failed runs excluded from statistics.'
+                )
                 if _failure_rate > 0.20:
                     import warnings as _w
                     _w.warn(

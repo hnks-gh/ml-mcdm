@@ -7,6 +7,11 @@ Provides weight calculation that:
 3. Imputes remaining partial NaN cells with the column mean before weight calculation
 4. Recalculates weights dynamically based on available data
 
+The two underlying base methods are:
+- ``'entropy'``  — Shannon entropy weighting.
+- ``'critic'``   — CRITIC (contrast intensity × inter-criteria independence).
+- ``'hybrid'``   — geometric mean of the two, used as the default.
+
 Notes
 -----
 The dataset uses NaN (not zero) to represent missing observations.  A value of
@@ -21,9 +26,6 @@ from dataclasses import dataclass
 from .base import WeightResult
 from .entropy import EntropyWeightCalculator
 from .critic import CRITICWeightCalculator
-from .merec import MERECWeightCalculator
-from .standard_deviation import StandardDeviationWeightCalculator
-from .fusion import GameTheoryWeightCombination
 
 
 @dataclass
@@ -52,7 +54,9 @@ class AdaptiveWeightCalculator:
     Parameters
     ----------
     method : str
-        Base weighting method: 'entropy', 'critic', 'merec', 'std_dev', 'hybrid'
+        Base weighting method: ``'entropy'``, ``'critic'``, or ``'hybrid'``
+        (default).  The ``'hybrid'`` mode blends Entropy and CRITIC via their
+        geometric mean, requiring a sub-criterion to score well on both axes.
     epsilon : float
         Small constant for numerical stability
     min_alternatives : int
@@ -72,12 +76,10 @@ class AdaptiveWeightCalculator:
         self.epsilon = epsilon
         self.min_alternatives = min_alternatives
         self.min_criteria = min_criteria
-        
-        # Initialize base calculators
+
+        # Initialize base calculators (Entropy + CRITIC)
         self.entropy_calc = EntropyWeightCalculator(epsilon=epsilon)
         self.critic_calc = CRITICWeightCalculator(epsilon=epsilon)
-        self.merec_calc = MERECWeightCalculator(epsilon=epsilon)
-        self.sd_calc = StandardDeviationWeightCalculator(epsilon=epsilon)
     
     def calculate(
         self, 
@@ -85,15 +87,16 @@ class AdaptiveWeightCalculator:
         entity_col: str = "Province"
     ) -> AdaptiveWeightResult:
         """
-        Calculate weights adaptively excluding zeros.
+        Calculate weights adaptively, excluding all-NaN rows.
         
         Parameters
         ----------
         data : pd.DataFrame
-            Decision matrix with alternatives and criteria
-            If contains 'Province' or entity_col, it's treated as index
+            Decision matrix with alternatives and criteria.
+            If it contains *entity_col* (or 'Province'), that column is
+            stripped before weight calculation.
         entity_col : str
-            Name of entity identifier column (if present)
+            Name of entity identifier column (if present).
         
         Returns
         -------
@@ -156,15 +159,13 @@ class AdaptiveWeightCalculator:
             base_result = self.entropy_calc.calculate(filtered_data)
         elif self.method == "critic":
             base_result = self.critic_calc.calculate(filtered_data)
-        elif self.method == "merec":
-            base_result = self.merec_calc.calculate(filtered_data)
-        elif self.method == "std_dev":
-            base_result = self.sd_calc.calculate(filtered_data)
         elif self.method == "hybrid":
-            # Use multiple methods and combine
             base_result = self._calculate_hybrid(filtered_data)
         else:
-            raise ValueError(f"Unknown method: {self.method}")
+            raise ValueError(
+                f"Unknown method: '{self.method}'.  "
+                "Supported: 'entropy', 'critic', 'hybrid'."
+            )
         
         # Step 4: Expand weights back to include excluded criteria (with zero weight)
         full_weights = {}
@@ -203,38 +204,40 @@ class AdaptiveWeightCalculator:
         )
     
     def _calculate_hybrid(self, data: pd.DataFrame) -> WeightResult:
-        """Calculate hybrid weights using multiple methods."""
-        # Calculate individual weights
+        """Blend Entropy and CRITIC weights via their geometric mean.
+
+        Both methods are philosophically complementary:
+        - Entropy rewards *discriminating power* (high variance across
+          alternatives).
+        - CRITIC rewards *contrast intensity AND independence* from other
+          criteria.
+
+        The geometric mean is preferred over the arithmetic mean because it
+        requires a sub-criterion to score well on *both* axes to receive a
+        high combined weight, producing more conservative and robust results.
+        """
         w_entropy = self.entropy_calc.calculate(data)
         w_critic = self.critic_calc.calculate(data)
-        w_merec = self.merec_calc.calculate(data)
-        w_sd = self.sd_calc.calculate(data)
-        
-        # Extract weight arrays
+
         criteria = data.columns.tolist()
-        weights_matrix = np.array([
-            [w_entropy.weights[c] for c in criteria],
-            [w_critic.weights[c] for c in criteria],
-            [w_merec.weights[c] for c in criteria],
-            [w_sd.weights[c] for c in criteria]
-        ])
-        
-        # Simple averaging (can be enhanced with GTWC)
-        # Using geometric mean for better stability
-        fused_weights = np.power(np.prod(weights_matrix, axis=0), 1/4)
-        
-        # Normalize
-        fused_weights = fused_weights / fused_weights.sum()
-        
+        we = np.array([w_entropy.weights[c] for c in criteria])
+        wc = np.array([w_critic.weights[c] for c in criteria])
+
+        # Geometric mean of the two weight vectors, then re-normalise
+        fused = np.sqrt(we * wc)
+        total = fused.sum()
+        if total > 0:
+            fused /= total
+        else:
+            fused = np.ones(len(criteria)) / len(criteria)
+
         return WeightResult(
-            weights={c: w for c, w in zip(criteria, fused_weights)},
+            weights={c: float(w) for c, w in zip(criteria, fused)},
             method="hybrid",
             details={
                 "entropy": w_entropy.weights,
-                "critic": w_critic.weights,
-                "merec": w_merec.weights,
-                "std_dev": w_sd.weights
-            }
+                "critic":  w_critic.weights,
+            },
         )
 
 
@@ -245,20 +248,21 @@ def calculate_adaptive_weights(
 ) -> AdaptiveWeightResult:
     """
     Convenience function for adaptive weight calculation.
-    
+
     Parameters
     ----------
     data : pd.DataFrame
-        Decision matrix
+        Decision matrix.
     method : str
-        Weighting method: 'entropy', 'critic', 'merec', 'std_dev', 'hybrid'
+        Weighting method: ``'entropy'``, ``'critic'``, or ``'hybrid'``.
     entity_col : str
-        Name of entity identifier column
-    
+        Name of the entity identifier column (used only when *data* contains
+        a row-label column instead of using the DataFrame index).
+
     Returns
     -------
     AdaptiveWeightResult
-        Calculated weights with adaptive metadata
+        Calculated weights with adaptive NaN-filtering metadata.
     """
     calc = AdaptiveWeightCalculator(method=method)
     return calc.calculate(data, entity_col=entity_col)
@@ -286,7 +290,8 @@ class WeightCalculator:
         self,
         subcriteria_data: pd.DataFrame,
         criteria_data: pd.DataFrame,
-        hierarchy_mapping: Dict[str, List[str]]
+        hierarchy_mapping: Dict[str, List[str]],
+        entity_col: str = "Province",
     ) -> Dict[str, Dict]:
         """
         Calculate weights at all hierarchy levels.
@@ -299,6 +304,9 @@ class WeightCalculator:
             Criteria decision matrix (provinces × criteria)
         hierarchy_mapping : Dict[str, List[str]]
             Mapping from criteria to their subcriteria
+        entity_col : str
+            Name of entity identifier column forwarded to the
+            adaptive calculator (default ``"Province"``).
         
         Returns
         -------
@@ -310,7 +318,7 @@ class WeightCalculator:
             }
         """
         # Calculate criteria weights
-        criteria_result = self.adaptive_calc.calculate(criteria_data)
+        criteria_result = self.adaptive_calc.calculate(criteria_data, entity_col=entity_col)
         
         # Calculate subcriteria weights for each criterion
         subcriteria_by_criterion = {}
@@ -326,7 +334,7 @@ class WeightCalculator:
             
             # Calculate weights for these subcriteria
             try:
-                sub_result = self.adaptive_calc.calculate(sub_data)
+                sub_result = self.adaptive_calc.calculate(sub_data, entity_col=entity_col)
                 subcriteria_by_criterion[criterion] = {
                     'weights': sub_result.weights,
                     'included': sub_result.included_criteria,

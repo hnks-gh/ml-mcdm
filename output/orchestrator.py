@@ -24,6 +24,8 @@ class OutputOrchestrator:
     """Coordinate saving all results in one call."""
 
     def __init__(self, base_output_dir: str = 'result'):
+        from . import _sanitize_output_dir
+        _sanitize_output_dir(base_output_dir)  # validate early
         self.base_dir = base_output_dir
         self.csv = CsvWriter(base_output_dir)
         self.report = ReportWriter(base_output_dir)
@@ -42,6 +44,7 @@ class OutputOrchestrator:
         execution_time: float,
         figure_paths: Optional[List[str]] = None,
         config: Optional[Any] = None,
+        multi_year_results: Optional[Dict[int, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Persist every artefact and return a summary dict.
@@ -50,7 +53,7 @@ class OutputOrchestrator:
         """
         subcriteria = weights['subcriteria']
 
-        # 1. Weights
+        # 1. Weights (hybrid MC ensemble)
         self.csv.save_weights(weights, subcriteria)
         logger.info('Saved: weights_analysis.csv')
 
@@ -104,6 +107,70 @@ class OutputOrchestrator:
         if config is not None:
             self.csv.save_config_snapshot(config)
             logger.info('Saved: config_snapshot.json')
+
+        # ── New B-series outputs ──────────────────────────────────────────
+
+        # 12. Per-method weight tables (Entropy / CRITIC / Hybrid)
+        try:
+            saved_mw = self.csv.save_method_weights(weights)
+            for key in saved_mw:
+                logger.info(f'Saved: {Path(saved_mw[key]).name}')
+        except Exception as _exc:
+            logger.warning(f'save_method_weights failed: {_exc}')
+
+        # 13. MC province rank-uncertainty statistics
+        try:
+            path_mps = self.csv.save_mc_province_stats(weights)
+            if path_mps:
+                logger.info(f'Saved: {Path(path_mps).name}')
+        except Exception as _exc:
+            logger.warning(f'save_mc_province_stats failed: {_exc}')
+
+        # 14. All-years score / rank matrices + criterion ER long-format
+        if multi_year_results:
+            try:
+                saved_ay = self.csv.save_rankings_all_years(
+                    multi_year_results, panel_data.provinces)
+                for key in saved_ay:
+                    logger.info(f'Saved: {Path(saved_ay[key]).name}')
+            except Exception as _exc:
+                logger.warning(f'save_rankings_all_years failed: {_exc}')
+
+        # 15. Belief distributions (Stage-1 ER)
+        try:
+            path_bd = self.csv.save_belief_distributions(
+                ranking_result, panel_data.provinces)
+            if path_bd:
+                logger.info(f'Saved: {Path(path_bd).name}')
+        except Exception as _exc:
+            logger.warning(f'save_belief_distributions failed: {_exc}')
+
+        # 16. MCDM composite comparison (all methods + ER)
+        try:
+            path_mc = self.csv.save_mcdm_composite_comparison(
+                ranking_result, panel_data.provinces)
+            if path_mc:
+                logger.info(f'Saved: {Path(path_mc).name}')
+        except Exception as _exc:
+            logger.warning(f'save_mcdm_composite_comparison failed: {_exc}')
+
+        # 17. Individual base-model predictions
+        if forecast_result is not None:
+            try:
+                path_imp = self.csv.save_individual_model_predictions(forecast_result)
+                if path_imp:
+                    logger.info(f'Saved: {Path(path_imp).name}')
+            except Exception as _exc:
+                logger.warning(f'save_individual_model_predictions failed: {_exc}')
+
+        # 18. Perturbation detail matrix
+        if analysis_results.get('sensitivity'):
+            try:
+                path_pd = self.csv.save_perturbation_detail(analysis_results)
+                if path_pd:
+                    logger.info(f'Saved: {Path(path_pd).name}')
+            except Exception as _exc:
+                logger.warning(f'save_perturbation_detail failed: {_exc}')
 
         # 12. Markdown report
         try:

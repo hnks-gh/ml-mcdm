@@ -15,7 +15,7 @@ Validation Components:
 2. Weight Scheme Validation
    - Temporal stability of weights
    - Bootstrap confidence intervals
-   - Method agreement (Entropy, CRITIC, MEREC, StdDev)
+   - Method agreement (Entropy, CRITIC)
 
 3. Forecast Validation
    - Temporal cross-validation (expanding window)

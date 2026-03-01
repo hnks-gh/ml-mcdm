@@ -49,7 +49,7 @@ class GradientBoostingForecaster(BaseForecaster):
     
     def __init__(self,
                  n_estimators: int = 200,
-                 max_depth: int = 6,
+                 max_depth: int = 4,
                  learning_rate: float = 0.1,
                  subsample: float = 0.8,
                  random_state: int = 42):

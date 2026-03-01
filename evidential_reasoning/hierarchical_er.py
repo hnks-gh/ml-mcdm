@@ -18,7 +18,7 @@ Stage 1 — **Within-Criterion Aggregation**
 Stage 2 — **Global Aggregation**
     For each province:
         • Input: 8 criterion-level beliefs.
-        • Combine using ER with criterion weights (from GTWC phase).
+        • Combine using ER with criterion weights (from weighting phase).
         → Final belief distribution  →  expected utility  → ranking.
 
 References

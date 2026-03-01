@@ -211,10 +211,14 @@ class ConformalPredictor:
         self, model, X: np.ndarray, y: np.ndarray, cv_folds: int
     ):
         """
-        Calibrate using CV+ method (Barber et al., 2019).
+        Calibrate using a CV+ *adaptation* for time-series data.
 
-        Uses leave-one-out or K-fold CV residuals for calibration,
-        producing tighter intervals than split conformal.
+        The original jackknife+ (Barber et al., 2019) uses LOO folds,
+        which would violate temporal ordering.  This implementation
+        substitutes ``TimeSeriesSplit`` folds, so finite-sample coverage
+        guarantees from the LOO theory do **not** hold exactly.  The
+        method remains a pragmatic variance-reduction heuristic that
+        typically produces tighter intervals than vanilla split conformal.
         """
         from sklearn.model_selection import TimeSeriesSplit
         import copy
@@ -271,47 +275,70 @@ class ConformalPredictor:
 
         For time series data where the distribution may drift over time.
         Tracks effective coverage and adapts the quantile threshold.
-        
-        Initialises q_hat from the first half of residuals to avoid
-        look-ahead bias, then runs the online update from the second half.
-        """
-        y_pred = model.predict(X)
-        if y_pred.ndim > 1:
-            y_pred = y_pred.mean(axis=1) if y_pred.shape[1] > 1 else y_pred.ravel()
 
-        residuals = np.abs(y - y_pred)
+        Splits the data into a proper-training portion and a calibration
+        portion.  The model is re-fitted on the training portion so that
+        conformity scores are computed on genuinely held-out data (audit
+        fix H6: the previous version used in-sample residuals, which
+        produced anti-conservative / too-tight intervals).
+        """
+        import copy
+
+        n = len(y)
+        # Reserve the last `n_cal` points for calibration (temporal split).
+        n_cal = max(5, int(n * self.calibration_fraction))
+
+        X_train = X[:-n_cal]
+        y_train = y[:-n_cal]
+        X_cal = X[-n_cal:]
+        y_cal = y[-n_cal:]
+
+        # Re-fit on proper training set so residuals are out-of-sample
+        model_proper = copy.deepcopy(model)
+        if hasattr(model_proper, 'fit'):
+            model_proper.fit(X_train, y_train)
+
+        # Use re-fitted model for future predict_intervals calls
+        self._base_model = model_proper
+
+        # Compute out-of-sample residuals on calibration set
+        y_pred_cal = model_proper.predict(X_cal)
+        if y_pred_cal.ndim > 1:
+            y_pred_cal = (
+                y_pred_cal.mean(axis=1) if y_pred_cal.shape[1] > 1
+                else y_pred_cal.ravel()
+            )
+
+        residuals = np.abs(y_cal - y_pred_cal)
         self._conformity_scores = residuals
 
-        n = len(residuals)
-        # Use first half for initial quantile (avoids look-ahead)
-        n_init = max(5, n // 2)
+        # Use first half of calibration residuals for initial quantile,
+        # then run the ACI online update on the second half.
+        n_init = max(3, n_cal // 2)
         init_residuals = residuals[:n_init]
         q_level_init = min(
             np.ceil((1 - self.alpha) * (n_init + 1)) / n_init, 1.0
         )
         self._q_hat = np.quantile(init_residuals, q_level_init)
 
-        # ACI: track adaptive alpha using exponential smoothing
+        # ACI: track adaptive alpha
         self._aci_alpha_t = self.alpha
         self._aci_history = []
 
-        # Online update starting from the initialisation boundary
-        for t in range(n_init, n):
+        # Online update on second half of calibration residuals
+        for t in range(n_init, n_cal):
             # Check if observation was covered
             covered = residuals[t] <= self._q_hat
             error_indicator = 0.0 if covered else 1.0
 
             # Update adaptive miscoverage rate (Gibbs & Candès, 2021, Eq. 3).
             # Gradient step: α_{t+1} = α_t + γ(α − error_t)
-            # When covered (error=0): α_t grows  → quantile tightens.
-            # When missed  (error=1): α_t shrinks → quantile widens.
-            # (γ is the step size, not an exponential-smoothing weight.)
             self._aci_alpha_t = (
                 self._aci_alpha_t + self.gamma * (self.alpha - error_indicator)
             )
             self._aci_alpha_t = np.clip(self._aci_alpha_t, 0.001, 0.999)
 
-            # Update quantile threshold using residuals seen so far
+            # Update quantile threshold using calibration residuals seen so far
             seen = residuals[:t + 1]
             q_level = min(
                 np.ceil((1 - self._aci_alpha_t) * (len(seen) + 1)) / len(seen),
@@ -325,7 +352,7 @@ class ConformalPredictor:
                 "covered": covered,
             })
 
-        self._n_cal = n
+        self._n_cal = n_cal
 
     def predict_intervals(
         self,

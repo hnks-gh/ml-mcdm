@@ -32,10 +32,11 @@ from dataclasses import dataclass, field
 import logging
 
 from data_loader import PanelData, HierarchyMapping
-from mcdm.traditional import (
-    TOPSISCalculator, VIKORCalculator, PROMETHEECalculator,
-    COPRASCalculator, EDASCalculator,
-)
+from .topsis import TOPSISCalculator
+from .vikor import VIKORCalculator
+from .promethee import PROMETHEECalculator
+from .copras import COPRASCalculator
+from .edas import EDASCalculator
 from evidential_reasoning import (
     HierarchicalEvidentialReasoning, HierarchicalERResult,
     BeliefDistribution, EvidentialReasoningEngine,
@@ -161,7 +162,7 @@ class HierarchicalRankingPipeline:
         panel_data : PanelData
             Hierarchical panel dataset (must contain ``year_contexts``).
         subcriteria_weights : dict
-            {SC_code: weight} — fused sub-criteria weights from GTWC.
+            {SC_code: weight} — fused sub-criteria weights from hybrid MC ensemble.
         target_year : int, optional
             Year to rank (default: latest year).
 
@@ -428,10 +429,20 @@ class HierarchicalRankingPipeline:
         ranks:  Dict[str, pd.Series] = {}
 
         # ----- Normalize crisp data to [0, 1] via min-max -----
+        # Cost criteria are inverted during min-max normalisation so that
+        # higher values = better for all columns after this step.
+        # NOTE: All sub-criteria in the PCI/PAPI governance dataset are
+        # benefit-type (higher = better governance).  cost_local will
+        # therefore be empty in normal operation.  The cost-inversion path
+        # is retained for generality but must NOT be forwarded to individual
+        # MCDM methods — they would apply a second inversion on already-
+        # inverted data, reversing the intended direction.
         df_norm = self._minmax_normalize(df, cost_criteria=cost_local)
 
         # ===== TRADITIONAL METHODS =====
-        trad_results = self._run_traditional(df_norm, subcrit_weights, cost_local)
+        # Pass cost_criteria=[] because direction is already encoded
+        # in df_norm by _minmax_normalize (audit fix C1).
+        trad_results = self._run_traditional(df_norm, subcrit_weights, cost_criteria=[])
         for name, res in trad_results.items():
             s = self._normalize_scores(
                 res['scores'], higher_is_better=res['higher_better'])

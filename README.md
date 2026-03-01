@@ -1,6 +1,6 @@
 # ML-MCDM Framework
 
-**A Hybrid Multi-Criteria Decision Making Framework with Intuitionistic Fuzzy Sets, Evidential Reasoning, and Ensemble Machine Learning**
+**A Hybrid Multi-Criteria Decision Making Framework with Evidential Reasoning and Ensemble Machine Learning**
 
 [![Python](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
@@ -10,8 +10,8 @@
 
 This framework combines state-of-the-art Multi-Criteria Decision Making (MCDM) methods with Machine Learning to analyze and forecast multi-dimensional performance across entities. It integrates three major components:
 
-1. **Objective Weighting** via Game Theory Weight Combination (GTWC)
-2. **Hierarchical Ranking** using Intuitionistic Fuzzy Sets (IFS) + Evidential Reasoning (ER)
+1. **Objective Weighting** via Monte Carlo Entropy–CRITIC Ensemble
+2. **Hierarchical Ranking** using 5 Traditional MCDM methods + Evidential Reasoning (ER)
 3. **ML Forecasting** via 6-model ensemble + Super Learner + Conformal Prediction
 
 **Application:** Vietnam PAPI (Provincial Governance and Public Administration Performance Index) analysis across 63 provinces over 14 years (2011-2024).
@@ -21,16 +21,14 @@ This framework combines state-of-the-art Multi-Criteria Decision Making (MCDM) m
 ## Key Features
 
 ### 🎯 Hierarchical Ranking System
-- **12 MCDM Methods**: 6 Traditional + 6 IFS variants
-  - Traditional: TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS, SAW
-  - IFS Extensions: Handles uncertainty via Atanassov's Intuitionistic Fuzzy Sets
+- **5 MCDM Methods**: TOPSIS, VIKOR, PROMETHEE II, COPRAS, EDAS
 - **Two-Stage Architecture**: Within-criterion combination → Global aggregation
 - **Evidential Reasoning**: Rigorous belief combination (Yang & Xu, 2002)
-- **Adaptive Zero-Handling**: Automatic exclusion of missing/zero data with restoration
+- **Adaptive NaN Handling**: Automatic exclusion of inactive sub-criteria per year
 
 ### ⚖️ Objective Weight Calculation
-- **4 Complementary Methods**: Entropy, CRITIC, MEREC, Standard Deviation
-- **Game Theory Combination**: Intra-group hybridization + cooperative optimization
+- **2 Complementary Methods**: Shannon Entropy + CRITIC
+- **Beta-Blended MC Ensemble**: Beta(α_a, α_b)-sampled blend, 64-point grid tuning
 - **Uncertainty Quantification**: Bayesian Bootstrap (200 iterations)
 - **Temporal Stability**: Split-half validation
 
@@ -49,13 +47,11 @@ This framework combines state-of-the-art Multi-Criteria Decision Making (MCDM) m
 ### 📊 Analysis & Validation
 - **Hierarchical Sensitivity Analysis**: Multi-level robustness testing
   - Subcriteria & criteria weight perturbation (±15%)
-  - IFS uncertainty analysis (μ/ν perturbation ±10%)
   - Temporal stability (year-to-year correlation)
   - Monte Carlo simulation (100+ iterations)
   - Forecast robustness testing
 - **Comprehensive Validation**: End-to-end pipeline validation
   - Cross-level consistency checking
-  - IFS parameter validation (μ + ν ≤ 1)
   - Weight scheme robustness (temporal + method agreement)
   - Forecast quality metrics
 - **Convergence Analysis**: Kendall's W concordance coefficient
@@ -76,12 +72,11 @@ This framework combines state-of-the-art Multi-Criteria Decision Making (MCDM) m
 │  WEIGHTING   │   │    RANKING      │
 │              │   │                 │
 │ • Entropy    │   │ Stage 1: Within │
-│ • CRITIC     │──►│  - Traditional  │
-│ • MEREC      │   │  - IFS-MCDM     │
-│ • Std Dev    │   │  - ER Combine   │
-│              │   │                 │
-│ Game Theory  │   │ Stage 2: Global │
-│ Combination  │   │  - ER Aggregate │
+│ • CRITIC     │──►│  - 5 MCDM Mtds  │
+│              │   │  - ER Combine   │
+│ MC Ensemble  │   │                 │
+│ (Beta blend) │   │ Stage 2: Global │
+│              │   │  - ER Aggregate │
 │              │   │  - Final Rank   │
 └──────────────┘   └────────┬────────┘
                             │
@@ -119,10 +114,10 @@ ml-mcdm/
 ├── weighting/             # Weight calculation
 │   ├── entropy.py
 │   ├── critic.py
-│   ├── merec.py
-│   ├── standard_deviation.py
-│   ├── fusion.py          # Game Theory Combination
-│   └── hybrid_weighting.py  # Main interface
+│   ├── adaptive.py        # NaN-aware adaptive weights
+│   ├── bootstrap.py       # Bayesian Bootstrap
+│   ├── normalization.py   # Global min-max normalization
+│   └── hybrid_weighting.py  # Main interface (MC ensemble)
 │
 ├── mcdm/                  # MCDM methods
 │   ├── traditional/       # Traditional MCDM
@@ -132,14 +127,6 @@ ml-mcdm/
 │   │   ├── copras.py
 │   │   ├── edas.py
 │   │   └── saw.py
-│   └── ifs/               # Intuitionistic Fuzzy Sets
-│       ├── base.py
-│       ├── ifs_topsis.py
-│       ├── ifs_vikor.py
-│       ├── ifs_promethee.py
-│       ├── ifs_copras.py
-│       ├── ifs_edas.py
-│       └── ifs_saw.py
 │
 ├── evidential_reasoning/  # ER aggregation
 │   ├── base.py            # BeliefDistribution, ER engine
@@ -174,7 +161,7 @@ ml-mcdm/
     ├── dataset_description.md  # Data description
     ├── workflow.md        # Pipeline workflow
     ├── weighting.md       # Weight calculation details
-    ├── ranking.md         # IFS+ER ranking methodology
+    ├── ranking.md         # ER ranking methodology
     └── forecast.md        # ML forecasting methods
 ```
 
@@ -194,36 +181,13 @@ ml-mcdm/
 
 | Document | Description |
 |----------|-------------|
-| [weighting.md](docs/weighting.md) | Game Theory Weight Combination (GTWC) methodology |
-| [ranking.md](docs/ranking.md) | IFS-MCDM + Evidential Reasoning details |
+| [weighting.md](docs/weighting.md) | Monte Carlo Entropy–CRITIC Ensemble methodology |
+| [ranking.md](docs/ranking.md) | Hierarchical MCDM + Evidential Reasoning details |
 | [forecast.md](docs/forecast.md) | Ensemble ML forecasting architecture |
 
 ---
 
 ## Methodology Highlights
-
-### Intuitionistic Fuzzy Sets (IFS)
-
-Extends classical fuzzy sets by introducing independent non-membership:
-
-$$
-\text{IFN} = (\mu, \nu, \pi)
-$$
-
-Where:
-- **μ (mu)**: Membership degree ∈ [0, 1]
-- **ν (nu)**: Non-membership degree ∈ [0, 1]
-- **π (pi)**: Hesitancy = 1 - μ - ν
-- **Constraint**: μ + ν ≤ 1
-
-**Construction from temporal data:**
-- μ: Normalized current value
-- ν: Temporal variance (historical std)
-- π: Unexplained uncertainty
-
-**Reference:** Atanassov, K.T. (1986). Intuitionistic fuzzy sets. *Fuzzy Sets and Systems*, 20(1), 87-96.
-
----
 
 ### Evidential Reasoning (ER)
 
@@ -241,32 +205,22 @@ $$
 Where K is normalization constant handling conflicts.
 
 **Two-stage architecture:**
-1. **Stage 1**: Within each criterion, combine 12 method scores via ER
+1. **Stage 1**: Within each criterion, combine 5 method scores via ER
 2. **Stage 2**: Combine 8 criterion beliefs via weighted ER
 
 **Reference:** Yang, J.B., & Xu, D.L. (2002). On the evidential reasoning algorithm. *IEEE Trans. SMC-A*, 32(3), 289-304.
 
 ---
 
-### Game Theory Weight Combination (GTWC)
+### Monte Carlo Entropy–CRITIC Ensemble
 
-Combines 4 weighting methods through:
+Combines two complementary objective weighting methods:
 
-1. **Intra-Group Hybridization:**
-   - Group A (Dispersion): Geometric mean of Entropy + Std Dev
-   - Group B (Interaction): Harmonic mean of CRITIC + MEREC
-
-2. **Cooperative Game Optimization:**
-   $$
-   \min L = \|α_1W_A + α_2W_B - W_A\|^2 + \|α_1W_A + α_2W_B - W_B\|^2
-   $$
-
-3. **Final Aggregation:**
-   $$
-   W^* = α_1 \cdot W_{\text{GroupA}} + α_2 \cdot W_{\text{GroupB}}
-   $$
-
-4. **Bayesian Bootstrap:** 200 iterations for uncertainty quantification
+1. **Shannon Entropy**: captures dispersion of normalized scores across provinces
+2. **CRITIC**: captures inter-criteria conflict via standard deviation + correlation
+3. **Beta-blend**: $w = \beta \cdot w_E + (1-\beta) \cdot w_C$, $\beta \sim \text{Beta}(\alpha_a, \alpha_b)$
+4. **Hyperparameter tuning**: 64-point grid search over $(\alpha_a, \alpha_b)$; optional Bayesian GP
+5. **Bayesian Bootstrap**: 200 iterations for uncertainty quantification
 
 ---
 
@@ -287,8 +241,8 @@ distribution-free uncertainty intervals.
 | File | Description |
 |------|-------------|
 | `final_rankings.csv` | Final province rankings with ER scores |
-| `criterion_weights.csv` | GTWC weights with bootstrap uncertainty |
-| `mcdm_scores_C01–C08.csv` | Per-criterion scores from 12 methods |
+| `criterion_weights.csv` | MC ensemble weights with bootstrap uncertainty |
+| `mcdm_scores_C01–C08.csv` | Per-criterion scores from 5 MCDM methods |
 | `mcdm_rank_comparison.csv` | Rank comparison across MCDM methods |
 | `weights_analysis.csv` | Weight derivation details |
 | `forecast_feature_importance.csv` | Aggregated from 6 forecast models (optional) |
@@ -297,7 +251,6 @@ distribution-free uncertainty intervals.
 | **`sensitivity_criteria.csv`** | **8 criteria sensitivity scores** |
 | **`temporal_stability.csv`** | **Year-to-year rank correlations** |
 | **`top_n_stability.csv`** | **Top-N ranking stability metrics** |
-| **`ifs_sensitivity.csv`** | **IFS μ/ν uncertainty analysis** |
 | `robustness_summary.csv` | Overall robustness + confidence level |
 | `prediction_uncertainty_er.csv` | ER belief-structure uncertainty |
 | `data_summary_statistics.csv` | Descriptive statistics of input data |
@@ -329,16 +282,12 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 ### Core Methodologies
 
-1. **Atanassov, K.T.** (1986). Intuitionistic fuzzy sets. *Fuzzy Sets and Systems*, 20(1), 87-96.
+1. **Yang, J.B., & Xu, D.L.** (2002). On the evidential reasoning algorithm for multiple attribute decision analysis under uncertainty. *IEEE Transactions on Systems, Man, and Cybernetics—Part A*, 32(3), 289-304.
 
-2. **Yang, J.B., & Xu, D.L.** (2002). On the evidential reasoning algorithm for multiple attribute decision analysis under uncertainty. *IEEE Transactions on Systems, Man, and Cybernetics—Part A*, 32(3), 289-304.
+2. **Hwang, C.L., & Yoon, K.** (1981). *Multiple Attribute Decision Making: Methods and Applications*. Springer.
 
-3. **Hwang, C.L., & Yoon, K.** (1981). *Multiple Attribute Decision Making: Methods and Applications*. Springer.
+3. **Diakoulaki, D., Mavrotas, G., & Papayannakis, L.** (1995). Determining objective weights in multiple criteria problems: The CRITIC method. *Computers & Operations Research*, 22(7), 763-770.
 
-4. **Keshavarz-Ghorabaee, M., et al.** (2021). Determination of Objective Weights Using a New Method Based on the Removal Effects of Criteria (MEREC). *Symmetry*, 13(4), 525.
+4. **Friedman, J.H.** (2001). Greedy function approximation: A gradient boosting machine. *Annals of Statistics*, 29(5), 1189-1232.
 
-5. **Diakoulaki, D., Mavrotas, G., & Papayannakis, L.** (1995). Determining objective weights in multiple criteria problems: The CRITIC method. *Computers & Operations Research*, 22(7), 763-770.
-
-6. **Friedman, J.H.** (2001). Greedy function approximation: A gradient boosting machine. *Annals of Statistics*, 29(5), 1189-1232.
-
-7. **Breiman, L.** (2001). Random forests. *Machine Learning*, 45(1), 5-32.
+5. **Breiman, L.** (2001). Random forests. *Machine Learning*, 45(1), 5-32.

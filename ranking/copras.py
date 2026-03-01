@@ -89,7 +89,7 @@ class COPRASCalculator:
     Examples
     --------
     >>> import pandas as pd
-    >>> from mcdm.traditional import COPRASCalculator
+    >>> from ranking import COPRASCalculator
     >>> 
     >>> data = pd.DataFrame({
     ...     'Quality': [0.8, 0.6, 0.9, 0.7],
@@ -203,12 +203,16 @@ class COPRASCalculator:
         )
     
     def _normalize(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Normalize using sum normalization."""
+        """Normalize using sum normalization.
+
+        Uses ``abs(col_sum)`` so that columns with negative totals
+        (rare, but possible with cost criteria) do not flip signs.
+        """
         result = data.copy()
         for col in data.columns:
             col_sum = data[col].sum()
-            if col_sum > 0:
-                result[col] = data[col] / col_sum
+            if abs(col_sum) > 0:
+                result[col] = data[col] / abs(col_sum)
             else:
                 result[col] = 1 / len(data)
         return result

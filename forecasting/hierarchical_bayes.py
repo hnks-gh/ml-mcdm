@@ -370,7 +370,8 @@ class HierarchicalBayesForecaster(BaseForecaster):
         return means, stds
 
     def predict_posterior_samples(
-        self, X: np.ndarray, n_samples: Optional[int] = None
+        self, X: np.ndarray, n_samples: Optional[int] = None,
+        group_indices: Optional[np.ndarray] = None,
     ) -> np.ndarray:
         """
         Draw samples from the posterior predictive distribution.
@@ -378,6 +379,10 @@ class HierarchicalBayesForecaster(BaseForecaster):
         Args:
             X: Feature matrix of shape (n_test, n_features)
             n_samples: Number of posterior samples (default: self.n_posterior_samples)
+            group_indices: Optional group IDs for each test point.
+                If provided, group intercepts are added to the mean
+                prediction before sampling (partial-pooling level).
+                If None, predictions are at the population level.
 
         Returns:
             Posterior samples of shape (n_samples, n_test)
@@ -397,6 +402,12 @@ class HierarchicalBayesForecaster(BaseForecaster):
         else:
             mean_1d = mean_pred
             std_1d  = std_pred
+
+        # Add group intercepts to the mean when group_indices are given
+        if group_indices is not None and self._group_intercepts_per_output:
+            intercepts = self._group_intercepts_per_output[0]
+            for i in range(n_test):
+                mean_1d[i] += intercepts.get(group_indices[i], 0.0)
 
         # Draw samples: y ~ Normal(mean, std)
         rng = np.random.RandomState(self.random_state)

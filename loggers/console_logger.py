@@ -30,7 +30,16 @@ _LINE_W = 70
 
 
 class ConsoleLogger:
-    """Structured, professional console logger for monitoring pipeline runs."""
+    """Structured, professional console logger for monitoring pipeline runs.
+
+    .. note::
+
+       The ``_write`` method performs unbuffered writes to ``sys.stdout``
+       but is **not** thread-safe.  If multiple threads share a single
+       ``ConsoleLogger`` instance, concurrent ``_write`` calls may
+       interleave output.  For multi-threaded pipelines, either
+       synchronise externally or give each thread its own logger.
+    """
 
     def __init__(self, use_color: Optional[bool] = None):
         self._color = Colors.supports_color() if use_color is None else use_color

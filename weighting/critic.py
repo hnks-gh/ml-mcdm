@@ -122,11 +122,15 @@ class CRITICWeightCalculator:
             if w.shape[0] != n:
                 raise ValueError(
                     f"sample_weights length ({w.shape[0]}) != n_observations ({n})")
-            w = w / (w.sum() + self.epsilon)
+            w_sum = w.sum()
+            w = w / w_sum if w_sum > self.epsilon else np.full(n, 1.0 / n)
             
-            # Weighted covariance matrix via np.cov with aweights
-            # np.cov returns bias-corrected estimate with aweights
-            cov_matrix = np.cov(X.T, aweights=w)
+            # Weighted covariance matrix via np.cov with aweights.
+            # Use ddof=0 (biased / population estimate) to avoid the Bessel
+            # correction denominator V1 − V2/V1 approaching zero when one
+            # Dirichlet-drawn weight dominates (audit fix M2).  The biased
+            # estimator is always well-defined and still consistent.
+            cov_matrix = np.cov(X.T, aweights=w, ddof=0)
             if cov_matrix.ndim == 0:
                 cov_matrix = np.array([[float(cov_matrix)]])
             

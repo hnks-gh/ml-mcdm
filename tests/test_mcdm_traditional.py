@@ -60,7 +60,7 @@ def uniform_weights4():
 
 class TestTOPSIS:
     def test_ranks_return_all_alternatives(self, dm4, equal_weights):
-        from mcdm.traditional.topsis import TOPSISCalculator
+        from ranking.topsis import TOPSISCalculator
 
         calc = TOPSISCalculator(cost_criteria=["C3"])
         res = calc.calculate(dm4, equal_weights)
@@ -69,28 +69,28 @@ class TestTOPSIS:
 
     def test_best_alternative_known(self, dm4, equal_weights):
         """A dominates all others on all criteria → rank 1."""
-        from mcdm.traditional.topsis import TOPSISCalculator
+        from ranking.topsis import TOPSISCalculator
 
         calc = TOPSISCalculator(cost_criteria=["C3"])
         res = calc.calculate(dm4, equal_weights)
         assert res.ranks["A"] == 1
 
     def test_worst_alternative_known(self, dm4, equal_weights):
-        from mcdm.traditional.topsis import TOPSISCalculator
+        from ranking.topsis import TOPSISCalculator
 
         calc = TOPSISCalculator(cost_criteria=["C3"])
         res = calc.calculate(dm4, equal_weights)
         assert res.ranks["D"] == 4
 
     def test_closeness_in_unit_interval(self, dm4, equal_weights):
-        from mcdm.traditional.topsis import TOPSISCalculator
+        from ranking.topsis import TOPSISCalculator
 
         calc = TOPSISCalculator(cost_criteria=["C3"])
         res = calc.calculate(dm4, equal_weights)
         assert (res.scores >= 0).all() and (res.scores <= 1).all()
 
     def test_distance_positivity(self, dm4, equal_weights):
-        from mcdm.traditional.topsis import TOPSISCalculator
+        from ranking.topsis import TOPSISCalculator
 
         calc = TOPSISCalculator(cost_criteria=["C3"])
         res = calc.calculate(dm4, equal_weights)
@@ -99,14 +99,14 @@ class TestTOPSIS:
 
     def test_vector_normalization(self, dm6, uniform_weights4):
         """Vector norm with all-benefit data should not crash."""
-        from mcdm.traditional.topsis import TOPSISCalculator
+        from ranking.topsis import TOPSISCalculator
 
         calc = TOPSISCalculator(normalization="vector")
         res = calc.calculate(dm6, uniform_weights4)
         assert res.ranks.shape[0] == 6
 
     def test_minmax_normalization(self, dm6, uniform_weights4):
-        from mcdm.traditional.topsis import TOPSISCalculator
+        from ranking.topsis import TOPSISCalculator
 
         calc = TOPSISCalculator(normalization="minmax")
         res = calc.calculate(dm6, uniform_weights4)
@@ -114,7 +114,7 @@ class TestTOPSIS:
 
     def test_weight_result_input(self, dm4):
         """TOPSISCalculator should accept a WeightResult object."""
-        from mcdm.traditional.topsis import TOPSISCalculator
+        from ranking.topsis import TOPSISCalculator
         from weighting.base import WeightResult
 
         wr = WeightResult(
@@ -128,7 +128,7 @@ class TestTOPSIS:
 
     def test_identical_rows_tied_rank(self):
         """Two identical rows should receive the same score."""
-        from mcdm.traditional.topsis import TOPSISCalculator
+        from ranking.topsis import TOPSISCalculator
 
         dm = pd.DataFrame(
             {"C1": [0.5, 0.5, 0.9], "C2": [0.5, 0.5, 0.1]},
@@ -145,7 +145,7 @@ class TestTOPSIS:
 
 class TestVIKOR:
     def test_compromise_solution_is_an_alternative(self, dm4, equal_weights):
-        from mcdm.traditional.vikor import VIKORCalculator
+        from ranking.vikor import VIKORCalculator
 
         calc = VIKORCalculator(cost_criteria=["C3"])
         res = calc.calculate(dm4, equal_weights)
@@ -153,14 +153,14 @@ class TestVIKOR:
 
     def test_q_values_bounded(self, dm4, equal_weights):
         """Q values should lie in [0, 1]."""
-        from mcdm.traditional.vikor import VIKORCalculator
+        from ranking.vikor import VIKORCalculator
 
         calc = VIKORCalculator(cost_criteria=["C3"])
         res = calc.calculate(dm4, equal_weights)
         assert (res.Q >= -1e-9).all() and (res.Q <= 1 + 1e-9).all()
 
     def test_best_alternative_q_near_zero(self, dm4, equal_weights):
-        from mcdm.traditional.vikor import VIKORCalculator
+        from ranking.vikor import VIKORCalculator
 
         calc = VIKORCalculator(cost_criteria=["C3"])
         res = calc.calculate(dm4, equal_weights)
@@ -168,28 +168,28 @@ class TestVIKOR:
 
     def test_v_zero_maximises_regret(self, dm6, uniform_weights4):
         """v=0 means only individual regret counts; all alternatives ranked."""
-        from mcdm.traditional.vikor import VIKORCalculator
+        from ranking.vikor import VIKORCalculator
 
         calc = VIKORCalculator(v=0.0)
         res = calc.calculate(dm6, uniform_weights4)
         assert len(res.ranks_Q) == 6
 
     def test_v_one_maximises_group_utility(self, dm6, uniform_weights4):
-        from mcdm.traditional.vikor import VIKORCalculator
+        from ranking.vikor import VIKORCalculator
 
         calc = VIKORCalculator(v=1.0)
         res = calc.calculate(dm6, uniform_weights4)
         assert set(res.ranks_Q.values.tolist()) == set(range(1, 6 + 1))
 
     def test_compromise_set_subset_of_alternatives(self, dm4, equal_weights):
-        from mcdm.traditional.vikor import VIKORCalculator
+        from ranking.vikor import VIKORCalculator
 
         calc = VIKORCalculator(cost_criteria=["C3"])
         res = calc.calculate(dm4, equal_weights)
         assert all(a in dm4.index for a in res.compromise_set)
 
     def test_ranks_complete_no_gaps(self, dm6, uniform_weights4):
-        from mcdm.traditional.vikor import VIKORCalculator
+        from ranking.vikor import VIKORCalculator
 
         calc = VIKORCalculator()
         res = calc.calculate(dm6, uniform_weights4)
@@ -202,7 +202,7 @@ class TestVIKOR:
 
 class TestEDAS:
     def test_pda_nda_non_negative(self, dm4, equal_weights):
-        from mcdm.traditional.edas import EDASCalculator
+        from ranking.edas import EDASCalculator
 
         calc = EDASCalculator(cost_criteria=["C3"])
         res = calc.calculate(dm4, equal_weights)
@@ -210,7 +210,7 @@ class TestEDAS:
         assert (res.NDA >= -1e-9).all().all()
 
     def test_appraisal_score_in_unit_interval(self, dm4, equal_weights):
-        from mcdm.traditional.edas import EDASCalculator
+        from ranking.edas import EDASCalculator
 
         calc = EDASCalculator(cost_criteria=["C3"])
         res = calc.calculate(dm4, equal_weights)
@@ -218,7 +218,7 @@ class TestEDAS:
 
     def test_average_solution_is_column_mean(self, dm4, equal_weights):
         """Average solution should equal column mean for benefit criteria."""
-        from mcdm.traditional.edas import EDASCalculator
+        from ranking.edas import EDASCalculator
 
         calc = EDASCalculator()   # all benefit
         res = calc.calculate(dm4, equal_weights)
@@ -227,7 +227,7 @@ class TestEDAS:
 
     def test_best_alternative_highest_score(self, dm4, equal_weights):
         """A has best values on all criteria → rank 1."""
-        from mcdm.traditional.edas import EDASCalculator
+        from ranking.edas import EDASCalculator
 
         calc = EDASCalculator(cost_criteria=["C3"])
         res = calc.calculate(dm4, equal_weights)
@@ -235,7 +235,7 @@ class TestEDAS:
 
     def test_modified_edas_trimmed_mean_returns_result(self, dm6, uniform_weights4):
         """ModifiedEDAS with use_trimmed_mean=True must return a result (not None)."""
-        from mcdm.traditional.edas import ModifiedEDAS
+        from ranking.edas import ModifiedEDAS
 
         calc = ModifiedEDAS(use_trimmed_mean=True)
         res = calc.calculate(dm6, uniform_weights4)
@@ -244,7 +244,7 @@ class TestEDAS:
 
     def test_pda_nda_zero_for_average_alternative(self):
         """An alternative exactly at the column mean has PDA=NDA=0."""
-        from mcdm.traditional.edas import EDASCalculator
+        from ranking.edas import EDASCalculator
 
         mean_val = 0.5
         dm = pd.DataFrame(
@@ -263,28 +263,28 @@ class TestEDAS:
 
 class TestSAW:
     def test_minmax_scores_in_unit_interval(self, dm4, equal_weights):
-        from mcdm.traditional.saw import SAWCalculator
+        from ranking.saw import SAWCalculator
 
         calc = SAWCalculator(normalization="minmax", cost_criteria=["C3"])
         res = calc.calculate(dm4, equal_weights)
         assert (res.scores >= -1e-9).all() and (res.scores <= 1 + 1e-9).all()
 
     def test_best_alternative_rank1(self, dm4, equal_weights):
-        from mcdm.traditional.saw import SAWCalculator
+        from ranking.saw import SAWCalculator
 
         calc = SAWCalculator(normalization="minmax", cost_criteria=["C3"])
         res = calc.calculate(dm4, equal_weights)
         assert res.ranks["A"] == 1
 
     def test_max_normalization(self, dm6, uniform_weights4):
-        from mcdm.traditional.saw import SAWCalculator
+        from ranking.saw import SAWCalculator
 
         calc = SAWCalculator(normalization="max")
         res = calc.calculate(dm6, uniform_weights4)
         assert sorted(res.ranks.values.tolist()) == list(range(1, 7))
 
     def test_sum_normalization_benefit(self, dm6, uniform_weights4):
-        from mcdm.traditional.saw import SAWCalculator
+        from ranking.saw import SAWCalculator
 
         calc = SAWCalculator(normalization="sum")
         res = calc.calculate(dm6, uniform_weights4)
@@ -292,7 +292,7 @@ class TestSAW:
 
     def test_sum_normalization_cost_inverts(self):
         """With sum normalization and a cost criterion, lower raw value → better rank."""
-        from mcdm.traditional.saw import SAWCalculator
+        from ranking.saw import SAWCalculator
 
         dm = pd.DataFrame(
             {"benefit": [0.9, 0.5], "cost": [0.1, 0.9]},
@@ -304,7 +304,7 @@ class TestSAW:
 
     def test_equal_alternatives_same_score(self):
         """Identical rows must yield identical scores."""
-        from mcdm.traditional.saw import SAWCalculator
+        from ranking.saw import SAWCalculator
 
         dm = pd.DataFrame(
             {"C1": [0.5, 0.5], "C2": [0.7, 0.7]},
@@ -315,7 +315,7 @@ class TestSAW:
         assert abs(res.scores["X"] - res.scores["Y"]) < 1e-10
 
     def test_ranks_are_contiguous_integers(self, dm4, equal_weights):
-        from mcdm.traditional.saw import SAWCalculator
+        from ranking.saw import SAWCalculator
 
         calc = SAWCalculator(cost_criteria=["C3"])
         res = calc.calculate(dm4, equal_weights)
@@ -329,28 +329,28 @@ class TestSAW:
 class TestCOPRAS:
     def test_utility_sum_100(self, dm4, equal_weights):
         """Best alternative's utility degree must be 100 % (COPRAS definition)."""
-        from mcdm.traditional.copras import COPRASCalculator
+        from ranking.copras import COPRASCalculator
 
         calc = COPRASCalculator(cost_criteria=["C3"])
         res = calc.calculate(dm4, equal_weights)
         assert abs(res.utility_degree.max() - 100.0) < 0.1
 
     def test_best_utility_is_100(self, dm4, equal_weights):
-        from mcdm.traditional.copras import COPRASCalculator
+        from ranking.copras import COPRASCalculator
 
         calc = COPRASCalculator(cost_criteria=["C3"])
         res = calc.calculate(dm4, equal_weights)
         assert abs(res.utility_degree.max() - 100.0) < 0.1
 
     def test_best_rank_is_1(self, dm4, equal_weights):
-        from mcdm.traditional.copras import COPRASCalculator
+        from ranking.copras import COPRASCalculator
 
         calc = COPRASCalculator(cost_criteria=["C3"])
         res = calc.calculate(dm4, equal_weights)
         assert res.ranks["A"] == 1
 
     def test_s_plus_s_minus_positive(self, dm4, equal_weights):
-        from mcdm.traditional.copras import COPRASCalculator
+        from ranking.copras import COPRASCalculator
 
         calc = COPRASCalculator(cost_criteria=["C3"])
         res = calc.calculate(dm4, equal_weights)
@@ -359,14 +359,14 @@ class TestCOPRAS:
 
     def test_all_benefit_no_cost(self, dm6, uniform_weights4):
         """With only benefit criteria S_minus should be zero for all."""
-        from mcdm.traditional.copras import COPRASCalculator
+        from ranking.copras import COPRASCalculator
 
         calc = COPRASCalculator()
         res = calc.calculate(dm6, uniform_weights4)
         assert (res.S_minus < 1e-9).all()
 
     def test_ranks_complete(self, dm6, uniform_weights4):
-        from mcdm.traditional.copras import COPRASCalculator
+        from ranking.copras import COPRASCalculator
 
         calc = COPRASCalculator()
         res = calc.calculate(dm6, uniform_weights4)
@@ -380,14 +380,14 @@ class TestCOPRAS:
 class TestPROMETHEE:
     def test_net_flow_antisymmetry(self, dm4, equal_weights):
         """Φ_net should sum to ~0 (antisymmetry of outranking relation)."""
-        from mcdm.traditional.promethee import PROMETHEECalculator
+        from ranking.promethee import PROMETHEECalculator
 
         calc = PROMETHEECalculator(cost_criteria=["C3"])
         res = calc.calculate(dm4, equal_weights)
         assert abs(res.phi_net.sum()) < 1e-9
 
     def test_positive_minus_negative_gives_net(self, dm4, equal_weights):
-        from mcdm.traditional.promethee import PROMETHEECalculator
+        from ranking.promethee import PROMETHEECalculator
 
         calc = PROMETHEECalculator(cost_criteria=["C3"])
         res = calc.calculate(dm4, equal_weights)
@@ -397,28 +397,28 @@ class TestPROMETHEE:
         )
 
     def test_best_alternative_highest_net(self, dm4, equal_weights):
-        from mcdm.traditional.promethee import PROMETHEECalculator
+        from ranking.promethee import PROMETHEECalculator
 
         calc = PROMETHEECalculator(cost_criteria=["C3"])
         res = calc.calculate(dm4, equal_weights)
         assert res.phi_net.idxmax() == "A"
 
     def test_ranks_complete(self, dm4, equal_weights):
-        from mcdm.traditional.promethee import PROMETHEECalculator
+        from ranking.promethee import PROMETHEECalculator
 
         calc = PROMETHEECalculator(cost_criteria=["C3"])
         res = calc.calculate(dm4, equal_weights)
         assert sorted(res.ranks_promethee_ii.values.tolist()) == [1, 2, 3, 4]
 
     def test_positive_flow_positive(self, dm4, equal_weights):
-        from mcdm.traditional.promethee import PROMETHEECalculator
+        from ranking.promethee import PROMETHEECalculator
 
         calc = PROMETHEECalculator(cost_criteria=["C3"])
         res = calc.calculate(dm4, equal_weights)
         assert (res.phi_positive >= -1e-9).all()
 
     def test_vshape_preference_function(self, dm6, uniform_weights4):
-        from mcdm.traditional.promethee import PROMETHEECalculator
+        from ranking.promethee import PROMETHEECalculator
 
         calc = PROMETHEECalculator(preference_function="vshape")
         res = calc.calculate(dm6, uniform_weights4)

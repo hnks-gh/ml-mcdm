@@ -454,4 +454,575 @@ class ForecastPlotter(BasePlotter):
         return self._save(fig, save_name)
 
 
+    # ==================================================================
+    #  FIG 16b – Ensemble Architecture Flowchart
+    # ==================================================================
+
+    def plot_ensemble_architecture(
+        self,
+        model_contributions: Optional[Dict[str, float]] = None,
+        save_name: str = 'fig16b_ensemble_architecture.png',
+    ) -> Optional[str]:
+        """Static matplotlib flowchart of the 3-tier ensemble pipeline.
+
+        Tier 1 — Six base estimators (LightGBM, XGBoost, RF, NAM, Bayesian, VAR)
+        Tier 2 — Super Learner (stacked generalisation)
+        Tier 3 — Conformal Prediction (distribution-free coverage guarantee)
+        """
+        if not HAS_MATPLOTLIB:
+            return None
+
+        try:
+            from matplotlib.patches import FancyBboxPatch, FancyArrowPatch
+        except ImportError:
+            return None
+
+        fig, ax = plt.subplots(figsize=(16, 11))
+        ax.set_xlim(0, 16)
+        ax.set_ylim(0, 11)
+        ax.axis('off')
+
+        # ── colour scheme ──────────────────────────────────────────
+        tier_colors = {
+            'data':      '#EBF5FB',
+            'base':      '#D6EAF8',
+            'ensemble':  '#D5F5E3',
+            'conformal': '#FDEBD0',
+            'output':    '#F9EBEA',
+        }
+        border_colors = {
+            'data':      '#2E86C1',
+            'base':      '#1A5276',
+            'ensemble':  '#1E8449',
+            'conformal': '#CA6F1E',
+            'output':    '#922B21',
+        }
+
+        def _box(x, y, w, h, label, sublabel='', kind='base', fontsize=9):
+            fc = tier_colors[kind]
+            ec = border_colors[kind]
+            patch = FancyBboxPatch((x - w / 2, y - h / 2), w, h,
+                                   boxstyle='round,pad=0.08',
+                                   fc=fc, ec=ec, lw=2, zorder=3,
+                                   transform=ax.transData)
+            ax.add_patch(patch)
+            ax.text(x, y + (0.12 if sublabel else 0), label,
+                    ha='center', va='center', fontsize=fontsize,
+                    fontweight='bold', color=ec, zorder=4)
+            if sublabel:
+                ax.text(x, y - 0.22, sublabel,
+                        ha='center', va='center', fontsize=7,
+                        color='#555555', style='italic', zorder=4)
+
+        def _arrow(x0, y0, x1, y1, color='#555555'):
+            ax.annotate('', xy=(x1, y1), xytext=(x0, y0),
+                        arrowprops=dict(arrowstyle='->', color=color,
+                                       lw=1.8, connectionstyle='arc3,rad=0.0'),
+                        zorder=2)
+
+        # ── Data source ────────────────────────────────────────────
+        _box(8, 10.1, 5.5, 0.85, 'Panel Data (63 Provinces × 14 Years × 29 SC)',
+             kind='data', fontsize=9.5)
+
+        # ── Tier 1 – Base Models ───────────────────────────────────
+        ax.text(8, 9.35, 'Tier 1 — Base Estimators', ha='center',
+                fontsize=9, color='#1A5276', style='italic')
+
+        base_models = [
+            ('LightGBM', 'Gradient\nBoosting'),
+            ('XGBoost', 'Gradient\nBoosting'),
+            ('Random\nForest', 'Bagging'),
+            ('Neural\nAdditive', 'NAM'),
+            ('Hierarchical\nBayes', 'Bayesian'),
+            ('Panel\nVAR', 'Time-Series'),
+        ]
+        xs_base = np.linspace(1.2, 14.8, 6)
+        for xi, (name, sub) in zip(xs_base, base_models):
+            _box(xi, 8.5, 2.1, 1.15, name, sub, kind='base', fontsize=8.5)
+            _arrow(8, 9.68, xi, 9.08)
+
+        # ── Tier 2 – Super Learner ─────────────────────────────────
+        ax.text(8, 7.5, 'Tier 2 — Stacked Generalisation', ha='center',
+                fontsize=9, color='#1E8449', style='italic')
+
+        _box(8, 6.85, 5.8, 0.9, 'Super Learner', 'Optimal linear combination', kind='ensemble')
+        for xi in xs_base:
+            _arrow(xi, 7.93, 8, 7.30)
+
+        # ── Weights annotation ─────────────────────────────────────
+        if model_contributions:
+            top3 = sorted(model_contributions.items(), key=lambda x: x[1], reverse=True)[:3]
+            w_txt = '  '.join(f'{self._truncate(m,12)}: {w:.2f}' for m, w in top3)
+            ax.text(8, 6.35, f'Top contributors: {w_txt}',
+                    ha='center', fontsize=7.5, color='#1E8449', style='italic')
+
+        # ── Tier 3 – Conformal Prediction ─────────────────────────
+        ax.text(8, 5.7, 'Tier 3 — Uncertainty Calibration', ha='center',
+                fontsize=9, color='#CA6F1E', style='italic')
+
+        _box(8, 5.05, 5.8, 0.9,
+             'Conformal Prediction', 'Distribution-free coverage guarantee (95%)',
+             kind='conformal')
+        _arrow(8, 6.40, 8, 5.50)
+
+        # ── Output ─────────────────────────────────────────────────
+        _arrow(8, 4.60, 8, 3.90)
+
+        out_cols = [
+            ('Point\nForecast', 'Province scores\nfor target year'),
+            ('Lower CI\n(2.5%)', 'Conformal lower\nbound'),
+            ('Upper CI\n(97.5%)', 'Conformal upper\nbound'),
+            ('Uncertainty\nScore', 'Interval width\n/ entropy'),
+        ]
+        xs_out = np.linspace(3.5, 12.5, 4)
+        for xi, (name, sub) in zip(xs_out, out_cols):
+            _box(xi, 3.3, 2.2, 1.1, name, sub, kind='output', fontsize=8)
+            _arrow(8, 3.90, xi, 3.85)
+
+        # ── MCDM feed ──────────────────────────────────────────────
+        ax.text(8, 2.7, '↓ Feeds into MCDM Ranking Pipeline', ha='center',
+                fontsize=10, fontweight='bold', color='#555555')
+
+        # ── Title ──────────────────────────────────────────────────
+        ax.text(8, 11.0, '', ha='center')
+        fig.suptitle('ML Ensemble Forecasting Architecture — 3-Tier Pipeline',
+                     fontsize=13, y=0.98, fontweight='bold')
+        plt.tight_layout()
+        return self._save(fig, save_name)
+
+    # ==================================================================
+    #  FIG 19b – Model Contribution Dot Plot (weight vs CV score)
+    # ==================================================================
+
+    def plot_model_contribution_dots(
+        self,
+        model_contributions: Dict[str, float],
+        cross_validation_scores: Optional[Dict[str, List[float]]] = None,
+        model_performance: Optional[Dict[str, Dict[str, float]]] = None,
+        save_name: str = 'fig19b_model_contribution_dots.png',
+    ) -> Optional[str]:
+        """Bubble chart: Super Learner weight (x) vs CV R² score (y).
+
+        Bubble size encodes the contribution weight; color encodes model family.
+        Annotates each model to show the weight–performance trade-off made by
+        the Super Learner during stacking.
+        """
+        if not HAS_MATPLOTLIB:
+            return None
+        if not model_contributions:
+            return None
+
+        # Derive CV R² mean for each model
+        cv_means: Dict[str, float] = {}
+        if cross_validation_scores:
+            for m, scores in cross_validation_scores.items():
+                if scores:
+                    cv_means[m] = float(np.mean(scores))
+        if not cv_means and model_performance:
+            for m, metrics in model_performance.items():
+                if 'R2' in metrics:
+                    cv_means[m] = float(metrics['R2'])
+                elif 'r2' in metrics:
+                    cv_means[m] = float(metrics['r2'])
+
+        models = sorted(model_contributions.keys())
+        weights = np.array([model_contributions[m] for m in models])
+        r2_vals = np.array([cv_means.get(m, 0.0) for m in models])
+
+        # Model family colour mapping
+        _family_color = {
+            'lightgbm': '#2ECC71', 'lgbm': '#2ECC71',
+            'xgboost': '#E74C3C', 'xgb': '#E74C3C',
+            'random': '#3498DB', 'rf': '#3498DB', 'forest': '#3498DB',
+            'neural': '#9B59B6', 'nam': '#9B59B6', 'additive': '#9B59B6',
+            'bayesian': '#F39C12', 'bayes': '#F39C12', 'hierarchical': '#F39C12',
+            'var': '#1ABC9C', 'panel': '#1ABC9C',
+            'super': '#E67E22', 'learner': '#E67E22',
+        }
+        colors_ = []
+        for m in models:
+            ml = m.lower()
+            c = '#95A5A6'
+            for key, col in _family_color.items():
+                if key in ml:
+                    c = col
+                    break
+            colors_.append(c)
+
+        fig, ax = plt.subplots(figsize=(11, 8))
+
+        sizes = weights / max(weights.max(), 1e-9) * 1200 + 80
+        sc = ax.scatter(weights, r2_vals, s=sizes, c=colors_, alpha=0.82,
+                        edgecolors='white', linewidths=1.5, zorder=4)
+
+        # Quadrant lines
+        mw = float(np.median(weights))
+        mr = float(np.median(r2_vals)) if r2_vals.max() > 0 else 0.5
+        ax.axvline(mw, color='gray', lw=1.0, ls='--', alpha=0.6)
+        ax.axhline(mr, color='gray', lw=1.0, ls='--', alpha=0.6)
+
+        # Quadrant labels
+        xlo, xhi = ax.get_xlim() if ax.get_xlim() != (0, 1) else (weights.min(), weights.max())
+        for lbl, xi, yi, col in [
+            ('High weight\nHigh CV',   0.75, 0.75, '#27AE60'),
+            ('Low weight\nHigh CV',    0.25, 0.75, '#2980B9'),
+            ('High weight\nLow CV',    0.75, 0.25, '#E67E22'),
+            ('Low weight\nLow CV',     0.25, 0.25, '#C0392B'),
+        ]:
+            ax.text(xi, yi, lbl, ha='center', va='center',
+                    transform=ax.transAxes, fontsize=8, color=col,
+                    alpha=0.40, style='italic', fontweight='bold')
+
+        for i, m in enumerate(models):
+            ax.annotate(
+                self._truncate(m, 16),
+                (weights[i], r2_vals[i]),
+                xytext=(6, 6), textcoords='offset points',
+                fontsize=8, color='#333333',
+            )
+
+        ax.set_xlabel('Super Learner Contribution Weight', fontsize=11)
+        ax.set_ylabel('Mean Cross-Validation R²', fontsize=11)
+        ax.set_title('Model Contribution vs CV Performance — Super Learner Diagnostics',
+                     pad=12)
+
+        # Size legend
+        for w_leg in [0.1, 0.3, 0.5]:
+            ax.scatter([], [], s=w_leg / max(weights.max(), 1e-9) * 1200 + 80,
+                       c='gray', alpha=0.6, label=f'Weight = {w_leg:.1f}')
+        ax.legend(title='Bubble size → weight', fontsize=9,
+                  title_fontsize=9, loc='lower right')
+
+        plt.tight_layout()
+        return self._save(fig, save_name)
+
+    # ==================================================================
+    #  FIG 22b – Conformal Coverage Calibration Curve
+    # ==================================================================
+
+    def plot_conformal_coverage(
+        self,
+        y_test: np.ndarray,
+        y_pred: np.ndarray,
+        alpha_levels: Optional[List[float]] = None,
+        save_name: str = 'fig22b_conformal_coverage.png',
+    ) -> Optional[str]:
+        """Reliability calibration curve for conformal prediction intervals.
+
+        For each miscoverage level α, derives the conformal interval half-width
+        as the (1−α) quantile of |residuals| on the test set, then measures
+        empirical coverage.  A well-calibrated conformal predictor hugs the y=x
+        diagonal (nominal = empirical coverage).
+        """
+        if not HAS_MATPLOTLIB:
+            return None
+
+        y_test = np.asarray(y_test, dtype=float).ravel()
+        y_pred = np.asarray(y_pred, dtype=float).ravel()
+        if len(y_test) < 4:
+            return None
+
+        residuals = np.abs(y_test - y_pred)
+        if alpha_levels is None:
+            alpha_levels = [0.01, 0.05, 0.10, 0.15, 0.20, 0.25,
+                            0.30, 0.35, 0.40, 0.50, 0.60, 0.70]
+
+        nominal_cov, empirical_cov, interval_widths = [], [], []
+        for alpha in alpha_levels:
+            nominal = 1.0 - alpha
+            # Conformal guarantee: use ceiling quantile (finite-sample correction)
+            n = len(residuals)
+            q_idx = min(int(np.ceil((n + 1) * nominal)) - 1, n - 1)
+            q_val = float(np.sort(residuals)[q_idx])
+            emp_cov = float(np.mean(residuals <= q_val))
+            nominal_cov.append(nominal)
+            empirical_cov.append(emp_cov)
+            interval_widths.append(2.0 * q_val)
+
+        nominal_cov = np.array(nominal_cov)
+        empirical_cov = np.array(empirical_cov)
+        interval_widths = np.array(interval_widths)
+
+        fig, axes = plt.subplots(1, 2, figsize=(15, 7))
+
+        # — Panel 1: Coverage calibration curve ———————————————————
+        ax = axes[0]
+        ax.plot([0, 1], [0, 1], 'k--', lw=1.5, alpha=0.6, label='Perfect calibration')
+        ax.fill_between([0, 1], [0, 1], [0.05, 1.05], alpha=0.07,
+                        color='green', label='±5% band')
+        ax.fill_between([0, 1], [-0.05, 0.95], [0, 1], alpha=0.07, color='green')
+
+        sc_ = ax.scatter(nominal_cov, empirical_cov, c=interval_widths,
+                         cmap='YlOrRd', s=120, zorder=4,
+                         edgecolors='black', linewidths=0.7)
+        ax.plot(nominal_cov, empirical_cov, color=PALETTE.get('royal_blue', '#4472C4'),
+                lw=2.0, alpha=0.8, zorder=3)
+
+        # Mark the standard 95% point
+        idx_95 = np.argmin(np.abs(nominal_cov - 0.95))
+        ax.scatter([nominal_cov[idx_95]], [empirical_cov[idx_95]],
+                   s=220, color='red', zorder=5, marker='*',
+                   label=f'95% CI → emp. {empirical_cov[idx_95]:.1%}')
+
+        cb = fig.colorbar(sc_, ax=ax, shrink=0.7)
+        cb.set_label('Interval Width (2·q)', fontsize=9)
+
+        ax.set_xlabel('Nominal Coverage (1 − α)', fontsize=11)
+        ax.set_ylabel('Empirical Coverage', fontsize=11)
+        ax.set_title('Conformal Prediction — Coverage Calibration Curve', pad=10)
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1.05)
+        ax.legend(fontsize=9)
+        ax.grid(alpha=0.3)
+
+        # — Panel 2: Interval width vs nominal coverage —————————————
+        ax2 = axes[1]
+        ax2.fill_between(nominal_cov, 0, interval_widths,
+                         alpha=0.25, color=PALETTE.get('royal_blue', '#4472C4'))
+        ax2.plot(nominal_cov, interval_widths,
+                 color=PALETTE.get('royal_blue', '#4472C4'), lw=2.0, marker='o',
+                 ms=7, mec='black', mew=0.7)
+        ax2.axvline(0.95, color='red', ls='--', lw=1.5, label='95% nominal')
+
+        for nc, iw in zip(nominal_cov, interval_widths):
+            ax2.text(nc, iw + 0.002, f'{iw:.3f}', ha='center', fontsize=7,
+                     color='#333333')
+
+        ax2.set_xlabel('Nominal Coverage (1 − α)', fontsize=11)
+        ax2.set_ylabel('Interval Width', fontsize=11)
+        ax2.set_title('Conformal Interval Width vs. Coverage Level', pad=10)
+        ax2.legend(fontsize=9)
+        ax2.grid(alpha=0.3)
+
+        fig.suptitle('Conformal Prediction Diagnostics', fontsize=13, y=1.01)
+        plt.tight_layout()
+        return self._save(fig, save_name)
+
+    # ==================================================================
+    #  FIG 23b – Province Score Comparison: Actual vs Forecast
+    # ==================================================================
+
+    def plot_province_forecast_comparison(
+        self,
+        provinces: List[str],
+        current_scores: np.ndarray,
+        pred_df: pd.DataFrame,
+        intervals: Optional[Dict[str, pd.DataFrame]] = None,
+        top_n: int = 20,
+        prediction_year: int = 2025,
+        save_name: str = 'fig23b_province_forecast_comparison.png',
+    ) -> Optional[str]:
+        """Grouped bar chart: current score vs forecast for top-N provinces.
+
+        Each province gets two bars (current = steel-blue, predicted = teal)
+        with conformal interval error bars on the predicted bar.
+        """
+        if not HAS_MATPLOTLIB:
+            return None
+        current_scores = np.asarray(current_scores, dtype=float)
+        if pred_df is None or pred_df.empty:
+            return None
+
+        # Resolve prediction column
+        pred_col = pred_df.columns[0]
+        pred_scores = pred_df[pred_col].values
+
+        # Align provinces with predictions index
+        prov_to_curr: Dict[str, float] = {p: s for p, s in zip(provinces, current_scores)}
+        prov_to_pred: Dict[str, float] = {}
+        for idx_val, score in zip(pred_df.index, pred_scores):
+            prov_to_pred[str(idx_val)] = float(score)
+
+        common_prov = [p for p in provinces if p in prov_to_pred]
+        if not common_prov:
+            # Fallback: positional alignment
+            n_align = min(len(provinces), len(pred_scores))
+            common_prov = provinces[:n_align]
+            prov_to_pred = {p: float(pred_scores[i])
+                            for i, p in enumerate(common_prov)}
+
+        # Sort by predicted score, take top-N
+        common_prov = sorted(common_prov,
+                             key=lambda p: prov_to_pred.get(p, 0), reverse=True)[:top_n]
+        n_show = len(common_prov)
+
+        curr_vals = np.array([prov_to_curr.get(p, 0.0) for p in common_prov])
+        pred_vals = np.array([prov_to_pred.get(p, 0.0) for p in common_prov])
+
+        # Error bars from prediction intervals
+        pred_lo = pred_hi = None
+        if intervals:
+            lower_df = intervals.get('lower')
+            upper_df = intervals.get('upper')
+            if lower_df is not None and not lower_df.empty:
+                lo_col = lower_df.columns[0] if pred_col not in lower_df.columns else pred_col
+                pred_lo = np.array([
+                    lower_df.loc[p, lo_col] if p in lower_df.index else pred_vals[i]
+                    for i, p in enumerate(common_prov)
+                ], dtype=float)
+            if upper_df is not None and not upper_df.empty:
+                hi_col = upper_df.columns[0] if pred_col not in upper_df.columns else pred_col
+                pred_hi = np.array([
+                    upper_df.loc[p, hi_col] if p in upper_df.index else pred_vals[i]
+                    for i, p in enumerate(common_prov)
+                ], dtype=float)
+
+        x = np.arange(n_show)
+        width = 0.35
+
+        fig, ax = plt.subplots(figsize=(max(13, n_show * 0.75), 8))
+
+        color_curr = PALETTE.get('royal_blue', '#4472C4')
+        color_pred = PALETTE.get('emerald', '#17B169')
+
+        bars_curr = ax.bar(x - width / 2, curr_vals, width, color=color_curr,
+                           alpha=0.75, edgecolor='white', linewidth=0.6,
+                           label='Current Score (2024)', zorder=3)
+        err_low = (pred_vals - pred_lo) if pred_lo is not None else None
+        err_hi = (pred_hi - pred_vals) if pred_hi is not None else None
+        yerr_ = (np.array([err_low, err_hi]) if err_low is not None and err_hi is not None
+                 else None)
+        bars_pred = ax.bar(x + width / 2, pred_vals, width, color=color_pred,
+                           alpha=0.75, edgecolor='white', linewidth=0.6,
+                           label=f'Predicted Score ({prediction_year})',
+                           yerr=yerr_,
+                           error_kw=dict(ecolor='#E74C3C', capsize=4, lw=1.5),
+                           zorder=3)
+
+        # Score change arrows / annotations
+        for i, (cv, pv) in enumerate(zip(curr_vals, pred_vals)):
+            delta = pv - cv
+            sym = '▲' if delta > 0 else '▼'
+            col = '#27AE60' if delta > 0 else '#E74C3C'
+            ax.text(x[i], max(cv, pv) + 0.015, f'{sym}{abs(delta):.3f}',
+                    ha='center', fontsize=7.5, color=col, fontweight='bold')
+
+        ax.set_xticks(x)
+        ax.set_xticklabels([self._truncate(p, 14) for p in common_prov],
+                           rotation=45, ha='right', fontsize=9)
+        ax.set_ylabel('Score')
+        ax.set_title(
+            f'Province Score Comparison — Current (2024) vs. Forecast ({prediction_year})',
+            pad=12)
+        ax.legend(fontsize=10)
+        ax.grid(axis='y', alpha=0.3)
+        plt.tight_layout()
+        return self._save(fig, save_name)
+
+    # ==================================================================
+    #  FIG 23c – Score Trajectory: Historical + Forecast
+    # ==================================================================
+
+    def plot_score_trajectory(
+        self,
+        provinces: List[str],
+        scores: np.ndarray,
+        pred_df: pd.DataFrame,
+        intervals: Optional[Dict[str, pd.DataFrame]] = None,
+        panel_years: Optional[List[int]] = None,
+        target_year: int = 2025,
+        top_n: int = 10,
+        save_name: str = 'fig23c_score_trajectory.png',
+    ) -> Optional[str]:
+        """Province score trajectories across time with forecast CI extension.
+
+        Shows the top-N provinces (by predicted score) as individual lines.
+        The final (forecast) point is shown with a shaded CI fan.  A dashed
+        vertical separator marks the observed/forecast boundary.
+        """
+        if not HAS_MATPLOTLIB:
+            return None
+        if pred_df is None or pred_df.empty:
+            return None
+
+        pred_col = pred_df.columns[0]
+        pred_scores_all = pred_df[pred_col].to_dict()
+
+        # Identify top-N by predicted score
+        all_prov_pred = {str(k): float(v) for k, v in pred_scores_all.items()}
+        avail = [p for p in provinces if p in all_prov_pred]
+        if not avail:
+            avail = provinces
+            avail_pred = {p: float(pred_scores_all.get(p, 0.0)) for p in avail}
+        else:
+            avail_pred = {p: all_prov_pred[p] for p in avail}
+
+        top_prov = sorted(avail_pred.keys(), key=lambda p: avail_pred[p],
+                          reverse=True)[:top_n]
+        if not top_prov:
+            return None
+
+        # Map province to current score (last observed year)
+        prov_to_curr = {p: float(s) for p, s in zip(provinces, scores)}
+
+        # Prediction interval values
+        prov_lo: Dict[str, float] = {}
+        prov_hi: Dict[str, float] = {}
+        if intervals:
+            lower_df = intervals.get('lower')
+            upper_df = intervals.get('upper')
+            if lower_df is not None and not lower_df.empty:
+                lo_col = lower_df.columns[0]
+                for p in top_prov:
+                    if p in lower_df.index:
+                        prov_lo[p] = float(lower_df.loc[p, lo_col])
+            if upper_df is not None and not upper_df.empty:
+                hi_col = upper_df.columns[0]
+                for p in top_prov:
+                    if p in upper_df.index:
+                        prov_hi[p] = float(upper_df.loc[p, hi_col])
+
+        # Build timeline
+        last_year = (max(panel_years) if panel_years else target_year - 1)
+        years_line = [last_year, target_year]
+
+        cmap_t = plt.colormaps['tab10']
+        fig, ax = plt.subplots(figsize=(12, 8))
+
+        # Vertical separator: observed vs forecast
+        ax.axvline(last_year + 0.5, color='gray', lw=1.5, ls='--', alpha=0.6)
+        ax.text(last_year + 0.55, 0.98, 'Forecast →', transform=ax.get_xaxis_transform(),
+                fontsize=9, color='gray', style='italic', va='top')
+        ax.text(last_year + 0.45, 0.98, '← Observed', transform=ax.get_xaxis_transform(),
+                fontsize=9, color='gray', style='italic', va='top', ha='right')
+
+        for ri, prov in enumerate(top_prov):
+            color = cmap_t(ri / max(top_n, 1))
+            curr_s = prov_to_curr.get(prov, 0.0)
+            pred_s = avail_pred.get(prov, curr_s)
+
+            # Line from last observed to forecast
+            ax.plot(years_line, [curr_s, pred_s],
+                    color=color, lw=2.2, alpha=0.85,
+                    marker='o', ms=7, mec='white', mew=1.2, zorder=3)
+
+            # Forecast CI fan
+            lo_s = prov_lo.get(prov, pred_s)
+            hi_s = prov_hi.get(prov, pred_s)
+            ax.fill_between([last_year, target_year],
+                            [curr_s, lo_s], [curr_s, hi_s],
+                            alpha=0.12, color=color, zorder=1)
+
+            # End labels
+            ax.text(target_year + 0.1, pred_s, self._truncate(prov, 14),
+                    va='center', fontsize=8, color=color)
+
+        ax.set_xticks(years_line)
+        ax.set_xticklabels([str(y) for y in years_line], fontsize=11)
+        ax.set_ylabel('Score', fontsize=11)
+        ax.set_title(
+            f'Score Trajectory — Top {top_n} Provinces by Forecast ({target_year})',
+            pad=12)
+
+        # Legend
+        from matplotlib.lines import Line2D
+        handles = [Line2D([0], [0], color=cmap_t(i / max(top_n, 1)),
+                          lw=2, label=self._truncate(p, 16))
+                   for i, p in enumerate(top_prov)]
+        ax.legend(handles=handles, fontsize=8, loc='lower right',
+                  ncol=2, framealpha=0.85)
+        plt.tight_layout()
+        return self._save(fig, save_name)
+
+
 __all__ = ['ForecastPlotter']

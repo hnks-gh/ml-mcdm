@@ -30,36 +30,47 @@ class WeightResult:
         return pd.Series(self.weights)
 
 
-def calculate_weights(data: pd.DataFrame, method: str = "robust_global") -> WeightResult:
+def calculate_weights(data: pd.DataFrame, method: str = "entropy") -> WeightResult:
     """
-    Convenience function to calculate weights.
-    
+    Convenience function to calculate weights using a single base method.
+
+    For the full two-level MC ensemble used by the main pipeline, use
+    ``HybridWeightingCalculator`` directly.
+
     Parameters
     ----------
     data : pd.DataFrame
-        Decision matrix (alternatives × criteria)
+        Decision matrix (alternatives × criteria).
     method : str
-        Weight calculation method: 'entropy', 'critic', 'merec', 'std_dev',
-        'robust_global', or 'equal'
-    
+        Weight calculation method.  Supported values:
+
+        ``'entropy'``
+            Shannon entropy weighting — assigns higher weight to criteria
+            with greater discriminating power across alternatives.
+        ``'critic'``
+            CRITIC weighting — rewards high variance *and* low correlation
+            with other criteria (Diakoulaki et al., 1995).
+        ``'equal'``
+            Uniform weights, each equal to 1/p.
+
     Returns
     -------
     WeightResult
-        Calculated weights with metadata
+        Calculated weights with metadata.
+
+    Raises
+    ------
+    ValueError
+        If *method* is ``'hybrid'`` / ``'ensemble'`` (requires the full
+        ``HybridWeightingCalculator`` pipeline), or an unknown string.
     """
     from .entropy import EntropyWeightCalculator
     from .critic import CRITICWeightCalculator
-    from .merec import MERECWeightCalculator
-    from .standard_deviation import StandardDeviationWeightCalculator
-    
+
     if method == "entropy":
         return EntropyWeightCalculator().calculate(data)
     elif method == "critic":
         return CRITICWeightCalculator().calculate(data)
-    elif method == "merec":
-        return MERECWeightCalculator().calculate(data)
-    elif method == "std_dev":
-        return StandardDeviationWeightCalculator().calculate(data)
     elif method in ("robust_global", "ensemble", "hybrid"):
         raise ValueError(
             f"Method '{method}' requires panel data and criteria_groups. "
@@ -71,7 +82,10 @@ def calculate_weights(data: pd.DataFrame, method: str = "robust_global") -> Weig
         return WeightResult(
             weights={c: w for c in cols},
             method="equal",
-            details={}
+            details={},
         )
     else:
-        raise ValueError(f"Unknown method: {method}")
+        raise ValueError(
+            f"Unknown method: '{method}'.  "
+            "Supported: 'entropy', 'critic', 'equal'."
+        )

@@ -5,8 +5,6 @@ Unit tests for weighting methods.
 Covers:
   - EntropyWeightCalculator
   - CRITICWeightCalculator
-  - MERECWeightCalculator
-  - StandardDeviationWeightCalculator
   - calculate_weights convenience function
   - WeightResult properties
   - HybridWeightingCalculator (two-level MC ensemble)
@@ -19,8 +17,6 @@ import pytest
 from weighting.base import WeightResult, calculate_weights
 from weighting.entropy import EntropyWeightCalculator
 from weighting.critic import CRITICWeightCalculator
-from weighting.merec import MERECWeightCalculator
-from weighting.standard_deviation import StandardDeviationWeightCalculator
 
 
 # ---------------------------------------------------------------------------
@@ -172,92 +168,11 @@ class TestCRITICWeightCalculator:
 
 
 # ---------------------------------------------------------------------------
-# TestMERECWeightCalculator
-# ---------------------------------------------------------------------------
-
-class TestMERECWeightCalculator:
-    def test_weights_sum_to_one(self, sample_data):
-        result = MERECWeightCalculator().calculate(sample_data)
-        assert abs(result.as_array.sum() - 1.0) < 1e-9
-
-    def test_weights_all_non_negative(self, sample_data):
-        result = MERECWeightCalculator().calculate(sample_data)
-        assert (result.as_array >= 0).all()
-
-    def test_method_name(self, sample_data):
-        result = MERECWeightCalculator().calculate(sample_data)
-        assert "merec" in result.method.lower()
-
-    def test_larger_matrix(self, large_data):
-        result = MERECWeightCalculator().calculate(large_data)
-        assert abs(result.as_array.sum() - 1.0) < 1e-9
-        assert len(result.weights) == 4
-
-    def test_constant_column_zero_weight(self):
-        """MEREC weights must sum to 1 even when one column is constant."""
-        data = pd.DataFrame(
-            {
-                "C1": [0.8, 0.6, 0.9, 0.4],
-                "C2": [0.5, 0.5, 0.5, 0.5],  # constant
-                "C3": [0.2, 0.8, 0.5, 0.9],
-            }
-        )
-        result = MERECWeightCalculator().calculate(data)
-        assert abs(result.as_array.sum() - 1.0) < 1e-9
-        assert all(w >= 0 for w in result.weights.values())
-
-
-# ---------------------------------------------------------------------------
-# TestStandardDeviationWeightCalculator
-# ---------------------------------------------------------------------------
-
-class TestStandardDeviationWeightCalculator:
-    def test_weights_sum_to_one(self, sample_data):
-        result = StandardDeviationWeightCalculator().calculate(sample_data)
-        assert abs(result.as_array.sum() - 1.0) < 1e-9
-
-    def test_weights_all_non_negative(self, sample_data):
-        result = StandardDeviationWeightCalculator().calculate(sample_data)
-        assert (result.as_array >= 0).all()
-
-    def test_zero_variance_column_zero_weight(self):
-        """A constant column should receive weight = 0."""
-        data = pd.DataFrame(
-            {
-                "C1": [0.8, 0.6, 0.9, 0.4],
-                "C2": [0.5, 0.5, 0.5, 0.5],  # zero variance
-                "C3": [0.2, 0.8, 0.5, 0.9],
-            }
-        )
-        result = StandardDeviationWeightCalculator().calculate(data)
-        assert abs(result.weights["C2"]) < 1e-9
-
-    def test_method_name(self, sample_data):
-        result = StandardDeviationWeightCalculator().calculate(sample_data)
-        assert result.method is not None
-
-    def test_higher_variance_higher_weight(self):
-        """Column with higher standard deviation should get higher weight."""
-        data = pd.DataFrame(
-            {
-                "Low":  [0.5, 0.6, 0.5, 0.6],  # small variance
-                "High": [0.1, 0.9, 0.2, 0.8],  # large variance
-            }
-        )
-        result = StandardDeviationWeightCalculator().calculate(data)
-        assert result.weights["High"] > result.weights["Low"]
-
-    def test_larger_matrix(self, large_data):
-        result = StandardDeviationWeightCalculator().calculate(large_data)
-        assert abs(result.as_array.sum() - 1.0) < 1e-9
-
-
-# ---------------------------------------------------------------------------
 # TestCalculateWeights (convenience function)
 # ---------------------------------------------------------------------------
 
 class TestCalculateWeights:
-    @pytest.mark.parametrize("method", ["entropy", "critic", "merec", "std_dev"])
+    @pytest.mark.parametrize("method", ["entropy", "critic"])
     def test_known_methods_return_valid_result(self, sample_data, method):
         result = calculate_weights(sample_data, method)
         assert isinstance(result, WeightResult)
@@ -398,16 +313,14 @@ class TestHybridWeightingCalculator:
             v_k   = crit[crit_id]
             for sc in sc_list:
                 expected = local[sc] * v_k
-                # After re-normalisation the product is proportional but the
-                # total should sum to 1; allow for global re-scale tolerance
-                ratio = gw[sc] / expected if expected > 1e-12 else 1.0
-                # ratio should be the same constant for all SCs (1/total)
-                assert abs(ratio - (sum(local[s]*v_k for cid2, scs2 in cg.items()
-                                       for s in scs2
-                                       for l2 in [result.details["level1"][cid2]["local_sc_weights"]]
-                                       if s == sc
-                                       for vc2 in [crit[cid2]]) ** 0) - 0) < 1  # trivial: just check positivity
+                assert expected > 0, f"local*criterion for {sc} is non-positive"
                 assert gw[sc] > 0, f"global SC weight for {sc} is non-positive"
+                # global weight should match local × criterion within
+                # tolerance (MC sampling induces small deviations)
+                assert abs(gw[sc] - expected) < 0.05, (
+                    f"global_w[{sc}]={gw[sc]:.6f} != "
+                    f"local_w[{sc}]*crit_w[{crit_id}]={expected:.6f}"
+                )
 
     # ── Reproducibility ───────────────────────────────────────────────────
 

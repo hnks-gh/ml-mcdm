@@ -71,6 +71,27 @@ The 29 sub-criteria are organized under 8 main criteria (not present in dataset)
 
 ---
 
+## Criterion Direction (Benefit / Cost)
+
+All 29 sub-criteria in this dataset are **benefit-type** criteria, meaning:
+
+- **Higher values = better governance performance.**
+- There are **no cost-type criteria** (where lower would be preferred).
+
+This is an inherent property of the PCI/PAPI governance index design: every sub-criterion is scored so that a higher value indicates stronger participation, greater transparency, better service delivery, etc.
+
+### Implications for MCDM analysis
+
+| Property | Value |
+|---|---|
+| Benefit criteria | SC11–SC14, SC21–SC24, SC31–SC33, SC41–SC44, SC51–SC54, SC61–SC64, SC71–SC73, SC81–SC83 |
+| Cost criteria | *(none)* |
+| `cost_criteria` parameter | Should be left empty (`[]`) for this dataset |
+
+When using the ranking pipeline, `cost_criteria` defaults to an empty list, which is correct for this data. If a future dataset version introduces a cost-type indicator (e.g., corruption incidence where lower is better), it must be explicitly listed in the `cost_criteria` configuration parameter so that normalization and MCDM methods handle the direction correctly.
+
+---
+
 ## File List
 
 The dataset consists of 14 separate CSV files located in the `data/` directory:

@@ -94,7 +94,7 @@ class EDASCalculator:
     Examples
     --------
     >>> import pandas as pd
-    >>> from mcdm.traditional import EDASCalculator
+    >>> from ranking import EDASCalculator
     >>> 
     >>> data = pd.DataFrame({
     ...     'Quality': [0.8, 0.6, 0.9, 0.7],

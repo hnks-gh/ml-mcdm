@@ -30,7 +30,7 @@ try:
     from .loggers import setup_logging
     from .loggers.context import PhaseMetrics
     from .data_loader import DataLoader, PanelData
-    from .mcdm.traditional import TOPSISCalculator
+    from .ranking import TOPSISCalculator
     from .ranking import HierarchicalRankingPipeline, HierarchicalRankingResult
     from .analysis import SensitivityAnalysis
     from .visualization import VisualizationOrchestrator
@@ -40,7 +40,7 @@ except ImportError:
     from loggers import setup_logging
     from loggers.context import PhaseMetrics
     from data_loader import DataLoader, PanelData
-    from mcdm.traditional import TOPSISCalculator
+    from ranking import TOPSISCalculator
     from ranking import HierarchicalRankingPipeline, HierarchicalRankingResult
     from analysis import SensitivityAnalysis
     from visualization import VisualizationOrchestrator
@@ -75,6 +75,10 @@ class PipelineResult:
     # Hierarchical Ranking (Traditional MCDM + ER)
     ranking_result: HierarchicalRankingResult
 
+    # Multi-year rankings — {year: HierarchicalRankingResult} for all panel years.
+    # Present when config.ranking.run_all_years is True.
+    multi_year_results: Dict[int, Any] = None  # type: ignore[assignment]
+
     # ML Forecasting (UnifiedForecaster)
     forecast_result: Optional[Any] = None
 
@@ -87,6 +91,10 @@ class PipelineResult:
     # Meta
     execution_time: float = 0.0
     config: Optional[Config] = None
+
+    def __post_init__(self):
+        if self.multi_year_results is None:
+            self.multi_year_results = {}
 
     # ---- convenience accessors ----
 
@@ -138,6 +146,7 @@ class MLMCDMPipeline:
         self.visualizer = VisualizationOrchestrator(
             output_dir=str(Path(self.config.output_dir) / 'figures'),
             dpi=self.config.visualization.dpi,
+            ranking_top_n=self.config.visualization.ranking_top_n,
         )
 
     # -----------------------------------------------------------------
@@ -177,8 +186,23 @@ class MLMCDMPipeline:
                 weights = self._calculate_weights(panel_data)
 
             # Phase 3: Hierarchical Ranking (6 MCDM methods + ER)
+            multi_year_results: Dict[int, Any] = {}
             with self.console.phase('Hierarchical Ranking (Traditional MCDM + ER)') as ph:
                 ranking_result = self._run_hierarchical_ranking(panel_data, weights)
+                # Multi-year: run all panel years for temporal visualisations
+                if getattr(getattr(self.config, 'ranking', None), 'run_all_years', True):
+                    try:
+                        multi_year_results = self._run_hierarchical_ranking_all_years(
+                            panel_data, weights
+                        )
+                        ph.detail(
+                            f'Multi-year: {len(multi_year_results)}/{len(panel_data.years)} '
+                            f'years ranked in parallel'
+                        )
+                    except Exception as _myr_exc:
+                        self.logger.warning(
+                            f'Multi-year ranking failed (non-fatal): {_myr_exc}'
+                        )
 
             # Phase 4: ML Forecasting (6 models + Super Learner + Conformal)
             forecast_result = None
@@ -215,6 +239,7 @@ class MLMCDMPipeline:
                         ranking_result=ranking_result,
                         analysis_results=analysis_results,
                         forecast_result=forecast_result,
+                        multi_year_results=multi_year_results,
                     )
                     ph.metric('Figures', fig_count)
                 except Exception as e:
@@ -233,6 +258,7 @@ class MLMCDMPipeline:
                         execution_time=execution_time,
                         figure_paths=figure_paths,
                         config=self.config,
+                        multi_year_results=multi_year_results,
                     )
                 except Exception as e:
                     ph.warning(f'Result saving failed: {e}')
@@ -265,6 +291,7 @@ class MLMCDMPipeline:
                 criterion_weights_dict  = weights['criterion_weights'],
                 weight_details          = weights.get('details', {}),
                 ranking_result          = ranking_result,
+                multi_year_results      = multi_year_results,
                 forecast_result         = forecast_result,
                 sensitivity_result      = analysis_results.get('sensitivity'),
                 mc_ensemble_diagnostics = (
@@ -395,17 +422,31 @@ class MLMCDMPipeline:
         )
 
         # ── Extract weights ───────────────────────────────────────────────
-        global_sc_weights = result.details['global_sc_weights']
-        criterion_weights = result.details['level2']['criterion_weights']
+        global_sc_weights     = result.details['global_sc_weights']
+        entropy_sc_weights    = result.details.get('entropy_sc_weights', {})
+        critic_sc_weights     = result.details.get('critic_sc_weights', {})
+        criterion_weights     = result.details['level2']['criterion_weights']
+        entropy_criterion_w   = result.details.get('entropy_criterion_weights', {})
+        critic_criterion_w    = result.details.get('critic_criterion_weights', {})
         sc_arr = np.array([global_sc_weights.get(sc, 0.0) for sc in subcriteria])
 
         self.logger.info(
             "  Global SC weights: [%.4f, %.4f]", sc_arr.min(), sc_arr.max()
         )
         self.logger.info(
-            "  Criterion weights: %s",
+            "  Criterion weights (hybrid): %s",
             ', '.join(f"{k}={v:.3f}" for k, v in sorted(criterion_weights.items())),
         )
+        if entropy_criterion_w:
+            self.logger.info(
+                "  Criterion weights (entropy): %s",
+                ', '.join(f"{k}={v:.3f}" for k, v in sorted(entropy_criterion_w.items())),
+            )
+        if critic_criterion_w:
+            self.logger.info(
+                "  Criterion weights (critic): %s",
+                ', '.join(f"{k}={v:.3f}" for k, v in sorted(critic_criterion_w.items())),
+            )
         l2_diag = result.details.get('level2', {}).get('mc_diagnostics', {})
         if l2_diag:
             self.logger.info(
@@ -420,12 +461,28 @@ class MLMCDMPipeline:
                 stab.get('cosine_similarity', 0), stab.get('is_stable'),
             )
 
+        # ── Extract MC province stats from Level 2 ────────────────────────
+        mc_province_stats: Dict[str, Any] = {}
+        if getattr(self.config.ranking, 'expose_mc_province_stats', True):
+            _l2mc = result.details.get('level2', {}).get('mc_diagnostics', {})
+            for _field in ('province_mean_rank', 'province_std_rank',
+                           'province_prob_top1', 'province_prob_topK',
+                           'rank_win_matrix'):
+                if _field in _l2mc and _l2mc[_field] is not None:
+                    mc_province_stats[_field] = _l2mc[_field]
+
         return {
-            'global_sc_weights': global_sc_weights,
-            'criterion_weights': criterion_weights,
-            'sc_array':          sc_arr,
-            'subcriteria':       subcriteria,
-            'details':           result.details,
+            'global_sc_weights':         global_sc_weights,
+            'entropy_sc_weights':        entropy_sc_weights,
+            'critic_sc_weights':         critic_sc_weights,
+            'criterion_weights':         criterion_weights,
+            'entropy_criterion_weights': entropy_criterion_w,
+            'critic_criterion_weights':  critic_criterion_w,
+            'mc_province_stats':         mc_province_stats,
+            'sc_array':                  sc_arr,
+            'subcriteria':               subcriteria,
+            'criteria_groups':           active_groups,
+            'details':                   result.details,
         }
 
     # -----------------------------------------------------------------
@@ -446,6 +503,90 @@ class MLMCDMPipeline:
             subcriteria_weights = weights['global_sc_weights'],
             criterion_weights   = weights['criterion_weights'],
         )
+
+    def _run_hierarchical_ranking_all_years(
+        self,
+        panel_data: PanelData,
+        weights: Dict[str, Any],
+    ) -> Dict[int, HierarchicalRankingResult]:
+        """
+        Run hierarchical ranking for every year in *panel_data.years* using
+        thread-level parallelism.
+
+        Each year-ranking is independent (its own ``YearContext`` governs which
+        provinces and sub-criteria are active), so they can run concurrently.
+        ``ThreadPoolExecutor`` is used rather than ``ProcessPoolExecutor`` to
+        avoid pickling issues with complex dataclass objects;  numpy operations
+        release the GIL so meaningful parallelism is achieved for the
+        matrix-heavy MCDM and ER stages.
+
+        Returns
+        -------
+        Dict[int, HierarchicalRankingResult]
+            Keyed by year.  Missing years (errors) are silently omitted and
+            logged as warnings.
+        """
+        import concurrent.futures as _cf
+        import os as _os
+
+        years = sorted(panel_data.years)
+        sc_weights   = weights['global_sc_weights']
+        crit_weights = weights['criterion_weights']
+        n_grades     = self.config.er.n_grades
+        scheme       = self.config.er.method_weight_scheme
+
+        # Resolve max_parallel_years: config → cpu_count → len(years)
+        _cfg_max = getattr(getattr(self.config, 'ranking', None),
+                           'max_parallel_years', None)
+        max_workers = min(
+            len(years),
+            _cfg_max if _cfg_max is not None else (_os.cpu_count() or 4),
+        )
+
+        self.logger.info(
+            "Multi-year ranking: %d years (%d–%d), max_workers=%d",
+            len(years), years[0], years[-1], max_workers,
+        )
+
+        def _rank_year(year: int):
+            """Worker: create a fresh pipeline instance and rank one year."""
+            try:
+                _pl = HierarchicalRankingPipeline(
+                    n_grades=n_grades,
+                    method_weight_scheme=scheme,
+                )
+                result = _pl.rank(
+                    panel_data          = panel_data,
+                    subcriteria_weights = sc_weights,
+                    criterion_weights   = crit_weights,
+                    target_year         = year,
+                )
+                return year, result, None
+            except Exception as _exc:
+                return year, None, str(_exc)
+
+        all_results: Dict[int, HierarchicalRankingResult] = {}
+
+        with _cf.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_map = {executor.submit(_rank_year, yr): yr for yr in years}
+            for fut in _cf.as_completed(future_map):
+                yr, res, err = fut.result()
+                if err:
+                    self.logger.warning(
+                        "Multi-year ranking: year %d failed — %s", yr, err
+                    )
+                else:
+                    all_results[yr] = res
+                    self.logger.debug(
+                        "  ✓ year %d: %d provinces ranked", yr,
+                        len(res.final_ranking),
+                    )
+
+        self.logger.info(
+            "Multi-year ranking complete: %d/%d years succeeded",
+            len(all_results), len(years),
+        )
+        return all_results
 
     # -----------------------------------------------------------------
     # Phase 4: ML Forecasting (State-of-the-Art Ensemble)

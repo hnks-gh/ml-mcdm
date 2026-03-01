@@ -27,7 +27,7 @@ def bayesian_bootstrap_weights(
     
     Uses continuous Dirichlet observation weights (Rubin, 1981) passed
     directly to the weight calculators, avoiding lossy discrete resampling.
-    Each underlying method (Entropy, CRITIC, MEREC, SD) accepts the
+    Each underlying method (Entropy, CRITIC) accepts the
     observation weight vector and computes weighted statistics internally.
     
     Parameters
@@ -68,9 +68,8 @@ def bayesian_bootstrap_weights(
        - Sample g_i ~ Exponential(1) for i = 1, ..., N
        - Compute w_i = g_i / Σ_k g_k
     2. Pass continuous weights to each weight calculator which computes
-       weighted proportions / weighted covariance / weighted removal
-       effects internally.
-    3. Fuse the four weight vectors via GTWC.
+       weighted proportions / weighted covariance internally.
+    3. Fuse the two weight vectors via hybrid MC ensemble.
     4. Store the fused weight vector.
     
     **Why continuous weights instead of discrete resampling?**
@@ -78,7 +77,7 @@ def bayesian_bootstrap_weights(
     - Discrete ``rng.choice()`` collapses the continuous weight vector
       into a multinomial count vector, discarding weight precision and
       potentially duplicating / dropping observations.
-    - All four weight methods (Entropy, CRITIC, MEREC, SD) now accept
+    - All two weight methods (Entropy, CRITIC) now accept
       ``sample_weights`` for exact weighted computation.
     
     **Why B=999?**
@@ -125,6 +124,10 @@ def bayesian_bootstrap_weights(
     )
 
     b_done = 0  # number of successfully stored iterations
+    # Accumulate only successful iterations to avoid contaminating
+    # posterior statistics with fallback values (audit fix C3).
+    successful_weights: list = []
+
     for b in range(B):
         try:
             # Step 1: Draw Dirichlet(1,...,1) weights via exponential trick
@@ -141,33 +144,30 @@ def bayesian_bootstrap_weights(
                 raise ValueError("NaN or Inf in bootstrap weights")
 
             W_boot = W_boot / (W_boot.sum() + epsilon)
-            all_weights[b, :] = W_boot
+            successful_weights.append(W_boot)
             b_done += 1
 
         except Exception as e:
-            # Fallback: use previous iteration or uniform weights
             failed_iterations += 1
-            if b > 0:
-                all_weights[b, :] = all_weights[b - 1, :]
-            else:
-                all_weights[b, :] = 1.0 / p
-
             if failed_iterations <= 5:  # Only log first few failures
                 logger.warning(f"Bootstrap iteration {b} failed: {e}")
 
         # ── Progress logging ──
-        if b in log_checkpoints or b == B - 1:
+        if b_done > 0 and (b in log_checkpoints or b == B - 1):
             pct = 100 * (b + 1) / B
-            running_mean = all_weights[: b + 1].mean(axis=0)
-            running_std  = all_weights[: b + 1].std(axis=0, ddof=min(1, b))
+            _sw = np.vstack(successful_weights)
+            running_mean = _sw.mean(axis=0)
+            running_std  = _sw.std(axis=0, ddof=min(1, b_done - 1))
             logger.info(
                 f"  Bootstrap {b + 1:>4d}/{B} ({pct:5.1f}%) — "
-                f"mean weight std: {running_std.mean():.6f}"
+                f"mean weight std: {running_std.mean():.6f}  "
+                f"[{b_done} successful]"
             )
 
         # ── Convergence early-stopping ──
-        if converged_at is None and b_done >= conv_min_iters and b_done % conv_check_every == 0:
-            current_mean = all_weights[:b + 1].mean(axis=0)
+        if (converged_at is None and b_done >= conv_min_iters
+                and b_done % conv_check_every == 0 and b_done > 0):
+            current_mean = np.vstack(successful_weights).mean(axis=0)
             if _prev_mean is not None:
                 delta = np.abs(current_mean - _prev_mean).max()
                 if delta < conv_tol:
@@ -177,9 +177,6 @@ def bayesian_bootstrap_weights(
                         f"(L∞ Δmean = {delta:.2e} < tol={conv_tol:.2e}). "
                         f"Stopping early."
                     )
-                    # Trim storage to the iterations actually run
-                    all_weights = all_weights[: b + 1]
-                    B = b + 1  # update effective count for statistics
                     break
             _prev_mean = current_mean
 
@@ -189,11 +186,19 @@ def bayesian_bootstrap_weights(
             f"({100 * failed_iterations / B:.1f}%)"
         )
 
-    # ── Posterior statistics ──
+    # ── Posterior statistics (only from successful iterations) ──
+    if b_done == 0:
+        logger.error("Bootstrap: all iterations failed — returning uniform weights")
+        all_weights = np.full((1, p), 1.0 / p)
+    else:
+        all_weights = np.vstack(successful_weights)
+
+    B_eff = all_weights.shape[0]  # effective iteration count
+
     mean_weights = all_weights.mean(axis=0)
     mean_weights = mean_weights / (mean_weights.sum() + epsilon)  # Renormalize
 
-    std_weights = all_weights.std(axis=0, ddof=min(1, B - 1))
+    std_weights = all_weights.std(axis=0, ddof=min(1, B_eff - 1))
 
     ci_lower = np.percentile(all_weights, 2.5, axis=0)
     ci_upper = np.percentile(all_weights, 97.5, axis=0)
@@ -213,7 +218,7 @@ def bayesian_bootstrap_weights(
         'all_weights': all_weights,
         'convergence_rate': convergence_rate,
         'converged_at': converged_at,
-        'effective_iterations': B,
+        'effective_iterations': B_eff,
     }
 
 

@@ -71,7 +71,10 @@ class ForecastEvaluator:
         "rmse": lambda y, p: np.sqrt(mean_squared_error(y, p)),
         "mae": lambda y, p: mean_absolute_error(y, p),
         "medae": lambda y, p: median_absolute_error(y, p),
-        "mape": lambda y, p: np.mean(np.abs((y - p) / (np.abs(y) + 1e-10))) * 100,
+        "mape": lambda y, p: (
+            np.mean(np.abs((y - p) / np.abs(y))[np.abs(y) > 1e-2]) * 100
+            if np.any(np.abs(y) > 1e-2) else np.nan
+        ),
         "max_error": lambda y, p: np.max(np.abs(y - p)),
         "bias": lambda y, p: np.mean(p - y),
     }
@@ -135,7 +138,17 @@ class ForecastEvaluator:
     def _cross_validate(
         self, model, X: np.ndarray, y: np.ndarray
     ) -> Dict[str, Any]:
-        """Run time-series cross-validation."""
+        """Run time-series cross-validation.
+
+        .. warning::
+
+           When *X* / *y* are stacked from multiple entities (panel data),
+           ``TimeSeriesSplit`` operates on row order only and may include
+           future observations from entity A in the training fold while
+           predicting past observations for entity B.  For strict
+           temporal validity the caller should pre-sort by time and
+           ideally use a panel-aware splitter (e.g. group-based).
+        """
         if y.ndim == 1:
             y = y.reshape(-1, 1)
 
@@ -281,6 +294,10 @@ class ForecastEvaluator:
         diagnostics["mean_is_zero"] = abs(np.mean(residuals)) < 2 * np.std(residuals) / np.sqrt(len(residuals))
 
         # 2. Durbin-Watson statistic (autocorrelation)
+        # NOTE: When residuals are pooled across entities the DW statistic
+        # is only meaningful if the data is sorted by entity *then* time
+        # so that consecutive rows belong to the same entity.  With cross-
+        # entity interleaving the result is uninterpretable.
         if len(residuals) > 2:
             diff = np.diff(residuals)
             dw = np.sum(diff ** 2) / (np.sum(residuals ** 2) + 1e-10)

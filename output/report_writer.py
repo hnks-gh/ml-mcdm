@@ -22,11 +22,18 @@ import logging
 _logger = logging.getLogger(__name__)
 
 
+def _esc_md(text: str) -> str:
+    """Escape pipe characters in *text* so Markdown tables render correctly."""
+    return str(text).replace('|', '\\|')
+
+
 class ReportWriter:
     """Build and save a publication-quality Markdown report."""
 
     def __init__(self, base_output_dir: str = 'result'):
-        self.reports_dir = Path(base_output_dir) / 'reports'
+        from . import _sanitize_output_dir
+        base = _sanitize_output_dir(base_output_dir)
+        self.reports_dir = base / 'reports'
         self.reports_dir.mkdir(parents=True, exist_ok=True)
         self._path = self.reports_dir / 'report.md'
 
@@ -139,7 +146,7 @@ class ReportWriter:
         L.append('| ---: | :--- | ---: |')
         for i in range(min(5, n_prov)):
             idx = order[i]
-            L.append(f'| {i+1} | {_active_provs[idx]} | {scores_arr[idx]:.4f} |')
+            L.append(f'| {i+1} | {_esc_md(_active_provs[idx])} | {scores_arr[idx]:.4f} |')
         L.append('')
 
         # Bottom 5
@@ -149,7 +156,7 @@ class ReportWriter:
         L.append('| ---: | :--- | ---: |')
         for i in range(min(5, n_prov)):
             idx = order[-(i + 1)]
-            L.append(f'| {n_prov - i} | {_active_provs[idx]} | {scores_arr[idx]:.4f} |')
+            L.append(f'| {n_prov - i} | {_esc_md(_active_provs[idx])} | {scores_arr[idx]:.4f} |')
         L.append('')
 
         L.append(f"- **Kendall's $W$ (concordance):** {ranking_result.kendall_w:.4f}")
@@ -309,7 +316,7 @@ class ReportWriter:
             z = (s - mean_s) / std_s
             pct = (n_prov - r + 1) / n_prov * 100
             q = 'Q1' if pct >= 75 else ('Q2' if pct >= 50 else ('Q3' if pct >= 25 else 'Q4'))
-            L.append(f'| {r} | {_active_provs[idx]} | {s:.4f} | {z:+.3f} | {q} |')
+            L.append(f'| {r} | {_esc_md(_active_provs[idx])} | {s:.4f} | {z:+.3f} | {q} |')
         L.append('')
 
         # Score distribution
@@ -415,7 +422,7 @@ class ReportWriter:
             L.append('| Province | Count | Frequency |')
             L.append('| :--- | ---: | ---: |')
             for idx, count in all_top5.most_common(10):
-                L.append(f'| {_active_provs[idx]} | {count} | {count/total:.1%} |')
+                L.append(f'| {_esc_md(_active_provs[idx])} | {count} | {count/total:.1%} |')
             L.append('')
         except Exception as _exc:
             _logger.debug('section skipped: %s', _exc)
@@ -645,12 +652,8 @@ class ReportWriter:
              'probability-distribution diversity across alternatives.'),
             ('**CRITIC**', 'Diakoulaki, Mavrotas & Papayannakis (1995). Weights based on '
              'contrast intensity and conflicting inter-criteria correlation.'),
-            ('**MEREC**', 'Keshavarz-Ghorabaee et al. (2021). Method based on the Effect '
-             'of Removal of a Criterion via logarithmic removal ratios.'),
-            ('**Standard Deviation**', 'Dispersion-based weighting assigning higher weight '
-             'to criteria exhibiting greater variability.'),
-            ('**Fusion**', 'Reliability-weighted Bayesian bootstrap combination accounting '
-             'for inter-method agreement at the subcriteria level.'),
+            ('**Hybrid MC Ensemble**', 'Reliability-weighted Bayesian bootstrap combination '
+             'accounting for inter-method agreement at the subcriteria level.'),
         ]
         for name, desc in notes:
             L.append(f'- {name} — {desc}')

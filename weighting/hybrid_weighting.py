@@ -78,6 +78,9 @@ class HybridWeightingCalculator:
 
     def __init__(self, config: Any) -> None:
         self.config = config
+        # NOTE: _rng is instance-level mutable state.  Do NOT share a
+        # single HybridWeightingCalculator across threads — each thread
+        # should create its own instance (or the caller must serialise).
         self._rng   = np.random.RandomState(config.seed)
         self._entropy_calc = EntropyWeightCalculator(epsilon=config.epsilon)
         self._critic_calc  = CRITICWeightCalculator(epsilon=config.epsilon)
@@ -172,7 +175,8 @@ class HybridWeightingCalculator:
             c_base = self._critic_calc.calculate(df_all)
             W_E_base = np.array([e_base.weights.get(sc, eps) for sc in all_sc_cols])
             W_C_base = np.array([c_base.weights.get(sc, eps) for sc in all_sc_cols])
-        except Exception:
+        except Exception as _exc:
+            logger.warning('Baseline Entropy/CRITIC failed, falling back to uniform: %s', _exc)
             n_sc = len(all_sc_cols)
             W_E_base = W_C_base = np.ones(n_sc) / n_sc
 
@@ -213,6 +217,40 @@ class HybridWeightingCalculator:
                 province_labels=None,
             )
             local_weights[crit_id] = result_k.mean_weights
+
+            # ── Baseline entropy-only and critic-only weights for this group ──
+            # These are single-run (no MC perturbation), used by downstream
+            # visualization (radar charts) and CSV exports.
+            try:
+                X_k_norm = global_min_max_normalize(X_k, epsilon=eps)
+                # Guard NaN after normalisation
+                if np.isnan(X_k_norm).any():
+                    _cm = np.nanmean(X_k_norm, axis=0)
+                    _cm = np.where(np.isnan(_cm), eps, _cm)
+                    _nr, _nc = np.where(np.isnan(X_k_norm))
+                    X_k_norm[_nr, _nc] = _cm[_nc]
+                df_k_base = pd.DataFrame(X_k_norm, columns=sc_cols_k)
+                _e_k = self._entropy_calc.calculate(df_k_base)
+                _c_k = self._critic_calc.calculate(df_k_base)
+                _entropy_local_w_k: Dict[str, float] = {
+                    sc: float(_e_k.weights.get(sc, eps)) for sc in sc_cols_k
+                }
+                _critic_local_w_k: Dict[str, float] = {
+                    sc: float(_c_k.weights.get(sc, eps)) for sc in sc_cols_k
+                }
+                # Normalise to sum-to-1 within group
+                _e_tot = sum(_entropy_local_w_k.values())
+                _c_tot = sum(_critic_local_w_k.values())
+                if _e_tot > 0:
+                    _entropy_local_w_k = {sc: w / _e_tot for sc, w in _entropy_local_w_k.items()}
+                if _c_tot > 0:
+                    _critic_local_w_k  = {sc: w / _c_tot for sc, w in _critic_local_w_k.items()}
+            except Exception as _exc:
+                logger.debug("Entropy/CRITIC baseline failed for %s: %s", crit_id, _exc)
+                _n_k = len(sc_cols_k)
+                _entropy_local_w_k = {sc: 1.0 / _n_k for sc in sc_cols_k}
+                _critic_local_w_k  = {sc: 1.0 / _n_k for sc in sc_cols_k}
+
             diag_k = {
                 "n_simulations_completed": result_k.n_completed,
                 "converged_at":            result_k.converged_at,
@@ -229,8 +267,10 @@ class HybridWeightingCalculator:
             if result_k.quality_flag != "ok":
                 diag_k["quality_flag"] = result_k.quality_flag
             level1_diagnostics[crit_id] = {
-                "local_sc_weights": result_k.mean_weights,
-                "mc_diagnostics":   diag_k,
+                "local_sc_weights":     result_k.mean_weights,
+                "entropy_local_weights": _entropy_local_w_k,
+                "critic_local_weights":  _critic_local_w_k,
+                "mc_diagnostics":       diag_k,
             }
 
         # ── STEP 4: Build Criterion Composite Matrix ─────────────────────
@@ -240,6 +280,39 @@ class HybridWeightingCalculator:
             col_idx = [all_sc_cols.index(sc) for sc in sc_cols_k]
             u_k     = np.array([local_weights[crit_id][sc] for sc in sc_cols_k])
             Z[:, k_idx] = X_raw_all[:, col_idx] @ u_k
+
+        # ── STEP 4b: Baseline entropy-only / critic-only criterion weights ──
+        # Computed on the composite Z matrix (using the same local weights as
+        # the hybrid, giving a fair like-for-like comparison).  Single-run,
+        # no MC perturbation.  Results flow into level2_diagnostics and the
+        # final details dict so CSV writers and radar charts can use them.
+        try:
+            Z_norm_base = global_min_max_normalize(Z, epsilon=eps)
+            if np.isnan(Z_norm_base).any():
+                _cm = np.nanmean(Z_norm_base, axis=0)
+                _cm = np.where(np.isnan(_cm), eps, _cm)
+                _nr, _nc = np.where(np.isnan(Z_norm_base))
+                Z_norm_base[_nr, _nc] = _cm[_nc]
+            df_Z_base = pd.DataFrame(Z_norm_base, columns=criterion_ids)
+            _e_L2 = self._entropy_calc.calculate(df_Z_base)
+            _c_L2 = self._critic_calc.calculate(df_Z_base)
+            entropy_criterion_w: Dict[str, float] = {
+                cid: float(_e_L2.weights.get(cid, eps)) for cid in criterion_ids
+            }
+            critic_criterion_w: Dict[str, float] = {
+                cid: float(_c_L2.weights.get(cid, eps)) for cid in criterion_ids
+            }
+            _e_tot = sum(entropy_criterion_w.values())
+            _c_tot = sum(critic_criterion_w.values())
+            if _e_tot > 0:
+                entropy_criterion_w = {k: v / _e_tot for k, v in entropy_criterion_w.items()}
+            if _c_tot > 0:
+                critic_criterion_w  = {k: v / _c_tot for k, v in critic_criterion_w.items()}
+        except Exception as _exc:
+            logger.debug("Entropy/CRITIC baseline Level-2 failed: %s", _exc)
+            _n_L2 = len(criterion_ids)
+            entropy_criterion_w = {cid: 1.0 / _n_L2 for cid in criterion_ids}
+            critic_criterion_w  = {cid: 1.0 / _n_L2 for cid in criterion_ids}
 
         # ── STEP 5: Level 2 — Criterion MC Ensemble ──────────────────────
         logger.info("  Level 2: %d criteria ...", len(criterion_ids))
@@ -260,7 +333,9 @@ class HybridWeightingCalculator:
         )
 
         level2_diagnostics: dict = {
-            "criterion_weights": criterion_weights,
+            "criterion_weights":          criterion_weights,
+            "entropy_criterion_weights":  entropy_criterion_w,
+            "critic_criterion_weights":   critic_criterion_w,
             "mc_diagnostics": {
                 "n_simulations_completed": result_L2.n_completed,
                 "converged_at":            result_L2.converged_at,
@@ -295,6 +370,28 @@ class HybridWeightingCalculator:
         if gw_total > 0:
             global_sc_weights = {sc: w / gw_total for sc, w in global_sc_weights.items()}
 
+        # ── STEP 6b: Global entropy-only and critic-only SC weights ──────
+        # global_entropy_w[SC_j] = entropy_local_w[SC_j | C_k] * entropy_criterion_w[C_k]
+        # These let downstream consumers plot like-for-like comparison across
+        # entropy / critic / hybrid at both the subcriteria and criteria levels.
+        entropy_sc_weights: Dict[str, float] = {}
+        critic_sc_weights:  Dict[str, float] = {}
+        for crit_id, sc_cols_k in criteria_groups.items():
+            _e_crit = entropy_criterion_w.get(crit_id, 0.0)
+            _c_crit = critic_criterion_w.get(crit_id, 0.0)
+            _e_local = level1_diagnostics[crit_id].get("entropy_local_weights", {})
+            _c_local = level1_diagnostics[crit_id].get("critic_local_weights", {})
+            for sc in sc_cols_k:
+                entropy_sc_weights[sc] = _e_local.get(sc, 0.0) * _e_crit
+                critic_sc_weights[sc]  = _c_local.get(sc, 0.0) * _c_crit
+        # Normalise global entropy/critic SC weights to sum to 1
+        _e_tot = sum(entropy_sc_weights.values())
+        _c_tot = sum(critic_sc_weights.values())
+        if _e_tot > 0:
+            entropy_sc_weights = {sc: w / _e_tot for sc, w in entropy_sc_weights.items()}
+        if _c_tot > 0:
+            critic_sc_weights  = {sc: w / _c_tot for sc, w in critic_sc_weights.items()}
+
         # ── STEP 7: Temporal Stability Verification ───────────────────────
         stability: dict = {
             "cosine_similarity":   None,
@@ -324,7 +421,8 @@ class HybridWeightingCalculator:
                         return np.array(
                             [r_h.weights.get(sc, 0.0) for sc in all_sc_cols]
                         )
-                    except Exception:
+                    except Exception as _exc:
+                        logger.debug('Stability callback failed, using uniform: %s', _exc)
                         return np.full(len(all_sc_cols), 1.0 / len(all_sc_cols))
 
                 stab_result = temporal_stability_verification(
@@ -354,9 +452,13 @@ class HybridWeightingCalculator:
         tuning_best_score = float(result_L2.avg_kendall_tau)
 
         details: dict = {
-            "level1":           level1_diagnostics,
-            "level2":           level2_diagnostics,
-            "global_sc_weights": global_sc_weights,
+            "level1":            level1_diagnostics,
+            "level2":            level2_diagnostics,
+            "global_sc_weights":          global_sc_weights,
+            "entropy_sc_weights":         entropy_sc_weights,
+            "critic_sc_weights":          critic_sc_weights,
+            "entropy_criterion_weights":  entropy_criterion_w,
+            "critic_criterion_weights":   critic_criterion_w,
             "hyperparameters": {
                 "beta_a":            alpha_a,
                 "beta_b":            alpha_b,
@@ -445,7 +547,7 @@ class HybridWeightingCalculator:
         denom      = N ** 2 * (m ** 3 - m) / 12.0
         if denom <= 0:
             return 0.0
-        return float(np.clip(12.0 * ss / (N ** 2 * (m ** 3 - m)), 0.0, 1.0))
+        return float(np.clip(ss / denom, 0.0, 1.0))
 
     def _run_mc_ensemble(
         self,
@@ -510,7 +612,8 @@ class HybridWeightingCalculator:
             )
             w_base = (w_e_base + w_c_base) / 2.0
             w_base /= w_base.sum()
-        except Exception:
+        except Exception as _exc:
+            logger.warning('MC ensemble baseline weights failed, using uniform: %s', _exc)
             w_base = np.ones(n_c) / n_c
 
         r_base = self._saw_province_ranking(X_norm, w_base, province_blocks, province_order)
@@ -593,8 +696,10 @@ class HybridWeightingCalculator:
                 spearman_rhos.append(float(rho) if np.isfinite(rho)  else 0.0)
                 n_completed += 1
 
-            except Exception:
+            except Exception as _e_sim:
                 failed_count += 1
+                if failed_count <= 3:
+                    logger.debug('MC simulation %d failed: %s', _s, _e_sim)
                 continue
 
             # ── Convergence check ──────────────────────────────────────
@@ -666,14 +771,11 @@ class HybridWeightingCalculator:
             province_prob_topk = {
                 p: float((rs[:, i] <= K).mean()) for i, p in enumerate(province_labels)
             }
-            # Pairwise win probability matrix as nested dict
-            rwm = np.zeros((B, B))
-            for i in range(B):
-                for j in range(B):
-                    if i == j:
-                        rwm[i, j] = 0.5
-                    else:
-                        rwm[i, j] = float((rs[:, i] < rs[:, j]).mean())
+            # Pairwise win probability matrix (vectorised)
+            # rs shape: (n_completed, B)
+            # Compare all (i, j) pairs via broadcasting
+            rwm = (rs[:, :, None] < rs[:, None, :]).mean(axis=0)  # (B, B)
+            np.fill_diagonal(rwm, 0.5)
             rank_win_matrix = {
                 province_labels[i]: {
                     province_labels[j]: float(rwm[i, j]) for j in range(B)
@@ -765,7 +867,9 @@ class HybridWeightingCalculator:
                         top5.append((score, (a_a, a_b, s_sc)))
                         top5.sort(key=lambda x: x[0], reverse=True)
                         top5 = top5[:5]
-                    except Exception:
+                    except Exception as _grid_exc:
+                        logger.debug('Grid point (%s,%s,%s) failed: %s',
+                                     a_a, a_b, s_sc, _grid_exc)
                         continue
 
         logger.info(
@@ -788,7 +892,7 @@ class HybridWeightingCalculator:
                 def _objective(params: List[float]) -> float:
                     a_a, a_b, s_sc = params
                     if a_a + a_b > 8.0:
-                        return 0.0
+                        return 1.0  # large penalty (valid scores are negative)
                     try:
                         r_t = self._run_mc_ensemble(
                             X               = Z_tune,
@@ -801,8 +905,9 @@ class HybridWeightingCalculator:
                             province_labels = None,
                         )
                         return -r_t.avg_kendall_tau   # minimise negated
-                    except Exception:
-                        return 0.0
+                    except Exception as _bo_exc:
+                        logger.debug('BO objective eval failed: %s', _bo_exc)
+                        return 1.0  # large penalty so GP avoids this region
 
                 bo_result = gp_minimize(
                     _objective, space,

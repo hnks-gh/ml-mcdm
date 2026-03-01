@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 
 name = "ml-mcdm"
 version = "4.0.0"
-description = "Advanced Machine Learning Enhanced Multi-Criteria Decision Making Framework with 10 MCDM Methods, Time-Series Forecasting, and Robust Ensemble Aggregation"
+description = "Advanced Machine Learning Enhanced Multi-Criteria Decision Making Framework with 5 MCDM Methods, Evidential Reasoning, Ensemble Weighting, and Time-Series Forecasting"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.8"
@@ -21,7 +21,7 @@ keywords = [
     "multi-criteria decision making",
     "machine learning",
     "time-series forecasting",
-    "fuzzy logic",
+    "evidential reasoning",
     "decision support",
     "TOPSIS",
     "VIKOR",
@@ -198,7 +198,6 @@ markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: marks tests as integration tests",
     "unit: marks tests as unit tests",
-    "fuzzy: marks tests for fuzzy MCDM methods",
     "ml: marks tests for machine learning components",
     "ensemble: marks tests for ensemble methods",
 ]

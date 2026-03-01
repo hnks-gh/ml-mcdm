@@ -237,4 +237,7 @@ class GlobalNormalizer:
         
         X_original = X_no_eps * denom + self.col_min_
         
+        # Propagate NaN: if the input was NaN, the output should be NaN too
+        X_original = np.where(np.isnan(X_norm), np.nan, X_original)
+        
         return X_original

@@ -8,45 +8,54 @@ A comprehensive framework for MCDM analysis with ML-powered forecasting.
 Architecture
 ------------
 Traditional MCDM + Evidential Reasoning (Yang & Xu, 2002) two-stage hierarchy:
-  Stage 1: Within each of 8 criteria, combine 6 traditional method scores via ER
+  Stage 1: Within each of 8 criteria, combine 5 traditional method scores via ER
   Stage 2: Combine 8 criterion beliefs via ER with criterion weights
 
 Package Structure
 -----------------
 ml-mcdm/
 ├── weighting/          # Criterion weighting methods
-│   ├── entropy.py      # Entropy weight calculation
+│   ├── entropy.py      # Shannon entropy weight calculation
 │   ├── critic.py       # CRITIC weight calculation
-│   ├── merec.py        # MEREC weight calculation
-│   ├── standard_deviation.py
-│   └── fusion.py       # Reliability-weighted fusion
+│   ├── hybrid_weighting.py  # Two-level MC ensemble (primary pipeline)
+│   ├── adaptive.py     # NaN-aware adaptive weight utility
+│   ├── normalization.py
+│   ├── bootstrap.py
+│   └── validation.py
 │
-├── mcdm/
-│   ├── traditional/    # Traditional MCDM methods
-│   │   ├── topsis.py   # TOPSIS
-│   │   ├── vikor.py    # VIKOR
-│   │   ├── promethee.py
-│   │   ├── copras.py
-│   │   ├── edas.py
-│   │   └── saw.py      # Simple Additive Weighting
-│   │
-│
-├── forecasting/        # ML forecasting methods (experimental)
-│   ├── tree_ensemble.py   # GB, RF, ExtraTrees
-│   ├── linear.py          # Bayesian, Huber, Ridge
-│   ├── neural.py          # MLP, Attention
-│   └── unified.py         # Unified forecaster
+├── ranking/
+│   ├── pipeline.py     # Unified ranking orchestrator
+│   ├── topsis.py       # TOPSIS
+│   ├── vikor.py        # VIKOR
+│   ├── promethee.py    # PROMETHEE II
+│   ├── copras.py       # COPRAS
+│   ├── edas.py         # EDAS
+│   └── saw.py          # Simple Additive Weighting (ensemble surrogate)
 │
 ├── evidential_reasoning/  # ER aggregation
 │   ├── base.py            # BeliefDistribution, ER engine
 │   └── hierarchical_er.py # Two-stage hierarchical ER
 │
-├── ranking/
-│   └── pipeline.py     # Unified ranking orchestrator
+├── forecasting/        # ML forecasting methods
+│   ├── base.py
+│   ├── features.py        # Feature engineering
+│   ├── unified.py         # Super Learner ensemble
+│   ├── conformal.py       # Conformal prediction intervals
+│   ├── gradient_boosting.py
+│   ├── bayesian.py
+│   ├── quantile_forest.py
+│   ├── panel_var.py
+│   ├── hierarchical_bayes.py
+│   └── neural_additive.py
 │
-└── analysis/           # Validation & sensitivity
-    ├── sensitivity.py  # Monte Carlo sensitivity
-    └── validation.py   # Cross-validation, bootstrap
+├── analysis/           # Validation & sensitivity
+│   ├── sensitivity.py  # Monte Carlo sensitivity analysis
+│   └── validation.py   # Cross-validation, bootstrap
+│
+└── output/             # Result export
+    ├── csv_writer.py
+    ├── report_writer.py
+    └── orchestrator.py
 
 Quick Start
 -----------

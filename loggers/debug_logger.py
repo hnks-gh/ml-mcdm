@@ -25,14 +25,23 @@ from .context import Colors, LogContext
 
 
 class DebugLogger:
-    """Accumulates structured log entries and flushes to a JSON array file."""
+    """Accumulates structured log entries and incrementally flushes to a JSON array file.
 
-    def __init__(self, output_dir: str = 'result/logs'):
+    Incremental flushing ensures that debug data is not lost on crash.
+    Entries are flushed to disk every *flush_every* entries and whenever
+    the pipeline phase changes (detected via :class:`LogContext`).
+    """
+
+    def __init__(self, output_dir: str = 'result/logs', *,
+                 flush_every: int = 200):
         self._dir = Path(output_dir)
         self._dir.mkdir(parents=True, exist_ok=True)
         ts = datetime.now().strftime('%Y%m%d_%H%M%S')
         self._path = self._dir / f'debug_{ts}.json'
         self._entries: List[Dict[str, Any]] = []
+        self._flush_every = max(1, flush_every)
+        self._unflushed_count = 0
+        self._last_phase: str = ''
 
         # Also set up a stdlib DEBUG-level handler for submodules
         # that still use ``logging.getLogger('ml_mcdm')``
@@ -126,13 +135,14 @@ class DebugLogger:
              data: Any = None, module: str = '', function: str = '',
              line: int = 0, duration_ms: Optional[float] = None) -> None:
         ctx = LogContext.get()
+        current_phase = ctx.get('phase', '')
         entry: Dict[str, Any] = {
             'timestamp': datetime.now().isoformat(),
             'level': level,
             'module': module,
             'function': function,
             'line': line,
-            'phase': ctx.get('phase', ''),
+            'phase': current_phase,
             'message': Colors.strip(str(message)),
         }
         if data is not None:
@@ -140,6 +150,25 @@ class DebugLogger:
         if duration_ms is not None:
             entry['duration_ms'] = round(duration_ms, 3)
         self._entries.append(entry)
+        self._unflushed_count += 1
+
+        # Incremental flush: on phase boundary or every N entries
+        phase_changed = (current_phase and current_phase != self._last_phase
+                         and self._last_phase != '')
+        if phase_changed or self._unflushed_count >= self._flush_every:
+            self._incremental_flush()
+        if current_phase:
+            self._last_phase = current_phase
+
+    def _incremental_flush(self) -> None:
+        """Write all accumulated entries to disk (overwrite full file)."""
+        try:
+            with open(self._path, 'w', encoding='utf-8') as fh:
+                json.dump(self._entries, fh, indent=2, default=_json_default,
+                          ensure_ascii=False)
+            self._unflushed_count = 0
+        except Exception:
+            pass  # best-effort — don't disrupt the pipeline
 
 
 # ------------------------------------------------------------------

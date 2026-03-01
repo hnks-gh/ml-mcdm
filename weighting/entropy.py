@@ -108,7 +108,8 @@ class EntropyWeightCalculator:
             if w.shape[0] != n:
                 raise ValueError(
                     f"sample_weights length ({w.shape[0]}) != n_observations ({n})")
-            w = w / (w.sum() + self.epsilon)  # ensure sums to 1
+            w_sum = w.sum()
+            w = w / w_sum if w_sum > self.epsilon else np.full(n, 1.0 / n)  # ensure sums to exactly 1
         else:
             w = np.full(n, 1.0 / n)
         
@@ -138,11 +139,18 @@ class EntropyWeightCalculator:
         P = wX / col_sums
         P = np.clip(P, self.epsilon, None)
         
-        # Effective sample size: N_eff = (Σw_i)² / Σw_i²  (Kish, 1965)
+        # Normalisation constant: k = 1 / ln(n) where n is the actual
+        # number of observations (rows).  This guarantees E ∈ [0, 1] because
+        # the theoretical maximum entropy of P over n rows is ln(n),
+        # regardless of the observation weights.  The previous implementation
+        # used n_eff (Kish effective sample size) which under-normalises
+        # when weights are non-uniform, allowing E > 1 and D < 0.
+        #
+        # We still compute n_eff for reporting purposes.
         n_eff = (w.sum() ** 2) / ((w ** 2).sum() + self.epsilon)
-        n_eff = max(n_eff, 2.0)  # floor at 2 to keep log defined
+        n_eff = max(n_eff, 2.0)  # floor at 2 for numerical stability
         
-        k = 1.0 / np.log(n_eff)
+        k = 1.0 / np.log(max(n, 2))  # use actual row count n (≥ 2 guaranteed above)
         E = -k * (P * np.log(P)).sum(axis=0)
         
         # Calculate divergence (information content)

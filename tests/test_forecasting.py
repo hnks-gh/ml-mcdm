@@ -492,9 +492,12 @@ class TestConformalPredictor:
         cp = ConformalPredictor(method="adaptive", alpha=0.10)
         cp.calibrate(model, X, y)
 
+        # After Phase 2 H6 fix: ACI splits into train/cal, then
+        # runs online updates on the second half of the cal set.
         n = len(y)
-        n_init = max(5, n // 2)
-        assert len(cp._aci_history) == n - n_init
+        n_cal = max(5, int(n * cp.calibration_fraction))  # 25
+        n_init = max(3, n_cal // 2)                        # 12
+        assert len(cp._aci_history) == n_cal - n_init
 
     def test_rejects_multioutput(self, small_dataset):
         from forecasting.conformal import ConformalPredictor

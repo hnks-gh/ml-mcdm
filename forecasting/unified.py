@@ -499,6 +499,9 @@ class UnifiedForecaster:
         # Average importance across models
         avg_importance = np.mean(list(importance_dict.values()), axis=0)
         
+        # Per-component importance is not available from the averaged
+        # base-model importances; report the same aggregate for each
+        # component and note the limitation.
         return pd.DataFrame(
             {comp: avg_importance for comp in component_names},
             index=feature_names

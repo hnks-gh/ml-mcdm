@@ -14,7 +14,7 @@ Configuration Groups
 - RandomConfig             — reproducibility seeds
 - TOPSISConfig             — TOPSIS method parameters
 - VIKORConfig              — VIKOR compromise parameter
-- WeightingConfig          — GTWC + Bayesian Bootstrap
+- WeightingConfig          — Hybrid MC Ensemble + Bayesian Bootstrap
 - EvidentialReasoningConfig— two-stage ER aggregation
 - ForecastConfig           — ML forecasting ensemble settings
 - ValidationConfig         — sensitivity / robustness analysis
@@ -44,8 +44,6 @@ class WeightMethod(Enum):
     """Supported weighting method families."""
     ENTROPY = "entropy"
     CRITIC = "critic"
-    MEREC = "merec"
-    STD_DEV = "std_dev"
     ENSEMBLE = "ensemble"
     EQUAL = "equal"
 
@@ -310,6 +308,35 @@ class ValidationConfig:
 
 
 # =========================================================================
+# Ranking Configuration
+# =========================================================================
+
+@dataclass
+class RankingConfig:
+    """
+    Hierarchical ranking configuration.
+
+    run_all_years
+        When True, the ranking pipeline is executed for every year in the
+        panel (not just the target year) to enable temporal charts.
+        Execution is parallelised via ThreadPoolExecutor.
+
+    max_parallel_years
+        Maximum number of year-ranking threads to run concurrently.
+        Defaults to min(n_years, cpu_count).  Set to 1 to force sequential
+        execution (debugging / memory-constrained environments).
+
+    expose_mc_province_stats
+        When True, per-province Monte Carlo rank distribution statistics
+        (mean_rank, std_rank, prob_top1, prob_topK) are carried through
+        the details dict so CSV writers can persist them.
+    """
+    run_all_years: bool = True
+    max_parallel_years: Optional[int] = None   # None → auto (cpu_count)
+    expose_mc_province_stats: bool = True
+
+
+# =========================================================================
 # Visualisation
 # =========================================================================
 
@@ -323,6 +350,11 @@ class VisualizationConfig:
     heatmap_cmap: str = "RdYlGn"
     diverging_cmap: str = "RdBu_r"
     save_formats: List[str] = field(default_factory=lambda: ["png"])
+    # Ranking chart options
+    ranking_top_n: int = 20      # how many provinces to show in top-N ranking charts
+    ranking_top_n_options: List[int] = field(
+        default_factory=lambda: [5, 10, 15, 20]
+    )   # additional cut-offs to generate separate charts for
 
 
 # =========================================================================
@@ -343,6 +375,9 @@ class Config:
     # Weighting
     weighting: WeightingConfig = field(default_factory=WeightingConfig)
     er: EvidentialReasoningConfig = field(default_factory=EvidentialReasoningConfig)
+
+    # Ranking
+    ranking: RankingConfig = field(default_factory=RankingConfig)
 
     # ML Forecasting
     forecast: ForecastConfig = field(default_factory=ForecastConfig)
@@ -397,9 +432,12 @@ class Config:
             f"    TOPSIS norm     : {self.topsis.normalization.value}\n"
             f"    VIKOR v         : {self.vikor.v}\n\n"
             f"  WEIGHTING\n"
-            f"    Strategy        : GTWC (Entropy+CRITIC+MEREC+SD)\n"
-            f"    Bootstrap iters : {self.weighting.bootstrap_iterations}\n"
+            f"    Strategy        : Hybrid MC Ensemble (Entropy + CRITIC)\n"
+            f"    MC simulations  : {self.weighting.mc_n_simulations}\n"
             f"    Stability thr   : {self.weighting.stability_threshold}\n\n"
+            f"  RANKING\n"
+            f"    Run all years   : {self.ranking.run_all_years}\n"
+            f"    Max workers     : {self.ranking.max_parallel_years or 'auto'}\n\n"
             f"  EVIDENTIAL REASONING\n"
             f"    Base methods    : {len(self.er.base_methods)}\n"
             f"    Method weights  : {self.er.method_weight_scheme}\n"

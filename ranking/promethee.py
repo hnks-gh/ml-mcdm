@@ -114,7 +114,7 @@ class PROMETHEECalculator:
     Examples
     --------
     >>> import pandas as pd
-    >>> from mcdm.traditional import PROMETHEECalculator
+    >>> from ranking import PROMETHEECalculator
     >>> 
     >>> data = pd.DataFrame({
     ...     'Quality': [0.8, 0.6, 0.9, 0.7],
@@ -140,6 +140,9 @@ class PROMETHEECalculator:
                  sigma: float = 0.2,
                  benefit_criteria: Optional[List[str]] = None,
                  cost_criteria: Optional[List[str]] = None):
+        # NOTE (M4): All thresholds (p, q, sigma) operate on data that has
+        # already been min-max normalized to [0, 1].  Set values in that
+        # scale — e.g. p=0.3 means "30 % of the observed range".
         self.default_pref_func = preference_function
         self.p = preference_threshold
         self.q = indifference_threshold
@@ -324,6 +327,8 @@ class PROMETHEECalculator:
         elif pref_func == "gaussian":
             if d <= 0:
                 return 0.0
+            if self.sigma <= 0:
+                return 1.0  # degenerate: any positive d gives full preference
             return 1.0 - np.exp(-(d ** 2) / (2 * self.sigma ** 2))
         else:
             raise ValueError(f"Unknown preference function: {pref_func}")

@@ -7,9 +7,7 @@ Covers the Phase 5 bug-fixes:
   - M8: RuntimeWarning emitted when >20% of MC simulations fail
   - M9: Spearman (not Pearson) used in temporal stability analysis
 
-Also covers previously-fixed components exercised through the
-sensitivity / GTWC path:
-  - C1: GTWC game-theory solve produces non-trivial (not always 0.5/0.5) α
+Also covers weight perturbation and ranking stability checks.
 """
 
 import warnings
@@ -377,133 +375,6 @@ class TestTemporalStabilitySpearman:
 
 
 # ---------------------------------------------------------------------------
-# C1 — GTWC game theory produces non-trivial alpha
-# ---------------------------------------------------------------------------
-
-class TestGTWCNonTrivialAlpha:
-    """
-    _solve_game_theory with genuinely distinct vectors must NOT always
-    return the trivial solution [0.5, 0.5].  The old wrong RHS always
-    produced α₁ = α₂ = 0.5 regardless of inputs.
-    """
-
-    def test_orthogonal_groups_give_unequal_alpha(self):
-        """
-        When W_A has a higher L2-norm than W_B (dot_AA ≠ dot_BB),
-        the RHS [d_AA, d_BB] is asymmetric, so α₁ ≠ α₂.
-
-        The old (broken) RHS was [(d_AA+d_AB)/2, (d_AB+d_BB)/2], which
-        always produces the trivial solution α = [0.5, 0.5].  Symmetric
-        vectors (equal L2 norms) would *correctly* give [0.5, 0.5] even
-        with the fix, so we must use norms that differ.
-        """
-        from weighting.fusion import GameTheoryWeightCombination
-
-        gtwc = GameTheoryWeightCombination()
-        # W_A has a higher L2-norm: dot_AA ≈ 0.455, dot_BB ≈ 0.375 → b different
-        W_A = np.array([0.60, 0.30, 0.06, 0.04])
-        W_B = np.array([0.10, 0.05, 0.45, 0.40])
-
-        alpha, _, details = gtwc._solve_game_theory(W_A, W_B)
-
-        # Verify the RHS is [d_AA, d_BB], NOT the average
-        d_AA = np.dot(W_A, W_A)
-        d_BB = np.dot(W_B, W_B)
-        # Because d_AA ≠ d_BB the system is no longer symmetric → α₁ ≠ α₂
-        assert abs(d_AA - d_BB) > 0.01, "Test pre-condition: d_AA must differ from d_BB"
-
-        # The two α values should NOT be equal
-        assert abs(alpha[0] - alpha[1]) > 0.01, (
-            f"Expected non-trivial α (d_AA={d_AA:.4f} ≠ d_BB={d_BB:.4f}), "
-            f"got α={alpha}. RHS fix may not be applied."
-        )
-        # They must still sum to 1 and be non-negative
-        assert abs(alpha.sum() - 1.0) < 1e-9
-        assert (alpha >= 0).all()
-
-    def test_identical_groups_give_equal_alpha(self):
-        """
-        When W_A == W_B the system is degenerate-symmetric → [0.5, 0.5]
-        is the correct Nash solution (and the only valid solution).
-        The fix must not break this legitimate case.
-        """
-        from weighting.fusion import GameTheoryWeightCombination
-
-        gtwc = GameTheoryWeightCombination()
-        W = np.array([0.1, 0.4, 0.3, 0.2])
-
-        alpha, _, _ = gtwc._solve_game_theory(W.copy(), W.copy())
-
-        assert abs(alpha[0] - 0.5) < 1e-9 and abs(alpha[1] - 0.5) < 1e-9, (
-            f"Expected α=[0.5, 0.5] for identical groups, got {alpha}"
-        )
-
-    def test_final_weights_sum_to_one(self):
-        """Full combine() pipeline must return weights summing to 1."""
-        from weighting.fusion import GameTheoryWeightCombination
-
-        gtwc = GameTheoryWeightCombination()
-        weight_vectors = {
-            "entropy": np.array([0.20, 0.30, 0.50]),
-            "std_dev": np.array([0.25, 0.35, 0.40]),
-            "critic":  np.array([0.30, 0.40, 0.30]),
-            "merec":   np.array([0.40, 0.30, 0.30]),
-        }
-        W_final, details = gtwc.combine(weight_vectors)
-
-        assert abs(W_final.sum() - 1.0) < 1e-9
-        assert (W_final >= 0).all()
-
-    def test_alpha_stored_in_details(self):
-        """Details must expose alpha_dispersion and alpha_interaction."""
-        from weighting.fusion import GameTheoryWeightCombination
-
-        gtwc = GameTheoryWeightCombination()
-        weight_vectors = {
-            "entropy": np.array([0.20, 0.30, 0.50]),
-            "std_dev": np.array([0.15, 0.45, 0.40]),
-            "critic":  np.array([0.35, 0.40, 0.25]),
-            "merec":   np.array([0.40, 0.25, 0.35]),
-        }
-        _, details = gtwc.combine(weight_vectors)
-
-        alpha_d = details["phase_3"]["alpha_dispersion"]
-        alpha_i = details["phase_3"]["alpha_interaction"]
-        assert abs(alpha_d + alpha_i - 1.0) < 1e-9
-        assert alpha_d >= 0 and alpha_i >= 0
-
-    def test_gtwc_rhs_is_not_average(self):
-        """
-        Regression guard for the exact RHS fix (C1).
-        The old code used b = [(AA+AB)/2, (AB+BB)/2].
-        Verify that details['system_rhs'] equals [d_AA, d_BB], NOT the average.
-        """
-        from weighting.fusion import GameTheoryWeightCombination
-
-        gtwc = GameTheoryWeightCombination()
-        W_A = np.array([0.5, 0.3, 0.2])
-        W_B = np.array([0.1, 0.4, 0.5])
-
-        _, _, details = gtwc._solve_game_theory(W_A, W_B)
-
-        d_AA = np.dot(W_A, W_A)
-        d_BB = np.dot(W_B, W_B)
-        d_AB = np.dot(W_A, W_B)
-
-        expected_rhs = [d_AA, d_BB]
-        wrong_rhs = [(d_AA + d_AB) / 2, (d_AB + d_BB) / 2]
-
-        actual_rhs = details["system_rhs"]
-
-        for i in range(2):
-            assert abs(actual_rhs[i] - expected_rhs[i]) < 1e-12, (
-                f"RHS[{i}] = {actual_rhs[i]:.6f}, expected {expected_rhs[i]:.6f}. "
-                "The old wrong average RHS would have been "
-                f"{wrong_rhs[i]:.6f}. C1 fix may not be applied."
-            )
-
-
-# ---------------------------------------------------------------------------
 # ACI update rule regression (C6)
 # ---------------------------------------------------------------------------
 
@@ -534,14 +405,23 @@ class TestACIUpdateRule:
         """
         from forecasting.conformal import ConformalPredictor
 
-        # n_init = max(5, n//2) = max(5,10) = 10
-        # y[:10] = 0 → q_hat ≈ 0 after calibration
-        # y[10] = 1000 → first online step: residual >> q_hat → missed
-        n = 20
-        n_init = max(5, n // 2)  # = 10
+        # After H6 fix: calibration_fraction (default 0.25) of n is
+        # used as calibration.  We need enough data so that the cal set
+        # has initial residuals near 0, then large residuals for misses.
+        # n=80, n_cal=20, n_init=10 → online window = 10 steps.
+        # y[:60] = training (not used for residuals).
+        # y[60:70] = cal init portion → residuals ≈ 0.
+        # y[70:80] = cal online portion → huge residual → miss.
+        n = 80
+        cal_frac = 0.25
+        n_cal = max(5, int(n * cal_frac))   # 20
+        n_init = max(3, n_cal // 2)          # 10
+
+        # ZeroModel always returns 0 regardless of input length
         y = np.concatenate([
-            np.zeros(n_init),            # calibration: residuals = 0
-            np.full(n - n_init, 1000.0), # online: huge residuals
+            np.zeros(n - n_cal),             # training: ignored
+            np.zeros(n_init),                # cal init: residuals = 0
+            np.full(n_cal - n_init, 1000.0), # cal online: huge residuals
         ])
         X = np.ones((n, 1))
         initial_alpha = 0.05
@@ -559,12 +439,12 @@ class TestACIUpdateRule:
             "The initial q_hat from zero-residuals should be 0, causing misses."
         )
 
-        # After first miss: α_t + γ(α − 1). Expected ≈ 0.05 − 0.9025 = −0.88 → clipped to 0.001
+        # After first miss: α_t + γ(α − 1). Expected ≈ 0.05 − 0.9025 → clipped 0.001
         first_miss_alpha = missed[0]["alpha_t"]
         assert first_miss_alpha < initial_alpha, (
             f"ACI missed step: expected α_t < {initial_alpha} after miss, "
             f"got {first_miss_alpha:.4f}. "
-            "The gradient-step update (C6 fix) must decrease α on a miss."
+            "The gradient-step update must decrease α on a miss."
         )
 
     def test_alpha_increases_when_always_covered(self):
@@ -576,20 +456,23 @@ class TestACIUpdateRule:
         """
         from forecasting.conformal import ConformalPredictor
 
-        # Perfect model: predicts y exactly → residuals always 0
+        # Perfect model: uses X to look up true y via a stored mapping.
+        # In the H6-fixed calibrate(), the model is deepcopy'd and
+        # predict() is called on the calibration slice only.
         class _PerfectModel:
-            def __init__(self, y):
-                self._y = y
-            def predict(self, X):
-                return self._y.copy()
+            def __init__(self, X, y):
+                self._lookup = {tuple(row): val for row, val in zip(X, y)}
+            def predict(self, X_in):
+                return np.array([self._lookup.get(tuple(r), 0.0) for r in X_in])
 
-        n = 30
-        y = np.random.RandomState(0).randn(n)  # any non-trivial signal
-        X = np.ones((n, 1))
+        n = 100  # enough data for cal split
+        rng = np.random.RandomState(0)
+        X = rng.randn(n, 2)       # 2-D to avoid collisions in lookup
+        y = rng.randn(n)
         initial_alpha = 0.05
 
         cp = ConformalPredictor(method="adaptive", alpha=initial_alpha, gamma=0.95)
-        cp.calibrate(_PerfectModel(y), X, y)
+        cp.calibrate(_PerfectModel(X, y), X, y)
 
         history = cp._aci_history
         assert len(history) > 0
@@ -599,7 +482,6 @@ class TestACIUpdateRule:
         assert len(covered_steps) > 0
 
         # The last covered alpha_t must be higher than initial (it grew)
-        # (some clipping at 0.999 may apply for long sequences)
         last_alpha = covered_steps[-1]["alpha_t"]
         assert last_alpha > initial_alpha, (
             f"Expected α_t > {initial_alpha} after all covered steps, "

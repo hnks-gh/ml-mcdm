@@ -132,13 +132,27 @@ class QuantileRandomForestForecaster(BaseForecaster):
 
     def predict(self, X: np.ndarray) -> np.ndarray:
         """
-        Make point predictions (conditional median).
+        Make point predictions (conditional mean).
 
-        Returns the 50th-percentile (median) of the conditional
-        distribution, which is the theoretically appropriate point
-        estimator for distributional forecasting (minimises MAE).
-        Falls back to the RF conditional mean when quantile
-        estimation fails.
+        Returns the RF conditional mean so that ``predict()`` is
+        consistent with the MSE-based Super Learner meta-learner.
+        Use :meth:`predict_quantiles` for distributional forecasting
+        or :meth:`predict_median` for the MAE-optimal point estimate.
+
+        Args:
+            X: Feature matrix of shape (n_samples, n_features)
+
+        Returns:
+            Predictions of shape (n_samples,) or (n_samples, n_outputs)
+        """
+        return self.predict_mean(X)
+
+    def predict_median(self, X: np.ndarray) -> np.ndarray:
+        """
+        Return the conditional median (50th percentile).
+
+        The median minimises MAE and is the natural point summary
+        for distributional / quantile regression models.
 
         Args:
             X: Feature matrix of shape (n_samples, n_features)
@@ -150,9 +164,7 @@ class QuantileRandomForestForecaster(BaseForecaster):
             q_preds = self.predict_quantiles(X, quantiles=[0.50])
             return q_preds[0.50]
         except Exception:
-            # Fallback to RF mean if quantile estimation fails
-            X_scaled = self.scaler_.transform(X)
-            return self.model_.predict(X_scaled)
+            return self.predict_mean(X)
 
     def predict_mean(self, X: np.ndarray) -> np.ndarray:
         """

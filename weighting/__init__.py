@@ -8,42 +8,37 @@ Objective weight calculation methods for MCDM:
 - HybridWeightingCalculator: Two-level hierarchical MC ensemble
   (Entropy + CRITIC blend, Beta-distributed) with tuning + stability check.
 
-**Adaptive Weighting:**
-- AdaptiveWeightCalculator: Adaptive weight calculation with zero handling
-- WeightCalculator: Hierarchical weight calculation for multi-level data
-- calculate_adaptive_weights: Convenience function for adaptive weights
-
-**Fusion Method:**
-- GameTheoryWeightCombination: Cooperative game-theoretic fusion
-
-**Individual Methods:**
+**Individual Base Methods (used internally by the MC ensemble):**
 - EntropyWeightCalculator: Information theory-based weighting
 - CRITICWeightCalculator: Contrast intensity + inter-criteria correlation
-- MERECWeightCalculator: Method based on Removal Effects of Criteria
-- StandardDeviationWeightCalculator: Variance-based weighting
+
+**Adaptive Weighting (NaN-aware utility):**
+- AdaptiveWeightCalculator: NaN-aware weight calculation (excludes all-NaN
+  rows/columns; imputes partial NaN cells with column mean) using
+  Entropy, CRITIC, or a blended hybrid of the two.
+- WeightCalculator: Hierarchical (two-level) weight calculation built on
+  AdaptiveWeightCalculator.
+- calculate_adaptive_weights: Convenience function for adaptive weights.
 
 **Utilities:**
-- global_min_max_normalize: Global normalization function
+- global_min_max_normalize: Global min-max normalization function
 - GlobalNormalizer: Stateful normalizer (fit/transform pattern)
-- bayesian_bootstrap_weights: Uncertainty quantification
+- bayesian_bootstrap_weights: Bayesian bootstrap weight sampling
 - temporal_stability_verification: Temporal stability validation
 """
 
 from .hybrid_weighting import HybridWeightingCalculator
 from .entropy import EntropyWeightCalculator
 from .critic import CRITICWeightCalculator
-from .merec import MERECWeightCalculator
-from .standard_deviation import StandardDeviationWeightCalculator
-from .fusion import GameTheoryWeightCombination
 from .normalization import global_min_max_normalize, GlobalNormalizer
 from .bootstrap import bayesian_bootstrap_weights, BayesianBootstrap
 from .validation import temporal_stability_verification, TemporalStabilityValidator, StabilityResult
 from .base import WeightResult, calculate_weights
 from .adaptive import (
-    AdaptiveWeightCalculator, 
-    WeightCalculator, 
+    AdaptiveWeightCalculator,
+    WeightCalculator,
     AdaptiveWeightResult,
-    calculate_adaptive_weights
+    calculate_adaptive_weights,
 )
 
 __all__ = [
@@ -53,26 +48,27 @@ __all__ = [
 
     # Primary pipeline
     'HybridWeightingCalculator',
-    
-    # Adaptive weighting
+
+    # Individual base calculators
+    'EntropyWeightCalculator',
+    'CRITICWeightCalculator',
+
+    # Adaptive weighting utilities
     'AdaptiveWeightCalculator',
     'WeightCalculator',
     'calculate_adaptive_weights',
-    
-    # Individual calculators
-    'EntropyWeightCalculator',
-    'CRITICWeightCalculator',
-    'MERECWeightCalculator',
-    'StandardDeviationWeightCalculator',
-    
-    # Fusion method
-    'GameTheoryWeightCombination',
+
+    # Normalization & bootstrap utilities
     'global_min_max_normalize',
     'GlobalNormalizer',
     'bayesian_bootstrap_weights',
     'BayesianBootstrap',
+
+    # Stability validation
     'temporal_stability_verification',
     'TemporalStabilityValidator',
     'StabilityResult',
+
+    # Convenience dispatcher
     'calculate_weights',
 ]

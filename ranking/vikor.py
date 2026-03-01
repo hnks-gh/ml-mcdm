@@ -80,7 +80,7 @@ class VIKORCalculator:
     Examples
     --------
     >>> import pandas as pd
-    >>> from mcdm.traditional import VIKORCalculator
+    >>> from ranking import VIKORCalculator
     >>> 
     >>> data = pd.DataFrame({
     ...     'Quality': [0.8, 0.6, 0.9, 0.7],
@@ -260,10 +260,9 @@ class VIKORCalculator:
             compromise_set = [alt for alt in sorted_alts 
                             if Q[alt] - Q[a1] < DQ]
         else:
-            # C1 holds but C2 fails: include a1, best-by-S, and best-by-R
-            best_s = S.idxmin()
-            best_r = R.idxmin()
-            compromise_set = list(dict.fromkeys([a1, best_s, best_r]))
+            # C1 holds but C2 fails → compromise set is {a(1), a(2)}
+            # per Opricovic & Tzeng (2004), Section 3, Condition C2.
+            compromise_set = [a1, a2]
         
         return advantage, stability, compromise_set
 

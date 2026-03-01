@@ -78,7 +78,7 @@ class TOPSISCalculator:
     Examples
     --------
     >>> import pandas as pd
-    >>> from mcdm.traditional import TOPSISCalculator
+    >>> from ranking import TOPSISCalculator
     >>> 
     >>> data = pd.DataFrame({
     ...     'Quality': [0.8, 0.6, 0.9, 0.7],
