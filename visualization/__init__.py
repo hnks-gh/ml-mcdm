@@ -253,6 +253,20 @@ class VisualizationOrchestrator:
             if path:
                 count += 1
 
+        def _safe(fn, *args, **kwargs):
+            """Call a plot function, catching any exception so one failure
+            never aborts the remaining figures."""
+            nonlocal count
+            try:
+                path = fn(*args, **kwargs)
+                if path:
+                    count += 1
+            except Exception as _exc:
+                _logger.warning(
+                    'Figure skipped [%s]: %s',
+                    getattr(fn, '__name__', repr(fn)), _exc,
+                )
+
         # Use the active province list from the result's index so that
         # dynamically-excluded provinces never appear in figures.
         provinces = (
@@ -274,31 +288,31 @@ class VisualizationOrchestrator:
 
         # ── Ranking ───────────────────────────────────────────────
         # fig01 — lollipop gradient ranking
-        _inc(self.ranking.plot_final_ranking(provinces, scores, ranks))
+        _safe(self.ranking.plot_final_ranking, provinces, scores, ranks)
 
         # fig01b — tier-band lollipop
-        _inc(self.ranking.plot_tier_ranking(provinces, scores, ranks))
+        _safe(self.ranking.plot_tier_ranking, provinces, scores, ranks)
 
         # fig01c — multi-year slope graph (only when multi-year data exists)
         if multi_year_results:
-            _inc(self.ranking.plot_multiyear_slopegraph(
+            _safe(self.ranking.plot_multiyear_slopegraph,
                 multi_year_results,
                 top_n=getattr(self, '_ranking_top_n', 20),
-            ))
+            )
 
         # fig01d — ER belief distribution heatmap
-        _inc(self.ranking.plot_belief_heatmap(ranking_result, provinces))
+        _safe(self.ranking.plot_belief_heatmap, ranking_result, provinces)
 
         # fig01e — rank vs uncertainty scatter
-        _inc(self.ranking.plot_rank_uncertainty_scatter(ranking_result, provinces))
+        _safe(self.ranking.plot_rank_uncertainty_scatter, ranking_result, provinces)
 
         # fig02 — score distribution histogram + KDE
-        _inc(self.ranking.plot_score_distribution(scores))
+        _safe(self.ranking.plot_score_distribution, scores)
 
         # fig02b — MC rank-uncertainty error-bar chart
         mc_stats = weights.get('mc_province_stats', {})
         if mc_stats:
-            _inc(self.ranking.plot_mc_rank_uncertainty(mc_stats))
+            _safe(self.ranking.plot_mc_rank_uncertainty, mc_stats)
 
         # ── Weights ───────────────────────────────────────────────
         sc_arr = weights['sc_array']
@@ -332,48 +346,48 @@ class VisualizationOrchestrator:
                           for i, sc in enumerate(subcriteria)])
 
         # fig03 — Three-method grouped bar with CI
-        _inc(self.weighting.plot_weights_comparison(
+        _safe(self.weighting.plot_weights_comparison,
             w_dict, subcriteria,
             ci_lower=ci_lo if ci_lo.any() else None,
             ci_upper=ci_hi if ci_hi.any() else None,
-        ))
+        )
 
         # fig03b — MC weight uncertainty error-bar chart
         if mc_stds_full.any():
-            _inc(self.weighting.plot_mc_weight_uncertainty(
+            _safe(self.weighting.plot_mc_weight_uncertainty,
                 subcriteria,
                 mc_means=mc_means_full,
                 mc_stds=mc_stds_full,
                 ci_lower=ci_lo,
                 ci_upper=ci_hi,
                 criteria_groups=crit_groups_map if crit_groups_map else None,
-            ))
+            )
 
         # fig03c — Criterion-level three-method horizontal bar + donut
         entropy_crit_d = weights.get('entropy_criterion_weights', {})
         critic_crit_d  = weights.get('critic_criterion_weights', {})
         hybrid_crit_d  = weights.get('criterion_weights', {})
         if entropy_crit_d or critic_crit_d:
-            _inc(self.weighting.plot_criterion_weights_comparison(
+            _safe(self.weighting.plot_criterion_weights_comparison,
                 entropy_crit=entropy_crit_d,
                 critic_crit=critic_crit_d,
                 hybrid_crit=hybrid_crit_d,
-            ))
+            )
 
         # fig03d — Diverging deviation from hybrid baseline
         if entropy_sc_arr.sum() > 1e-9 or critic_sc_arr.sum() > 1e-9:
-            _inc(self.weighting.plot_weight_deviation(
+            _safe(self.weighting.plot_weight_deviation,
                 entropy_sc=entropy_sc_d,
                 critic_sc=critic_sc_d,
                 hybrid_sc=hybrid_sc_d,
                 subcriteria=subcriteria,
-            ))
+            )
 
         # fig04 — Radar (all 3 methods)
-        _inc(self.weighting.plot_weight_radar(w_dict, subcriteria))
+        _safe(self.weighting.plot_weight_radar, w_dict, subcriteria)
 
         # fig05 — Heatmap with dendrogram
-        _inc(self.weighting.plot_weight_heatmap(w_dict, subcriteria))
+        _safe(self.weighting.plot_weight_heatmap, w_dict, subcriteria)
 
         # ── MCDM agreement ───────────────────────────────────────
         all_method_ranks: Dict[str, np.ndarray] = {}
@@ -388,26 +402,26 @@ class VisualizationOrchestrator:
 
         # fig06 — clustered Spearman agreement heatmap
         if all_method_ranks:
-            _inc(self.mcdm.plot_method_agreement_matrix(all_method_ranks))
+            _safe(self.mcdm.plot_method_agreement_matrix, all_method_ranks)
 
         # fig06b — per-criterion avg Spearman bar
-        _inc(self.mcdm.plot_method_agreement_per_criterion(ranking_result))
+        _safe(self.mcdm.plot_method_agreement_per_criterion, ranking_result)
 
         # fig07 — 2×4 grid of per-criterion parallel-coord panels
-        _inc(self.mcdm.plot_criterion_parallel_grid(ranking_result, provinces))
+        _safe(self.mcdm.plot_criterion_parallel_grid, ranking_result, provinces)
 
         # fig08 — per-criterion method score panels (one file per criterion)
         for crit_id, method_scores in ranking_result.criterion_method_scores.items():
-            _inc(self.mcdm.plot_criterion_scores(
+            _safe(self.mcdm.plot_criterion_scores,
                 method_scores, crit_id, top_n=20,
                 save_name=f'fig08_{crit_id}_scores.png',
-            ))
+            )
 
         # fig08b — MCDM composite vs ER final score scatter
-        _inc(self.mcdm.plot_mcdm_composite_scatter(ranking_result, provinces))
+        _safe(self.mcdm.plot_mcdm_composite_scatter, ranking_result, provinces)
 
         # fig08c — Province × Criterion ER utility heatmap
-        _inc(self.mcdm.plot_criterion_er_utility_heatmap(ranking_result, provinces))
+        _safe(self.mcdm.plot_criterion_er_utility_heatmap, ranking_result, provinces)
 
 
         # ── Sensitivity ──────────────────────────────────────────
@@ -421,38 +435,38 @@ class VisualizationOrchestrator:
 
             # fig09 — classic criteria tornado
             if crit_sens:
-                _inc(self.sensitivity.plot_sensitivity_tornado(crit_sens))
+                _safe(self.sensitivity.plot_sensitivity_tornado, crit_sens)
 
             # fig09b — butterfly tornado (two-sided diverging)
             if crit_sens:
-                _inc(self.sensitivity.plot_tornado_butterfly(
+                _safe(self.sensitivity.plot_tornado_butterfly,
                     crit_sens, perturbation_analysis=pert_a,
-                ))
+                )
 
             # fig09c — subcriteria dot/strip grouped by criterion
             if sc_sens:
-                _inc(self.sensitivity.plot_subcriteria_dotstrip(sc_sens))
+                _safe(self.sensitivity.plot_subcriteria_dotstrip, sc_sens)
 
             # fig10 — subcriteria bar (top-20; backward-compat)
             if sc_sens:
-                _inc(self.sensitivity.plot_subcriteria_sensitivity(sc_sens))
+                _safe(self.sensitivity.plot_subcriteria_sensitivity, sc_sens)
 
             # fig11 — top-N stability
             if top_n_stab:
-                _inc(self.sensitivity.plot_top_n_stability(top_n_stab))
+                _safe(self.sensitivity.plot_top_n_stability, top_n_stab)
 
             # fig12 — temporal stability
             temp_stab = getattr(sens, 'temporal_stability', {})
             if temp_stab:
-                _inc(self.sensitivity.plot_temporal_stability(temp_stab))
+                _safe(self.sensitivity.plot_temporal_stability, temp_stab)
 
             # fig13 — rank volatility bar (all provinces)
             if rank_stab:
-                _inc(self.sensitivity.plot_rank_volatility(rank_stab))
+                _safe(self.sensitivity.plot_rank_volatility, rank_stab)
 
             # fig13b — stability sorted line + CI bands
             if rank_stab:
-                _inc(self.sensitivity.plot_stability_line_ci(rank_stab))
+                _safe(self.sensitivity.plot_stability_line_ci, rank_stab)
 
             # fig14 — rank vs stability scatter (quadrant analysis)
             try:
@@ -466,18 +480,18 @@ class VisualizationOrchestrator:
 
             # fig14b — violin of rank-change distributions
             if pert_a:
-                _inc(self.sensitivity.plot_rank_change_violin(
+                _safe(self.sensitivity.plot_rank_change_violin,
                     pert_a, provinces=provinces,
-                ))
+                )
 
             # fig25 — robustness summary infographic
             if hasattr(sens, 'overall_robustness'):
-                _inc(self.sensitivity.plot_robustness_summary(
+                _safe(self.sensitivity.plot_robustness_summary,
                     sens.overall_robustness,
                     getattr(sens, 'confidence_level', 0.95),
                     crit_sens,
                     top_n_stab,
-                ))
+                )
 
         # ER uncertainty (fig15)
         try:

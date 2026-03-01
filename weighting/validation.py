@@ -71,8 +71,12 @@ class TemporalStabilityValidator:
         # Calculate Spearman rank correlation — weights are compositional /
         # ordinal in nature; Spearman is more appropriate than Pearson.
         if len(w1) > 1:
+            import warnings
             from scipy.stats import spearmanr as _spearmanr
-            _corr_val, _ = _spearmanr(w1, w2)
+            from scipy.stats import ConstantInputWarning
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", ConstantInputWarning)
+                _corr_val, _ = _spearmanr(w1, w2)
             corr = float(np.nan_to_num(_corr_val))
         else:
             corr = 1.0
