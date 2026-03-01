@@ -21,10 +21,10 @@ The ML-MCDM pipeline analyzes panel data (entities × time periods × criteria) 
 
 ### Core Methodology
 
-- **5 MCDM Methods**: TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS
+- **6 MCDM Methods**: TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS, SAW
 - **Two-Stage Aggregation**: Within-criterion ER → Global ER
 - **Hybrid MC Ensemble Weighting**: Entropy + CRITIC with Bayesian Bootstrap
-- **Bayesian Bootstrap**: 200 iterations for weight uncertainty quantification
+- **MC Ensemble**: 2000 simulations for weight uncertainty quantification
 - **ML Forecasting**: 6-model ensemble + Super Learner + Conformal Prediction
 - **Temporal Stability**: Split-half validation for robustness
 
@@ -59,8 +59,8 @@ The ML-MCDM pipeline analyzes panel data (entities × time periods × criteria) 
 │  Phase 3: Hierarchical Ranking (ER)                                     │
 │  ┌──────────────────────────────────────────────────────────┐           │
 │  │ Stage 1: Within-criterion (per 8 criteria)              │           │
-│  │   • 5 MCDM methods (TOPSIS, VIKOR, PROMETHEE, COPRAS,   │           │
-│  │     EDAS) with adaptive zero-handling                    │           │
+│  │   • 6 MCDM methods (TOPSIS, VIKOR, PROMETHEE, COPRAS,   │           │
+│  │     EDAS, SAW) with adaptive zero-handling               │           │
 │  │   • ER belief aggregation                               │           │
 │  │                                                          │           │
 │  │ Stage 2: Global aggregation                             │           │
@@ -179,7 +179,7 @@ PanelData
 
 **Purpose:** Two-stage aggregation using Evidential Reasoning.
 
-#### 5 MCDM Methods
+#### 6 MCDM Methods
 
 | Method | Key Innovation |
 |--------|----------------|
@@ -188,19 +188,20 @@ PanelData
 | **PROMETHEE** | Pairwise outranking |
 | **COPRAS** | Stepwise comparison |
 | **EDAS** | Distance from average |
+| **SAW** | Simple weighted sum |
 
 #### Stage 1: Within-Criterion Aggregation
 
 For **each of 8 criteria** (C01 through C08):
 
-1. **Run 5 MCDM methods** on subcriteria scores
+1. **Run 6 MCDM methods** on subcriteria scores
 2. **Adaptive Zero-Handling:**
    - Identify zero/missing values
    - Temporarily exclude from ranking
    - Restore after computation (assign worst rank)
 3. **Normalize scores** to [0, 1]
 4. **Construct belief structure:**
-   - Convert 5 method scores → 5-grade belief distribution
+   - Convert 6 method scores → 5-grade belief distribution
    - Grades: {Excellent, Good, Fair, Poor, Bad}
 5. **ER combination** → single criterion belief per entity
 
@@ -217,14 +218,14 @@ For **each of 8 criteria** (C01 through C08):
 
 #### Validation
 
-- **Kendall's W concordance coefficient** across 5 methods
+- **Kendall's W concordance coefficient** across 6 methods
 - Expected: W > 0.7 (strong agreement)
 - Actual: W ≈ 0.88 (very strong agreement)
 
 **Output Files:**
 - `final_rankings.csv`: Final ranks + ER utility scores
 - `mcdm_scores_C01.csv` ... `mcdm_scores_C08.csv`: Per-criterion method scores (8 files)
-- `mcdm_rank_comparison.csv`: Rank comparison across all 5 methods
+- `mcdm_rank_comparison.csv`: Rank comparison across all 6 methods
 - `prediction_uncertainty_er.csv`: Hesitancy degrees (π) per entity
 
 ---
@@ -421,8 +422,8 @@ print(f"Robustness: {result.analysis['sensitivity'].overall_robustness:.4f}")
 
 | Component | Time | Notes |
 |-----------|------|-------|
-| Weighting | ~90s | Bootstrap (200 iterations) |
-| Ranking | ~10s | 5 MCDM + 2-stage ER |
+| Weighting | ~90s | MC Ensemble (2000 simulations) |
+| Ranking | ~10s | 6 MCDM + 2-stage ER |
 | ML Forecasting | ~15s | 6 models + Super Learner |
 | Sensitivity Analysis | ~20s | Monte Carlo (1000 sims) |
 | Visualization + Export | ~5s | 5 figures + results |
@@ -453,8 +454,8 @@ print(f"Robustness: {result.analysis['sensitivity'].overall_robustness:.4f}")
   Years             : 2011-2024 (14 years)
   Subcriteria       : 29
   Criteria          : 8
-  MCDM methods      : 5 (TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS)
-  Bootstrap iters   : 200
+  MCDM methods      : 6 (TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS, SAW)
+  MC simulations    : 2000
   Sensitivity sims  : 1000
   Output            : result/
 ======================================================================
@@ -464,13 +465,13 @@ print(f"Robustness: {result.analysis['sensitivity'].overall_robustness:.4f}")
   ✓ Completed in 0.91s
 
 ▶ Phase 2/7: Weight Calculation
-  Hybrid MC Ensemble: Entropy + CRITIC with 200 bootstrap
+  Hybrid MC Ensemble: Entropy + CRITIC with 2000 MC simulations
   Weights: [0.142, 0.118, 0.095, 0.158, 0.127, 0.109, 0.132, 0.119]
   Cosine similarity: 0.9915 (stable)
   ✓ Completed in 19.51s
 
 ▶ Phase 3/7: Hierarchical Ranking
-  Stage 1: 5 MCDM × 8 criteria with adaptive zero-handling
+  Stage 1: 6 MCDM × 8 criteria with adaptive zero-handling
   Stage 2: Weighted ER aggregation
   Kendall's W: 0.8786 (strong agreement)
   Top-ranked: P02 (utility = 0.8547)
@@ -511,7 +512,7 @@ The ML-MCDM pipeline provides:
 
 1. **Rigorous Methodology**: Two-stage ER with adaptive zero-handling
 2. **Objective Weighting**: Hybrid MC Ensemble (2 methods) with Bayesian Bootstrap uncertainty
-3. **Multi-Method Consensus**: 5 MCDM methods (TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS)
+3. **Multi-Method Consensus**: 6 MCDM methods (TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS, SAW)
 4. **ML Forecasting**: 6-model ensemble (optional) with Super Learner
 5. **Hierarchical Sensitivity**: Multi-level robustness analysis (1000 simulations)
 6. **Comprehensive Outputs**: 5 high-resolution figures + 17+ data files + detailed report

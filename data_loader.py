@@ -591,22 +591,19 @@ class DataLoader:
 
                 avail_scs_in_df = [sc for sc in crit_active_scs
                                    if sc in df_sub.columns]
-                criterion_scores = []
-                provinces_with_crit = []
+                if not avail_scs_in_df:
+                    criteria_values[crit_id] = pd.Series(
+                        np.nan, index=df_sub.index)
+                    criteria_availability_yr[crit_id] = []
+                    continue
 
-                for idx, row in df_sub.iterrows():
-                    prov = row['Province']
-                    sub_vals = [row[sc] for sc in avail_scs_in_df]
-                    valid_vals = [v for v in sub_vals if pd.notna(v)]
-                    if valid_vals:
-                        criterion_scores.append(float(np.mean(valid_vals)))
-                        provinces_with_crit.append(prov)
-                    else:
-                        criterion_scores.append(np.nan)
-
-                criteria_values[crit_id] = pd.Series(
-                    criterion_scores, index=df_sub.index)
-                criteria_availability_yr[crit_id] = provinces_with_crit
+                # Vectorised row-mean — pandas skips NaN cells automatically
+                col_scores = df_sub[avail_scs_in_df].mean(axis=1)
+                criteria_values[crit_id] = col_scores
+                has_score = df_sub[avail_scs_in_df].notna().any(axis=1)
+                criteria_availability_yr[crit_id] = (
+                    df_sub.loc[has_score, 'Province'].tolist()
+                )
 
             availability['criteria_by_year'][year] = criteria_availability_yr
 
@@ -619,20 +616,17 @@ class DataLoader:
             # ==============================================================
             # Final composite (mean of criteria composites, skip NaN)
             # ==============================================================
-            final_scores_list = []
-            for _, row in df_criteria.iterrows():
-                crit_vals = [
-                    row[c] for c in hierarchy.all_criteria
-                    if c in df_criteria.columns and pd.notna(row[c])
-                ]
-                final_scores_list.append(
-                    float(np.mean(crit_vals)) if crit_vals else np.nan
-                )
+            _active_crit_cols = [
+                c for c in hierarchy.all_criteria
+                if c in df_criteria.columns
+            ]
+            # Vectorised row-mean — pandas skips NaN criteria automatically
+            _final_scores = df_criteria[_active_crit_cols].mean(axis=1)
 
             df_final = pd.DataFrame({
                 'Year': df_criteria['Year'],
                 'Province': df_criteria['Province'],
-                'FinalScore': final_scores_list,
+                'FinalScore': _final_scores.values,
             })
 
             # ---- Append to long format ----

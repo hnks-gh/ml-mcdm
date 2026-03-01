@@ -62,6 +62,22 @@ class Colors:
         return cls.ANSI_PATTERN.sub('', text)
 
     @classmethod
+    def _enable_windows_color(cls) -> None:
+        """Enable ANSI virtual terminal processing on Windows (call once at startup).
+
+        Separated from :meth:`supports_color` so that the query method does not
+        mutate global console state as a side effect.
+        """
+        if sys.platform != "win32":
+            return
+        try:
+            import ctypes
+            kernel32 = ctypes.windll.kernel32
+            kernel32.SetConsoleMode(kernel32.GetStdHandle(-11), 7)
+        except Exception:
+            pass
+
+    @classmethod
     def supports_color(cls) -> bool:
         """Return ``True`` if the hosting terminal supports ANSI colours."""
         if os.getenv("NO_COLOR"):
@@ -73,9 +89,9 @@ class Colors:
         if sys.platform == "win32":
             try:
                 import ctypes
-                kernel32 = ctypes.windll.kernel32
-                kernel32.SetConsoleMode(kernel32.GetStdHandle(-11), 7)
-                return True
+                # Read-only check: verify a valid stdout handle exists.
+                # Actual ANSI mode activation is done in _enable_windows_color().
+                return ctypes.windll.kernel32.GetStdHandle(-11) != 0
             except Exception:
                 return os.getenv("TERM") == "xterm"
         return True

@@ -514,3 +514,45 @@ class TestCrossMethodAgreement:
         assert edas.ranks["A3"] == 3
         assert copras.ranks["A3"] == 3
         assert promethee.ranks_promethee_ii["A3"] == 3
+
+
+# ===================================================================
+# Cross-method dominance using shared conftest fixtures  (P4-29)
+#
+# dm3x3 / w_equal_3 are defined in tests/conftest.py.
+# A1 dominates A3 in all three criteria, so every method that produces
+# a complete ranking must assign rank(A1) < rank(A3).
+# ===================================================================
+
+class TestSharedFixtureCrossMethod:
+    """All six MCDM methods agree: A1 ranks above A3 under equal weights."""
+
+    def test_topsis_a1_beats_a3(self, dm3x3, w_equal_3):
+        from ranking.topsis import TOPSISCalculator
+        res = TOPSISCalculator().calculate(dm3x3, w_equal_3)
+        assert res.ranks["A1"] < res.ranks["A3"]
+
+    def test_vikor_a1_beats_a3(self, dm3x3, w_equal_3):
+        from ranking.vikor import VIKORCalculator
+        res = VIKORCalculator().calculate(dm3x3, w_equal_3)
+        assert res.ranks_Q["A1"] < res.ranks_Q["A3"]
+
+    def test_edas_a1_beats_a3(self, dm3x3, w_equal_3):
+        from ranking.edas import EDASCalculator
+        res = EDASCalculator().calculate(dm3x3, w_equal_3)
+        assert res.ranks["A1"] < res.ranks["A3"]
+
+    def test_saw_a1_beats_a3(self, dm3x3, w_equal_3):
+        from ranking.saw import SAWCalculator
+        res = SAWCalculator().calculate(dm3x3, w_equal_3)
+        assert res.ranks["A1"] < res.ranks["A3"]
+
+    def test_copras_a1_beats_a3(self, dm3x3, w_equal_3):
+        from ranking.copras import COPRASCalculator
+        res = COPRASCalculator().calculate(dm3x3, w_equal_3)
+        assert res.ranks["A1"] < res.ranks["A3"]
+
+    def test_promethee_a1_beats_a3(self, dm3x3, w_equal_3):
+        from ranking.promethee import PROMETHEECalculator
+        res = PROMETHEECalculator().calculate(dm3x3, w_equal_3)
+        assert res.ranks_promethee_ii["A1"] < res.ranks_promethee_ii["A3"]

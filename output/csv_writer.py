@@ -57,7 +57,7 @@ class CsvWriter:
 
     def _save_csv(self, df: pd.DataFrame, name: str,
                   directory: Optional[Path] = None,
-                  float_fmt: str = '%.6f', **kwargs) -> str:
+                  float_fmt: str = '%.6g', **kwargs) -> str:
         d = directory if directory is not None else self.csv_dir
         path = d / name
         df.to_csv(path, float_format=float_fmt, **kwargs)

@@ -185,6 +185,104 @@ class TestReportWriter:
         expected = tmp_path / "reports" / "report.md"
         assert Path(rw._path) == expected
 
+    def test_build_report_creates_file(self, tmp_path):
+        """build_report() must write report.md to disk and return non-empty text."""
+        import numpy as np
+        import pandas as pd
+        from unittest.mock import MagicMock
+
+        provinces = ["P1", "P2", "P3"]
+        final_scores = pd.Series([0.80, 0.55, 0.30], index=provinces)
+        final_ranking = pd.Series([1, 2, 3], index=provinces, dtype=int)
+
+        # Minimal ranking result mock
+        ranking_result = MagicMock()
+        ranking_result.final_scores = final_scores
+        ranking_result.final_ranking = final_ranking
+        ranking_result.methods_used = ["TOPSIS", "VIKOR", "SAW"]
+        ranking_result.kendall_w = 0.90
+
+        # Minimal panel_data mock
+        panel_data = MagicMock()
+        panel_data.years = [2021, 2022, 2023]
+        panel_data.provinces = provinces
+        panel_data.n_subcriteria = 3
+        panel_data.n_criteria = 2
+        panel_data.subcriteria_cross_section = {}  # no data → table section skipped
+
+        # Minimal weights dict — all keys accessed directly (outside try/except)
+        weights = {
+            "sc_array": np.array([0.4, 0.3, 0.3]),
+            "subcriteria": ["SC1", "SC2", "SC3"],
+            "global_sc_weights": {"SC1": 0.4, "SC2": 0.3, "SC3": 0.3},
+            "criterion_weights": {"C1": 0.6, "C2": 0.4},
+            "details": {},
+        }
+
+        rw = ReportWriter(base_output_dir=str(tmp_path))
+        report_text = rw.build_report(
+            panel_data=panel_data,
+            weights=weights,
+            ranking_result=ranking_result,
+            forecast_result=None,
+            analysis_results={},
+            execution_time=12.34,
+        )
+
+        # File must exist
+        assert Path(rw._path).is_file(), "report.md was not created"
+
+        # Returned text must be non-empty
+        assert isinstance(report_text, str) and len(report_text) > 0
+
+        # Core markdown headings must be present
+        assert "# 1. Executive Summary" in report_text
+        assert "# 2. Data Description" in report_text
+
+    def test_build_report_text_matches_file(self, tmp_path):
+        """Text returned by build_report() must match what is written to disk."""
+        import numpy as np
+        import pandas as pd
+        from unittest.mock import MagicMock
+
+        provinces = ["P1", "P2"]
+        final_scores = pd.Series([0.7, 0.3], index=provinces)
+        final_ranking = pd.Series([1, 2], index=provinces, dtype=int)
+
+        ranking_result = MagicMock()
+        ranking_result.final_scores = final_scores
+        ranking_result.final_ranking = final_ranking
+        ranking_result.methods_used = ["TOPSIS"]
+        ranking_result.kendall_w = 0.75
+
+        panel_data = MagicMock()
+        panel_data.years = [2022, 2023]
+        panel_data.provinces = provinces
+        panel_data.n_subcriteria = 2
+        panel_data.n_criteria = 1
+        panel_data.subcriteria_cross_section = {}
+
+        weights = {
+            "sc_array": np.array([0.6, 0.4]),
+            "subcriteria": ["SC1", "SC2"],
+            "global_sc_weights": {"SC1": 0.6, "SC2": 0.4},
+            "criterion_weights": {"C1": 1.0},
+            "details": {},
+        }
+
+        rw = ReportWriter(base_output_dir=str(tmp_path))
+        returned = rw.build_report(
+            panel_data=panel_data,
+            weights=weights,
+            ranking_result=ranking_result,
+            forecast_result=None,
+            analysis_results={},
+            execution_time=1.0,
+        )
+
+        on_disk = Path(rw._path).read_text(encoding="utf-8")
+        assert returned == on_disk
+
 
 # ---------------------------------------------------------------------------
 # OutputOrchestrator

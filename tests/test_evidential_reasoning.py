@@ -215,3 +215,87 @@ class TestEvidentialReasoningEngine:
         result = engine.combine([b1, b2], weights=np.array([0.5, 0.5]))
         u = result.expected_utility()
         assert 0.0 <= u <= 1.0
+
+
+# ---------------------------------------------------------------------------
+# TestERNumericalTextbook  (P4-21)
+#
+# Hand-computed reference values using Yang & Xu (2002) Eqs. 1–3.
+#
+#  L = 2, N = 3 grades ["H1", "H2", "H3"]
+#  Source 1 : β = [0.5, 0.3, 0.2],  weight = 0.6
+#  Source 2 : β = [0.4, 0.4, 0.2],  weight = 0.4
+#
+#  Both sources are complete (Σβ = 1), so B = C and m̃_H = 0.
+#
+#  A matrix (A[n, i] = w_i·β_{n,i} + 1 − w_i):
+#   A[0,0]=0.70  A[1,0]=0.58  A[2,0]=0.52
+#   A[0,1]=0.76  A[1,1]=0.76  A[2,1]=0.68
+#
+#  prod_A = [0.532, 0.4408, 0.3536]
+#  prod_B = prod_C = 0.24
+#
+#  denom = 0.532+0.4408+0.3536 − 2×0.24 = 0.8464
+#
+#  final_β = [0.292, 0.2008, 0.1136] / 0.8464
+#  unassigned (β_H) = 0.24 / 0.8464
+# ---------------------------------------------------------------------------
+
+class TestERNumericalTextbook:
+    """Known-answer ER verification against Yang & Xu (2002) formulas."""
+
+    # Shared expected values (computed above)
+    _DENOM   = 0.8464
+    _EXPECT0 = 0.292  / 0.8464  # ≈ 0.34498
+    _EXPECT1 = 0.2008 / 0.8464  # ≈ 0.23726
+    _EXPECT2 = 0.1136 / 0.8464  # ≈ 0.13422
+    _EXPECT_H = 0.24  / 0.8464  # ≈ 0.28354
+
+    @pytest.fixture
+    def er_result(self):
+        """Run ER combination and return the BeliefDistribution."""
+        engine = EvidentialReasoningEngine(grades=["H1", "H2", "H3"])
+        src1 = BeliefDistribution(
+            grades=["H1", "H2", "H3"],
+            beliefs=np.array([0.5, 0.3, 0.2]),
+        )
+        src2 = BeliefDistribution(
+            grades=["H1", "H2", "H3"],
+            beliefs=np.array([0.4, 0.4, 0.2]),
+        )
+        return engine.combine([src1, src2], weights=np.array([0.6, 0.4]))
+
+    def test_beta_h1_matches_formula(self, er_result):
+        assert er_result.beliefs[0] == pytest.approx(self._EXPECT0, abs=1e-4)
+
+    def test_beta_h2_matches_formula(self, er_result):
+        assert er_result.beliefs[1] == pytest.approx(self._EXPECT1, abs=1e-4)
+
+    def test_beta_h3_matches_formula(self, er_result):
+        assert er_result.beliefs[2] == pytest.approx(self._EXPECT2, abs=1e-4)
+
+    def test_unassigned_matches_formula(self, er_result):
+        assert er_result.unassigned == pytest.approx(self._EXPECT_H, abs=1e-4)
+
+    def test_beliefs_sum_plus_unassigned_equals_one(self, er_result):
+        total = er_result.beliefs.sum() + er_result.unassigned
+        assert total == pytest.approx(1.0, abs=1e-9)
+
+    def test_dominant_grade_is_h1(self, er_result):
+        """H1 should have the highest belief (strongest source favours H1)."""
+        assert er_result.beliefs[0] == er_result.beliefs.max()
+
+    def test_unnormalised_weights_give_same_result(self):
+        """Multiplying weights by any positive scalar must not change the result."""
+        engine = EvidentialReasoningEngine(grades=["H1", "H2", "H3"])
+        src1 = BeliefDistribution(
+            grades=["H1", "H2", "H3"],
+            beliefs=np.array([0.5, 0.3, 0.2]),
+        )
+        src2 = BeliefDistribution(
+            grades=["H1", "H2", "H3"],
+            beliefs=np.array([0.4, 0.4, 0.2]),
+        )
+        r1 = engine.combine([src1, src2], weights=np.array([0.6, 0.4]))
+        r2 = engine.combine([src1, src2], weights=np.array([6.0, 4.0]))
+        np.testing.assert_allclose(r1.beliefs, r2.beliefs, atol=1e-9)

@@ -167,8 +167,12 @@ class DebugLogger:
                 json.dump(self._entries, fh, indent=2, default=_json_default,
                           ensure_ascii=False)
             self._unflushed_count = 0
-        except Exception:
-            pass  # best-effort — don't disrupt the pipeline
+        except Exception as _flush_exc:
+            import sys as _sys
+            print(
+                f"[ml-mcdm] Warning: debug log write failed: {_flush_exc}",
+                file=_sys.stderr,
+            )
 
 
 # ------------------------------------------------------------------

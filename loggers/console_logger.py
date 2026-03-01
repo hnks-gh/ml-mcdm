@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import sys
 import time
+import threading
 from contextlib import contextmanager
 from typing import Any, Dict, Generator, List, Optional, Sequence, Tuple
 
@@ -34,15 +35,18 @@ class ConsoleLogger:
 
     .. note::
 
-       The ``_write`` method performs unbuffered writes to ``sys.stdout``
-       but is **not** thread-safe.  If multiple threads share a single
-       ``ConsoleLogger`` instance, concurrent ``_write`` calls may
-       interleave output.  For multi-threaded pipelines, either
-       synchronise externally or give each thread its own logger.
+       The ``_write`` method acquires a :class:`threading.Lock` before
+       writing to ``sys.stdout``, making concurrent calls from multiple
+       threads safe.  Individual *lines* are atomic, though multi-line
+       blocks (e.g. banners) may still interleave with other thread output
+       between lines.
     """
 
     def __init__(self, use_color: Optional[bool] = None):
         self._color = Colors.supports_color() if use_color is None else use_color
+        if self._color:
+            Colors._enable_windows_color()
+        self._lock = threading.Lock()
         self._phase_stack: List[PhaseMetrics] = []
         self._all_phases: List[PhaseMetrics] = []
 
@@ -60,8 +64,9 @@ class ConsoleLogger:
     # ------------------------------------------------------------------
 
     def _write(self, msg: str) -> None:
-        sys.stdout.write(msg + '\n')
-        sys.stdout.flush()
+        with self._lock:
+            sys.stdout.write(msg + '\n')
+            sys.stdout.flush()
 
     # ------------------------------------------------------------------
     # Banners & separators

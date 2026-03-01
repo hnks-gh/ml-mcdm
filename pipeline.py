@@ -619,7 +619,13 @@ class MLMCDMPipeline:
             target_year = max(panel_data.years) + 1
         
         self.logger.info(f"Target year: {target_year}")
-        self.logger.info(f"Base models: 6 (GB, BayesianRidge, QuantileRF, PanelVAR, HierarchBayes, NAM)")
+        _base_model_names = [
+            "GradientBoosting", "BayesianRidge", "QuantileRF",
+            "PanelVAR", "HierarchicalBayes", "NAM",
+        ]
+        self.logger.info(
+            f"Base models: {len(_base_model_names)} ({', '.join(_base_model_names)})"
+        )
         self.logger.info(f"Meta-learner: Super Learner (Ridge)")
         self.logger.info(f"Calibration: Conformal {self.config.forecast.conformal_method} (α={self.config.forecast.conformal_alpha})")
         

@@ -188,6 +188,47 @@ class TestBayesianForecaster:
         pred = model.predict(X)
         assert pred.shape == y.shape
 
+    def test_predict_with_uncertainty_shape(self, small_dataset):
+        """predict_with_uncertainty returns (mean, std) with matching shapes."""
+        from forecasting.bayesian import BayesianForecaster
+
+        X, y = small_dataset
+        model = BayesianForecaster()
+        model.fit(X, y)
+        mean, std = model.predict_with_uncertainty(X)
+        assert mean.shape == y.shape
+        assert std.shape == y.shape
+
+    def test_predict_with_uncertainty_std_positive(self, small_dataset):
+        """All posterior standard deviations must be strictly positive."""
+        from forecasting.bayesian import BayesianForecaster
+
+        X, y = small_dataset
+        model = BayesianForecaster()
+        model.fit(X, y)
+        _, std = model.predict_with_uncertainty(X)
+        assert np.all(std > 0), "Some std values are non-positive"
+
+    def test_feature_importance_length(self, small_dataset):
+        """get_feature_importance() returns one value per input feature."""
+        from forecasting.bayesian import BayesianForecaster
+
+        X, y = small_dataset
+        model = BayesianForecaster()
+        model.fit(X, y)
+        imp = model.get_feature_importance()
+        assert len(imp) == X.shape[1]
+
+    def test_feature_importance_non_negative(self, small_dataset):
+        """Feature importances (|coef|) must be ≥ 0."""
+        from forecasting.bayesian import BayesianForecaster
+
+        X, y = small_dataset
+        model = BayesianForecaster()
+        model.fit(X, y)
+        imp = model.get_feature_importance()
+        assert np.all(imp >= 0)
+
 
 class TestQuantileRandomForest:
     def test_fit_predict_multioutput(self, small_dataset):
@@ -351,6 +392,46 @@ class TestNeuralAdditive:
         model.fit(X, y)
         pred = model.predict(X)
         assert pred.shape == y.shape
+
+    def test_multi_output_shape(self, small_dataset):
+        """NAM handles multi-output targets with correct prediction shape."""
+        from forecasting.neural_additive import NeuralAdditiveForecaster
+
+        X, y = small_dataset
+        assert y.ndim == 2 and y.shape[1] > 1, "fixture must be multi-output"
+        model = NeuralAdditiveForecaster(
+            n_basis_per_feature=8, n_iterations=2, random_state=42
+        )
+        model.fit(X, y)
+        pred = model.predict(X)
+        assert pred.shape == y.shape
+
+    def test_get_shape_functions_returns_dict(self, small_dataset):
+        """get_shape_functions() returns one array per input feature."""
+        from forecasting.neural_additive import NeuralAdditiveForecaster
+
+        X, y = small_dataset
+        model = NeuralAdditiveForecaster(
+            n_basis_per_feature=8, n_iterations=2, random_state=42
+        )
+        model.fit(X, y)
+        shapes = model.get_shape_functions(X)
+        assert len(shapes) == X.shape[1]
+        for j, arr in shapes.items():
+            assert arr.shape == (X.shape[0],), f"shape function {j} bad shape"
+
+    def test_feature_importance_non_negative_and_length(self, small_dataset):
+        """NAM feature importances are non-negative and have length n_features."""
+        from forecasting.neural_additive import NeuralAdditiveForecaster
+
+        X, y = small_dataset
+        model = NeuralAdditiveForecaster(
+            n_basis_per_feature=8, n_iterations=2, random_state=42
+        )
+        model.fit(X, y)
+        imp = model.get_feature_importance()
+        assert len(imp) == X.shape[1]
+        assert np.all(imp >= 0)
 
 
 # ---------------------------------------------------------------------------
@@ -589,3 +670,60 @@ class TestPhaseRegression:
         assert lag1.shape == (4, 8)
         np.testing.assert_array_equal(lag1[0, :4], X[1])
         np.testing.assert_array_equal(lag1[0, 4:], X[0])
+
+
+# ---------------------------------------------------------------------------
+# Known-answer numerical test  (P4-28)
+#
+# y = 2·x₀  (exact linear relationship, near-zero noise)
+# After training on enough samples the model must predict y_new ≈ 2·x_new
+# within a generous 25 % relative tolerance.
+# ---------------------------------------------------------------------------
+
+class TestKnownAnswerForecasting:
+    """Verify that base forecasters can recover a near-trivial signal."""
+
+    @pytest.fixture
+    def linear_data(self):
+        """Single-feature, single-output (1-D): y = 2x + ε, ε ~ N(0, 0.01)."""
+        rng = np.random.RandomState(0)
+        n = 200
+        X = rng.randn(n, 1)
+        y = 2.0 * X[:, 0] + rng.randn(n) * 0.01  # 1-D so models use single-output path
+        return X, y
+
+    def test_gradient_boosting_recovers_known_slope(self, linear_data):
+        """GradientBoostingForecaster predicts y ≈ 2x on held-out points."""
+        from forecasting.gradient_boosting import GradientBoostingForecaster
+
+        X, y = linear_data
+        model = GradientBoostingForecaster(n_estimators=100, random_state=42)
+        model.fit(X, y)
+
+        x_vals = np.array([[1.0], [-1.0], [2.0], [0.5]])
+        y_hat = model.predict(x_vals).ravel()
+        y_true = 2.0 * x_vals[:, 0]  # 1-D: [2.0, -2.0, 4.0, 1.0]
+
+        rel_err = np.abs(y_hat - y_true) / (np.abs(y_true) + 1e-8)
+        assert rel_err.max() < 0.25, (
+            f"Gradient boosting failed to recover y=2x; max relative error "
+            f"= {rel_err.max():.3f}"
+        )
+
+    def test_bayesian_forecaster_recovers_known_slope(self, linear_data):
+        """BayesianForecaster recovers y = 2x on held-out single-feature data."""
+        from forecasting.bayesian import BayesianForecaster
+
+        X, y = linear_data
+        model = BayesianForecaster()
+        model.fit(X, y)
+
+        x_vals = np.array([[1.0], [-1.0], [2.0], [0.5]])
+        y_hat = model.predict(x_vals).ravel()
+        y_true = 2.0 * x_vals[:, 0]  # 1-D: [2.0, -2.0, 4.0, 1.0]
+
+        rel_err = np.abs(y_hat - y_true) / (np.abs(y_true) + 1e-8)
+        assert rel_err.max() < 0.25, (
+            f"BayesianForecaster failed to recover y=2x; max relative error "
+            f"= {rel_err.max():.3f}"
+        )

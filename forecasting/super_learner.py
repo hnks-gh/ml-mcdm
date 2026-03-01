@@ -420,7 +420,11 @@ class SuperLearner:
 
                 meta = RidgeCV(
                     alphas=self.meta_alpha_range,
-                    cv=max(2, min(3, valid.sum() // 2)),
+                    # Use TimeSeriesSplit on the OOF meta-features.
+                    # Meta-features are already temporally ordered OOF
+                    # predictions, so this preserves the temporal guarantee
+                    # at the meta-learning stage.
+                    cv=TimeSeriesSplit(n_splits=max(2, min(3, valid.sum() // 2))),
                 )
 
             try:

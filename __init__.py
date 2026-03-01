@@ -8,7 +8,7 @@ A comprehensive framework for MCDM analysis with ML-powered forecasting.
 Architecture
 ------------
 Traditional MCDM + Evidential Reasoning (Yang & Xu, 2002) two-stage hierarchy:
-  Stage 1: Within each of 8 criteria, combine 5 traditional method scores via ER
+  Stage 1: Within each of 8 criteria, combine 6 traditional method scores via ER
   Stage 2: Combine 8 criterion beliefs via ER with criterion weights
 
 Package Structure
@@ -59,8 +59,8 @@ ml-mcdm/
 
 Quick Start
 -----------
->>> from config import Config
->>> from pipeline import run_pipeline
+>>> from ml_mcdm.config import Config
+>>> from ml_mcdm.pipeline import run_pipeline
 >>> result = run_pipeline('data/data.csv', Config())
 >>> print(result.summary())
 
@@ -68,8 +68,8 @@ For detailed usage, see individual module documentation.
 """
 
 try:
-    from config import Config, get_default_config, get_config, set_config, reset_config
-    from loggers import (
+    from .config import Config, get_default_config, get_config, set_config, reset_config
+    from .loggers import (
         setup_logging,
         ConsoleLogger,
         DebugLogger,
@@ -83,12 +83,17 @@ try:
         log_context,
         timed_operation,
     )
-    from data_loader import DataLoader, PanelData, HierarchyMapping, load_data
-    from pipeline import MLMCDMPipeline, run_pipeline, PipelineResult
-    from output import OutputOrchestrator, CsvWriter, ReportWriter
-    from visualization import VisualizationOrchestrator, create_visualizer
-except ImportError:
-    pass  # Allow partial import when loaded in isolation (e.g., during pytest package traversal)
+    from .data_loader import DataLoader, PanelData, HierarchyMapping, load_data
+    from .pipeline import MLMCDMPipeline, run_pipeline, PipelineResult
+    from .output import OutputOrchestrator, CsvWriter, ReportWriter
+    from .visualization import VisualizationOrchestrator, create_visualizer
+except ImportError as _import_err:
+    import warnings as _warnings
+    _warnings.warn(
+        f"ml-mcdm: partial import — some symbols are unavailable: {_import_err}",
+        ImportWarning,
+        stacklevel=2,
+    )
 
 try:
     from importlib.metadata import version as _pkg_version, PackageNotFoundError as _PkgNotFoundError

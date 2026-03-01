@@ -347,7 +347,7 @@ class RankingPlotter(BasePlotter):
 
             # Determine grade count from first entry
             first_bd    = next(iter(final_beliefs.values()))
-            n_grades    = len(first_bd.degrees)
+            n_grades    = len(first_bd.beliefs)
             grade_labels = [f'Grade {g+1}' for g in range(n_grades)]
 
             # Sort provinces by ER rank
@@ -357,7 +357,7 @@ class RankingPlotter(BasePlotter):
                             if p in final_beliefs]
 
             data = np.array([
-                final_beliefs[p].degrees for p in sorted_provs
+                final_beliefs[p].beliefs for p in sorted_provs
             ])   # shape (n_prov, n_grades)
 
             n_prov = len(sorted_provs)

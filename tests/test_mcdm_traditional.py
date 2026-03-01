@@ -463,3 +463,164 @@ class TestWeightResultColumnOrder:
         s = wr.as_series
         assert s["X"] == pytest.approx(0.6)
         assert s["Y"] == pytest.approx(0.4)
+
+
+# ---------------------------------------------------------------------------
+# Shared conftest fixtures round-trip  (P4-29)
+#
+# dm3x3 and w_equal_3 are defined in tests/conftest.py and available to
+# every test module. This class validates they plug into all six methods.
+# ---------------------------------------------------------------------------
+
+class TestSharedFixturesRoundTrip:
+    """All six MCDM methods accept dm3x3 / w_equal_3 without error."""
+
+    def test_topsis_accepts_shared_fixtures(self, dm3x3, w_equal_3):
+        from ranking.topsis import TOPSISCalculator
+        res = TOPSISCalculator().calculate(dm3x3, w_equal_3)
+        assert len(res.scores) == 3
+        assert set(res.scores.index) == {"A1", "A2", "A3"}
+
+    def test_vikor_accepts_shared_fixtures(self, dm3x3, w_equal_3):
+        from ranking.vikor import VIKORCalculator
+        res = VIKORCalculator().calculate(dm3x3, w_equal_3)
+        assert len(res.ranks_Q) == 3
+
+    def test_edas_accepts_shared_fixtures(self, dm3x3, w_equal_3):
+        from ranking.edas import EDASCalculator
+        res = EDASCalculator().calculate(dm3x3, w_equal_3)
+        assert len(res.ranks) == 3
+
+    def test_saw_accepts_shared_fixtures(self, dm3x3, w_equal_3):
+        from ranking.saw import SAWCalculator
+        res = SAWCalculator().calculate(dm3x3, w_equal_3)
+        assert len(res.scores) == 3
+
+    def test_copras_accepts_shared_fixtures(self, dm3x3, w_equal_3):
+        from ranking.copras import COPRASCalculator
+        res = COPRASCalculator().calculate(dm3x3, w_equal_3)
+        assert len(res.ranks) == 3
+
+    def test_promethee_accepts_shared_fixtures(self, dm3x3, w_equal_3):
+        from ranking.promethee import PROMETHEECalculator
+        res = PROMETHEECalculator().calculate(dm3x3, w_equal_3)
+        assert len(res.phi_net) == 3
+#
+# The dataset is all-benefit; cost criteria are never tested here.
+# Expected behaviour: methods return a result without raising, with the
+# correct number of alternatives/criteria in the output.
+# ---------------------------------------------------------------------------
+
+class TestDegenerateMCDM:
+    """Edge-case: m=1 alternative, or n=1 criterion (all-benefit)."""
+
+    # --- helpers -----------------------------------------------------------
+
+    @staticmethod
+    def _single_alt_dm():
+        """1 alternative × 3 criteria decision matrix."""
+        return pd.DataFrame(
+            {"C1": [0.8], "C2": [0.6], "C3": [0.9]},
+            index=["A1"],
+        )
+
+    @staticmethod
+    def _single_crit_dm():
+        """3 alternatives × 1 criterion decision matrix."""
+        return pd.DataFrame(
+            {"C1": [0.9, 0.5, 0.3]},
+            index=["A1", "A2", "A3"],
+        )
+
+    @staticmethod
+    def _w3():
+        return {"C1": 1 / 3, "C2": 1 / 3, "C3": 1 / 3}
+
+    @staticmethod
+    def _w1():
+        return {"C1": 1.0}
+
+    # --- TOPSIS -----------------------------------------------------------
+
+    def test_topsis_single_alternative_no_crash(self):
+        from ranking.topsis import TOPSISCalculator
+
+        res = TOPSISCalculator().calculate(self._single_alt_dm(), self._w3())
+        assert len(res.scores) == 1
+
+    def test_topsis_single_criterion_no_crash(self):
+        from ranking.topsis import TOPSISCalculator
+
+        res = TOPSISCalculator().calculate(self._single_crit_dm(), self._w1())
+        assert len(res.scores) == 3
+        assert int(res.ranks.iloc[0]) == 1  # highest value ranked first
+
+    # --- VIKOR ------------------------------------------------------------
+
+    def test_vikor_single_alternative_no_crash(self):
+        from ranking.vikor import VIKORCalculator
+
+        res = VIKORCalculator().calculate(self._single_alt_dm(), self._w3())
+        assert len(res.ranks_Q) == 1
+
+    def test_vikor_single_criterion_no_crash(self):
+        from ranking.vikor import VIKORCalculator
+
+        res = VIKORCalculator().calculate(self._single_crit_dm(), self._w1())
+        assert len(res.ranks_Q) == 3
+
+    # --- EDAS -------------------------------------------------------------
+
+    def test_edas_single_alternative_no_crash(self):
+        from ranking.edas import EDASCalculator
+
+        res = EDASCalculator().calculate(self._single_alt_dm(), self._w3())
+        assert len(res.ranks) == 1
+
+    def test_edas_single_criterion_no_crash(self):
+        from ranking.edas import EDASCalculator
+
+        res = EDASCalculator().calculate(self._single_crit_dm(), self._w1())
+        assert len(res.ranks) == 3
+
+    # --- SAW --------------------------------------------------------------
+
+    def test_saw_single_alternative_no_crash(self):
+        from ranking.saw import SAWCalculator
+
+        res = SAWCalculator().calculate(self._single_alt_dm(), self._w3())
+        assert len(res.scores) == 1
+
+    def test_saw_single_criterion_no_crash(self):
+        from ranking.saw import SAWCalculator
+
+        res = SAWCalculator().calculate(self._single_crit_dm(), self._w1())
+        assert len(res.scores) == 3
+
+    # --- COPRAS -----------------------------------------------------------
+
+    def test_copras_single_alternative_no_crash(self):
+        from ranking.copras import COPRASCalculator
+
+        res = COPRASCalculator().calculate(self._single_alt_dm(), self._w3())
+        assert len(res.ranks) == 1
+
+    def test_copras_single_criterion_no_crash(self):
+        from ranking.copras import COPRASCalculator
+
+        res = COPRASCalculator().calculate(self._single_crit_dm(), self._w1())
+        assert len(res.ranks) == 3
+
+    # --- PROMETHEE --------------------------------------------------------
+
+    def test_promethee_single_alternative_no_crash(self):
+        from ranking.promethee import PROMETHEECalculator
+
+        res = PROMETHEECalculator().calculate(self._single_alt_dm(), self._w3())
+        assert len(res.phi_net) == 1
+
+    def test_promethee_single_criterion_no_crash(self):
+        from ranking.promethee import PROMETHEECalculator
+
+        res = PROMETHEECalculator().calculate(self._single_crit_dm(), self._w1())
+        assert len(res.phi_net) == 3

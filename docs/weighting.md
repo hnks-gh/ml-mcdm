@@ -209,7 +209,7 @@ where $\hat{\sigma}_j$ is the sample std of column $j$ after global normalizatio
 
 For each simulation $s = 1, \ldots, N$:
 
-1. **Apply perturbation** (bootstrap + noise) - see Â§4.5.
+1. **Apply perturbation** (bootstrap + noise) - see §4.5.
 2. **Normalize:** $\tilde{X}^{(s)} = \text{GlobalMinMax}(X^{(s)}, \varepsilon)$.
 3. **Compute:** $\mathbf{w}_E^{(s)} = \text{Entropy}(\tilde{X}^{(s)})$, $\mathbf{w}_C^{(s)} = \text{CRITIC}(\tilde{X}^{(s)})$.
 4. **Sample:** $\beta^{(s)} \sim \text{Beta}(\alpha_a, \alpha_b)$.
@@ -304,9 +304,9 @@ Two consecutive checks passing triggers early termination; `converged_at` is rec
 | Beta shape 2 | $\alpha_b$ | 1.0 | [0.5, 5.0] | Controls $\beta$ distribution towards CRITIC |
 | Noise scale | $\sigma_{\text{scale}}$ | 0.02 | [0.005, 0.15] | Log-normal noise magnitude |
 | Bootstrap fraction | $f_{\text{boot}}$ | 1.0 | {0.8, 1.0} | Province bootstrap resample ratio |
-| MC simulations | $N$ | 2000 | 500â€“5000 | Inference iterations per level |
-| Tuning simulations | $N_{\text{tune}}$ | 500 | 200â€“1000 | Per-grid-point MC count |
-| Top-K for stability | $K$ | 10 | 5â€“20 | Rank variance window |
+| MC simulations | $N$ | 2000 | 500–5000 | Inference iterations per level |
+| Tuning simulations | $N_{\text{tune}}$ | 500 | 200–1000 | Per-grid-point MC count |
+| Top-K for stability | $K$ | 10 | 5–20 | Rank variance window |
 
 > **Note:** There is no `blend_mode` parameter. The linear blend is always primary; multiplicative is a silent numeric fallback. This is not configurable.
 
@@ -320,7 +320,7 @@ Two consecutive checks passing triggers early termination; `converged_at` is rec
 | (1, 3) | 0.25 | CRITIC-dominant |
 | (0.5, 0.5) | 0.5 | Bimodal {0,1} - strong method preference |
 
-**Why $N = 2000$?** For $p = 29$ and 95% ETI, the MCSE of the CI endpoint is $\approx 0.011\,\hat{\sigma}_{w_j}$ - negligible. $N = 2000$ gives stable Kendall's $W$ for $m = 63$. Early-stopping typically terminates at 800â€“1200 iterations.
+**Why $N = 2000$?** For $p = 29$ and 95% ETI, the MCSE of the CI endpoint is $\approx 0.011\,\hat{\sigma}_{w_j}$ - negligible. $N = 2000$ gives stable Kendall's $W$ for $m = 63$. Early-stopping typically terminates at 800–1200 iterations.
 
 ---
 
@@ -363,7 +363,7 @@ The tuning is run **once** before both Level 1 and Level 2 inference - both leve
 
 ```
 INPUT:
-  panel_df        - long-format panel (Province, Year, SC11â€¦SC83), pre-cleaned
+  panel_df        - long-format panel (Province, Year, SC11…SC83), pre-cleaned
   criteria_groups - dict {Ck: [sc_col1, sc_col2, ...]} - 8 groups total
   entity_col      - 'Province'
   time_col        - 'Year'
@@ -407,40 +407,40 @@ STEP 3 - LEVEL 1: Per-Criterion Group MC Ensemble
                   X=X_k, province_blocks=province_blocks,
                   col_names=sc_cols_k, θ=θ*, config=config)
 
-    local_weights[C_k]    â† result_k.mean_weights   # {sc: float}, sums to 1
-    level1_diagnostics[C_k] â† result_k.diagnostics
+    local_weights[C_k]    ← result_k.mean_weights   # {sc: float}, sums to 1
+    level1_diagnostics[C_k] ← result_k.diagnostics
 
 STEP 4 - BUILD CRITERION COMPOSITE MATRIX
-  X_raw_all â† panel_df[all_sc_cols].values        # m Ã— 29
-  Z         â† zeros(m, 8)
+  X_raw_all ← panel_df[all_sc_cols].values        # m × 29
+  Z         ← zeros(m, 8)
   FOR k = 1..8:
-    j_cols    â† column indices of criteria_groups[C_k] in X_raw_all
-    u_k       â† array([local_weights[C_k][sc] for sc in criteria_groups[C_k]])
-    Z[:, k-1] â† X_raw_all[:, j_cols] @ u_k        # m Ã— 1 composite
+    j_cols    ← column indices of criteria_groups[C_k] in X_raw_all
+    u_k       ← array([local_weights[C_k][sc] for sc in criteria_groups[C_k]])
+    Z[:, k-1] ← X_raw_all[:, j_cols] @ u_k        # m × 1 composite
 
 STEP 5 - LEVEL 2: Criterion MC Ensemble
-  criterion_names â† ['C01','C02','C03','C04','C05','C06','C07','C08']
-  result_L2 â† _run_mc_ensemble(
+  criterion_names ← ['C01','C02','C03','C04','C05','C06','C07','C08']
+  result_L2 ← _run_mc_ensemble(
                 X=Z, province_blocks=province_blocks,
-                col_names=criterion_names, Î¸=Î¸*, config=config)
+                col_names=criterion_names, θ=θ*, config=config)
 
-  criterion_weights  â† result_L2.mean_weights     # {Ck: float}, sums to 1
-  level2_diagnostics â† result_L2.diagnostics
+  criterion_weights  ← result_L2.mean_weights     # {Ck: float}, sums to 1
+  level2_diagnostics ← result_L2.diagnostics
 
 STEP 6 - GLOBAL SC WEIGHTS
-  global_sc_weights â† {}
+  global_sc_weights ← {}
   FOR k = 1..8:
-    v_k â† criterion_weights[C_k]
+    v_k ← criterion_weights[C_k]
     FOR sc in criteria_groups[C_k]:
       global_sc_weights[sc] = local_weights[C_k][sc] * v_k
 
   # Re-normalise (numerical guard)
-  total â† sum(global_sc_weights.values())
-  global_sc_weights â† {sc: w/total for sc, w in global_sc_weights.items()}
-  # By construction total â‰ˆ 1.0; re-norm is floating-point safety only
+  total ← sum(global_sc_weights.values())
+  global_sc_weights ← {sc: w/total for sc, w in global_sc_weights.items()}
+  # By construction total ≈1.0; re-norm is floating-point safety only
 
 STEP 7 - TEMPORAL STABILITY VERIFICATION
-  stability â† temporal_stability_verification(
+  stability ← temporal_stability_verification(
                  panel_df, compute_weights_fn,   # callback: no tuning, N=200
                  entity_col, time_col, all_sc_cols,
                  threshold=config.stability_threshold)
@@ -452,15 +452,15 @@ STEP 8 - RETURN
     details = build_details_dict(
                 level1_diagnostics, level2_diagnostics,
                 global_sc_weights, criterion_weights,
-                local_weights, Î¸*, stability, config)
+                local_weights, θ*, stability, config)
   )
 
 
-SUBROUTINE: _run_mc_ensemble(X, province_blocks, col_names, Î¸, config)
+SUBROUTINE: _run_mc_ensemble(X, province_blocks, col_names, θ, config)
 
-  [Implements Â§4.5â€“4.6 perturbation + blend loop]
+  [Implements §4.5–4.6 perturbation + blend loop]
   [Collects weight and rank samples for N iterations]
-  [Applies convergence check (Â§5.3)]
+  [Applies convergence check (§5.3)]
   [Returns DiagnosticsResult: mean_weights, std_weights, ci_lower, ci_upper,
    avg_kendall_tau, avg_spearman_rho, kendall_w, top_k_rank_var,
    province_mean_rank, province_std_rank, prob_top1, prob_topK,
@@ -750,10 +750,10 @@ For $m = 63$: $63 \times 63 = 3{,}969$ floats - trivially small. Store as `{prov
 1. Shannon, C.E. (1948). A Mathematical Theory of Communication. *Bell System Technical Journal*, 27(3), 379–423.
 2. Diakoulaki, D., Mavrotas, G., & Papayannakis, L. (1995). Determining objective weights in multiple criteria problems: The CRITIC method. *Computers & Operations Research*, 22(7), 763–770.
 3. Kunsch, H.R. (1989). The Jackknife and the Bootstrap for General Stationary Observations. *Annals of Statistics*, 17(3), 1217–1241.
-4. Politis, D.N. & Romano, J.P. (1994). The Stationary Bootstrap. *Journal of the American Statistical Association*, 89(428), 1303â€“1313.
-5. Kendall, M.G. (1938). A new measure of rank correlation. *Biometrika*, 30(1/2), 81â€“93.
-6. Kendall, M.G. & Babington Smith, B. (1939). The problem of m rankings. *Annals of Mathematical Statistics*, 10(3), 275â€“287.
+4. Politis, D.N. & Romano, J.P. (1994). The Stationary Bootstrap. *Journal of the American Statistical Association*, 89(428), 1303–1313.
+5. Kendall, M.G. (1938). A new measure of rank correlation. *Biometrika*, 30(1/2), 81–93.
+6. Kendall, M.G. & Babington Smith, B. (1939). The problem of m rankings. *Annals of Mathematical Statistics*, 10(3), 275–287.
 7. Davison, A.C. & Hinkley, D.V. (1997). *Bootstrap Methods and Their Application*. Cambridge University Press.
-8. Mockus, J. (1994). Application of Bayesian approach to numerical methods of global and stochastic optimization. *Journal of Global Optimization*, 4(4), 347â€“365.
-9. Snoek, J., Larochelle, H., & Adams, R.P. (2012). Practical Bayesian Optimization of Machine Learning Algorithms. *NeurIPS 2012*, 2951â€“2959.
+8. Mockus, J. (1994). Application of Bayesian approach to numerical methods of global and stochastic optimization. *Journal of Global Optimization*, 4(4), 347–365.
+9. Snoek, J., Larochelle, H., & Adams, R.P. (2012). Practical Bayesian Optimization of Machine Learning Algorithms. *NeurIPS 2012*, 2951–2959.
 

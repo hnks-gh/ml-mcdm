@@ -343,7 +343,7 @@ class RankingConfig:
 @dataclass
 class VisualizationConfig:
     """Figure appearance defaults."""
-    figsize: tuple = (12, 8)
+    figsize: tuple = field(default_factory=lambda: (12, 8))
     dpi: int = 300
     style: str = "seaborn-v0_8-whitegrid"
     palette: str = "viridis"
@@ -388,6 +388,9 @@ class Config:
 
     def __post_init__(self):
         self.paths.ensure_directories()
+        # Propagate the global random seed to weighting if not explicitly overridden
+        if self.weighting.seed is None:
+            self.weighting.seed = self.random.seed
 
     # --- convenience properties ---
 
@@ -400,7 +403,15 @@ class Config:
     def to_dict(self) -> Dict:
         def _cvt(obj):
             if hasattr(obj, '__dataclass_fields__'):
-                return {k: _cvt(v) for k, v in obj.__dict__.items()}
+                d = {k: _cvt(v) for k, v in obj.__dict__.items()}
+                # Include computed properties that are not stored in __dict__
+                if isinstance(obj, PanelDataConfig):
+                    d['subcriteria_cols'] = obj.subcriteria_cols
+                    d['criteria_cols'] = obj.criteria_cols
+                    d['train_years'] = obj.train_years
+                    d['test_year'] = obj.test_year
+                    d['n_observations'] = obj.n_observations
+                return d
             if isinstance(obj, Enum):
                 return obj.value
             if isinstance(obj, Path):

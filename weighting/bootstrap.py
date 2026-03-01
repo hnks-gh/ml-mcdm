@@ -18,7 +18,7 @@ def bayesian_bootstrap_weights(
     X_norm: np.ndarray,
     criteria_cols: List[str],
     weight_calculator: Callable[..., np.ndarray],
-    n_iterations: int = 200,
+    n_iterations: int = 201,
     seed: int = 42,
     epsilon: float = 1e-10
 ) -> Dict:
@@ -40,9 +40,9 @@ def bayesian_bootstrap_weights(
         Function with signature
         ``(X_df, criteria_cols, sample_weights=None) -> np.ndarray``.
         *sample_weights* is a 1-D array of observation weights summing to 1.
-    n_iterations : int, default=200
-        Number of bootstrap iterations. Odd number to avoid interpolation
-        at percentiles (2.5%, 97.5%).
+    n_iterations : int, default=201
+        Number of bootstrap iterations. Use an odd number to avoid
+        interpolation at percentiles (2.5%, 97.5%).
     seed : int, default=42
         Random seed for reproducibility.
     epsilon : float, default=1e-10
