@@ -1,0 +1,12 @@
+{
+  "overall_robustness": 0.8584461399355412,
+  "confidence_level": 0.95,
+  "n_criteria_analyzed": 8,
+  "n_subcriteria_analyzed": 29,
+  "n_provinces_stability": 61,
+  "top_n_stability": {
+    "3": 0.471,
+    "5": 1.0,
+    "10": 0.919
+  }
+}

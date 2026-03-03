@@ -1,0 +1,4349 @@
+[
+  {
+    "timestamp": "2026-03-01T19:01:32.268119",
+    "level": "INFO",
+    "module": "data_loader",
+    "function": "load",
+    "line": 316,
+    "phase": "Data Loading",
+    "message": "Loading data from /content/ml-mcdm/data"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:32.283127",
+    "level": "INFO",
+    "module": "data_loader",
+    "function": "_load_hierarchy_mapping",
+    "line": 378,
+    "phase": "Data Loading",
+    "message": "[OK] Loaded hierarchy: 8 criteria, 29 subcriteria"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:32.289879",
+    "level": "INFO",
+    "module": "data_loader",
+    "function": "_load_yearly_files",
+    "line": 419,
+    "phase": "Data Loading",
+    "message": "  Loaded 2011: 63 provinces, 29 subcriteria"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:32.292714",
+    "level": "INFO",
+    "module": "data_loader",
+    "function": "_load_yearly_files",
+    "line": 419,
+    "phase": "Data Loading",
+    "message": "  Loaded 2012: 63 provinces, 29 subcriteria"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:32.295317",
+    "level": "INFO",
+    "module": "data_loader",
+    "function": "_load_yearly_files",
+    "line": 419,
+    "phase": "Data Loading",
+    "message": "  Loaded 2013: 63 provinces, 29 subcriteria"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:32.297703",
+    "level": "INFO",
+    "module": "data_loader",
+    "function": "_load_yearly_files",
+    "line": 419,
+    "phase": "Data Loading",
+    "message": "  Loaded 2014: 63 provinces, 29 subcriteria"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:32.300132",
+    "level": "INFO",
+    "module": "data_loader",
+    "function": "_load_yearly_files",
+    "line": 419,
+    "phase": "Data Loading",
+    "message": "  Loaded 2015: 63 provinces, 29 subcriteria"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:32.302574",
+    "level": "INFO",
+    "module": "data_loader",
+    "function": "_load_yearly_files",
+    "line": 419,
+    "phase": "Data Loading",
+    "message": "  Loaded 2016: 63 provinces, 29 subcriteria"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:32.304905",
+    "level": "INFO",
+    "module": "data_loader",
+    "function": "_load_yearly_files",
+    "line": 419,
+    "phase": "Data Loading",
+    "message": "  Loaded 2017: 63 provinces, 29 subcriteria"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:32.307270",
+    "level": "INFO",
+    "module": "data_loader",
+    "function": "_load_yearly_files",
+    "line": 419,
+    "phase": "Data Loading",
+    "message": "  Loaded 2018: 63 provinces, 29 subcriteria"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:32.309697",
+    "level": "INFO",
+    "module": "data_loader",
+    "function": "_load_yearly_files",
+    "line": 419,
+    "phase": "Data Loading",
+    "message": "  Loaded 2019: 63 provinces, 29 subcriteria"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:32.312094",
+    "level": "INFO",
+    "module": "data_loader",
+    "function": "_load_yearly_files",
+    "line": 419,
+    "phase": "Data Loading",
+    "message": "  Loaded 2020: 63 provinces, 29 subcriteria"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:32.314420",
+    "level": "INFO",
+    "module": "data_loader",
+    "function": "_load_yearly_files",
+    "line": 419,
+    "phase": "Data Loading",
+    "message": "  Loaded 2021: 63 provinces, 29 subcriteria"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:32.316990",
+    "level": "INFO",
+    "module": "data_loader",
+    "function": "_load_yearly_files",
+    "line": 419,
+    "phase": "Data Loading",
+    "message": "  Loaded 2022: 63 provinces, 29 subcriteria"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:32.319422",
+    "level": "INFO",
+    "module": "data_loader",
+    "function": "_load_yearly_files",
+    "line": 419,
+    "phase": "Data Loading",
+    "message": "  Loaded 2023: 63 provinces, 29 subcriteria"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:32.322159",
+    "level": "INFO",
+    "module": "data_loader",
+    "function": "_load_yearly_files",
+    "line": 419,
+    "phase": "Data Loading",
+    "message": "  Loaded 2024: 63 provinces, 29 subcriteria"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:32.360242",
+    "level": "INFO",
+    "module": "data_loader",
+    "function": "_create_hierarchical_views",
+    "line": 565,
+    "phase": "Data Loading",
+    "message": "  Year 2011: excluded 7 sub-criterion(a) (all-NaN): ['SC24', 'SC71', 'SC72', 'SC73', 'SC81', 'SC82', 'SC83']"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:32.360302",
+    "level": "INFO",
+    "module": "data_loader",
+    "function": "_create_hierarchical_views",
+    "line": 570,
+    "phase": "Data Loading",
+    "message": "  Year 2011: excluded 2 criteria (no valid SCs): ['C07', 'C08']"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:32.397202",
+    "level": "INFO",
+    "module": "data_loader",
+    "function": "_create_hierarchical_views",
+    "line": 565,
+    "phase": "Data Loading",
+    "message": "  Year 2012: excluded 7 sub-criterion(a) (all-NaN): ['SC24', 'SC71', 'SC72', 'SC73', 'SC81', 'SC82', 'SC83']"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:32.397265",
+    "level": "INFO",
+    "module": "data_loader",
+    "function": "_create_hierarchical_views",
+    "line": 570,
+    "phase": "Data Loading",
+    "message": "  Year 2012: excluded 2 criteria (no valid SCs): ['C07', 'C08']"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:32.437783",
+    "level": "INFO",
+    "module": "data_loader",
+    "function": "_create_hierarchical_views",
+    "line": 565,
+    "phase": "Data Loading",
+    "message": "  Year 2013: excluded 7 sub-criterion(a) (all-NaN): ['SC24', 'SC71', 'SC72', 'SC73', 'SC81', 'SC82', 'SC83']"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:32.437843",
+    "level": "INFO",
+    "module": "data_loader",
+    "function": "_create_hierarchical_views",
+    "line": 570,
+    "phase": "Data Loading",
+    "message": "  Year 2013: excluded 2 criteria (no valid SCs): ['C07', 'C08']"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:32.476463",
+    "level": "INFO",
+    "module": "data_loader",
+    "function": "_create_hierarchical_views",
+    "line": 560,
+    "phase": "Data Loading",
+    "message": "  Year 2014: excluded 2 province(s) (all-NaN): ['P15', 'P56']"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:32.476525",
+    "level": "INFO",
+    "module": "data_loader",
+    "function": "_create_hierarchical_views",
+    "line": 565,
+    "phase": "Data Loading",
+    "message": "  Year 2014: excluded 7 sub-criterion(a) (all-NaN): ['SC24', 'SC71', 'SC72', 'SC73', 'SC81', 'SC82', 'SC83']"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:32.476552",
+    "level": "INFO",
+    "module": "data_loader",
+    "function": "_create_hierarchical_views",
+    "line": 570,
+    "phase": "Data Loading",
+    "message": "  Year 2014: excluded 2 criteria (no valid SCs): ['C07', 'C08']"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:32.513408",
+    "level": "INFO",
+    "module": "data_loader",
+    "function": "_create_hierarchical_views",
+    "line": 565,
+    "phase": "Data Loading",
+    "message": "  Year 2015: excluded 7 sub-criterion(a) (all-NaN): ['SC24', 'SC71', 'SC72', 'SC73', 'SC81', 'SC82', 'SC83']"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:32.513468",
+    "level": "INFO",
+    "module": "data_loader",
+    "function": "_create_hierarchical_views",
+    "line": 570,
+    "phase": "Data Loading",
+    "message": "  Year 2015: excluded 2 criteria (no valid SCs): ['C07', 'C08']"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:32.553890",
+    "level": "INFO",
+    "module": "data_loader",
+    "function": "_create_hierarchical_views",
+    "line": 565,
+    "phase": "Data Loading",
+    "message": "  Year 2016: excluded 7 sub-criterion(a) (all-NaN): ['SC24', 'SC71', 'SC72', 'SC73', 'SC81', 'SC82', 'SC83']"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:32.553949",
+    "level": "INFO",
+    "module": "data_loader",
+    "function": "_create_hierarchical_views",
+    "line": 570,
+    "phase": "Data Loading",
+    "message": "  Year 2016: excluded 2 criteria (no valid SCs): ['C07', 'C08']"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:32.591691",
+    "level": "INFO",
+    "module": "data_loader",
+    "function": "_create_hierarchical_views",
+    "line": 565,
+    "phase": "Data Loading",
+    "message": "  Year 2017: excluded 7 sub-criterion(a) (all-NaN): ['SC24', 'SC71', 'SC72', 'SC73', 'SC81', 'SC82', 'SC83']"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:32.591749",
+    "level": "INFO",
+    "module": "data_loader",
+    "function": "_create_hierarchical_views",
+    "line": 570,
+    "phase": "Data Loading",
+    "message": "  Year 2017: excluded 2 criteria (no valid SCs): ['C07', 'C08']"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:32.637262",
+    "level": "INFO",
+    "module": "data_loader",
+    "function": "_create_hierarchical_views",
+    "line": 565,
+    "phase": "Data Loading",
+    "message": "  Year 2018: excluded 1 sub-criterion(a) (all-NaN): ['SC83']"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:32.782486",
+    "level": "INFO",
+    "module": "data_loader",
+    "function": "_create_hierarchical_views",
+    "line": 560,
+    "phase": "Data Loading",
+    "message": "  Year 2021: excluded 3 province(s) (all-NaN): ['P14', 'P15', 'P18']"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:32.782554",
+    "level": "INFO",
+    "module": "data_loader",
+    "function": "_create_hierarchical_views",
+    "line": 565,
+    "phase": "Data Loading",
+    "message": "  Year 2021: excluded 1 sub-criterion(a) (all-NaN): ['SC52']"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:32.831390",
+    "level": "INFO",
+    "module": "data_loader",
+    "function": "_create_hierarchical_views",
+    "line": 565,
+    "phase": "Data Loading",
+    "message": "  Year 2022: excluded 1 sub-criterion(a) (all-NaN): ['SC52']"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:32.896486",
+    "level": "INFO",
+    "module": "data_loader",
+    "function": "_create_hierarchical_views",
+    "line": 560,
+    "phase": "Data Loading",
+    "message": "  Year 2023: excluded 2 province(s) (all-NaN): ['P14', 'P47']"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:32.896581",
+    "level": "INFO",
+    "module": "data_loader",
+    "function": "_create_hierarchical_views",
+    "line": 565,
+    "phase": "Data Loading",
+    "message": "  Year 2023: excluded 1 sub-criterion(a) (all-NaN): ['SC52']"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:32.957863",
+    "level": "INFO",
+    "module": "data_loader",
+    "function": "_create_hierarchical_views",
+    "line": 560,
+    "phase": "Data Loading",
+    "message": "  Year 2024: excluded 2 province(s) (all-NaN): ['P17', 'P52']"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:32.957927",
+    "level": "INFO",
+    "module": "data_loader",
+    "function": "_create_hierarchical_views",
+    "line": 565,
+    "phase": "Data Loading",
+    "message": "  Year 2024: excluded 1 sub-criterion(a) (all-NaN): ['SC52']"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:32.982134",
+    "level": "INFO",
+    "module": "data_loader",
+    "function": "load",
+    "line": 327,
+    "phase": "Data Loading",
+    "message": "[OK] Loaded: 63 provinces (global), 14 years, 29 subcriteria, 8 criteria"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:32.982194",
+    "level": "INFO",
+    "module": "data_loader",
+    "function": "load",
+    "line": 335,
+    "phase": "Data Loading",
+    "message": "  2011: 63 provinces, 22 subcriteria (excl. 0 prov, 7 SC)"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:32.982220",
+    "level": "INFO",
+    "module": "data_loader",
+    "function": "load",
+    "line": 335,
+    "phase": "Data Loading",
+    "message": "  2012: 63 provinces, 22 subcriteria (excl. 0 prov, 7 SC)"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:32.982241",
+    "level": "INFO",
+    "module": "data_loader",
+    "function": "load",
+    "line": 335,
+    "phase": "Data Loading",
+    "message": "  2013: 63 provinces, 22 subcriteria (excl. 0 prov, 7 SC)"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:32.982259",
+    "level": "INFO",
+    "module": "data_loader",
+    "function": "load",
+    "line": 335,
+    "phase": "Data Loading",
+    "message": "  2014: 61 provinces, 22 subcriteria (excl. 2 prov, 7 SC)"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:32.982278",
+    "level": "INFO",
+    "module": "data_loader",
+    "function": "load",
+    "line": 335,
+    "phase": "Data Loading",
+    "message": "  2015: 63 provinces, 22 subcriteria (excl. 0 prov, 7 SC)"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:32.982296",
+    "level": "INFO",
+    "module": "data_loader",
+    "function": "load",
+    "line": 335,
+    "phase": "Data Loading",
+    "message": "  2016: 63 provinces, 22 subcriteria (excl. 0 prov, 7 SC)"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:32.982313",
+    "level": "INFO",
+    "module": "data_loader",
+    "function": "load",
+    "line": 335,
+    "phase": "Data Loading",
+    "message": "  2017: 63 provinces, 22 subcriteria (excl. 0 prov, 7 SC)"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:32.982346",
+    "level": "INFO",
+    "module": "data_loader",
+    "function": "load",
+    "line": 335,
+    "phase": "Data Loading",
+    "message": "  2018: 63 provinces, 28 subcriteria (excl. 0 prov, 1 SC)"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:32.982365",
+    "level": "INFO",
+    "module": "data_loader",
+    "function": "load",
+    "line": 335,
+    "phase": "Data Loading",
+    "message": "  2021: 60 provinces, 28 subcriteria (excl. 3 prov, 1 SC)"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:32.982382",
+    "level": "INFO",
+    "module": "data_loader",
+    "function": "load",
+    "line": 335,
+    "phase": "Data Loading",
+    "message": "  2022: 63 provinces, 28 subcriteria (excl. 0 prov, 1 SC)"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:32.982399",
+    "level": "INFO",
+    "module": "data_loader",
+    "function": "load",
+    "line": 335,
+    "phase": "Data Loading",
+    "message": "  2023: 61 provinces, 28 subcriteria (excl. 2 prov, 1 SC)"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:32.982415",
+    "level": "INFO",
+    "module": "data_loader",
+    "function": "load",
+    "line": 335,
+    "phase": "Data Loading",
+    "message": "  2024: 61 provinces, 28 subcriteria (excl. 2 prov, 1 SC)"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:32.982720",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_load_data",
+    "line": 316,
+    "phase": "Data Loading",
+    "message": "Loaded: 63 provinces, 14 years, 29 subcriteria, 8 criteria"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:33.046145",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_calculate_weights",
+    "line": 392,
+    "phase": "Weight Calculation (Hybrid Weighting)",
+    "message": "  Weighting: 13 observations excluded (13 unique prov-year pairs)"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:33.047447",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_calculate_weights",
+    "line": 397,
+    "phase": "Weight Calculation (Hybrid Weighting)",
+    "message": "    2014: 2 province(s) skipped (P15, P56)"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:33.047490",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_calculate_weights",
+    "line": 397,
+    "phase": "Weight Calculation (Hybrid Weighting)",
+    "message": "    2018: 2 province(s) skipped (P14, P56)"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:33.047512",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_calculate_weights",
+    "line": 397,
+    "phase": "Weight Calculation (Hybrid Weighting)",
+    "message": "    2021: 3 province(s) skipped (P14, P15, P18)"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:33.047533",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_calculate_weights",
+    "line": 397,
+    "phase": "Weight Calculation (Hybrid Weighting)",
+    "message": "    2022: 2 province(s) skipped (P15, P18)"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:33.047551",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_calculate_weights",
+    "line": 397,
+    "phase": "Weight Calculation (Hybrid Weighting)",
+    "message": "    2023: 2 province(s) skipped (P14, P47)"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:33.047567",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_calculate_weights",
+    "line": 397,
+    "phase": "Weight Calculation (Hybrid Weighting)",
+    "message": "    2024: 2 province(s) skipped (P17, P52)"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:33.048701",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_calculate_weights",
+    "line": 411,
+    "phase": "Weight Calculation (Hybrid Weighting)",
+    "message": "Hybrid Weighting (MC Ensemble): 869 obs, 29 active SCs, 8 criterion groups"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:33.128076",
+    "level": "INFO",
+    "module": "hybrid_weighting",
+    "function": "calculate",
+    "line": 156,
+    "phase": "Weight Calculation (Hybrid Weighting)",
+    "message": "HybridWeightingCalculator: 869 obs, 29 sub-crit across 8 groups"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:33.130156",
+    "level": "INFO",
+    "module": "hybrid_weighting",
+    "function": "calculate",
+    "line": 166,
+    "phase": "Weight Calculation (Hybrid Weighting)",
+    "message": "  Block bootstrap: 63 provinces × 14 years"
+  },
+  {
+    "timestamp": "2026-03-01T19:01:33.165513",
+    "level": "INFO",
+    "module": "hybrid_weighting",
+    "function": "calculate",
+    "line": 189,
+    "phase": "Weight Calculation (Hybrid Weighting)",
+    "message": "  Hyperparameter tuning (64-point coarse grid) ..."
+  },
+  {
+    "timestamp": "2026-03-01T19:06:37.081969",
+    "level": "INFO",
+    "module": "hybrid_weighting",
+    "function": "_tune_hyperparameters",
+    "line": 875,
+    "phase": "Weight Calculation (Hybrid Weighting)",
+    "message": "  Grid best θ=(4.0, 4.0, 0.03), AvgKendall=0.9718"
+  },
+  {
+    "timestamp": "2026-03-01T19:06:37.082056",
+    "level": "INFO",
+    "module": "hybrid_weighting",
+    "function": "calculate",
+    "line": 197,
+    "phase": "Weight Calculation (Hybrid Weighting)",
+    "message": "  θ* = (α_a=4.000, α_b=4.000, σ_scale=0.0300)"
+  },
+  {
+    "timestamp": "2026-03-01T19:06:37.082797",
+    "level": "INFO",
+    "module": "hybrid_weighting",
+    "function": "calculate",
+    "line": 208,
+    "phase": "Weight Calculation (Hybrid Weighting)",
+    "message": "  Level 1: C01 (4 SCs) ..."
+  },
+  {
+    "timestamp": "2026-03-01T19:06:53.656079",
+    "level": "INFO",
+    "module": "hybrid_weighting",
+    "function": "calculate",
+    "line": 208,
+    "phase": "Weight Calculation (Hybrid Weighting)",
+    "message": "  Level 1: C02 (4 SCs) ..."
+  },
+  {
+    "timestamp": "2026-03-01T19:07:10.087463",
+    "level": "INFO",
+    "module": "hybrid_weighting",
+    "function": "calculate",
+    "line": 208,
+    "phase": "Weight Calculation (Hybrid Weighting)",
+    "message": "  Level 1: C03 (3 SCs) ..."
+  },
+  {
+    "timestamp": "2026-03-01T19:07:25.472176",
+    "level": "INFO",
+    "module": "hybrid_weighting",
+    "function": "calculate",
+    "line": 208,
+    "phase": "Weight Calculation (Hybrid Weighting)",
+    "message": "  Level 1: C04 (4 SCs) ..."
+  },
+  {
+    "timestamp": "2026-03-01T19:07:40.739786",
+    "level": "INFO",
+    "module": "hybrid_weighting",
+    "function": "calculate",
+    "line": 208,
+    "phase": "Weight Calculation (Hybrid Weighting)",
+    "message": "  Level 1: C05 (4 SCs) ..."
+  },
+  {
+    "timestamp": "2026-03-01T19:07:57.438454",
+    "level": "INFO",
+    "module": "hybrid_weighting",
+    "function": "calculate",
+    "line": 208,
+    "phase": "Weight Calculation (Hybrid Weighting)",
+    "message": "  Level 1: C06 (4 SCs) ..."
+  },
+  {
+    "timestamp": "2026-03-01T19:08:13.358826",
+    "level": "INFO",
+    "module": "hybrid_weighting",
+    "function": "calculate",
+    "line": 208,
+    "phase": "Weight Calculation (Hybrid Weighting)",
+    "message": "  Level 1: C07 (3 SCs) ..."
+  },
+  {
+    "timestamp": "2026-03-01T19:08:28.793705",
+    "level": "INFO",
+    "module": "hybrid_weighting",
+    "function": "calculate",
+    "line": 208,
+    "phase": "Weight Calculation (Hybrid Weighting)",
+    "message": "  Level 1: C08 (3 SCs) ..."
+  },
+  {
+    "timestamp": "2026-03-01T19:08:44.327611",
+    "level": "INFO",
+    "module": "hybrid_weighting",
+    "function": "calculate",
+    "line": 318,
+    "phase": "Weight Calculation (Hybrid Weighting)",
+    "message": "  Level 2: 8 criteria ..."
+  },
+  {
+    "timestamp": "2026-03-01T19:09:04.320213",
+    "level": "INFO",
+    "module": "hybrid_weighting",
+    "function": "calculate",
+    "line": 330,
+    "phase": "Weight Calculation (Hybrid Weighting)",
+    "message": "  Level 2 Kendall τ=0.9695, W=0.9959"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:04.328998",
+    "level": "INFO",
+    "module": "hybrid_weighting",
+    "function": "calculate",
+    "line": 156,
+    "phase": "Weight Calculation (Hybrid Weighting)",
+    "message": "HybridWeightingCalculator: 439 obs, 22 sub-crit across 6 groups"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:04.329288",
+    "level": "DEBUG",
+    "module": "hybrid_weighting",
+    "function": "_stability_callback",
+    "line": 425,
+    "phase": "Weight Calculation (Hybrid Weighting)",
+    "message": "Stability callback failed, using uniform: 'Province'"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:04.334397",
+    "level": "INFO",
+    "module": "hybrid_weighting",
+    "function": "calculate",
+    "line": 156,
+    "phase": "Weight Calculation (Hybrid Weighting)",
+    "message": "HybridWeightingCalculator: 126 obs, 29 sub-crit across 8 groups"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:04.334518",
+    "level": "DEBUG",
+    "module": "hybrid_weighting",
+    "function": "_stability_callback",
+    "line": 425,
+    "phase": "Weight Calculation (Hybrid Weighting)",
+    "message": "Stability callback failed, using uniform: 'Province'"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:04.335603",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_calculate_weights",
+    "line": 433,
+    "phase": "Weight Calculation (Hybrid Weighting)",
+    "message": "  Global SC weights: [0.0079, 0.1541]"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:04.335673",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_calculate_weights",
+    "line": 436,
+    "phase": "Weight Calculation (Hybrid Weighting)",
+    "message": "  Criterion weights (hybrid): C01=0.111, C02=0.079, C03=0.259, C04=0.097, C05=0.082, C06=0.123, C07=0.118, C08=0.131"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:04.335710",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_calculate_weights",
+    "line": 441,
+    "phase": "Weight Calculation (Hybrid Weighting)",
+    "message": "  Criterion weights (entropy): C01=0.105, C02=0.066, C03=0.321, C04=0.068, C05=0.045, C06=0.098, C07=0.135, C08=0.161"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:04.335742",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_calculate_weights",
+    "line": 446,
+    "phase": "Weight Calculation (Hybrid Weighting)",
+    "message": "  Criterion weights (critic): C01=0.117, C02=0.094, C03=0.204, C04=0.121, C05=0.104, C06=0.150, C07=0.104, C08=0.106"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:04.335769",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_calculate_weights",
+    "line": 452,
+    "phase": "Weight Calculation (Hybrid Weighting)",
+    "message": "  Level 2 Kendall τ=0.9695, W=0.9959"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:04.335794",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_calculate_weights",
+    "line": 459,
+    "phase": "Weight Calculation (Hybrid Weighting)",
+    "message": "  Stability: cosine=1.0000, stable=True"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:04.336305",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 184,
+    "phase": "Hierarchical Ranking (Traditional MCDM + ER)",
+    "message": "Hierarchical ranking for year 2024 — YearContext active: 61 provinces, 28 sub-criteria, 8 criteria"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:04.338002",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 192,
+    "phase": "Hierarchical Ranking (Traditional MCDM + ER)",
+    "message": "  Excluded provinces (2): P17, P52"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:04.338051",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 197,
+    "phase": "Hierarchical Ranking (Traditional MCDM + ER)",
+    "message": "  Excluded sub-criteria (1): SC52"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:04.338113",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 215,
+    "phase": "Hierarchical Ranking (Traditional MCDM + ER)",
+    "message": "  61 alternatives, 8 criteria groups (pre-exclusion), 5 MCDM methods"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:04.338197",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_derive_hierarchical_weights",
+    "line": 602,
+    "phase": "Hierarchical Ranking (Traditional MCDM + ER)",
+    "message": "  Criterion weights: C01=0.111, C02=0.079, C03=0.259, C04=0.097, C05=0.082, C06=0.123, C07=0.118, C08=0.131"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:04.338231",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Hierarchical Ranking (Traditional MCDM + ER)",
+    "message": "  C01: 61 provinces, 4 sub-criteria (SC11, SC12, SC13, SC14)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:04.439303",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Hierarchical Ranking (Traditional MCDM + ER)",
+    "message": "  C02: 61 provinces, 4 sub-criteria (SC21, SC22, SC23, SC24)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:04.520281",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Hierarchical Ranking (Traditional MCDM + ER)",
+    "message": "  C03: 61 provinces, 3 sub-criteria (SC31, SC32, SC33)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:04.594805",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Hierarchical Ranking (Traditional MCDM + ER)",
+    "message": "  C04: 61 provinces, 4 sub-criteria (SC41, SC42, SC43, SC44)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:04.677401",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Hierarchical Ranking (Traditional MCDM + ER)",
+    "message": "  C05: 61 provinces, 3 sub-criteria (SC51, SC53, SC54)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:04.748881",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Hierarchical Ranking (Traditional MCDM + ER)",
+    "message": "  C06: 61 provinces, 4 sub-criteria (SC61, SC62, SC63, SC64)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:04.825542",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Hierarchical Ranking (Traditional MCDM + ER)",
+    "message": "  C07: 61 provinces, 3 sub-criteria (SC71, SC72, SC73)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:04.898143",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Hierarchical Ranking (Traditional MCDM + ER)",
+    "message": "  C08: 61 provinces, 3 sub-criteria (SC81, SC82, SC83)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:04.972548",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 297,
+    "phase": "Hierarchical Ranking (Traditional MCDM + ER)",
+    "message": "  Running Evidential Reasoning aggregation..."
+  },
+  {
+    "timestamp": "2026-03-01T19:09:05.146425",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 304,
+    "phase": "Hierarchical Ranking (Traditional MCDM + ER)",
+    "message": "  Kendall's W = 0.3818"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:05.146649",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 307,
+    "phase": "Hierarchical Ranking (Traditional MCDM + ER)",
+    "message": "  Top: P39 (score=0.6310)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:05.146811",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_run_hierarchical_ranking_all_years",
+    "line": 546,
+    "phase": "Hierarchical Ranking (Traditional MCDM + ER)",
+    "message": "Multi-year ranking: 14 years (2011–2024), max_workers=2"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:05.147410",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 184,
+    "phase": "",
+    "message": "Hierarchical ranking for year 2011 — YearContext active: 63 provinces, 22 sub-criteria, 6 criteria"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:05.147454",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 197,
+    "phase": "",
+    "message": "  Excluded sub-criteria (7): SC24, SC71, SC72, SC73, SC81, SC82, SC83"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:05.147501",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 215,
+    "phase": "",
+    "message": "  63 alternatives, 8 criteria groups (pre-exclusion), 5 MCDM methods"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:05.147572",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_derive_hierarchical_weights",
+    "line": 602,
+    "phase": "",
+    "message": "  Criterion weights: C01=0.111, C02=0.079, C03=0.259, C04=0.097, C05=0.082, C06=0.123, C07=0.118, C08=0.131"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:05.147602",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C01: 63 provinces, 4 sub-criteria (SC11, SC12, SC13, SC14)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:05.161009",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 184,
+    "phase": "",
+    "message": "Hierarchical ranking for year 2012 — YearContext active: 63 provinces, 22 sub-criteria, 6 criteria"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:05.161071",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 197,
+    "phase": "",
+    "message": "  Excluded sub-criteria (7): SC24, SC71, SC72, SC73, SC81, SC82, SC83"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:05.161116",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 215,
+    "phase": "",
+    "message": "  63 alternatives, 8 criteria groups (pre-exclusion), 5 MCDM methods"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:05.161187",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_derive_hierarchical_weights",
+    "line": 602,
+    "phase": "",
+    "message": "  Criterion weights: C01=0.111, C02=0.079, C03=0.259, C04=0.097, C05=0.082, C06=0.123, C07=0.118, C08=0.131"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:05.161215",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C01: 63 provinces, 4 sub-criteria (SC11, SC12, SC13, SC14)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:05.315599",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C02: 63 provinces, 3 sub-criteria (SC21, SC22, SC23)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:05.333771",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C02: 63 provinces, 3 sub-criteria (SC21, SC22, SC23)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:05.486561",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C03: 63 provinces, 3 sub-criteria (SC31, SC32, SC33)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:05.506881",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C03: 63 provinces, 3 sub-criteria (SC31, SC32, SC33)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:05.650771",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C04: 63 provinces, 4 sub-criteria (SC41, SC42, SC43, SC44)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:05.660634",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C04: 63 provinces, 4 sub-criteria (SC41, SC42, SC43, SC44)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:05.821209",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C05: 63 provinces, 4 sub-criteria (SC51, SC52, SC53, SC54)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:05.830047",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C05: 63 provinces, 4 sub-criteria (SC51, SC52, SC53, SC54)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:05.990994",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C06: 63 provinces, 4 sub-criteria (SC61, SC62, SC63, SC64)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:06.005020",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C06: 63 provinces, 4 sub-criteria (SC61, SC62, SC63, SC64)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:06.137279",
+    "level": "WARNING",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 253,
+    "phase": "",
+    "message": "  C07: no active sub-criteria — skipped"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:06.137377",
+    "level": "WARNING",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 253,
+    "phase": "",
+    "message": "  C08: no active sub-criteria — skipped"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:06.137410",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 297,
+    "phase": "",
+    "message": "  Running Evidential Reasoning aggregation..."
+  },
+  {
+    "timestamp": "2026-03-01T19:09:06.244547",
+    "level": "WARNING",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 253,
+    "phase": "",
+    "message": "  C07: no active sub-criteria — skipped"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:06.244593",
+    "level": "WARNING",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 253,
+    "phase": "",
+    "message": "  C08: no active sub-criteria — skipped"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:06.244619",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 297,
+    "phase": "",
+    "message": "  Running Evidential Reasoning aggregation..."
+  },
+  {
+    "timestamp": "2026-03-01T19:09:06.625917",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 184,
+    "phase": "",
+    "message": "Hierarchical ranking for year 2013 — YearContext active: 63 provinces, 22 sub-criteria, 6 criteria"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:06.625964",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 197,
+    "phase": "",
+    "message": "  Excluded sub-criteria (7): SC24, SC71, SC72, SC73, SC81, SC82, SC83"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:06.626009",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 215,
+    "phase": "",
+    "message": "  63 alternatives, 8 criteria groups (pre-exclusion), 5 MCDM methods"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:06.626082",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_derive_hierarchical_weights",
+    "line": 602,
+    "phase": "",
+    "message": "  Criterion weights: C01=0.111, C02=0.079, C03=0.259, C04=0.097, C05=0.082, C06=0.123, C07=0.118, C08=0.131"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:06.626110",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C01: 63 provinces, 4 sub-criteria (SC11, SC12, SC13, SC14)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:06.643777",
+    "level": "WARNING",
+    "module": "pipeline",
+    "function": "_run_hierarchical_ranking_all_years",
+    "line": 575,
+    "phase": "Hierarchical Ranking (Traditional MCDM + ER)",
+    "message": "Multi-year ranking: year 2011 failed — 'C07'"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:06.684063",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 184,
+    "phase": "",
+    "message": "Hierarchical ranking for year 2014 — YearContext active: 61 provinces, 22 sub-criteria, 6 criteria"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:06.684115",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 192,
+    "phase": "",
+    "message": "  Excluded provinces (2): P15, P56"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:06.684137",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 197,
+    "phase": "",
+    "message": "  Excluded sub-criteria (7): SC24, SC71, SC72, SC73, SC81, SC82, SC83"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:06.684179",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 215,
+    "phase": "",
+    "message": "  61 alternatives, 8 criteria groups (pre-exclusion), 5 MCDM methods"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:06.684245",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_derive_hierarchical_weights",
+    "line": 602,
+    "phase": "",
+    "message": "  Criterion weights: C01=0.111, C02=0.079, C03=0.259, C04=0.097, C05=0.082, C06=0.123, C07=0.118, C08=0.131"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:06.684272",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C01: 61 provinces, 4 sub-criteria (SC11, SC12, SC13, SC14)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:06.692402",
+    "level": "WARNING",
+    "module": "pipeline",
+    "function": "_run_hierarchical_ranking_all_years",
+    "line": 575,
+    "phase": "Hierarchical Ranking (Traditional MCDM + ER)",
+    "message": "Multi-year ranking: year 2012 failed — 'C07'"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:06.824501",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C02: 63 provinces, 3 sub-criteria (SC21, SC22, SC23)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:06.886678",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C02: 61 provinces, 3 sub-criteria (SC21, SC22, SC23)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:06.930940",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C03: 63 provinces, 3 sub-criteria (SC31, SC32, SC33)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:07.066807",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C03: 61 provinces, 3 sub-criteria (SC31, SC32, SC33)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:07.100685",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C04: 63 provinces, 4 sub-criteria (SC41, SC42, SC43, SC44)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:07.200951",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C04: 61 provinces, 4 sub-criteria (SC41, SC42, SC43, SC44)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:07.271979",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C05: 63 provinces, 4 sub-criteria (SC51, SC52, SC53, SC54)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:07.371676",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C05: 61 provinces, 4 sub-criteria (SC51, SC52, SC53, SC54)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:07.443945",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C06: 63 provinces, 4 sub-criteria (SC61, SC62, SC63, SC64)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:07.552321",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C06: 61 provinces, 4 sub-criteria (SC61, SC62, SC63, SC64)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:07.642523",
+    "level": "WARNING",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 253,
+    "phase": "",
+    "message": "  C07: no active sub-criteria — skipped"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:07.642569",
+    "level": "WARNING",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 253,
+    "phase": "",
+    "message": "  C08: no active sub-criteria — skipped"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:07.642596",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 297,
+    "phase": "",
+    "message": "  Running Evidential Reasoning aggregation..."
+  },
+  {
+    "timestamp": "2026-03-01T19:09:07.752412",
+    "level": "WARNING",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 253,
+    "phase": "",
+    "message": "  C07: no active sub-criteria — skipped"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:07.752459",
+    "level": "WARNING",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 253,
+    "phase": "",
+    "message": "  C08: no active sub-criteria — skipped"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:07.752486",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 297,
+    "phase": "",
+    "message": "  Running Evidential Reasoning aggregation..."
+  },
+  {
+    "timestamp": "2026-03-01T19:09:07.978996",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 184,
+    "phase": "",
+    "message": "Hierarchical ranking for year 2015 — YearContext active: 63 provinces, 22 sub-criteria, 6 criteria"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:07.979048",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 197,
+    "phase": "",
+    "message": "  Excluded sub-criteria (7): SC24, SC71, SC72, SC73, SC81, SC82, SC83"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:07.979094",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 215,
+    "phase": "",
+    "message": "  63 alternatives, 8 criteria groups (pre-exclusion), 5 MCDM methods"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:07.979162",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_derive_hierarchical_weights",
+    "line": 602,
+    "phase": "",
+    "message": "  Criterion weights: C01=0.111, C02=0.079, C03=0.259, C04=0.097, C05=0.082, C06=0.123, C07=0.118, C08=0.131"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:07.979190",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C01: 63 provinces, 4 sub-criteria (SC11, SC12, SC13, SC14)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:07.987615",
+    "level": "WARNING",
+    "module": "pipeline",
+    "function": "_run_hierarchical_ranking_all_years",
+    "line": 575,
+    "phase": "Hierarchical Ranking (Traditional MCDM + ER)",
+    "message": "Multi-year ranking: year 2013 failed — 'C07'"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:08.130216",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 184,
+    "phase": "",
+    "message": "Hierarchical ranking for year 2016 — YearContext active: 63 provinces, 22 sub-criteria, 6 criteria"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:08.130262",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 197,
+    "phase": "",
+    "message": "  Excluded sub-criteria (7): SC24, SC71, SC72, SC73, SC81, SC82, SC83"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:08.130306",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 215,
+    "phase": "",
+    "message": "  63 alternatives, 8 criteria groups (pre-exclusion), 5 MCDM methods"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:08.130418",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_derive_hierarchical_weights",
+    "line": 602,
+    "phase": "",
+    "message": "  Criterion weights: C01=0.111, C02=0.079, C03=0.259, C04=0.097, C05=0.082, C06=0.123, C07=0.118, C08=0.131"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:08.130449",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C01: 63 provinces, 4 sub-criteria (SC11, SC12, SC13, SC14)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:08.149272",
+    "level": "WARNING",
+    "module": "pipeline",
+    "function": "_run_hierarchical_ranking_all_years",
+    "line": 575,
+    "phase": "Hierarchical Ranking (Traditional MCDM + ER)",
+    "message": "Multi-year ranking: year 2014 failed — 'C07'"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:08.196960",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C02: 63 provinces, 3 sub-criteria (SC21, SC22, SC23)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:08.307405",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C02: 63 provinces, 3 sub-criteria (SC21, SC22, SC23)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:08.380400",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C03: 63 provinces, 3 sub-criteria (SC31, SC32, SC33)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:08.469066",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C03: 63 provinces, 3 sub-criteria (SC31, SC32, SC33)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:08.566305",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C04: 63 provinces, 4 sub-criteria (SC41, SC42, SC43, SC44)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:08.661828",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C04: 63 provinces, 4 sub-criteria (SC41, SC42, SC43, SC44)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:08.727101",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C05: 63 provinces, 4 sub-criteria (SC51, SC52, SC53, SC54)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:08.826918",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C05: 63 provinces, 4 sub-criteria (SC51, SC52, SC53, SC54)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:08.909494",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C06: 63 provinces, 4 sub-criteria (SC61, SC62, SC63, SC64)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:08.992430",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C06: 63 provinces, 4 sub-criteria (SC61, SC62, SC63, SC64)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:09.090393",
+    "level": "WARNING",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 253,
+    "phase": "",
+    "message": "  C07: no active sub-criteria — skipped"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:09.090449",
+    "level": "WARNING",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 253,
+    "phase": "",
+    "message": "  C08: no active sub-criteria — skipped"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:09.090475",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 297,
+    "phase": "",
+    "message": "  Running Evidential Reasoning aggregation..."
+  },
+  {
+    "timestamp": "2026-03-01T19:09:09.216056",
+    "level": "WARNING",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 253,
+    "phase": "",
+    "message": "  C07: no active sub-criteria — skipped"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:09.216108",
+    "level": "WARNING",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 253,
+    "phase": "",
+    "message": "  C08: no active sub-criteria — skipped"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:09.216134",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 297,
+    "phase": "",
+    "message": "  Running Evidential Reasoning aggregation..."
+  },
+  {
+    "timestamp": "2026-03-01T19:09:09.458961",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 184,
+    "phase": "",
+    "message": "Hierarchical ranking for year 2017 — YearContext active: 63 provinces, 22 sub-criteria, 6 criteria"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:09.459013",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 197,
+    "phase": "",
+    "message": "  Excluded sub-criteria (7): SC24, SC71, SC72, SC73, SC81, SC82, SC83"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:09.459061",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 215,
+    "phase": "",
+    "message": "  63 alternatives, 8 criteria groups (pre-exclusion), 5 MCDM methods"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:09.459141",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_derive_hierarchical_weights",
+    "line": 602,
+    "phase": "",
+    "message": "  Criterion weights: C01=0.111, C02=0.079, C03=0.259, C04=0.097, C05=0.082, C06=0.123, C07=0.118, C08=0.131"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:09.459170",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C01: 63 provinces, 4 sub-criteria (SC11, SC12, SC13, SC14)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:09.467172",
+    "level": "WARNING",
+    "module": "pipeline",
+    "function": "_run_hierarchical_ranking_all_years",
+    "line": 575,
+    "phase": "Hierarchical Ranking (Traditional MCDM + ER)",
+    "message": "Multi-year ranking: year 2015 failed — 'C07'"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:09.641112",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 184,
+    "phase": "",
+    "message": "Hierarchical ranking for year 2018 — YearContext active: 63 provinces, 28 sub-criteria, 8 criteria"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:09.641167",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 197,
+    "phase": "",
+    "message": "  Excluded sub-criteria (1): SC83"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:09.641219",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 215,
+    "phase": "",
+    "message": "  63 alternatives, 8 criteria groups (pre-exclusion), 5 MCDM methods"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:09.641299",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_derive_hierarchical_weights",
+    "line": 602,
+    "phase": "",
+    "message": "  Criterion weights: C01=0.111, C02=0.079, C03=0.259, C04=0.097, C05=0.082, C06=0.123, C07=0.118, C08=0.131"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:09.641374",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C01: 63 provinces, 4 sub-criteria (SC11, SC12, SC13, SC14)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:09.655673",
+    "level": "WARNING",
+    "module": "pipeline",
+    "function": "_run_hierarchical_ranking_all_years",
+    "line": 575,
+    "phase": "Hierarchical Ranking (Traditional MCDM + ER)",
+    "message": "Multi-year ranking: year 2016 failed — 'C07'"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:09.701162",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C02: 63 provinces, 3 sub-criteria (SC21, SC22, SC23)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:09.818615",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C02: 61 provinces, 4 sub-criteria (SC21, SC22, SC23, SC24)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:09.873569",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C03: 63 provinces, 3 sub-criteria (SC31, SC32, SC33)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:09.991959",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C03: 63 provinces, 3 sub-criteria (SC31, SC32, SC33)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:10.046225",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C04: 63 provinces, 4 sub-criteria (SC41, SC42, SC43, SC44)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:10.144929",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C04: 61 provinces, 4 sub-criteria (SC41, SC42, SC43, SC44)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:10.251387",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C05: 63 provinces, 4 sub-criteria (SC51, SC52, SC53, SC54)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:10.318484",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C05: 63 provinces, 4 sub-criteria (SC51, SC52, SC53, SC54)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:10.430780",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C06: 63 provinces, 4 sub-criteria (SC61, SC62, SC63, SC64)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:10.512096",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C06: 63 provinces, 4 sub-criteria (SC61, SC62, SC63, SC64)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:10.632524",
+    "level": "WARNING",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 253,
+    "phase": "",
+    "message": "  C07: no active sub-criteria — skipped"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:10.632574",
+    "level": "WARNING",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 253,
+    "phase": "",
+    "message": "  C08: no active sub-criteria — skipped"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:10.632601",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 297,
+    "phase": "",
+    "message": "  Running Evidential Reasoning aggregation..."
+  },
+  {
+    "timestamp": "2026-03-01T19:09:10.713503",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C07: 63 provinces, 3 sub-criteria (SC71, SC72, SC73)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:10.968829",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 184,
+    "phase": "",
+    "message": "Hierarchical ranking for year 2019 — YearContext active: 63 provinces, 29 sub-criteria, 8 criteria"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:10.968911",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 215,
+    "phase": "",
+    "message": "  63 alternatives, 8 criteria groups (pre-exclusion), 5 MCDM methods"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:10.969005",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_derive_hierarchical_weights",
+    "line": 602,
+    "phase": "",
+    "message": "  Criterion weights: C01=0.111, C02=0.079, C03=0.259, C04=0.097, C05=0.082, C06=0.123, C07=0.118, C08=0.131"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:10.969037",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C01: 63 provinces, 4 sub-criteria (SC11, SC12, SC13, SC14)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:10.977268",
+    "level": "WARNING",
+    "module": "pipeline",
+    "function": "_run_hierarchical_ranking_all_years",
+    "line": 575,
+    "phase": "Hierarchical Ranking (Traditional MCDM + ER)",
+    "message": "Multi-year ranking: year 2017 failed — 'C07'"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:10.994645",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C08: 63 provinces, 2 sub-criteria (SC81, SC82)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:11.123061",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C02: 63 provinces, 4 sub-criteria (SC21, SC22, SC23, SC24)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:11.163214",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 297,
+    "phase": "",
+    "message": "  Running Evidential Reasoning aggregation..."
+  },
+  {
+    "timestamp": "2026-03-01T19:09:11.379634",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C03: 63 provinces, 3 sub-criteria (SC31, SC32, SC33)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:11.629757",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 304,
+    "phase": "",
+    "message": "  Kendall's W = nan"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:11.630124",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 307,
+    "phase": "",
+    "message": "  Top: P14 (score=0.6120)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:11.630308",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 184,
+    "phase": "",
+    "message": "Hierarchical ranking for year 2020 — YearContext active: 63 provinces, 29 sub-criteria, 8 criteria"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:11.630412",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 215,
+    "phase": "",
+    "message": "  63 alternatives, 8 criteria groups (pre-exclusion), 5 MCDM methods"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:11.630518",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_derive_hierarchical_weights",
+    "line": 602,
+    "phase": "",
+    "message": "  Criterion weights: C01=0.111, C02=0.079, C03=0.259, C04=0.097, C05=0.082, C06=0.123, C07=0.118, C08=0.131"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:11.630563",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C01: 63 provinces, 4 sub-criteria (SC11, SC12, SC13, SC14)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:11.641889",
+    "level": "DEBUG",
+    "module": "pipeline",
+    "function": "_run_hierarchical_ranking_all_years",
+    "line": 580,
+    "phase": "Hierarchical Ranking (Traditional MCDM + ER)",
+    "message": "  ✓ year 2018: 63 provinces ranked"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:11.675668",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C04: 63 provinces, 4 sub-criteria (SC41, SC42, SC43, SC44)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:11.786781",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C02: 63 provinces, 4 sub-criteria (SC21, SC22, SC23, SC24)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:11.852991",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C05: 63 provinces, 4 sub-criteria (SC51, SC52, SC53, SC54)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:11.985936",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C03: 63 provinces, 3 sub-criteria (SC31, SC32, SC33)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:12.035315",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C06: 63 provinces, 4 sub-criteria (SC61, SC62, SC63, SC64)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:12.128523",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C04: 63 provinces, 4 sub-criteria (SC41, SC42, SC43, SC44)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:12.217056",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C07: 63 provinces, 3 sub-criteria (SC71, SC72, SC73)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:12.336479",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C05: 63 provinces, 4 sub-criteria (SC51, SC52, SC53, SC54)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:12.402694",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C08: 63 provinces, 3 sub-criteria (SC81, SC82, SC83)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:12.529879",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C06: 63 provinces, 4 sub-criteria (SC61, SC62, SC63, SC64)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:12.583064",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 297,
+    "phase": "",
+    "message": "  Running Evidential Reasoning aggregation..."
+  },
+  {
+    "timestamp": "2026-03-01T19:09:12.727059",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C07: 63 provinces, 3 sub-criteria (SC71, SC72, SC73)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:12.954846",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C08: 63 provinces, 3 sub-criteria (SC81, SC82, SC83)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:13.137921",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 304,
+    "phase": "",
+    "message": "  Kendall's W = 0.2421"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:13.138232",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 307,
+    "phase": "",
+    "message": "  Top: P31 (score=0.6198)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:13.138466",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 184,
+    "phase": "",
+    "message": "Hierarchical ranking for year 2021 — YearContext active: 60 provinces, 28 sub-criteria, 8 criteria"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:13.138508",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 192,
+    "phase": "",
+    "message": "  Excluded provinces (3): P14, P15, P18"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:13.138538",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 197,
+    "phase": "",
+    "message": "  Excluded sub-criteria (1): SC52"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:13.138603",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 215,
+    "phase": "",
+    "message": "  60 alternatives, 8 criteria groups (pre-exclusion), 5 MCDM methods"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:13.138715",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_derive_hierarchical_weights",
+    "line": 602,
+    "phase": "",
+    "message": "  Criterion weights: C01=0.111, C02=0.079, C03=0.259, C04=0.097, C05=0.082, C06=0.123, C07=0.118, C08=0.131"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:13.138759",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C01: 60 provinces, 4 sub-criteria (SC11, SC12, SC13, SC14)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:13.147659",
+    "level": "DEBUG",
+    "module": "pipeline",
+    "function": "_run_hierarchical_ranking_all_years",
+    "line": 580,
+    "phase": "Hierarchical Ranking (Traditional MCDM + ER)",
+    "message": "  ✓ year 2019: 63 provinces ranked"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:13.225791",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 297,
+    "phase": "",
+    "message": "  Running Evidential Reasoning aggregation..."
+  },
+  {
+    "timestamp": "2026-03-01T19:09:13.344156",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C02: 60 provinces, 4 sub-criteria (SC21, SC22, SC23, SC24)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:13.521462",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C03: 60 provinces, 3 sub-criteria (SC31, SC32, SC33)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:13.694439",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C04: 60 provinces, 4 sub-criteria (SC41, SC42, SC43, SC44)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:13.885291",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C05: 60 provinces, 3 sub-criteria (SC51, SC53, SC54)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:14.052138",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C06: 60 provinces, 4 sub-criteria (SC61, SC62, SC63, SC64)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:14.239585",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 304,
+    "phase": "",
+    "message": "  Kendall's W = 0.3578"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:14.241791",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 307,
+    "phase": "",
+    "message": "  Top: P12 (score=0.6235)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:14.241981",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 184,
+    "phase": "",
+    "message": "Hierarchical ranking for year 2022 — YearContext active: 63 provinces, 28 sub-criteria, 8 criteria"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:14.242021",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 197,
+    "phase": "",
+    "message": "  Excluded sub-criteria (1): SC52"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:14.242110",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 215,
+    "phase": "",
+    "message": "  63 alternatives, 8 criteria groups (pre-exclusion), 5 MCDM methods"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:14.242208",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_derive_hierarchical_weights",
+    "line": 602,
+    "phase": "",
+    "message": "  Criterion weights: C01=0.111, C02=0.079, C03=0.259, C04=0.097, C05=0.082, C06=0.123, C07=0.118, C08=0.131"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:14.242248",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C01: 62 provinces, 4 sub-criteria (SC11, SC12, SC13, SC14)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:14.244914",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C07: 60 provinces, 3 sub-criteria (SC71, SC72, SC73)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:14.255514",
+    "level": "DEBUG",
+    "module": "pipeline",
+    "function": "_run_hierarchical_ranking_all_years",
+    "line": 580,
+    "phase": "Hierarchical Ranking (Traditional MCDM + ER)",
+    "message": "  ✓ year 2020: 63 provinces ranked"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:14.488065",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C08: 60 provinces, 3 sub-criteria (SC81, SC82, SC83)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:14.519789",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C02: 61 provinces, 4 sub-criteria (SC21, SC22, SC23, SC24)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:14.754101",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 297,
+    "phase": "",
+    "message": "  Running Evidential Reasoning aggregation..."
+  },
+  {
+    "timestamp": "2026-03-01T19:09:14.787667",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C03: 62 provinces, 3 sub-criteria (SC31, SC32, SC33)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:15.003297",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C04: 61 provinces, 4 sub-criteria (SC41, SC42, SC43, SC44)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:15.248314",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C05: 62 provinces, 3 sub-criteria (SC51, SC53, SC54)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:15.455487",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C06: 63 provinces, 4 sub-criteria (SC61, SC62, SC63, SC64)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:15.675576",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C07: 63 provinces, 3 sub-criteria (SC71, SC72, SC73)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:15.886232",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 304,
+    "phase": "",
+    "message": "  Kendall's W = 0.4829"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:15.886982",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C08: 62 provinces, 3 sub-criteria (SC81, SC82, SC83)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:15.888689",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 307,
+    "phase": "",
+    "message": "  Top: P31 (score=0.7175)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:15.888878",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 184,
+    "phase": "",
+    "message": "Hierarchical ranking for year 2023 — YearContext active: 61 provinces, 28 sub-criteria, 8 criteria"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:15.888918",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 192,
+    "phase": "",
+    "message": "  Excluded provinces (2): P14, P47"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:15.888947",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 197,
+    "phase": "",
+    "message": "  Excluded sub-criteria (1): SC52"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:15.889023",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 215,
+    "phase": "",
+    "message": "  61 alternatives, 8 criteria groups (pre-exclusion), 5 MCDM methods"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:15.889126",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_derive_hierarchical_weights",
+    "line": 602,
+    "phase": "",
+    "message": "  Criterion weights: C01=0.111, C02=0.079, C03=0.259, C04=0.097, C05=0.082, C06=0.123, C07=0.118, C08=0.131"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:15.889167",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C01: 61 provinces, 4 sub-criteria (SC11, SC12, SC13, SC14)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:15.890649",
+    "level": "DEBUG",
+    "module": "pipeline",
+    "function": "_run_hierarchical_ranking_all_years",
+    "line": 580,
+    "phase": "Hierarchical Ranking (Traditional MCDM + ER)",
+    "message": "  ✓ year 2021: 60 provinces ranked"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:16.140614",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 297,
+    "phase": "",
+    "message": "  Running Evidential Reasoning aggregation..."
+  },
+  {
+    "timestamp": "2026-03-01T19:09:16.193598",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C02: 61 provinces, 4 sub-criteria (SC21, SC22, SC23, SC24)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:16.396791",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C03: 61 provinces, 3 sub-criteria (SC31, SC32, SC33)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:16.636270",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 304,
+    "phase": "",
+    "message": "  Kendall's W = nan"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:16.653399",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C04: 61 provinces, 4 sub-criteria (SC41, SC42, SC43, SC44)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:16.662166",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 307,
+    "phase": "",
+    "message": "  Top: P26 (score=0.6341)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:16.662488",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 184,
+    "phase": "",
+    "message": "Hierarchical ranking for year 2024 — YearContext active: 61 provinces, 28 sub-criteria, 8 criteria"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:16.662521",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 192,
+    "phase": "",
+    "message": "  Excluded provinces (2): P17, P52"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:16.662541",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 197,
+    "phase": "",
+    "message": "  Excluded sub-criteria (1): SC52"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:16.662587",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 215,
+    "phase": "",
+    "message": "  61 alternatives, 8 criteria groups (pre-exclusion), 5 MCDM methods"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:16.662662",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_derive_hierarchical_weights",
+    "line": 602,
+    "phase": "",
+    "message": "  Criterion weights: C01=0.111, C02=0.079, C03=0.259, C04=0.097, C05=0.082, C06=0.123, C07=0.118, C08=0.131"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:16.662691",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C01: 61 provinces, 4 sub-criteria (SC11, SC12, SC13, SC14)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:16.670508",
+    "level": "DEBUG",
+    "module": "pipeline",
+    "function": "_run_hierarchical_ranking_all_years",
+    "line": 580,
+    "phase": "Hierarchical Ranking (Traditional MCDM + ER)",
+    "message": "  ✓ year 2022: 63 provinces ranked"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:16.831491",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C05: 61 provinces, 3 sub-criteria (SC51, SC53, SC54)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:16.841285",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C02: 61 provinces, 4 sub-criteria (SC21, SC22, SC23, SC24)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:17.011148",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C06: 61 provinces, 4 sub-criteria (SC61, SC62, SC63, SC64)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:17.016835",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C03: 61 provinces, 3 sub-criteria (SC31, SC32, SC33)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:17.179081",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C04: 61 provinces, 4 sub-criteria (SC41, SC42, SC43, SC44)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:17.220901",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C07: 61 provinces, 3 sub-criteria (SC71, SC72, SC73)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:17.343886",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C05: 61 provinces, 3 sub-criteria (SC51, SC53, SC54)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:17.362927",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C08: 61 provinces, 3 sub-criteria (SC81, SC82, SC83)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:17.468558",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C06: 61 provinces, 4 sub-criteria (SC61, SC62, SC63, SC64)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:17.550252",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 297,
+    "phase": "",
+    "message": "  Running Evidential Reasoning aggregation..."
+  },
+  {
+    "timestamp": "2026-03-01T19:09:17.625687",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C07: 61 provinces, 3 sub-criteria (SC71, SC72, SC73)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:17.876120",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "",
+    "message": "  C08: 61 provinces, 3 sub-criteria (SC81, SC82, SC83)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:18.002435",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 304,
+    "phase": "",
+    "message": "  Kendall's W = 0.4046"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:18.002732",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 307,
+    "phase": "",
+    "message": "  Top: P62 (score=0.6392)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:18.003482",
+    "level": "DEBUG",
+    "module": "pipeline",
+    "function": "_run_hierarchical_ranking_all_years",
+    "line": 580,
+    "phase": "Hierarchical Ranking (Traditional MCDM + ER)",
+    "message": "  ✓ year 2023: 61 provinces ranked"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:18.067673",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 297,
+    "phase": "",
+    "message": "  Running Evidential Reasoning aggregation..."
+  },
+  {
+    "timestamp": "2026-03-01T19:09:18.245769",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 304,
+    "phase": "",
+    "message": "  Kendall's W = 0.3818"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:18.246004",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 307,
+    "phase": "",
+    "message": "  Top: P39 (score=0.6310)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:18.246260",
+    "level": "DEBUG",
+    "module": "pipeline",
+    "function": "_run_hierarchical_ranking_all_years",
+    "line": 580,
+    "phase": "Hierarchical Ranking (Traditional MCDM + ER)",
+    "message": "  ✓ year 2024: 61 provinces ranked"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:18.246645",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_run_hierarchical_ranking_all_years",
+    "line": 585,
+    "phase": "Hierarchical Ranking (Traditional MCDM + ER)",
+    "message": "Multi-year ranking complete: 7/14 years succeeded"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:19.443285",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_run_forecasting",
+    "line": 621,
+    "phase": "ML Forecasting (SOTA Ensemble)",
+    "message": "Target year: 2025"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:19.447121",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_run_forecasting",
+    "line": 626,
+    "phase": "ML Forecasting (SOTA Ensemble)",
+    "message": "Base models: 6 (GradientBoosting, BayesianRidge, QuantileRF, PanelVAR, HierarchicalBayes, NAM)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:19.447191",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_run_forecasting",
+    "line": 629,
+    "phase": "ML Forecasting (SOTA Ensemble)",
+    "message": "Meta-learner: Super Learner (Ridge)"
+  },
+  {
+    "timestamp": "2026-03-01T19:09:19.447234",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_run_forecasting",
+    "line": 630,
+    "phase": "ML Forecasting (SOTA Ensemble)",
+    "message": "Calibration: Conformal cv_plus (α=0.05)"
+  },
+  {
+    "timestamp": "2026-03-01T19:36:33.767850",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_run_forecasting",
+    "line": 644,
+    "phase": "ML Forecasting (SOTA Ensemble)",
+    "message": "Super Learner weights:"
+  },
+  {
+    "timestamp": "2026-03-01T19:36:33.767932",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_run_forecasting",
+    "line": 646,
+    "phase": "ML Forecasting (SOTA Ensemble)",
+    "message": "  GradientBoosting    : 0.4057"
+  },
+  {
+    "timestamp": "2026-03-01T19:36:33.767959",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_run_forecasting",
+    "line": 646,
+    "phase": "ML Forecasting (SOTA Ensemble)",
+    "message": "  QuantileRF          : 0.2422"
+  },
+  {
+    "timestamp": "2026-03-01T19:36:33.767981",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_run_forecasting",
+    "line": 646,
+    "phase": "ML Forecasting (SOTA Ensemble)",
+    "message": "  PanelVAR            : 0.2342"
+  },
+  {
+    "timestamp": "2026-03-01T19:36:33.768000",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_run_forecasting",
+    "line": 646,
+    "phase": "ML Forecasting (SOTA Ensemble)",
+    "message": "  NAM                 : 0.0619"
+  },
+  {
+    "timestamp": "2026-03-01T19:36:33.768017",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_run_forecasting",
+    "line": 646,
+    "phase": "ML Forecasting (SOTA Ensemble)",
+    "message": "  BayesianRidge       : 0.0525"
+  },
+  {
+    "timestamp": "2026-03-01T19:36:33.768035",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_run_forecasting",
+    "line": 646,
+    "phase": "ML Forecasting (SOTA Ensemble)",
+    "message": "  HierarchicalBayes   : 0.0035"
+  },
+  {
+    "timestamp": "2026-03-01T19:36:33.768205",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_run_forecasting",
+    "line": 652,
+    "phase": "ML Forecasting (SOTA Ensemble)",
+    "message": "CV Performance: Mean R²=-20.3842 ± 98.1147"
+  },
+  {
+    "timestamp": "2026-03-01T19:36:33.781790",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_run_analysis",
+    "line": 676,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "Running hierarchical sensitivity analysis"
+  },
+  {
+    "timestamp": "2026-03-01T19:36:33.786678",
+    "level": "INFO",
+    "module": "sensitivity",
+    "function": "analyze_full_pipeline",
+    "line": 220,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "Sensitivity analysis: Using sequential execution"
+  },
+  {
+    "timestamp": "2026-03-01T19:36:33.797858",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 184,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "Hierarchical ranking for year 2024 — YearContext active: 61 provinces, 28 sub-criteria, 8 criteria"
+  },
+  {
+    "timestamp": "2026-03-01T19:36:33.797922",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 192,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  Excluded provinces (2): P17, P52"
+  },
+  {
+    "timestamp": "2026-03-01T19:36:33.797945",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 197,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  Excluded sub-criteria (1): SC52"
+  },
+  {
+    "timestamp": "2026-03-01T19:36:33.797991",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 215,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  61 alternatives, 8 criteria groups (pre-exclusion), 5 MCDM methods"
+  },
+  {
+    "timestamp": "2026-03-01T19:36:33.798092",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_derive_hierarchical_weights",
+    "line": 602,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  Criterion weights: C01=0.113, C02=0.081, C03=0.263, C04=0.098, C05=0.067, C06=0.125, C07=0.120, C08=0.133"
+  },
+  {
+    "timestamp": "2026-03-01T19:36:33.798123",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  C01: 61 provinces, 4 sub-criteria (SC11, SC12, SC13, SC14)"
+  },
+  {
+    "timestamp": "2026-03-01T19:36:33.877424",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  C02: 61 provinces, 4 sub-criteria (SC21, SC22, SC23, SC24)"
+  },
+  {
+    "timestamp": "2026-03-01T19:36:33.961492",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  C03: 61 provinces, 3 sub-criteria (SC31, SC32, SC33)"
+  },
+  {
+    "timestamp": "2026-03-01T19:36:34.032630",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  C04: 61 provinces, 4 sub-criteria (SC41, SC42, SC43, SC44)"
+  },
+  {
+    "timestamp": "2026-03-01T19:36:34.110189",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  C05: 61 provinces, 3 sub-criteria (SC51, SC53, SC54)"
+  },
+  {
+    "timestamp": "2026-03-01T19:36:34.183513",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  C06: 61 provinces, 4 sub-criteria (SC61, SC62, SC63, SC64)"
+  },
+  {
+    "timestamp": "2026-03-01T19:36:34.259873",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  C07: 61 provinces, 3 sub-criteria (SC71, SC72, SC73)"
+  },
+  {
+    "timestamp": "2026-03-01T19:36:34.338098",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  C08: 61 provinces, 3 sub-criteria (SC81, SC82, SC83)"
+  },
+  {
+    "timestamp": "2026-03-01T19:36:34.413715",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 297,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  Running Evidential Reasoning aggregation..."
+  },
+  {
+    "timestamp": "2026-03-01T19:36:34.581116",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 304,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  Kendall's W = 0.3818"
+  },
+  {
+    "timestamp": "2026-03-01T19:36:34.581306",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 307,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  Top: P39 (score=0.6297)"
+  },
+  {
+    "timestamp": "2026-03-01T19:39:56.689612",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 184,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "Hierarchical ranking for year 2024 — YearContext active: 61 provinces, 28 sub-criteria, 8 criteria"
+  },
+  {
+    "timestamp": "2026-03-01T19:39:56.689657",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 192,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  Excluded provinces (2): P17, P52"
+  },
+  {
+    "timestamp": "2026-03-01T19:39:56.689681",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 197,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  Excluded sub-criteria (1): SC52"
+  },
+  {
+    "timestamp": "2026-03-01T19:39:56.689727",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 215,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  61 alternatives, 8 criteria groups (pre-exclusion), 5 MCDM methods"
+  },
+  {
+    "timestamp": "2026-03-01T19:39:56.689797",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_derive_hierarchical_weights",
+    "line": 602,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  Criterion weights: C01=0.113, C02=0.081, C03=0.263, C04=0.098, C05=0.067, C06=0.125, C07=0.120, C08=0.133"
+  },
+  {
+    "timestamp": "2026-03-01T19:39:56.689827",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  C01: 61 provinces, 4 sub-criteria (SC11, SC12, SC13, SC14)"
+  },
+  {
+    "timestamp": "2026-03-01T19:39:56.764744",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  C02: 61 provinces, 4 sub-criteria (SC21, SC22, SC23, SC24)"
+  },
+  {
+    "timestamp": "2026-03-01T19:39:56.840420",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  C03: 61 provinces, 3 sub-criteria (SC31, SC32, SC33)"
+  },
+  {
+    "timestamp": "2026-03-01T19:39:56.909841",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  C04: 61 provinces, 4 sub-criteria (SC41, SC42, SC43, SC44)"
+  },
+  {
+    "timestamp": "2026-03-01T19:39:56.991020",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  C05: 61 provinces, 3 sub-criteria (SC51, SC53, SC54)"
+  },
+  {
+    "timestamp": "2026-03-01T19:39:57.064092",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  C06: 61 provinces, 4 sub-criteria (SC61, SC62, SC63, SC64)"
+  },
+  {
+    "timestamp": "2026-03-01T19:39:57.147318",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  C07: 61 provinces, 3 sub-criteria (SC71, SC72, SC73)"
+  },
+  {
+    "timestamp": "2026-03-01T19:39:57.224501",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  C08: 61 provinces, 3 sub-criteria (SC81, SC82, SC83)"
+  },
+  {
+    "timestamp": "2026-03-01T19:39:57.300765",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 297,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  Running Evidential Reasoning aggregation..."
+  },
+  {
+    "timestamp": "2026-03-01T19:39:57.464843",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 304,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  Kendall's W = 0.3818"
+  },
+  {
+    "timestamp": "2026-03-01T19:39:57.465064",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 307,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  Top: P39 (score=0.6297)"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:08.797474",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 184,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "Hierarchical ranking for year 2020 — YearContext active: 63 provinces, 29 sub-criteria, 8 criteria"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:08.797558",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 215,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  63 alternatives, 8 criteria groups (pre-exclusion), 5 MCDM methods"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:08.797641",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_derive_hierarchical_weights",
+    "line": 602,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  Criterion weights: C01=0.111, C02=0.079, C03=0.259, C04=0.097, C05=0.082, C06=0.123, C07=0.118, C08=0.131"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:08.797673",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  C01: 63 provinces, 4 sub-criteria (SC11, SC12, SC13, SC14)"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:08.878722",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  C02: 63 provinces, 4 sub-criteria (SC21, SC22, SC23, SC24)"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:08.961935",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  C03: 63 provinces, 3 sub-criteria (SC31, SC32, SC33)"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:09.035174",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  C04: 63 provinces, 4 sub-criteria (SC41, SC42, SC43, SC44)"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:09.115666",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  C05: 63 provinces, 4 sub-criteria (SC51, SC52, SC53, SC54)"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:09.194280",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  C06: 63 provinces, 4 sub-criteria (SC61, SC62, SC63, SC64)"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:09.273952",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  C07: 63 provinces, 3 sub-criteria (SC71, SC72, SC73)"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:09.347259",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  C08: 63 provinces, 3 sub-criteria (SC81, SC82, SC83)"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:09.420088",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 297,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  Running Evidential Reasoning aggregation..."
+  },
+  {
+    "timestamp": "2026-03-01T19:43:09.602215",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 304,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  Kendall's W = 0.3578"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:09.602417",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 307,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  Top: P12 (score=0.6235)"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:09.602486",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 184,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "Hierarchical ranking for year 2021 — YearContext active: 60 provinces, 28 sub-criteria, 8 criteria"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:09.602511",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 192,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  Excluded provinces (3): P14, P15, P18"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:09.602530",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 197,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  Excluded sub-criteria (1): SC52"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:09.602568",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 215,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  60 alternatives, 8 criteria groups (pre-exclusion), 5 MCDM methods"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:09.602628",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_derive_hierarchical_weights",
+    "line": 602,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  Criterion weights: C01=0.113, C02=0.081, C03=0.263, C04=0.098, C05=0.067, C06=0.125, C07=0.120, C08=0.133"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:09.602656",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  C01: 60 provinces, 4 sub-criteria (SC11, SC12, SC13, SC14)"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:09.677129",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  C02: 60 provinces, 4 sub-criteria (SC21, SC22, SC23, SC24)"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:09.749188",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  C03: 60 provinces, 3 sub-criteria (SC31, SC32, SC33)"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:09.818289",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  C04: 60 provinces, 4 sub-criteria (SC41, SC42, SC43, SC44)"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:09.894115",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  C05: 60 provinces, 3 sub-criteria (SC51, SC53, SC54)"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:09.967545",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  C06: 60 provinces, 4 sub-criteria (SC61, SC62, SC63, SC64)"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:10.043623",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  C07: 60 provinces, 3 sub-criteria (SC71, SC72, SC73)"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:10.117232",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  C08: 60 provinces, 3 sub-criteria (SC81, SC82, SC83)"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:10.188808",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 297,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  Running Evidential Reasoning aggregation..."
+  },
+  {
+    "timestamp": "2026-03-01T19:43:10.348649",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 304,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  Kendall's W = 0.4829"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:10.348858",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 307,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  Top: P31 (score=0.7165)"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:10.349849",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 184,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "Hierarchical ranking for year 2022 — YearContext active: 63 provinces, 28 sub-criteria, 8 criteria"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:10.349881",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 197,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  Excluded sub-criteria (1): SC52"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:10.349933",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 215,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  63 alternatives, 8 criteria groups (pre-exclusion), 5 MCDM methods"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:10.350001",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_derive_hierarchical_weights",
+    "line": 602,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  Criterion weights: C01=0.113, C02=0.081, C03=0.263, C04=0.098, C05=0.067, C06=0.125, C07=0.120, C08=0.133"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:10.350029",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  C01: 62 provinces, 4 sub-criteria (SC11, SC12, SC13, SC14)"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:10.429755",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  C02: 61 provinces, 4 sub-criteria (SC21, SC22, SC23, SC24)"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:10.506897",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  C03: 62 provinces, 3 sub-criteria (SC31, SC32, SC33)"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:10.595765",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  C04: 61 provinces, 4 sub-criteria (SC41, SC42, SC43, SC44)"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:10.674699",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  C05: 62 provinces, 3 sub-criteria (SC51, SC53, SC54)"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:10.748994",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  C06: 63 provinces, 4 sub-criteria (SC61, SC62, SC63, SC64)"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:10.830023",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  C07: 63 provinces, 3 sub-criteria (SC71, SC72, SC73)"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:10.902852",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  C08: 62 provinces, 3 sub-criteria (SC81, SC82, SC83)"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:10.977638",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 297,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  Running Evidential Reasoning aggregation..."
+  },
+  {
+    "timestamp": "2026-03-01T19:43:11.149945",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 304,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  Kendall's W = nan"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:11.150124",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 307,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  Top: P26 (score=0.6340)"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:11.150943",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 184,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "Hierarchical ranking for year 2023 — YearContext active: 61 provinces, 28 sub-criteria, 8 criteria"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:11.150974",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 192,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  Excluded provinces (2): P14, P47"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:11.150994",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 197,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  Excluded sub-criteria (1): SC52"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:11.151037",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 215,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  61 alternatives, 8 criteria groups (pre-exclusion), 5 MCDM methods"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:11.151099",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_derive_hierarchical_weights",
+    "line": 602,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  Criterion weights: C01=0.113, C02=0.081, C03=0.263, C04=0.098, C05=0.067, C06=0.125, C07=0.120, C08=0.133"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:11.151126",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  C01: 61 provinces, 4 sub-criteria (SC11, SC12, SC13, SC14)"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:11.228391",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  C02: 61 provinces, 4 sub-criteria (SC21, SC22, SC23, SC24)"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:11.304434",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  C03: 61 provinces, 3 sub-criteria (SC31, SC32, SC33)"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:11.374075",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  C04: 61 provinces, 4 sub-criteria (SC41, SC42, SC43, SC44)"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:11.450798",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  C05: 61 provinces, 3 sub-criteria (SC51, SC53, SC54)"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:11.520570",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  C06: 61 provinces, 4 sub-criteria (SC61, SC62, SC63, SC64)"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:11.600668",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  C07: 61 provinces, 3 sub-criteria (SC71, SC72, SC73)"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:11.682763",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  C08: 61 provinces, 3 sub-criteria (SC81, SC82, SC83)"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:11.752251",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 297,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  Running Evidential Reasoning aggregation..."
+  },
+  {
+    "timestamp": "2026-03-01T19:43:11.914222",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 304,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  Kendall's W = 0.4046"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:11.914473",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 307,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  Top: P62 (score=0.6372)"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:11.915508",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 184,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "Hierarchical ranking for year 2024 — YearContext active: 61 provinces, 28 sub-criteria, 8 criteria"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:11.915542",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 192,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  Excluded provinces (2): P17, P52"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:11.915562",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 197,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  Excluded sub-criteria (1): SC52"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:11.915606",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 215,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  61 alternatives, 8 criteria groups (pre-exclusion), 5 MCDM methods"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:11.915672",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_derive_hierarchical_weights",
+    "line": 602,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  Criterion weights: C01=0.113, C02=0.081, C03=0.263, C04=0.098, C05=0.067, C06=0.125, C07=0.120, C08=0.133"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:11.915699",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  C01: 61 provinces, 4 sub-criteria (SC11, SC12, SC13, SC14)"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:11.999676",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  C02: 61 provinces, 4 sub-criteria (SC21, SC22, SC23, SC24)"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:12.085576",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  C03: 61 provinces, 3 sub-criteria (SC31, SC32, SC33)"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:12.161310",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  C04: 61 provinces, 4 sub-criteria (SC41, SC42, SC43, SC44)"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:12.243392",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  C05: 61 provinces, 3 sub-criteria (SC51, SC53, SC54)"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:12.317911",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  C06: 61 provinces, 4 sub-criteria (SC61, SC62, SC63, SC64)"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:12.397156",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  C07: 61 provinces, 3 sub-criteria (SC71, SC72, SC73)"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:12.472041",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 261,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  C08: 61 provinces, 3 sub-criteria (SC81, SC82, SC83)"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:12.546655",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 297,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  Running Evidential Reasoning aggregation..."
+  },
+  {
+    "timestamp": "2026-03-01T19:43:12.744636",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 304,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  Kendall's W = 0.3818"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:12.744852",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "rank",
+    "line": 307,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  Top: P39 (score=0.6297)"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:12.839103",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_run_analysis",
+    "line": 702,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "Sensitivity analysis: robustness = 0.8584"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:12.839155",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_run_analysis",
+    "line": 705,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  Criteria sensitivity: 8 criteria analyzed"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:12.839178",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_run_analysis",
+    "line": 708,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  Subcriteria sensitivity: 29 subcriteria analyzed"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:12.839198",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_run_analysis",
+    "line": 711,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  Temporal stability: 4 year pairs"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:12.839220",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_run_analysis",
+    "line": 714,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "  Top-5 stability: 100.0%"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:12.858831",
+    "level": "INFO",
+    "module": "pipeline",
+    "function": "_run_validation",
+    "line": 739,
+    "phase": "Sensitivity Analysis & Validation",
+    "message": "Validation: PASSED (score=0.8184)"
+  },
+  {
+    "timestamp": "2026-03-01T19:43:17.294180",
+    "level": "WARNING",
+    "module": "__init__",
+    "function": "_safe",
+    "line": 265,
+    "phase": "Generating Figures",
+    "message": "Figure skipped [plot_multiyear_slopegraph]: cannot convert float NaN to integer"
+  },
+  {
+    "timestamp": "2026-03-01T19:44:26.446898",
+    "level": "DEBUG",
+    "module": "__init__",
+    "function": "generate_all",
+    "line": 479,
+    "phase": "Generating Figures",
+    "message": "rank-stability scatter skipped: The truth value of a Series is ambiguous. Use a.empty, a.bool(), a.item(), a.any() or a.all()."
+  },
+  {
+    "timestamp": "2026-03-01T19:44:42.460469",
+    "level": "INFO",
+    "module": "orchestrator",
+    "function": "save_all",
+    "line": 58,
+    "phase": "Saving Results",
+    "message": "Saved: weights_analysis.csv"
+  },
+  {
+    "timestamp": "2026-03-01T19:44:42.472836",
+    "level": "INFO",
+    "module": "orchestrator",
+    "function": "save_all",
+    "line": 62,
+    "phase": "Saving Results",
+    "message": "Saved: final_rankings.csv"
+  },
+  {
+    "timestamp": "2026-03-01T19:44:42.567274",
+    "level": "INFO",
+    "module": "orchestrator",
+    "function": "save_all",
+    "line": 68,
+    "phase": "Saving Results",
+    "message": "Saved: mcdm_scores_*.csv (8 files)"
+  },
+  {
+    "timestamp": "2026-03-01T19:44:42.578688",
+    "level": "INFO",
+    "module": "orchestrator",
+    "function": "save_all",
+    "line": 72,
+    "phase": "Saving Results",
+    "message": "Saved: mcdm_rank_comparison.csv"
+  },
+  {
+    "timestamp": "2026-03-01T19:44:42.579856",
+    "level": "INFO",
+    "module": "orchestrator",
+    "function": "save_all",
+    "line": 76,
+    "phase": "Saving Results",
+    "message": "Saved: criterion_weights.csv"
+  },
+  {
+    "timestamp": "2026-03-01T19:44:42.580871",
+    "level": "INFO",
+    "module": "orchestrator",
+    "function": "save_all",
+    "line": 80,
+    "phase": "Saving Results",
+    "message": "Saved: prediction_uncertainty_er.csv"
+  },
+  {
+    "timestamp": "2026-03-01T19:44:42.622181",
+    "level": "INFO",
+    "module": "orchestrator",
+    "function": "save_all",
+    "line": 84,
+    "phase": "Saving Results",
+    "message": "Saved: data_summary_statistics.csv"
+  },
+  {
+    "timestamp": "2026-03-01T19:44:42.728262",
+    "level": "INFO",
+    "module": "orchestrator",
+    "function": "save_all",
+    "line": 90,
+    "phase": "Saving Results",
+    "message": "Saved: forecast_predictions.csv"
+  },
+  {
+    "timestamp": "2026-03-01T19:44:42.728313",
+    "level": "INFO",
+    "module": "orchestrator",
+    "function": "save_all",
+    "line": 90,
+    "phase": "Saving Results",
+    "message": "Saved: prediction_intervals.csv"
+  },
+  {
+    "timestamp": "2026-03-01T19:44:42.728375",
+    "level": "INFO",
+    "module": "orchestrator",
+    "function": "save_all",
+    "line": 90,
+    "phase": "Saving Results",
+    "message": "Saved: model_contributions.csv"
+  },
+  {
+    "timestamp": "2026-03-01T19:44:42.728425",
+    "level": "INFO",
+    "module": "orchestrator",
+    "function": "save_all",
+    "line": 90,
+    "phase": "Saving Results",
+    "message": "Saved: model_performance.csv"
+  },
+  {
+    "timestamp": "2026-03-01T19:44:42.728452",
+    "level": "INFO",
+    "module": "orchestrator",
+    "function": "save_all",
+    "line": 90,
+    "phase": "Saving Results",
+    "message": "Saved: feature_importance.csv"
+  },
+  {
+    "timestamp": "2026-03-01T19:44:42.728476",
+    "level": "INFO",
+    "module": "orchestrator",
+    "function": "save_all",
+    "line": 90,
+    "phase": "Saving Results",
+    "message": "Saved: cross_validation_scores.csv"
+  },
+  {
+    "timestamp": "2026-03-01T19:44:42.728501",
+    "level": "INFO",
+    "module": "orchestrator",
+    "function": "save_all",
+    "line": 90,
+    "phase": "Saving Results",
+    "message": "Saved: forecast_summary.json"
+  },
+  {
+    "timestamp": "2026-03-01T19:44:42.738383",
+    "level": "INFO",
+    "module": "orchestrator",
+    "function": "save_all",
+    "line": 96,
+    "phase": "Saving Results",
+    "message": "Saved: sensitivity_criteria.csv"
+  },
+  {
+    "timestamp": "2026-03-01T19:44:42.738436",
+    "level": "INFO",
+    "module": "orchestrator",
+    "function": "save_all",
+    "line": 96,
+    "phase": "Saving Results",
+    "message": "Saved: sensitivity_subcriteria.csv"
+  },
+  {
+    "timestamp": "2026-03-01T19:44:42.738467",
+    "level": "INFO",
+    "module": "orchestrator",
+    "function": "save_all",
+    "line": 96,
+    "phase": "Saving Results",
+    "message": "Saved: sensitivity_rank_stability.csv"
+  },
+  {
+    "timestamp": "2026-03-01T19:44:42.738494",
+    "level": "INFO",
+    "module": "orchestrator",
+    "function": "save_all",
+    "line": 96,
+    "phase": "Saving Results",
+    "message": "Saved: sensitivity_top_n_stability.csv"
+  },
+  {
+    "timestamp": "2026-03-01T19:44:42.738530",
+    "level": "INFO",
+    "module": "orchestrator",
+    "function": "save_all",
+    "line": 96,
+    "phase": "Saving Results",
+    "message": "Saved: sensitivity_temporal.csv"
+  },
+  {
+    "timestamp": "2026-03-01T19:44:42.738553",
+    "level": "INFO",
+    "module": "orchestrator",
+    "function": "save_all",
+    "line": 96,
+    "phase": "Saving Results",
+    "message": "Saved: sensitivity_summary.json"
+  },
+  {
+    "timestamp": "2026-03-01T19:44:42.739573",
+    "level": "INFO",
+    "module": "orchestrator",
+    "function": "save_all",
+    "line": 104,
+    "phase": "Saving Results",
+    "message": "Saved: execution_summary.json"
+  },
+  {
+    "timestamp": "2026-03-01T19:44:42.740178",
+    "level": "INFO",
+    "module": "orchestrator",
+    "function": "save_all",
+    "line": 109,
+    "phase": "Saving Results",
+    "message": "Saved: config_snapshot.json"
+  },
+  {
+    "timestamp": "2026-03-01T19:44:42.747864",
+    "level": "INFO",
+    "module": "orchestrator",
+    "function": "save_all",
+    "line": 117,
+    "phase": "Saving Results",
+    "message": "Saved: entropy_weights.csv"
+  },
+  {
+    "timestamp": "2026-03-01T19:44:42.747921",
+    "level": "INFO",
+    "module": "orchestrator",
+    "function": "save_all",
+    "line": 117,
+    "phase": "Saving Results",
+    "message": "Saved: critic_weights.csv"
+  },
+  {
+    "timestamp": "2026-03-01T19:44:42.747952",
+    "level": "INFO",
+    "module": "orchestrator",
+    "function": "save_all",
+    "line": 117,
+    "phase": "Saving Results",
+    "message": "Saved: method_weights_comparison.csv"
+  },
+  {
+    "timestamp": "2026-03-01T19:44:42.750900",
+    "level": "INFO",
+    "module": "orchestrator",
+    "function": "save_all",
+    "line": 125,
+    "phase": "Saving Results",
+    "message": "Saved: mc_province_rankings.csv"
+  },
+  {
+    "timestamp": "2026-03-01T19:44:42.889281",
+    "level": "INFO",
+    "module": "orchestrator",
+    "function": "save_all",
+    "line": 135,
+    "phase": "Saving Results",
+    "message": "Saved: rankings_all_years.csv"
+  },
+  {
+    "timestamp": "2026-03-01T19:44:42.889412",
+    "level": "INFO",
+    "module": "orchestrator",
+    "function": "save_all",
+    "line": 135,
+    "phase": "Saving Results",
+    "message": "Saved: ranks_all_years.csv"
+  },
+  {
+    "timestamp": "2026-03-01T19:44:42.889464",
+    "level": "INFO",
+    "module": "orchestrator",
+    "function": "save_all",
+    "line": 135,
+    "phase": "Saving Results",
+    "message": "Saved: criterion_er_scores_all_years.csv"
+  },
+  {
+    "timestamp": "2026-03-01T19:44:42.889642",
+    "level": "DEBUG",
+    "module": "csv_writer",
+    "function": "save_belief_distributions",
+    "line": 962,
+    "phase": "Saving Results",
+    "message": "belief distributions skipped: 'BeliefDistribution' object has no attribute 'degrees'"
+  },
+  {
+    "timestamp": "2026-03-01T19:44:42.914001",
+    "level": "INFO",
+    "module": "orchestrator",
+    "function": "save_all",
+    "line": 153,
+    "phase": "Saving Results",
+    "message": "Saved: mcdm_composite_scores.csv"
+  },
+  {
+    "timestamp": "2026-03-01T19:44:42.917527",
+    "level": "INFO",
+    "module": "orchestrator",
+    "function": "save_all",
+    "line": 162,
+    "phase": "Saving Results",
+    "message": "Saved: individual_model_predictions.csv"
+  },
+  {
+    "timestamp": "2026-03-01T19:44:42.919628",
+    "level": "INFO",
+    "module": "orchestrator",
+    "function": "save_all",
+    "line": 171,
+    "phase": "Saving Results",
+    "message": "Saved: perturbation_detail.csv"
+  },
+  {
+    "timestamp": "2026-03-01T19:44:42.966756",
+    "level": "INFO",
+    "module": "orchestrator",
+    "function": "save_all",
+    "line": 187,
+    "phase": "Saving Results",
+    "message": "Saved: report.md (comprehensive analysis report)"
+  },
+  {
+    "timestamp": "2026-03-01T19:44:42.966808",
+    "level": "INFO",
+    "module": "orchestrator",
+    "function": "save_all",
+    "line": 192,
+    "phase": "Saving Results",
+    "message": "Total output files: 40"
+  },
+  {
+    "timestamp": "2026-03-01T19:44:42.966834",
+    "level": "INFO",
+    "module": "orchestrator",
+    "function": "save_all",
+    "line": 193,
+    "phase": "Saving Results",
+    "message": "All results saved to /content/ml-mcdm/result"
+  }
+]

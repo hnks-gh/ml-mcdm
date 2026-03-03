@@ -1,0 +1,24 @@
+{
+  "n_models": 6,
+  "n_predictions": 61,
+  "model_weights": {
+    "GradientBoosting": 0.4057115194134769,
+    "BayesianRidge": 0.05248848748676626,
+    "QuantileRF": 0.24223511047315327,
+    "PanelVAR": 0.23416144376313824,
+    "HierarchicalBayes": 0.0035211219677341483,
+    "NAM": 0.06188231689573119
+  },
+  "holdout_performance": null,
+  "training_info": {
+    "n_samples": 126,
+    "n_features": 464,
+    "mode": "advanced",
+    "ensemble_method": "super_learner",
+    "conformal_calibrated": true
+  },
+  "data_summary": {
+    "n_entities": 61,
+    "n_components": 29
+  }
+}

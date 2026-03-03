@@ -1,0 +1,179 @@
+{
+  "paths": {
+    "base_dir": "/content/ml-mcdm"
+  },
+  "panel": {
+    "n_provinces": 63,
+    "years": [
+      2011,
+      2012,
+      2013,
+      2014,
+      2015,
+      2016,
+      2017,
+      2018,
+      2019,
+      2020,
+      2021,
+      2022,
+      2023,
+      2024
+    ],
+    "province_col": "Province",
+    "year_col": "Year",
+    "n_subcriteria": 29,
+    "n_criteria": 8,
+    "subcriteria_prefix": "SC",
+    "criteria_prefix": "C",
+    "_subcriteria_per_criterion": [
+      4,
+      4,
+      3,
+      4,
+      4,
+      4,
+      3,
+      3
+    ],
+    "subcriteria_cols": [
+      "SC11",
+      "SC12",
+      "SC13",
+      "SC14",
+      "SC21",
+      "SC22",
+      "SC23",
+      "SC24",
+      "SC31",
+      "SC32",
+      "SC33",
+      "SC41",
+      "SC42",
+      "SC43",
+      "SC44",
+      "SC51",
+      "SC52",
+      "SC53",
+      "SC54",
+      "SC61",
+      "SC62",
+      "SC63",
+      "SC64",
+      "SC71",
+      "SC72",
+      "SC73",
+      "SC81",
+      "SC82",
+      "SC83"
+    ],
+    "criteria_cols": [
+      "C01",
+      "C02",
+      "C03",
+      "C04",
+      "C05",
+      "C06",
+      "C07",
+      "C08"
+    ],
+    "train_years": [
+      2011,
+      2012,
+      2013,
+      2014,
+      2015,
+      2016,
+      2017,
+      2018,
+      2019,
+      2020,
+      2021,
+      2022,
+      2023
+    ],
+    "test_year": 2024,
+    "n_observations": 882
+  },
+  "random": {
+    "seed": 42
+  },
+  "topsis": {
+    "normalization": "vector",
+    "benefit_criteria": null,
+    "cost_criteria": null
+  },
+  "vikor": {
+    "v": 0.5
+  },
+  "weighting": {
+    "mc_n_simulations": 2000,
+    "mc_n_tuning_simulations": 500,
+    "beta_a": 1.0,
+    "beta_b": 1.0,
+    "noise_sigma_scale": 0.02,
+    "boot_fraction": 1.0,
+    "perform_tuning": true,
+    "use_bayesian_tuning": false,
+    "tuning_objective": "avg_kendall_tau",
+    "top_k_stability": 10,
+    "stability_threshold": 0.95,
+    "convergence_tolerance": 5e-05,
+    "conv_min_iters_fraction": 0.16666666666666666,
+    "epsilon": 1e-10,
+    "seed": 42
+  },
+  "er": {
+    "n_grades": 5,
+    "method_weight_scheme": "equal",
+    "base_methods": [
+      "topsis",
+      "vikor",
+      "promethee",
+      "copras",
+      "edas",
+      "saw"
+    ]
+  },
+  "ranking": {
+    "run_all_years": true,
+    "max_parallel_years": null,
+    "expose_mc_province_stats": true
+  },
+  "forecast": {
+    "enabled": true,
+    "target_year": null,
+    "conformal_method": "cv_plus",
+    "conformal_alpha": 0.05,
+    "cv_folds": 3,
+    "random_state": 42,
+    "verbose": true
+  },
+  "validation": {
+    "n_simulations": 1000,
+    "weight_perturbation": 0.1,
+    "n_sensitivity_scenarios": 100,
+    "rank_correlation_threshold": 0.85
+  },
+  "visualization": {
+    "figsize": [
+      12,
+      8
+    ],
+    "dpi": 300,
+    "style": "seaborn-v0_8-whitegrid",
+    "palette": "viridis",
+    "heatmap_cmap": "RdYlGn",
+    "diverging_cmap": "RdBu_r",
+    "save_formats": [
+      "png"
+    ],
+    "ranking_top_n": 20,
+    "ranking_top_n_options": [
+      5,
+      10,
+      15,
+      20
+    ]
+  }
+}
