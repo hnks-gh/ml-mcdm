@@ -416,7 +416,7 @@ class WeightingPlotter(BasePlotter):
         return self._save(fig, save_name)
 
     # ==================================================================
-    #  FIG 05 – Annotated Heatmap with optional dendrogram clustering
+    #  FIG 05 – Annotated Weight Heatmap (sequential SC order, no dendrogram)
     # ==================================================================
 
     def plot_weight_heatmap(
@@ -425,6 +425,12 @@ class WeightingPlotter(BasePlotter):
         component_names: List[str],
         save_name: str = 'fig05_weight_heatmap.png',
     ) -> Optional[str]:
+        """
+        Annotated weight heatmap with sub-criteria sorted sequentially
+        (SC11, SC12, …, SC83).  Criterion-group boundaries are marked with
+        a dashed vertical separator for clean readability.  No clustering
+        or dendrogram is applied.
+        """
         if not HAS_MATPLOTLIB:
             return None
 
@@ -436,44 +442,25 @@ class WeightingPlotter(BasePlotter):
         n_c = len(component_names)
         data = np.array([weights[m] for m in methods])
 
-        # Hierarchical clustering on the SC axis when scipy is available
-        col_order = np.arange(n_c)
-        if HAS_SCIPY and n_c >= 4:
-            from scipy.cluster.hierarchy import linkage, leaves_list
-            from scipy.spatial.distance import pdist
-            dist = pdist(data.T, metric='euclidean')
-            Z = linkage(dist, method='average')
-            col_order = leaves_list(Z)
+        # Sort columns sequentially by SC name: SC11 → SC12 → … → SC83
+        def _sc_sort_key(name: str) -> tuple:
+            try:
+                return (int(name[2]), int(name[3:]))
+            except Exception:
+                return (99, 99)
 
-            fig = plt.figure(figsize=(max(14, n_c * 0.6), n_m + 4))
-            gs = fig.add_gridspec(
-                2, 2, height_ratios=[1.3, 4],
-                width_ratios=[n_c, 1],
-                hspace=0.02, wspace=0.02,
-            )
-            dend_ax = fig.add_subplot(gs[0, 0])
-            heat_ax = fig.add_subplot(gs[1, 0])
-            cbar_ax = fig.add_subplot(gs[1, 1])
-
-            from scipy.cluster.hierarchy import dendrogram
-            dendrogram(Z, ax=dend_ax, no_labels=True,
-                       color_threshold=0,
-                       above_threshold_color='#888888',
-                       link_color_func=lambda _: '#555555')
-            dend_ax.set_axis_off()
-            dendrogrammed = True
-        else:
-            fig, (heat_ax, cbar_ax) = plt.subplots(
-                1, 2,
-                figsize=(max(14, n_c * 0.6), max(4, n_m + 2)),
-                gridspec_kw={'width_ratios': [n_c, 1]},
-            )
-            dendrogrammed = False
-
-        data_ord = data[:, col_order]
+        col_order = np.array(
+            sorted(range(n_c), key=lambda i: _sc_sort_key(component_names[i])))
+        data_ord  = data[:, col_order]
         names_ord = [component_names[i] for i in col_order]
 
         import matplotlib as mpl
+        fig, (heat_ax, cbar_ax) = plt.subplots(
+            1, 2,
+            figsize=(max(14, n_c * 0.62), max(4, n_m + 2)),
+            gridspec_kw={'width_ratios': [n_c, 1]},
+        )
+
         cmap = plt.get_cmap('YlOrRd')
         heat_ax.imshow(data_ord, aspect='auto', cmap=cmap, vmin=0)
 
@@ -495,9 +482,34 @@ class WeightingPlotter(BasePlotter):
                 heat_ax.text(j, i, f'{val:.3f}', ha='center', va='center',
                              fontsize=7, color=txt_col, fontweight='bold')
 
+        # Clean dashed separators at criterion-group boundaries + group labels
+        prev_c: Optional[int] = None
+        first_j_of_group: int = 0
+        for j, sc in enumerate(names_ord):
+            try:
+                c = int(sc[2])
+            except Exception:
+                c = -1
+            if prev_c is not None and c != prev_c:
+                heat_ax.axvline(j - 0.5, color='#555555', lw=1.6,
+                                linestyle='--', alpha=0.75)
+                # label the completed group at its horizontal mid-point
+                mid = (first_j_of_group + j - 1) / 2
+                heat_ax.text(mid, -0.70, f'C0{prev_c}',
+                             ha='center', va='top', fontsize=7.5,
+                             color='#333333', fontstyle='italic')
+                first_j_of_group = j
+            prev_c = c
+
+        # Label the last group
+        if prev_c is not None:
+            mid = (first_j_of_group + n_c - 1) / 2
+            heat_ax.text(mid, -0.70, f'C0{prev_c}',
+                         ha='center', va='top', fontsize=7.5,
+                         color='#333333', fontstyle='italic')
+
         heat_ax.set_title(
-            'Weight Heatmap — Method × Sub-Criterion'
-            + (' (clustered)' if dendrogrammed else ''),
+            'Weight Heatmap — Method × Sub-Criterion (sequential order)',
             pad=10, fontsize=13, fontweight='bold',
         )
 
@@ -506,6 +518,248 @@ class WeightingPlotter(BasePlotter):
                                   orientation='vertical')
         cbar_ax.set_ylabel('Weight', fontsize=10)
 
+        fig.tight_layout()
+        return self._save(fig, save_name)
+
+    # ==================================================================
+    #  FIG 04a + 04b – Additional Radar Charts (Criteria + Group radars)
+    # ==================================================================
+
+    def plot_weight_radar_grouped(
+        self,
+        weights: Dict[str, np.ndarray],
+        component_names: List[str],
+        save_prefix: str = 'fig04',
+    ) -> List[Optional[str]]:
+        """
+        Generate 9 additional radar charts:
+
+        * **fig04a_weight_radar_criteria.png** – one radar for the 8 criteria
+          (weights aggregated by summing SC global weights per group).
+        * **fig04b_C01_radar.png … fig04b_C08_radar.png** – one radar per
+          criterion group using sub-criteria weights *locally normalised*
+          (summing to 1 within each group).  All radars overlay Entropy,
+          CRITIC and Hybrid.
+        """
+        if not HAS_MATPLOTLIB:
+            return []
+
+        methods = [m for m in _METHOD_ORDER if m in weights]
+        if not methods:
+            methods = list(weights.keys())
+        if not methods:
+            return []
+
+        # ── parse SC groups ────────────────────────────────────────────
+        groups: Dict[int, List[int]] = {}
+        for i, sc in enumerate(component_names):
+            try:
+                groups.setdefault(int(sc[2]), []).append(i)
+            except Exception:
+                pass
+        if not groups:
+            return []
+
+        crit_digits = sorted(groups.keys())           # [1, 2, … 8]
+        crit_labels = [f'C0{d}' for d in crit_digits]
+
+        # ── criteria-level weights ─────────────────────────────────────
+        crit_w: Dict[str, np.ndarray] = {}
+        for method in methods:
+            crit_w[method] = np.array(
+                [weights[method][np.array(groups[d])].sum()
+                 for d in crit_digits])
+
+        saved: List[Optional[str]] = []
+
+        # fig04a – criteria-level radar
+        saved.append(self._draw_radar(
+            crit_w, crit_labels, methods,
+            title='Criterion-Level Weight Radar — Entropy / CRITIC / Hybrid',
+            save_name=f'{save_prefix}a_weight_radar_criteria.png',
+        ))
+
+        # fig04b_C0X – group radars with locally-normalised weights
+        for d in crit_digits:
+            idxs     = np.array(groups[d])
+            sc_names = [component_names[i] for i in idxs]
+            local_w: Dict[str, np.ndarray] = {}
+            for method in methods:
+                raw   = weights[method][idxs]
+                total = raw.sum()
+                local_w[method] = raw / total if total > 1e-12 else raw
+            saved.append(self._draw_radar(
+                local_w, sc_names, methods,
+                title=(f'C0{d} Sub-Criterion Weights (locally normalised) '
+                       '— Entropy / CRITIC / Hybrid'),
+                save_name=f'{save_prefix}b_C0{d}_radar.png',
+            ))
+
+        return saved
+
+    def _draw_radar(
+        self,
+        weights: Dict[str, np.ndarray],
+        labels: List[str],
+        methods: List[str],
+        title: str,
+        save_name: str,
+    ) -> Optional[str]:
+        """Low-level helper: draw a single polar radar chart and save it."""
+        n = len(labels)
+        if n < 3:
+            return None
+
+        angles        = np.linspace(0, 2 * np.pi, n, endpoint=False).tolist()
+        angles_closed = angles + angles[:1]
+
+        fig, ax = plt.subplots(figsize=(9, 9),
+                               subplot_kw={'projection': 'polar'})
+        for i, method in enumerate(methods):
+            w    = weights[method]
+            vals = list(w) + [w[0]]
+            color = _METHOD_COLORS.get(method, CATEGORICAL_COLORS[i])
+            ax.plot(angles_closed, vals, 'o-', lw=2.2, label=method,
+                    color=color, markersize=5, alpha=0.9)
+            ax.fill(angles_closed, vals, alpha=0.10, color=color)
+
+        ax.set_xticks(angles)
+        ax.set_xticklabels(
+            [self._truncate(lb, 10) for lb in labels], fontsize=9)
+        ax.set_rlabel_position(15)
+        ax.tick_params(axis='y', labelsize=7)
+        ax.set_title(title, y=1.10, fontsize=13, fontweight='bold')
+        ax.legend(loc='upper right', bbox_to_anchor=(1.38, 1.12), fontsize=10)
+        return self._save(fig, save_name)
+
+    # ==================================================================
+    #  FIG 04c – Hierarchical Weight Rose (Coxcomb) Chart  [creative]
+    # ==================================================================
+
+    def plot_weight_hierarchical_rose(
+        self,
+        weights: Dict[str, np.ndarray],
+        component_names: List[str],
+        save_name: str = 'fig04c_weight_hierarchical_rose.png',
+    ) -> Optional[str]:
+        """
+        Hierarchical Coxcomb / Rose chart — one panel per weighting method.
+
+        Each petal maps to one criterion; its radial length equals the
+        criterion's aggregated global weight.  The petal is angularly
+        subdivided into sub-criterion slices proportional to their *local*
+        (within-criterion) normalised weights.  Slice shading darkens
+        progressively for sub-criterion identity.
+        """
+        if not HAS_MATPLOTLIB:
+            return None
+
+        import matplotlib as mpl
+
+        methods = [m for m in _METHOD_ORDER if m in weights]
+        if not methods:
+            return None
+
+        # -- parse groups --
+        groups: Dict[int, List[int]] = {}
+        for i, sc in enumerate(component_names):
+            try:
+                groups.setdefault(int(sc[2]), []).append(i)
+            except Exception:
+                pass
+        crit_digits = sorted(groups.keys())
+        n_crit = len(crit_digits)
+        if n_crit == 0:
+            return None
+
+        n_m      = len(methods)
+        sector_w = 2 * np.pi / n_crit
+        gap      = 0.05
+
+        palette = [
+            '#2E86AB', '#C73E1D', '#17B169', '#F4A261',
+            '#9B5DE5', '#F15BB5', '#00BBF9', '#06D6A0',
+        ]
+        group_colors = palette[:n_crit]
+
+        fig, axes = plt.subplots(
+            1, n_m, figsize=(7 * n_m, 7.5),
+            subplot_kw={'projection': 'polar'},
+        )
+        if n_m == 1:
+            axes = [axes]
+
+        for ax, method in zip(axes, methods):
+            w = weights[method]
+
+            for ci, d in enumerate(crit_digits):
+                idxs       = np.array(groups[d])
+                sc_ws      = w[idxs]
+                crit_ht    = float(sc_ws.sum())
+                local_sum  = crit_ht
+                local_frac = (sc_ws / local_sum
+                              if local_sum > 1e-12
+                              else np.ones(len(idxs)) / len(idxs))
+
+                base_col  = group_colors[ci % len(group_colors)]
+                rgba_base = mpl.colors.to_rgba(base_col)
+
+                theta_start = ci * sector_w + gap / 2
+                theta_avail = sector_w - gap
+                bar_offset  = 0.0
+
+                for si, (frac, _sc_w) in enumerate(zip(local_frac, sc_ws)):
+                    t0 = theta_start + bar_offset * theta_avail
+                    dt = frac * theta_avail
+                    shade     = 0.35 + 0.55 * (si / max(len(idxs) - 1, 1))
+                    slice_col = tuple(
+                        min(1.0, c * (0.5 + shade))
+                        for c in rgba_base[:3]
+                    ) + (0.85,)
+
+                    ax.bar(
+                        t0 + dt / 2, crit_ht,
+                        width=dt, bottom=0,
+                        color=slice_col,
+                        edgecolor='white', linewidth=0.5,
+                    )
+
+                    # Sub-criterion tip label
+                    theta_mid = t0 + dt / 2
+                    rot_deg   = np.degrees(theta_mid)
+                    if 90 < rot_deg < 270:
+                        rot_deg -= 180
+                    ax.text(
+                        theta_mid, crit_ht * 1.08,
+                        component_names[idxs[si]],
+                        ha='center', va='bottom',
+                        fontsize=6, rotation=rot_deg,
+                        rotation_mode='anchor',
+                        color='#222222',
+                    )
+                    bar_offset += frac
+
+                # Criterion label at petal centre
+                theta_mid = theta_start + theta_avail / 2
+                ax.text(
+                    theta_mid, crit_ht * 0.50,
+                    f'C0{d}',
+                    ha='center', va='center',
+                    fontsize=9.5, fontweight='bold', color='white',
+                )
+
+            ax.set_yticklabels([])
+            ax.set_xticks([])
+            ax.spines['polar'].set_visible(False)
+            ax.set_title(
+                method, y=1.08, fontsize=13, fontweight='bold',
+                color=_METHOD_COLORS.get(method, 'black'),
+            )
+
+        fig.suptitle(
+            'Hierarchical Weight Rose — Criteria & Sub-Criteria Breakdown',
+            y=1.02, fontsize=15, fontweight='bold',
+        )
         fig.tight_layout()
         return self._save(fig, save_name)
 

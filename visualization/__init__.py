@@ -112,6 +112,12 @@ class VisualizationOrchestrator:
     def plot_weight_heatmap(self, *a, **kw):
         return self.weighting.plot_weight_heatmap(*a, **kw)
 
+    def plot_weight_radar_grouped(self, *a, **kw):
+        return self.weighting.plot_weight_radar_grouped(*a, **kw)
+
+    def plot_weight_hierarchical_rose(self, *a, **kw):
+        return self.weighting.plot_weight_hierarchical_rose(*a, **kw)
+
     # MCDM
     def plot_method_agreement_matrix(self, *a, **kw):
         return self.mcdm.plot_method_agreement_matrix(*a, **kw)
@@ -383,10 +389,17 @@ class VisualizationOrchestrator:
                 subcriteria=subcriteria,
             )
 
-        # fig04 — Radar (all 3 methods)
+        # fig04 — Radar (all 3 methods, all 29 sub-criteria)
         _safe(self.weighting.plot_weight_radar, w_dict, subcriteria)
 
-        # fig05 — Heatmap with dendrogram
+        # fig04a + fig04b — Criteria-level radar + 8 group radars
+        #   (locally-normalised weights per group)
+        _safe(self.weighting.plot_weight_radar_grouped, w_dict, subcriteria)
+
+        # fig04c — Hierarchical rose / coxcomb chart  [creative]
+        _safe(self.weighting.plot_weight_hierarchical_rose, w_dict, subcriteria)
+
+        # fig05 — Heatmap (sequential SC order, no dendrogram)
         _safe(self.weighting.plot_weight_heatmap, w_dict, subcriteria)
 
         # ── MCDM agreement ───────────────────────────────────────
