@@ -18,6 +18,26 @@ Algorithm:
        - Estimate quantiles from the empirical distribution of {y_i}
     3. Output: Q(τ|x) for τ ∈ {0.05, 0.10, ..., 0.95}
 
+Point-prediction semantics:
+    ``predict(X)``        → conditional **mean** (standard RF average)
+                            Used by Super Learner meta-learner (MSE criterion)
+    ``predict_median(X)`` → conditional **median** at q=0.5 via
+                            ``predict_quantiles(X, [0.50])[0.50]``
+    ``predict_mean(X)``   → identical to ``predict()``
+
+    Before Bug Q-1 was fixed, ``get_prediction_distribution()["median"]``
+    silently returned the mean.  It now routes through ``predict_median()``.
+
+Vectorised quantile estimation (Bug Q-2 fix):
+    The naïve O(n_test × n_outputs × n_trees) triple Python loop is replaced
+    by a 2-stage NumPy operation:
+      1. Tree stage  (~n_estimators iters): accumulate sparse leaf-match
+         weight matrix W (n_test × n_train) using boolean broadcasting.
+      2. Output stage (~n_outputs iters): sort training targets, compute
+         cumulative-weight matrix, locate quantile cut-points via argmax.
+    For 63 test points × 29 outputs × 100 trees this reduces Python-level
+    iterations from ~183 000 to ~130.
+
 Key Advantages:
     - Non-parametric: No distributional assumptions
     - Heteroscedastic: Uncertainty varies with input
@@ -194,6 +214,23 @@ class QuantileRandomForestForecaster(BaseForecaster):
         the same leaf in each tree, then computes weighted quantiles
         from those observations.
 
+        Vectorized implementation
+        -------------------------
+        The naïve triple Python loop over ``n_test × n_outputs × n_trees``
+        is replaced by:
+
+        1. **Tree loop** (~100 iters): for each tree *t*, compute the sparse
+           ``(n_test, n_train)`` leaf-match matrix via boolean broadcasting
+           ``leaf_test[:, t:t+1] == leaf_train[:, t]``, normalize rows
+           within-tree, and accumulate into ``W_total``.
+        2. **Output loop** (29 iters): for each output column, sort training
+           targets, compute ``(n_test, n_train)`` cumulative weight matrix,
+           and run ``np.argmax`` to find quantile cut-points — all in
+           vectorized NumPy ops rather than per-sample Python loops.
+
+        For 63 test points × 29 outputs × 100 trees this reduces the
+        total number of Python-level iterations from ~183 000 to ~130.
+
         Args:
             X: Feature matrix of shape (n_samples, n_features)
             quantiles: List of quantile levels (default: self.quantiles)
@@ -207,44 +244,68 @@ class QuantileRandomForestForecaster(BaseForecaster):
             quantiles = self.quantiles
 
         X_scaled = self.scaler_.transform(X)
-        leaf_indices_test = self.model_.apply(X_scaled)
+        leaf_indices_test = self.model_.apply(X_scaled)   # (n_test, n_trees)
 
-        n_test = X_scaled.shape[0]
+        n_test  = X_scaled.shape[0]
+        n_train = len(self._y_train)
         n_trees = self.n_estimators
+        leaf_train = self._leaf_indices_train              # (n_train, n_trees)
 
+        # ------------------------------------------------------------------
+        # Stage 1: Build aggregate (n_test, n_train) weight matrix.
+        #
+        # For each tree t, test sample i and training sample j share a leaf
+        # iff leaf_test[i, t] == leaf_train[j, t].  The per-tree weight of
+        # training sample j for test point i is 1 / (number of training
+        # samples in the same leaf).  We accumulate these fractions across
+        # all trees and then row-normalise.
+        # ------------------------------------------------------------------
+        W_total = np.zeros((n_test, n_train), dtype=np.float64)
+
+        for t in range(n_trees):
+            # (n_test, 1) vs (n_train,) → broadcast to (n_test, n_train) bool
+            same_leaf = leaf_indices_test[:, t:t + 1] == leaf_train[:, t]
+            counts = same_leaf.sum(axis=1, keepdims=True).astype(np.float64)
+            # Avoid division-by-zero for test points with no match in tree t
+            counts[counts == 0] = 1.0
+            W_total += same_leaf.astype(np.float64) / counts
+
+        # Row-normalise: every row should sum to n_trees originally, but
+        # some test points may miss a few trees → renormalise to sum-to-1.
+        row_sums = W_total.sum(axis=1, keepdims=True)
+        row_sums[row_sums == 0] = 1.0
+        W_total /= row_sums
+
+        # ------------------------------------------------------------------
+        # Stage 2: Compute weighted quantiles per output column.
+        #
+        # For each output, sort training targets and compute the cumulative
+        # weight matrix W_sorted (n_test, n_train).  For each quantile q,
+        # np.argmax finds the first column where cum_W >= q — this is
+        # equivalent to the weighted-quantile search done in the old loop but
+        # vectorised across all test points simultaneously.
+        # ------------------------------------------------------------------
         results = {q: np.zeros((n_test, self._n_outputs)) for q in quantiles}
 
-        for i in range(n_test):
-            for out_col in range(self._n_outputs):
-                # Compute sample weights: fraction of trees where each
-                # training sample shares a leaf with test sample i
-                weights = np.zeros(len(self._y_train))
+        for out_col in range(self._n_outputs):
+            y_col    = self._y_train[:, out_col]          # (n_train,)
+            sort_idx = np.argsort(y_col)
+            sorted_y = y_col[sort_idx]                    # (n_train,)
 
-                for t in range(n_trees):
-                    test_leaf = leaf_indices_test[i, t]
-                    train_leaves = self._leaf_indices_train[:, t]
-                    same_leaf = train_leaves == test_leaf
-                    n_in_leaf = same_leaf.sum()
-                    if n_in_leaf > 0:
-                        weights[same_leaf] += 1.0 / n_in_leaf
+            # Re-order weight columns in ascending y order: (n_test, n_train)
+            sorted_W = W_total[:, sort_idx]
+            cum_W    = np.cumsum(sorted_W, axis=1)        # (n_test, n_train)
 
-                # Normalize weights
-                weight_sum = weights.sum()
-                if weight_sum > 0:
-                    weights /= weight_sum
-
-                # Compute weighted quantiles
-                y_col = self._y_train[:, out_col]
-                sorted_indices = np.argsort(y_col)
-                sorted_y = y_col[sorted_indices]
-                sorted_weights = weights[sorted_indices]
-                cumulative_weights = np.cumsum(sorted_weights)
-
-                for q in quantiles:
-                    # Find the value where cumulative weight >= q
-                    idx = np.searchsorted(cumulative_weights, q)
-                    idx = min(idx, len(sorted_y) - 1)
-                    results[q][i, out_col] = sorted_y[idx]
+            for q in quantiles:
+                # First index where cumulative weight >= q
+                idx = np.argmax(cum_W >= q, axis=1)       # (n_test,)
+                # argmax returns 0 when no element is True AND when the first
+                # element is already True.  The latter is correct; to handle
+                # zero-weight rows (cum_W[:, -1] == 0) gracefully we cap to
+                # the last valid index.
+                idx = np.where(cum_W[:, -1] >= q, idx, len(sorted_y) - 1)
+                idx = np.minimum(idx, len(sorted_y) - 1)
+                results[q][:, out_col] = sorted_y[idx]
 
         # Squeeze single-output results
         if self._n_outputs == 1:
@@ -313,10 +374,14 @@ class QuantileRandomForestForecaster(BaseForecaster):
             (QRF conditional median), 'std', 'q05', 'q10', 'q25', 'q50',
             'q75', 'q90', 'q95'
         """
-        median_pred   = self.predict(X)        # conditional median
-        mean_pred     = self.predict_mean(X)   # conditional mean (RF average)
+        # predict_mean() → RF conditional mean (average of tree outputs)
+        # predict_median() → QRF conditional median (leaf-weight quantile at τ=0.5)
+        # These are distinct statistics; using predict() here was a bug because
+        # predict() returns the mean, not the median.
+        mean_pred      = self.predict_mean(X)
+        median_pred    = self.predict_median(X)   # true QRF conditional median
         quantile_preds = self.predict_quantiles(X)
-        uncertainty   = self.predict_uncertainty(X)
+        uncertainty    = self.predict_uncertainty(X)
 
         return {
             "mean":   mean_pred,

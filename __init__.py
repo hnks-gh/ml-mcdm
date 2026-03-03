@@ -45,7 +45,6 @@ ml-mcdm/
 │   ├── bayesian.py
 │   ├── quantile_forest.py
 │   ├── panel_var.py
-│   ├── hierarchical_bayes.py
 │   └── neural_additive.py
 │
 ├── analysis/           # Validation & sensitivity

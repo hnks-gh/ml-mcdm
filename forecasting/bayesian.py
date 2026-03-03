@@ -125,10 +125,27 @@ class BayesianForecaster(BaseForecaster):
     
     @property
     def alpha(self) -> float:
-        """Get estimated alpha (precision of weights)."""
+        """Get estimated alpha (precision of noise) from the fitted BayesianRidge.
+
+        For multi-output models, returns the mean alpha_ across all per-output
+        estimators, since ``MultiOutputRegressor`` trains one ``BayesianRidge``
+        per output and exposes the attribute only on each sub-estimator.
+        """
+        if self._is_multi_output:
+            if not hasattr(self, 'model') or self.model is None:
+                raise AttributeError("Model not fitted yet.")
+            return float(np.mean([est.alpha_ for est in self.model.estimators_]))
         return self.model.alpha_
-    
+
     @property
     def lambda_(self) -> float:
-        """Get estimated lambda (precision of noise)."""
+        """Get estimated lambda (precision of weights) from the fitted BayesianRidge.
+
+        For multi-output models, returns the mean lambda_ across all per-output
+        estimators for the same reason as :attr:`alpha`.
+        """
+        if self._is_multi_output:
+            if not hasattr(self, 'model') or self.model is None:
+                raise AttributeError("Model not fitted yet.")
+            return float(np.mean([est.lambda_ for est in self.model.estimators_]))
         return self.model.lambda_

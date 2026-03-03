@@ -66,6 +66,7 @@ class TestFeatureEngineer:
     def _make_mock_panel(n_entities=3, n_years=5, n_components=2):
         """Create a lightweight mock PanelData object."""
         import pandas as pd
+        from types import SimpleNamespace
 
         years = list(range(2011, 2011 + n_years))
         provinces = [f"P{i}" for i in range(n_entities)]
@@ -100,6 +101,26 @@ class TestFeatureEngineer:
                 rows.append(row)
             cs[y] = pd.DataFrame(rows)
         panel.cross_section = cs
+
+        # T-3: Add year_contexts so the FeatureEngineer dynamic-exclusion
+        # code path is exercised (previously untested — year_contexts was None
+        # and all ctx_next guards were skipped entirely).
+        #
+        # Each year's context marks all provinces and components as active
+        # and all (province, component) pairs as valid.  This mirrors the
+        # common case where every province has full data every year.
+        def _make_ctx(yr):
+            ctx = SimpleNamespace()
+            ctx.year = yr
+            ctx.active_provinces = list(provinces)
+            ctx.active_subcriteria = list(components)
+            ctx.valid_pairs = {
+                (p, sc) for p in provinces for sc in components
+            }
+            ctx.is_valid = lambda prov, sc, _c=ctx: (prov, sc) in _c.valid_pairs
+            return ctx
+
+        panel.year_contexts = {yr: _make_ctx(yr) for yr in years}
 
         return panel
 
@@ -241,19 +262,63 @@ class TestQuantileRandomForest:
         assert pred.shape == y.shape
 
     def test_predict_returns_median(self, small_dataset):
-        """predict() should return the conditional median, not mean."""
+        """
+        T-4: Regression test for Bug Q-1 — ``get_prediction_distribution()``
+        must return the true leaf-weight quantile median, not the mean.
+
+        Before the Q-1 fix, ``get_prediction_distribution()["median"]`` was
+        computed via ``predict_mean()`` (standard RF average), so the
+        "median" and "mean" keys were identical — a silent semantic error.
+        After the fix, ``"median"`` routes through ``predict_median()``
+        (which uses the leaf-weight weighted-quantile at q=0.5), while
+        ``"mean"`` still calls ``predict_mean()`` (standard RF average).
+
+        Two invariants are checked:
+        1. The distribution "median" matches ``predict_median()`` exactly.
+        2. The distribution "mean" matches ``predict_mean()`` exactly.
+        3. ``predict_median()`` differs from ``predict_mean()`` on at least
+           one sample — without this the test would have no discriminative power.
+        """
         from forecasting.quantile_forest import QuantileRandomForestForecaster
 
         X, y = small_dataset
-        model = QuantileRandomForestForecaster(n_estimators=20, random_state=42)
+        model = QuantileRandomForestForecaster(n_estimators=40, random_state=42)
         model.fit(X, y)
 
-        median_pred = model.predict(X[:5])
-        mean_pred = model.predict_mean(X[:5])
+        X_test = X[:10]
 
-        # They should generally differ (median ≠ mean for skewed leaves)
-        # At the very least, both should be valid arrays
-        assert median_pred.shape == mean_pred.shape
+        dist = model.get_prediction_distribution(X_test)
+        assert "median" in dist, "get_prediction_distribution() must have 'median' key"
+        assert "mean"   in dist, "get_prediction_distribution() must have 'mean' key"
+
+        dist_median = dist["median"]
+        dist_mean   = dist["mean"]
+        true_median = model.predict_median(X_test)
+        true_mean   = model.predict_mean(X_test)
+
+        # Invariant 1: distribution['median'] == predict_median()
+        np.testing.assert_array_almost_equal(
+            dist_median, true_median, decimal=10,
+            err_msg=(
+                "get_prediction_distribution()['median'] does not match "
+                "predict_median().  Before Bug Q-1 was fixed, this key used "
+                "predict_mean() instead of the leaf-weight quantile median."
+            ),
+        )
+
+        # Invariant 2: distribution['mean'] == predict_mean()
+        np.testing.assert_array_almost_equal(
+            dist_mean, true_mean, decimal=10,
+            err_msg="get_prediction_distribution()['mean'] must equal predict_mean().",
+        )
+
+        # Invariant 3: median != mean (discriminative power)
+        diff = np.abs(dist_median.ravel() - dist_mean.ravel())
+        assert diff.max() > 1e-6, (
+            "predict_median() and predict_mean() are identical on all test points; "
+            "the test has no discriminative power.  Either n_estimators is too small "
+            "or the data distribution is perfectly symmetric."
+        )
 
     def test_predict_quantiles(self, small_dataset):
         from forecasting.quantile_forest import QuantileRandomForestForecaster
@@ -334,51 +399,6 @@ class TestPanelVAR:
         model.fit(X, y, entity_indices=entity_indices)
         imp = model.get_feature_importance()
         assert len(imp) == X.shape[1]  # trimmed to original features
-
-
-class TestHierarchicalBayes:
-    def test_multi_output_distinct(self, small_dataset, entity_indices):
-        from forecasting.hierarchical_bayes import HierarchicalBayesForecaster
-
-        X, y = small_dataset
-        model = HierarchicalBayesForecaster(n_em_iterations=5, random_state=42)
-        model.fit(X, y, group_indices=entity_indices)
-        pred = model.predict(X, group_indices=entity_indices)
-        assert pred.shape == y.shape
-
-        # Outputs should not be identical
-        for i in range(y.shape[1]):
-            for j in range(i + 1, y.shape[1]):
-                assert np.abs(pred[:, i] - pred[:, j]).sum() > 0.01
-
-    def test_warns_without_groups(self, small_dataset):
-        from forecasting.hierarchical_bayes import HierarchicalBayesForecaster
-
-        X, y = small_dataset
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            model = HierarchicalBayesForecaster(n_em_iterations=3, random_state=42)
-            model.fit(X, y)
-            assert any("no group_indices" in str(x.message) for x in w)
-
-    def test_predict_with_uncertainty(self, small_dataset, entity_indices):
-        from forecasting.hierarchical_bayes import HierarchicalBayesForecaster
-
-        X, y = small_dataset
-        model = HierarchicalBayesForecaster(n_em_iterations=5, random_state=42)
-        model.fit(X, y, group_indices=entity_indices)
-        mean, std = model.predict_with_uncertainty(X)
-        # Phase 4: predict_with_uncertainty() is multi-output aware.
-        # For a k-output model it returns (n, k); for single-output (n,).
-        n = X.shape[0]
-        k = y.shape[1] if y.ndim > 1 else 1
-        if k > 1:
-            assert mean.shape == (n, k), f"Expected ({n}, {k}), got {mean.shape}"
-            assert std.shape == (n, k), f"Expected ({n}, {k}), got {std.shape}"
-        else:
-            assert mean.shape == (n,)
-            assert std.shape == (n,)
-        assert np.all(std > 0)
 
 
 class TestNeuralAdditive:
@@ -528,24 +548,46 @@ class TestSuperLearner:
 # ---------------------------------------------------------------------------
 
 class TestConformalPredictor:
-    def test_split_coverage(self, univariate_dataset):
-        """Split conformal should achieve ~(1-α) coverage on synthetic data."""
+    def test_split_coverage(self):
+        """
+        T-1: Split conformal achieves ≥ (1-α) − 0.05 on n=200 test data.
+
+        Uses a fully-specified linear DGP so a Ridge model is correctly
+        specified.  This validates the mathematical guarantee rather than
+        merely checking that code runs.
+
+        With n=200 held-out points and a correctly-specified model the
+        empirical coverage should be within 5 pp of the nominal level;
+        the previous ±0.15 slack was too wide to catch real regressions.
+        """
         from forecasting.conformal import ConformalPredictor
         from sklearn.linear_model import Ridge
 
-        X, y = univariate_dataset
-        alpha = 0.10
+        rng = np.random.RandomState(7)
+        n, d = 200, 5
+        coefs = np.array([1.5, -0.8, 2.0, 0.4, -1.2])
+        X = rng.randn(n, d)
+        # Gaussian noise with known σ=0.5 → Ridge is well-specified
+        y = X @ coefs + rng.randn(n) * 0.5
 
-        model = Ridge()
+        alpha = 0.10
+        model = Ridge(alpha=1e-3)  # near-OLS; well-specified
         model.fit(X, y)
 
-        cp = ConformalPredictor(method="split", alpha=alpha, calibration_fraction=0.3)
+        cp = ConformalPredictor(method="split", alpha=alpha,
+                                calibration_fraction=0.3)
         cp.calibrate(model, X, y)
 
         lower, upper = cp.predict_intervals(X)
         covered = (y >= lower) & (y <= upper)
-        # Empirical coverage should not be catastrophically low
-        assert covered.mean() >= (1 - alpha) - 0.15
+        empirical_coverage = covered.mean()
+
+        tol = 0.05
+        assert empirical_coverage >= (1 - alpha) - tol, (
+            f"Split conformal coverage {empirical_coverage:.3f} is below "
+            f"({1 - alpha:.2f} - {tol:.2f}) = {(1-alpha-tol):.2f}.  "
+            f"The finite-sample guarantee should hold within ±{tol:.0%}."
+        )
 
     def test_cv_plus_coverage(self, univariate_dataset):
         from forecasting.conformal import ConformalPredictor
@@ -598,12 +640,29 @@ class TestConformalPredictor:
 
 class TestForecastEvaluator:
     def test_oof_residuals(self, univariate_dataset):
-        """Diagnostics should use out-of-fold residuals."""
+        """
+        T-2: Diagnostics use genuine OOF residuals, not in-sample residuals.
+
+        For a Ridge model fitted on the full data, in-sample residuals have
+        near-zero mean (Ridge shrinks toward zero, but the mean of y − ŷ
+        is always exactly zero for OLS and very close to zero for Ridge).
+        OOF residuals — where each fold's predictions come from a model that
+        never saw those samples — should have a measurably higher absolute
+        mean, proving that the CV mechanism is active and not just applying
+        the full-data model to the training set.
+        """
         from forecasting.evaluation import ForecastEvaluator
         from sklearn.linear_model import Ridge
 
         X, y = univariate_dataset
         model = Ridge()
+
+        # Baseline: in-sample residual mean from a model fit on full data
+        model_insample = Ridge()
+        model_insample.fit(X, y)
+        insample_resid_mean = float(
+            np.abs(np.mean(y - model_insample.predict(X)))
+        )
 
         evaluator = ForecastEvaluator(verbose=False, n_folds=3)
         results = evaluator.evaluate(model, X, y)
@@ -611,9 +670,18 @@ class TestForecastEvaluator:
         diag = results["diagnostics"]
         assert "residual_mean" in diag
         assert "durbin_watson" in diag
-        # OOF residual mean should be small but non-zero (not exactly 0
-        # as it would be with in-sample residuals from an OLS model)
         assert "error" not in diag
+
+        oof_resid_mean = float(np.abs(diag["residual_mean"]))
+
+        # OOF residual mean must exceed the in-sample near-zero baseline.
+        # If ForecastEvaluator were using in-sample predictions, the means
+        # would be similar (both ≈ 0 for well-fit Ridge on linear data).
+        assert oof_resid_mean > insample_resid_mean, (
+            f"OOF residual mean ({oof_resid_mean:.6f}) should be larger than "
+            f"in-sample residual mean ({insample_resid_mean:.6f}). "
+            "This suggests ForecastEvaluator is not using genuine OOF predictions."
+        )
 
     def test_cv_scores(self, univariate_dataset):
         from forecasting.evaluation import ForecastEvaluator
@@ -635,16 +703,6 @@ class TestForecastEvaluator:
 # ---------------------------------------------------------------------------
 
 class TestPhaseRegression:
-    def test_phase1_hierarch_bayes(self, small_dataset, entity_indices):
-        from forecasting.hierarchical_bayes import HierarchicalBayesForecaster
-
-        X, y = small_dataset
-        hb = HierarchicalBayesForecaster(n_em_iterations=5, random_state=42)
-        hb.fit(X, y, group_indices=entity_indices)
-        assert len(hb._global_models) == y.shape[1]
-        preds = hb.predict(X, group_indices=entity_indices)
-        assert preds.shape == y.shape
-
     def test_phase1_conformal_split_refit(self, univariate_dataset):
         from forecasting.conformal import ConformalPredictor
         from sklearn.linear_model import Ridge

@@ -210,20 +210,28 @@ class PanelVARForecaster(BaseForecaster):
                 if n_samples < lag + 2:
                     continue
 
+                # Hold-out CV: train on first ~80 %, evaluate on last ~20 %.
+                # This replaces the former in-sample Ridge AIC/BIC for two
+                # reasons:
+                #   (a) Ridge in-sample RSS is not monotone in lag order
+                #       (shrinkage inflates in-sample RSS vs OLS).
+                #   (b) Standard AIC/BIC penalties assume OLS and count raw
+                #       parameters; under Ridge the effective df is
+                #       tr(X(X'X+λI)⁻¹X') ≪ k, so the penalty severely
+                #       over-penalises complexity and biases toward lag=1.
+                h = max(1, n_samples // 5)
+                if n_samples - h < lag + 2:
+                    continue
+                X_tr, X_val = X_lag[:-h], X_lag[-h:]
+                y_tr, y_val = y_lag[:-h], y_lag[-h:]
+
                 model = Ridge(alpha=self.alpha, random_state=self.random_state)
-                model.fit(X_lag, y_lag)
-                y_pred = model.predict(X_lag)
+                model.fit(X_tr, y_tr)
+                y_val_pred = model.predict(X_val)
+                hold_out_mse = float(np.mean((y_val - y_val_pred) ** 2))
 
-                rss = np.sum((y_lag - y_pred) ** 2)
-                k = X_lag.shape[1]
-
-                if self.lag_selection == "aic":
-                    ic = n_samples * np.log(rss / n_samples + 1e-10) + 2 * k
-                else:  # bic
-                    ic = n_samples * np.log(rss / n_samples + 1e-10) + k * np.log(n_samples)
-
-                if ic < best_ic:
-                    best_ic = ic
+                if hold_out_mse < best_ic:
+                    best_ic = hold_out_mse
                     best_lag = lag
             except Exception:
                 continue
@@ -435,14 +443,27 @@ class PanelVARForecaster(BaseForecaster):
         if not self.use_fixed_effects or not self._fitted:
             return None
 
-        # Fixed effects are captured in the dummy variable coefficients
+        # After lag expansion, the Ridge coefficient vector has the structure:
+        #   Block 0 (current time t) : [base_feats(0..n_base-1), dummies(n_base..n_base+n_dum-1)]
+        #   Block 1 (lag 1, t-1)     : [base_feats, dummies]
+        #   ...
+        # The LSDV fixed effects are the coefficients on the entity dummies in the
+        # CURRENT-TIME block (block 0), i.e. positions n_base_features through
+        # n_base_features + n_dummies - 1.  Using coefs[-(n_entities-1):] was
+        # incorrect because those are the entity-dummy coefficients from the
+        # *last* lag block, not the fixed effects.
+        n_dummies = self._n_entities - 1  # reference entity is absorbed into intercept
         effects = {}
         for col in range(self._n_outputs):
             model = self.models_[col]
             coefs = model.coef_
-            # Last (n_entities - 1) coefficients are the fixed effects
-            # Reference entity has effect = 0
-            effects[col] = coefs[-(self._n_entities - 1):] if self._n_entities > 1 else np.array([0.0])
+            if self._n_entities > 1:
+                fe_slice = coefs[
+                    self._n_base_features : self._n_base_features + n_dummies
+                ]
+                effects[col] = fe_slice
+            else:
+                effects[col] = np.array([0.0])
         return effects
 
     def get_diagnostics(self) -> Dict[str, any]:

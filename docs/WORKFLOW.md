@@ -235,13 +235,12 @@ For **each of 8 criteria** (C01 through C08):
 **Purpose:** Forecast future criterion values using state-of-the-art ensemble learning. Feature importance is computed as a by-product.
 
 **Ensemble Architecture:**
-- **6 Base Models:**
+- **5 Base Models:**
   1. **Gradient Boosting** — Tree-based with Huber loss
   2. **Bayesian Ridge** — Probabilistic linear model
   3. **Quantile Random Forest** — Distributional forecasting
   4. **Panel VAR** — Panel-specific dynamics
-  5. **Hierarchical Bayesian** — Partial pooling across entities
-  6. **Neural Additive Models (NAM)** — Interpretable non-linearity
+  5. **Neural Additive Models (NAM)** — Interpretable non-linearity
 
 - **Meta-Ensemble:** Super Learner (Ridge regression for optimal model weighting)
 - **Uncertainty Quantification:** Conformal Prediction (distribution-free 95% intervals)

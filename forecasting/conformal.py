@@ -24,10 +24,20 @@ Algorithm (Split Conformal):
     5. Prediction interval: [ŷ_new - q, ŷ_new + q]
 
 Adaptive Conformal Inference (ACI) for Time Series:
-    Uses exponential smoothing of conformity scores to handle
-    temporal non-stationarity:
-    
-    α_t = γ * α_{t-1} + (1-γ) * error_indicator_t
+    Implements the *additive* gradient step from Gibbs & Candès (2021, Eq. 3):
+
+        α_{t+1} = α_t + γ(α − err_t)
+
+    where ``err_t ∈ {0, 1}`` is the miscoverage indicator.  The default
+    γ = 0.02 is appropriate for moderate distribution shifts (literature
+    recommends γ ∈ [0.005, 0.05]).  The old default of 0.95 was incorrectly
+    borrowed from exponential-smoothing forgetting factors (multiplicative
+    formula) and caused wild oscillation with this additive update rule.
+
+Additional calibration path:
+    ``calibrate_residuals(residuals)`` accepts pre-computed OOF residuals
+    so the full model never needs to be re-fitted or deep-copied during
+    conformal calibration (used by ``UnifiedForecaster``).
 
 References:
     - Vovk, Gammerman & Shafer (2005). "Algorithmic Learning in a
@@ -60,7 +70,19 @@ class ConformalPredictor:
         method: Conformal method ('split', 'cv_plus', 'adaptive')
         alpha: Miscoverage rate (default 0.05 for 95% intervals)
         calibration_fraction: Fraction of data for calibration (split method)
-        gamma: Adaptation rate for ACI (0 < γ < 1, default 0.95)
+        gamma: Adaptation rate for ACI.  The ACI update rule is the additive
+            gradient step from Gibbs & Candès (2021, Eq. 3):
+
+                α_{t+1} = α_t + γ(α − err_t)
+
+            where ``err_t ∈ {0, 1}`` is the miscoverage indicator.  With
+            this *additive* formulation a single miss shifts α by ``γ``
+            (not ``γ × α``), so the step size must be small.  Typical
+            values from the literature are γ ∈ [0.005, 0.05].  The
+            default 0.02 tracks moderate distribution shifts while
+            remaining stable.  (The old default 0.95 was borrowed from
+            exponential-smoothing forgetting factors where the formula is
+            *multiplicative*; it caused wild oscillation here.)
         symmetric: If True, symmetric intervals; if False, asymmetric
         random_state: Random seed for reproducibility
 
@@ -76,7 +98,7 @@ class ConformalPredictor:
         method: str = "cv_plus",
         alpha: float = 0.05,
         calibration_fraction: float = 0.25,
-        gamma: float = 0.95,
+        gamma: float = 0.02,
         symmetric: bool = True,
         random_state: int = 42,
     ):
@@ -155,6 +177,74 @@ class ConformalPredictor:
         self._calibrated = True
         return self
 
+    def calibrate_residuals(
+        self,
+        residuals: np.ndarray,
+        base_model=None,
+    ) -> "ConformalPredictor":
+        """
+        Calibrate from pre-computed out-of-fold residuals.
+
+        This is a lightweight alternative to :meth:`calibrate` that
+        avoids re-fitting the model entirely.  It is used by
+        ``UnifiedForecaster`` to calibrate conformal intervals from the
+        SuperLearner's cached OOF residuals so that the entire
+        SuperLearner ensemble is **never** deep-copied during conformal
+        calibration (U-2 performance fix).
+
+        The same finite-sample ``(n+1)/n`` Papadopoulos quantile
+        correction is applied as in :meth:`_calibrate_cv_plus`.
+
+        Args:
+            residuals: 1-D array of signed ``y_true - y_pred`` residuals
+                from held-out (OOF) data.  NaNs are automatically removed.
+            base_model: Optional fitted model to store as ``_base_model``.
+                If ``predict_intervals`` is called without
+                ``point_predictions``, this model is used.  When the
+                caller always passes pre-computed point predictions (as
+                ``UnifiedForecaster`` does), this can be ``None``.
+
+        Returns:
+            Self for method chaining.
+        """
+        residuals = np.asarray(residuals, dtype=np.float64)
+        residuals = residuals[~np.isnan(residuals)]
+
+        if len(residuals) < 3:
+            raise ValueError(
+                "calibrate_residuals() needs at least 3 valid residuals; "
+                f"got {len(residuals)}."
+            )
+
+        if base_model is not None:
+            self._base_model = base_model
+
+        n_cal = len(residuals)
+
+        if self.symmetric:
+            abs_residuals = np.abs(residuals)
+            self._conformity_scores = abs_residuals
+            q_level = np.ceil((1 - self.alpha) * (n_cal + 1)) / n_cal
+            q_level = min(q_level, 1.0)
+            self._q_hat = np.quantile(abs_residuals, q_level)
+        else:
+            # Asymmetric: same (n+1)/n Papadopoulos correction as
+            # _calibrate_split / _calibrate_cv_plus.
+            self._conformity_scores = residuals
+            alpha_half = self.alpha / 2
+            q_upper_level = min(
+                np.ceil((1.0 - alpha_half) * (n_cal + 1)) / n_cal, 1.0
+            )
+            q_lower_level = max(
+                np.floor(alpha_half * (n_cal + 1)) / n_cal, 0.0
+            )
+            self._q_lower = np.quantile(residuals, q_lower_level)
+            self._q_upper = np.quantile(residuals, q_upper_level)
+
+        self._n_cal = n_cal
+        self._calibrated = True
+        return self
+
     def _calibrate_split(self, model, X: np.ndarray, y: np.ndarray):
         """Calibrate using split conformal method.
         
@@ -197,11 +287,23 @@ class ConformalPredictor:
             q_level = min(q_level, 1.0)
             self._q_hat = np.quantile(self._conformity_scores, q_level)
         else:
-            # Asymmetric: separate upper and lower quantiles
+            # Asymmetric: separate upper and lower quantiles.
+            # Apply the finite-sample (n+1)/n Papadopoulos correction to
+            # both quantile levels.  Without this correction the marginal
+            # coverage guarantee P(Y ∈ C(X)) ≥ 1 − α does NOT hold;
+            # intervals are systematically too narrow.
             self._conformity_scores = residuals
             alpha_half = self.alpha / 2
-            q_lower_level = alpha_half
-            q_upper_level = 1.0 - alpha_half
+            # Upper tail: we want the α/2-upper quantile of the calibration
+            # signed residuals, i.e. the high-end threshold.
+            q_upper_level = min(
+                np.ceil((1.0 - alpha_half) * (n_cal + 1)) / n_cal, 1.0
+            )
+            # Lower tail: floor ensures we do not clip the lower tail too
+            # aggressively (conservative on both sides).
+            q_lower_level = max(
+                np.floor(alpha_half * (n_cal + 1)) / n_cal, 0.0
+            )
             self._q_lower = np.quantile(residuals, q_lower_level)
             self._q_upper = np.quantile(residuals, q_upper_level)
 
@@ -262,10 +364,20 @@ class ConformalPredictor:
             q_level = min(q_level, 1.0)
             self._q_hat = np.quantile(abs_residuals, q_level)
         else:
+            # Apply the same finite-sample (n+1)/n correction as
+            # _calibrate_split so asymmetric cv_plus intervals also
+            # carry the marginal coverage guarantee.
             self._conformity_scores = residuals
+            n_cv_cal = len(residuals)
             alpha_half = self.alpha / 2
-            self._q_lower = np.quantile(residuals, alpha_half)
-            self._q_upper = np.quantile(residuals, 1.0 - alpha_half)
+            q_upper_level = min(
+                np.ceil((1.0 - alpha_half) * (n_cv_cal + 1)) / n_cv_cal, 1.0
+            )
+            q_lower_level = max(
+                np.floor(alpha_half * (n_cv_cal + 1)) / n_cv_cal, 0.0
+            )
+            self._q_lower = np.quantile(residuals, q_lower_level)
+            self._q_upper = np.quantile(residuals, q_upper_level)
 
         self._n_cal = len(residuals)
 

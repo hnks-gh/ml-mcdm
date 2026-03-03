@@ -13,15 +13,20 @@ Architecture:
          ├─ Random Forest      (ŷ₂)      ElasticNet / Ridge
          ├─ Bayesian Ridge     (ŷ₃)      (learns α₁...αₙ)
          ├─ Panel VAR          (ŷ₄)           ↓
-         ├─ Hier. Bayes        (ŷ₅)      ŷ_final = Σ αᵢŷᵢ
-         └─ NAM                (ŷ₆)
+         └─ NAM                (ŷ₅)      ŷ_final = Σ αᵢŷᵢ
 
 Key Properties:
     1. Oracle inequality: Super Learner performs asymptotically
        as well as the best weighted combination of base models
     2. Cross-validated meta-features prevent information leakage
-    3. Non-negative weights ensure interpretability
-    4. Temporal ordering preserved via TimeSeriesSplit
+    3. Non-negative weights (NNLS) ensure interpretability and
+       per-entity weight clamping prevents boundary artefacts
+    4. Panel-aware temporal CV (``_PanelTemporalSplit``) uses the
+       *median* entity length to size fold windows, preserving data
+       from longer-history entities that the old min-based splitter
+       discarded (Bug S-2 fix)
+    5. OOF predictions are cached and re-used for conformal calibration
+       — the SuperLearner ensemble is never deep-copied (Bug U-2 fix)
 
 Variants:
     - Standard: ElasticNet meta-learner with positive weights
@@ -114,33 +119,63 @@ class _PanelTemporalSplit:
             for ent in unique_entities
         }
 
-        # Use the minimum entity length so every entity can contribute
-        T = min(len(rows) for rows in entity_rows.values())
-        if T < 2:
+        # S-2 FIX: Use the MEDIAN entity length to size the fold windows rather
+        # than the MIN.  The old code used T = min(...) — any entity shorter
+        # than the fold window would exclude ALL data from longer-history
+        # entities, wasting up to 9 years of panel data per province.
+        #
+        # New behaviour:
+        #   * Fold boundaries are derived from the median entity length.
+        #   * For each fold, each entity contributes its OWN rows up to its
+        #     actual T — longer entities provide full training + validation;
+        #     shorter entities that fall below the validation window simply
+        #     contribute 0 validation rows for that fold (acceptable).
+        T_per_entity = {ent: len(rows) for ent, rows in entity_rows.items()}
+        T_median = max(2, int(np.median(list(T_per_entity.values()))))
+
+        if T_median < 2:
             yield from TimeSeriesSplit(n_splits=self.n_splits).split(X)
             return
 
         # Reserve at least 1 time step as the initial training window
-        min_train_T = max(1, T // (self.n_splits + 1))
-        fold_size = max(1, (T - min_train_T) // self.n_splits)
+        min_train_T = max(1, T_median // (self.n_splits + 1))
+        fold_size = max(1, (T_median - min_train_T) // self.n_splits)
 
         for fold in range(self.n_splits):
             cut = min_train_T + fold * fold_size
-            val_end = min(cut + fold_size, T)
-            if cut >= T:
+            val_end = cut + fold_size
+            if cut >= T_median:
                 break
 
-            train_idx = np.concatenate(
-                [rows[:cut] for rows in entity_rows.values()]
-            )
-            val_idx = np.concatenate(
-                [rows[cut:val_end] for rows in entity_rows.values()]
-            )
+            train_idx_parts: List[np.ndarray] = []
+            val_idx_parts: List[np.ndarray] = []
+
+            for ent, rows in entity_rows.items():
+                T_ent = len(rows)
+                # Training: all rows of this entity with within-entity
+                # position < cut (clamped to the entity's actual length)
+                train_cut_ent = min(cut, T_ent)
+                if train_cut_ent > 0:
+                    train_idx_parts.append(rows[:train_cut_ent])
+
+                # Validation: rows in [cut, val_end], clamped to T_ent.
+                # Entities shorter than `cut` contribute 0 val rows — that
+                # is fine; they still contribute to training in later folds.
+                val_start_ent = min(cut, T_ent)
+                val_end_ent = min(val_end, T_ent)
+                if val_end_ent > val_start_ent:
+                    val_idx_parts.append(rows[val_start_ent:val_end_ent])
+
+            if not train_idx_parts or not val_idx_parts:
+                continue
+
+            train_idx = np.sort(np.concatenate(train_idx_parts))
+            val_idx   = np.sort(np.concatenate(val_idx_parts))
 
             if len(train_idx) == 0 or len(val_idx) == 0:
                 continue
 
-            yield np.sort(train_idx), np.sort(val_idx)
+            yield train_idx, val_idx
 
 
 class SuperLearner:
@@ -161,7 +196,14 @@ class SuperLearner:
         positive_weights: If True, constrain meta-weights to be non-negative
         normalize_weights: If True, meta-weights sum to 1
         meta_alpha_range: Range of regularization values for meta-learner CV
-        temperature: Temperature for Bayesian stacking softmax
+        temperature: Temperature for the softmax-weighted stacking (higher
+            temperature → flatter weights; lower → winner-takes-all). Only
+            used when ``meta_learner_type='bayesian_stacking'``.
+            Note: despite the name, the current implementation is a
+            deterministic *softmax* weighting of OOF R² scores
+            (temperature-scaled), not a full Bayesian Dirichlet-posterior
+            stacking as in Yao et al. (2018).  The name is retained for
+            backward compatibility.
         random_state: Random seed
         verbose: Print progress messages
 
@@ -210,6 +252,12 @@ class SuperLearner:
         self._fitted: bool = False
         self._n_outputs: int = 1
         self._oof_r2: Dict[str, float] = {}
+
+        # OOF ensemble predictions — stored at fit time so that
+        # UnifiedForecaster can calibrate conformal intervals from pre-computed
+        # residuals without deep-copying the full ensemble (U-2).
+        self._oof_ensemble_predictions_: Optional[np.ndarray] = None  # (n_samples, n_outputs)
+        self._oof_valid_mask_: Optional[np.ndarray] = None            # (n_samples,) bool
 
     @_silence_warnings
     def fit(self, X: np.ndarray, y: np.ndarray, entity_indices: Optional[np.ndarray] = None) -> "SuperLearner":
@@ -316,6 +364,32 @@ class SuperLearner:
             oof_y = y[valid_rows]
 
             self._fit_meta_learner(oof_X, oof_y)
+
+        # ----------------------------------------------------------
+        # Cache ensemble OOF predictions for conformal calibration
+        # (U-2): build the meta-weighted blend of per-model OOF preds
+        # so UnifiedForecaster can calibrate from these residuals
+        # without deep-copying the full ensemble inside cv_plus.
+        # ----------------------------------------------------------
+        oof_ensemble = np.full((n_samples, self._n_outputs), np.nan)
+        for i_out in range(self._n_outputs):
+            weighted_col = np.zeros(n_samples)
+            weight_sum_col = np.zeros(n_samples)
+            for m_idx, name in enumerate(self.base_models):
+                w = self._meta_weights.get(name, 0.0)
+                if w == 0.0:
+                    continue
+                col_idx = m_idx * self._n_outputs + i_out
+                oof_col = oof_predictions[:, col_idx]
+                valid_col = ~np.isnan(oof_col)
+                weighted_col[valid_col] += w * oof_col[valid_col]
+                weight_sum_col[valid_col] += w
+            valid_col_any = weight_sum_col > 0
+            oof_ensemble[valid_col_any, i_out] = (
+                weighted_col[valid_col_any] / weight_sum_col[valid_col_any]
+            )
+        self._oof_ensemble_predictions_ = oof_ensemble
+        self._oof_valid_mask_ = ~np.isnan(oof_ensemble).any(axis=1)
 
         # ============================================================
         # Stage 3: Re-train all base models on full data
@@ -528,7 +602,7 @@ class SuperLearner:
         return result
 
     def predict_with_uncertainty(
-        self, X: np.ndarray
+        self, X: np.ndarray, entity_indices: Optional[np.ndarray] = None
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Predict with uncertainty from model disagreement.
@@ -537,6 +611,11 @@ class SuperLearner:
 
         Args:
             X: Feature matrix
+            entity_indices: Optional entity group IDs, forwarded to panel-aware
+                base models (``PanelVARForecaster``).
+                When *None*, panel models fall back to population-level (zero-dummy)
+                predictions, making the uncertainty estimate entity-wrong.
+                Always pass the same ``entity_indices`` used during ``predict()``.
 
         Returns:
             Tuple of (mean prediction, standard deviation)
@@ -546,7 +625,12 @@ class SuperLearner:
 
         for name, model in self._fitted_base_models.items():
             try:
-                pred = model.predict(X)
+                # Use _predict_model so that panel-aware models receive
+                # entity_indices (fixing audit issue S-1: the previous
+                # model.predict(X) call omitted entity_indices, causing
+                # PanelVAR to predict at the reference
+                # entity level for ALL entities, producing wrong uncertainty).
+                pred = self._predict_model(model, X, entity_indices)
                 if pred.ndim == 1:
                     pred = pred.reshape(-1, 1)
                 all_predictions.append(pred)

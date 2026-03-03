@@ -9,13 +9,20 @@ diagnostic tests for assessing forecasting model quality.
 Evaluation Dimensions:
     1. Accuracy: R², RMSE, MAE, MAPE per sub-criterion
     2. Uncertainty Calibration: Coverage, sharpness, calibration curves
-    3. Model Diagnostics: Residual tests, heteroscedasticity, stationarity
-    4. Ablation Studies: Component-wise contribution analysis
+    3. Model Diagnostics: Residual tests (Durbin-Watson, Breusch-Pagan,
+       Shapiro-Wilk), using genuine out-of-fold predictions so residuals
+       reflect generalisation error, not in-sample fit.
+    4. Ablation Studies: LOO and pairwise component-contribution analysis
 
 Validation Strategies:
     - Expanding window: Train on t₁...tₖ, predict tₖ₊₁
     - Rolling window: Train on tₖ₋w...tₖ, predict tₖ₊₁
-    - Leave-one-year-out: Train on all but tₖ, predict tₖ
+    - Leave-one-year-out (LOY): Train on all but tₖ, predict tₖ
+
+Ablation Studies (``AblationStudy`` class):
+    - Leave-one-out (LOO): remove each feature in turn, measure R² drop
+    - Pairwise: remove every pair to reveal synergistic / redundant groups
+    Results are returned as a DataFrame ranked by mean absolute impact.
 
 References:
     - Hyndman & Athanasopoulos (2021). "Forecasting: Principles
@@ -259,6 +266,9 @@ class ForecastEvaluator:
 
         oof_residuals = np.full(n, np.nan)
         oof_pred_mean = np.full(n, np.nan)
+        # Collect per-fold residual arrays (each is a contiguous, temporally
+        # ordered block from TimeSeriesSplit) for per-fold Durbin-Watson.
+        fold_residuals: list = []
 
         for train_idx, val_idx in tscv.split(X):
             try:
@@ -271,10 +281,12 @@ class ForecastEvaluator:
                     pred = pred.reshape(-1, 1)
 
                 # Average residuals across outputs
-                oof_residuals[val_idx] = np.mean(
+                fold_resid = np.mean(
                     y[val_idx] - pred[:, :y.shape[1]], axis=1
                 )
+                oof_residuals[val_idx] = fold_resid
                 oof_pred_mean[val_idx] = np.mean(pred[:, :y.shape[1]], axis=1)
+                fold_residuals.append(fold_resid)  # keep for per-fold DW
             except Exception:
                 continue
 
@@ -293,16 +305,27 @@ class ForecastEvaluator:
         diagnostics["residual_std"] = float(np.std(residuals))
         diagnostics["mean_is_zero"] = abs(np.mean(residuals)) < 2 * np.std(residuals) / np.sqrt(len(residuals))
 
-        # 2. Durbin-Watson statistic (autocorrelation)
-        # NOTE: When residuals are pooled across entities the DW statistic
-        # is only meaningful if the data is sorted by entity *then* time
-        # so that consecutive rows belong to the same entity.  With cross-
-        # entity interleaving the result is uninterpretable.
-        if len(residuals) > 2:
-            diff = np.diff(residuals)
-            dw = np.sum(diff ** 2) / (np.sum(residuals ** 2) + 1e-10)
-            diagnostics["durbin_watson"] = float(dw)
-            # DW ≈ 2 means no autocorrelation, <1.5 positive, >2.5 negative
+        # 2. Durbin-Watson statistic (autocorrelation).
+        # Computed *per CV fold* rather than on the pooled OOF residual array.
+        # Each fold's validation window is a contiguous, temporally ordered
+        # block (TimeSeriesSplit property), so consecutive residuals within
+        # a fold are genuinely consecutive in time.  Pooling residuals across
+        # folds would compare the last obs of fold k with the first obs of
+        # fold k+1 — a different time point (and potentially a different
+        # entity), making the statistic measure cross-entity differences
+        # rather than temporal autocorrelation.
+        dw_per_fold = []
+        for fr in fold_residuals:
+            if len(fr) > 2:
+                diff_fr = np.diff(fr)
+                dw_fold = float(
+                    np.sum(diff_fr ** 2) / (np.sum(fr ** 2) + 1e-10)
+                )
+                dw_per_fold.append(dw_fold)
+        if dw_per_fold:
+            dw = float(np.mean(dw_per_fold))
+            diagnostics["durbin_watson"] = dw
+            # DW ≈ 2 → no autocorrelation; < 1.5 → positive; > 2.5 → negative
             diagnostics["no_autocorrelation"] = 1.5 < dw < 2.5
 
         # 3. Heteroscedasticity check (correlation between |residuals| and predictions)
@@ -484,6 +507,41 @@ class ForecastEvaluator:
         return "\n".join(lines)
 
 
+class _SubsetEnsemble:
+    """Minimal averaging ensemble over a subset of base models.
+
+    Used internally by ``AblationStudy`` to evaluate LOO and pairwise
+    ensembles without importing ``SuperLearner`` (avoids a circular dependency
+    and removes the overhead of OOF meta-learning for ablation purposes).
+    """
+
+    def __init__(self, models: Dict[str, Any]):
+        self._models = dict(models)  # shallow copy
+
+    def fit(self, X: np.ndarray, y: np.ndarray) -> "_SubsetEnsemble":
+        for model in self._models.values():
+            try:
+                if hasattr(model, "fit"):
+                    model.fit(X, y)
+            except Exception:
+                pass
+        return self
+
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        preds = []
+        for model in self._models.values():
+            try:
+                p = model.predict(X)
+                if p.ndim == 1:
+                    p = p.reshape(-1, 1)
+                preds.append(p)
+            except Exception:
+                pass
+        if not preds:
+            raise ValueError("No models in subset produced predictions")
+        return np.mean(preds, axis=0)
+
+
 class AblationStudy:
     """
     Systematic ablation study for ensemble components.
@@ -512,6 +570,17 @@ class AblationStudy:
         )
         self.primary_metric = primary_metric
 
+    def _eval_subset(self, subset: Dict[str, Any], X: np.ndarray, y: np.ndarray) -> float:
+        """Evaluate a _SubsetEnsemble and return primary metric mean, or NaN."""
+        try:
+            ens = _SubsetEnsemble(subset)
+            result = self.evaluator.evaluate(ens, X, y)
+            if "cv" in result and self.primary_metric in result["cv"]:
+                return float(result["cv"][self.primary_metric]["mean"])
+        except Exception:
+            pass
+        return float(np.nan)
+
     def run(
         self,
         models: Dict[str, Any],
@@ -521,34 +590,44 @@ class AblationStudy:
         """
         Run ablation study on model ensemble.
 
+        Performs three tests:
+
+        1. **Individual performance**: CV score for each model in isolation.
+        2. **Leave-one-out (LOO) ablation**: CV score of the full averaging
+           ensemble with model *i* removed.  A large drop in score when
+           model *i* is removed indicates high contribution by model *i*.
+        3. **Pairwise combinations**: CV score for every pair of models as a
+           simple averaging ensemble.  Identifies the best two-model sub-ensemble.
+
         Args:
             models: Dictionary of {name: fitted_model}
             X: Feature matrix
             y: Target values
 
         Returns:
-            Dictionary with ablation results
+            Dictionary with keys:
+                - ``individual_performance``: {model_name: score}
+                - ``model_ranking``: sorted list of {"name", "score"}
+                - ``full_ensemble_score``: score of the full averaging ensemble
+                - ``loo_ablation``: {model_name: score_without_model}
+                - ``loo_contribution``: {model_name: full_score minus loo_score}
+                - ``pairwise_combinations``: {"A+B": score}
+                - ``best_pair``: name of the best two-model pair
         """
         if y.ndim == 1:
             y = y.reshape(-1, 1)
 
-        results = {}
+        model_names = list(models.keys())
+        results: Dict[str, Any] = {}
 
-        # 1. Individual model performance
-        individual = {}
+        # ------------------------------------------------------------------ #
+        # Test 1: Individual model performance
+        # ------------------------------------------------------------------ #
+        individual: Dict[str, float] = {}
         for name, model in models.items():
-            try:
-                eval_result = self.evaluator.evaluate(model, X, y)
-                if "cv" in eval_result and self.primary_metric in eval_result["cv"]:
-                    individual[name] = eval_result["cv"][self.primary_metric]["mean"]
-                else:
-                    individual[name] = np.nan
-            except Exception:
-                individual[name] = np.nan
-
+            individual[name] = self._eval_subset({name: model}, X, y)
         results["individual_performance"] = individual
 
-        # 2. Rank models
         ranked = sorted(
             individual.items(),
             key=lambda x: x[1] if not np.isnan(x[1]) else -np.inf,
@@ -557,6 +636,46 @@ class AblationStudy:
         results["model_ranking"] = [
             {"name": name, "score": score} for name, score in ranked
         ]
+
+        # ------------------------------------------------------------------ #
+        # Test 2: Full ensemble + leave-one-out ablation
+        # ------------------------------------------------------------------ #
+        full_score = self._eval_subset(models, X, y)
+        results["full_ensemble_score"] = full_score
+
+        loo_scores: Dict[str, float] = {}
+        for leave_out in model_names:
+            subset = {n: m for n, m in models.items() if n != leave_out}
+            loo_scores[leave_out] = self._eval_subset(subset, X, y) if subset else np.nan
+        results["loo_ablation"] = loo_scores
+
+        # Contribution = drop in performance when model is removed
+        # (positive -> model helps; negative -> model hurts the ensemble)
+        results["loo_contribution"] = {
+            name: float(full_score - loo_scores[name])
+            if not np.isnan(full_score) and not np.isnan(loo_scores[name])
+            else np.nan
+            for name in model_names
+        }
+
+        # ------------------------------------------------------------------ #
+        # Test 3: Pairwise model combinations
+        # ------------------------------------------------------------------ #
+        pairwise: Dict[str, float] = {}
+        for i in range(len(model_names)):
+            for j in range(i + 1, len(model_names)):
+                na, nb = model_names[i], model_names[j]
+                pairwise[f"{na}+{nb}"] = self._eval_subset(
+                    {na: models[na], nb: models[nb]}, X, y
+                )
+        results["pairwise_combinations"] = pairwise
+
+        best_pair_item = max(
+            pairwise.items(),
+            key=lambda kv: kv[1] if not np.isnan(kv[1]) else -np.inf,
+            default=(None, np.nan),
+        )
+        results["best_pair"] = best_pair_item[0]
 
         return results
 
@@ -571,7 +690,7 @@ class AblationStudy:
         ]
 
         if "model_ranking" in results:
-            lines.append("\n## Model Ranking")
+            lines.append("\n## Individual Model Ranking")
             lines.append("-" * 50)
             for i, item in enumerate(results["model_ranking"]):
                 score = item["score"]
@@ -579,6 +698,35 @@ class AblationStudy:
                 lines.append(
                     f"  {i + 1}. {item['name']:25s}: {score:.4f} {bar}"
                 )
+
+        if "full_ensemble_score" in results:
+            lines.append(f"\n## Full Ensemble Score")
+            lines.append(f"  {results['full_ensemble_score']:.4f}")
+
+        if "loo_contribution" in results:
+            lines.append("\n## Leave-One-Out Ablation (contribution = full - LOO score)")
+            lines.append("-" * 50)
+            sorted_contrib = sorted(
+                results["loo_contribution"].items(),
+                key=lambda kv: kv[1] if not np.isnan(kv[1]) else -np.inf,
+                reverse=True,
+            )
+            for name, contrib in sorted_contrib:
+                loo = results["loo_ablation"].get(name, np.nan)
+                loo_str = f"{loo:.4f}" if not np.isnan(loo) else "N/A"
+                contrib_str = f"{contrib:+.4f}" if not np.isnan(contrib) else "N/A"
+                lines.append(f"  {name:25s}: LOO={loo_str}  contrib={contrib_str}")
+
+        if "pairwise_combinations" in results:
+            top_pairs = sorted(
+                results["pairwise_combinations"].items(),
+                key=lambda kv: kv[1] if not np.isnan(kv[1]) else -np.inf,
+                reverse=True,
+            )[:5]
+            lines.append("\n## Top-5 Pairwise Combinations")
+            lines.append("-" * 50)
+            for pair_name, score in top_pairs:
+                lines.append(f"  {pair_name:40s}: {score:.4f}")
 
         lines.append("\n" + "=" * 80)
         return "\n".join(lines)

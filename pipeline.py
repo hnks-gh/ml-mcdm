@@ -73,7 +73,8 @@ class PipelineResult:
     weight_details: Dict[str, Any]       # full WeightResult.details dict
 
     # Hierarchical Ranking (Traditional MCDM + ER)
-    ranking_result: HierarchicalRankingResult
+    # Optional so the pipeline can return partial results if this phase fails
+    ranking_result: Optional[HierarchicalRankingResult] = None
 
     # Multi-year rankings — {year: HierarchicalRankingResult} for all panel years.
     # Present when config.ranking.run_all_years is True.
@@ -187,10 +188,26 @@ class MLMCDMPipeline:
 
             # Phase 3: Hierarchical Ranking (6 MCDM methods + ER)
             multi_year_results: Dict[int, Any] = {}
+            ranking_result: Optional[HierarchicalRankingResult] = None
             with self.console.phase('Hierarchical Ranking (Traditional MCDM + ER)') as ph:
-                ranking_result = self._run_hierarchical_ranking(panel_data, weights)
+                # PL-1: guard against primary ranking failure so the pipeline
+                # can still save partial results (weights, data) rather than
+                # crashing entirely — consistent with phases 4-7.
+                try:
+                    ranking_result = self._run_hierarchical_ranking(panel_data, weights)
+                except Exception as _rank_exc:
+                    ph.warning(f'Hierarchical ranking failed: {_rank_exc}')
+                    self.logger.error(
+                        'Phase 3 (Hierarchical Ranking) failed — partial results will '
+                        'be saved (weights and data are available): %s',
+                        _rank_exc,
+                    )
+                    self.logger.debug(traceback.format_exc())
+
                 # Multi-year: run all panel years for temporal visualisations
-                if getattr(getattr(self.config, 'ranking', None), 'run_all_years', True):
+                if ranking_result is not None and getattr(
+                    getattr(self.config, 'ranking', None), 'run_all_years', True
+                ):
                     try:
                         multi_year_results = self._run_hierarchical_ranking_all_years(
                             panel_data, weights
@@ -216,11 +233,14 @@ class MLMCDMPipeline:
             # Phase 5: Sensitivity Analysis & Validation
             analysis_results: Dict[str, Any] = {'sensitivity': None, 'validation': None}
             with self.console.phase('Sensitivity Analysis & Validation') as ph:
-                try:
-                    analysis_results = self._run_analysis(
-                        panel_data, ranking_result, weights, forecast_result)
-                except Exception as e:
-                    ph.warning(f'Sensitivity analysis skipped: {e}')
+                if ranking_result is not None:
+                    try:
+                        analysis_results = self._run_analysis(
+                            panel_data, ranking_result, weights, forecast_result)
+                    except Exception as e:
+                        ph.warning(f'Sensitivity analysis skipped: {e}')
+                else:
+                    ph.warning('Sensitivity analysis skipped (ranking unavailable)')
 
                 try:
                     analysis_results['validation'] = self._run_validation(
@@ -282,7 +302,57 @@ class MLMCDMPipeline:
             cs = panel_data.subcriteria_cross_section[latest_year]
             avail_scs = [sc for sc in subcriteria if sc in cs.columns]
             avail_provs = [p for p in active_provs if p in cs.index]
-            decision_matrix = cs.loc[avail_provs, avail_scs].values
+
+            # PL-2: NaN handling for decision_matrix — year/SC mismatches can
+            # leave some province-SC cells empty (e.g. a new SC introduced in
+            # a year where some provinces have missing reports).
+            dm_df = cs.loc[avail_provs, avail_scs].copy()
+            nan_count_before = int(dm_df.isna().sum().sum())
+            if nan_count_before > 0:
+                self.logger.warning(
+                    'Decision matrix has %d NaN cell(s) in year %d '
+                    '(%d province-SC pairs affected); attempting imputation.',
+                    nan_count_before, latest_year,
+                    int(dm_df.isna().any(axis=1).sum()),
+                )
+                # Step 1: back-fill from prior years, province by province
+                prior_years = sorted(
+                    [yr for yr in panel_data.years if yr < latest_year], reverse=True
+                )
+                for prior_yr in prior_years:
+                    if dm_df.isna().sum().sum() == 0:
+                        break
+                    prior_cs = panel_data.subcriteria_cross_section.get(prior_yr)
+                    if prior_cs is None:
+                        continue
+                    for prov in avail_provs:
+                        if prov not in prior_cs.index:
+                            continue
+                        for sc in avail_scs:
+                            if pd.isna(dm_df.at[prov, sc]) and sc in prior_cs.columns:
+                                prior_val = prior_cs.at[prov, sc]
+                                if not pd.isna(prior_val):
+                                    dm_df.at[prov, sc] = prior_val
+
+                # Step 2: fill any remaining NaNs with column median
+                nan_count_after_fill = int(dm_df.isna().sum().sum())
+                if nan_count_after_fill > 0:
+                    col_medians = dm_df.median()
+                    dm_df = dm_df.fillna(col_medians)
+                    self.logger.warning(
+                        '  %d cell(s) could not be back-filled from prior years; '
+                        'replaced with column median.',
+                        nan_count_after_fill,
+                    )
+
+                nan_count_final = int(dm_df.isna().sum().sum())
+                self.logger.info(
+                    '  Decision matrix NaN imputation complete: '
+                    '%d → %d remaining NaN(s).',
+                    nan_count_before, nan_count_final,
+                )
+
+            decision_matrix = dm_df.values
 
             return PipelineResult(
                 panel_data              = panel_data,
@@ -621,7 +691,7 @@ class MLMCDMPipeline:
         self.logger.info(f"Target year: {target_year}")
         _base_model_names = [
             "GradientBoosting", "BayesianRidge", "QuantileRF",
-            "PanelVAR", "HierarchicalBayes", "NAM",
+            "PanelVAR", "NAM",
         ]
         self.logger.info(
             f"Base models: {len(_base_model_names)} ({', '.join(_base_model_names)})"
@@ -772,18 +842,23 @@ class MLMCDMPipeline:
                 if isinstance(value, (dict, list)) and len(value) == 0:
                     empty.append(f"{attr} ({description})")
         
+        # PL-3: convert structural errors into logged warnings so they are
+        # not silently swallowed by the outer try/except in _run_analysis.
+        # A missing attribute is a real data-quality problem that deserves
+        # attention, but it should not discard an otherwise valid sensitivity
+        # result that was successfully computed.
         if missing:
-            raise ValueError(
-                f"Sensitivity result missing required attributes:\n  " +
-                "\n  ".join(missing) +
-                "\n\nEnsure SensitivityAnalysis.analyze_full_pipeline() returns "
-                "complete hierarchical structure."
+            self.logger.error(
+                'Sensitivity result is missing required attributes — results may '
+                'be incomplete.  Ensure SensitivityAnalysis.analyze_full_pipeline() '
+                'returns a complete hierarchical structure:\n  %s',
+                '\n  '.join(missing),
             )
-        
+
         if empty:
             self.logger.warning(
-                f"Sensitivity result has empty attributes:\n  " +
-                "\n  ".join(empty)
+                'Sensitivity result has empty attributes (computed but no data):\n  %s',
+                '\n  '.join(empty),
             )
 
     # -----------------------------------------------------------------

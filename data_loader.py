@@ -307,7 +307,10 @@ class DataLoader:
     
     def __init__(self, config: Optional[Config] = None):
         self.config = config or get_config()
-        self.logger = get_logger()
+        # D-1: always use a module-scoped logger name so that the fallback
+        # path (logging.getLogger) does not pollute the root logger with
+        # application-level messages.
+        self.logger = get_logger('ml_mcdm.data_loader')
     
     def load(self) -> PanelData:
         """Load panel data from data folder."""

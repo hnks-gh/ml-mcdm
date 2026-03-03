@@ -7,12 +7,11 @@ State-of-the-art ensemble forecasting system optimized for small-to-medium
 panel data (N < 1000), emphasizing model diversity over quantity.
 
 Architecture:
-    Tier 1 - Base Models (6 diverse models):
+    Tier 1 - Base Models (5 diverse models):
         - gradient_boosting: Gradient Boosting (robust, sample-efficient)
         - bayesian: Bayesian Ridge regression (uncertainty quantification)
         - panel_var: Panel Vector Autoregression with fixed effects
         - quantile_forest: Distributional forecasting via quantile RF
-        - hierarchical_bayes: Partial pooling via empirical Bayes
         - neural_additive: Neural Additive Models (interpretable)
 
     Tier 2 - Meta-Ensemble:
@@ -27,7 +26,7 @@ Architecture:
         - unified: Full pipeline orchestration
 
 Design Philosophy:
-    - Model diversity over quantity (6 diverse > 11 correlated)
+    - Model diversity over quantity (5 diverse > 11 correlated)
     - Statistical appropriateness for N < 1000
     - Automatic optimal weighting (Super Learner)
     - Guaranteed uncertainty coverage (Conformal Prediction)
@@ -56,7 +55,6 @@ from .bayesian import BayesianForecaster
 # Advanced models (state-of-the-art)
 from .panel_var import PanelVARForecaster
 from .quantile_forest import QuantileRandomForestForecaster
-from .hierarchical_bayes import HierarchicalBayesForecaster
 from .neural_additive import NeuralAdditiveForecaster
 
 # Meta-ensemble methods
@@ -85,7 +83,6 @@ __all__ = [
     # Advanced models (SOTA)
     'PanelVARForecaster',
     'QuantileRandomForestForecaster',
-    'HierarchicalBayesForecaster',
     'NeuralAdditiveForecaster',
     # Meta-ensemble
     'SuperLearner',

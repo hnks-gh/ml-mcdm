@@ -7,11 +7,26 @@ Advanced feature engineering for time series panel data, creating
 rich feature sets for ML forecasting models.
 
 Features include:
-- Lag features (historical values)
-- Rolling statistics (mean, std, min, max)
-- Momentum and acceleration
-- Trend features (linear slope)
-- Cross-entity features (relative position)
+- Lag features (historical values at t-1, t-2)
+- Rolling statistics (mean, std, min, max over 2–3 year windows)
+- Momentum and acceleration (first/second differences)
+- Trend features (linear slope via polyfit)
+- Cross-entity features (percentile rank, z-score relative to panel)
+
+Dynamic exclusion via ``year_contexts``
+---------------------------------------
+When ``panel_data.year_contexts`` is present, ``fit_transform`` removes:
+
+* **Training rows** whose *target* year excludes the entity (province absent
+  from ``year_contexts[t+1].active_provinces``) or whose target sub-criterion
+  is NaN for that year.  No imputation is performed on target values.
+
+* **Prediction rows** limited to entities in the *forecast year*'s
+  ``active_provinces`` set; excluded entities are simply absent from output.
+
+NaN values in *feature* (input) vectors — e.g. missing lag values for
+entities with short histories — are filled with 0.0 ("no prior information")
+after all filters are applied.
 """
 
 import numpy as np
@@ -278,13 +293,19 @@ class TemporalFeatureEngineer:
         feature_names.extend([f"{c}_current" for c in components])
         
         # Lag features
+        # When there is insufficient history (year_idx < lag), use NaN rather
+        # than current_values.  The previous fallback ``lag_values = current_values``
+        # created a false "no-change" signal (lag feature == current feature) that
+        # biased all models toward predicting zero change for early-history entities.
+        # NaN is replaced with 0.0 by the _create_features_safe wrapper, encoding
+        # "no prior information" without fabricating a spurious signal.
         year_idx = years.index(current_year)
         for lag in self.lag_periods:
             if year_idx - lag >= 0:
                 lag_year = years[year_idx - lag]
                 lag_values = entity_data.loc[lag_year, components].values
             else:
-                lag_values = current_values  # Use current if not enough history
+                lag_values = np.full(len(components), np.nan)  # no history → missing
             features.extend(lag_values)
             feature_names.extend([f"{c}_lag{lag}" for c in components])
         

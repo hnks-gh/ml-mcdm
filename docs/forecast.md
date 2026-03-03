@@ -2,21 +2,21 @@
 
 ## Overview
 
-This framework implements a **statistically-principled 3-tier ensemble learning system** optimized for small-to-medium panel data (N < 1000). It combines 6 diverse machine learning models with Super Learner meta-learning and distribution-free conformal prediction to forecast future criterion values.
+This framework implements a **statistically-principled 3-tier ensemble learning system** optimized for small-to-medium panel data (N < 1000). It combines 5 diverse machine learning models with Super Learner meta-learning and distribution-free conformal prediction to forecast future criterion values.
 
 **Key Design Principles:**
-- **Model diversity over quantity**: 6 diverse models outperform 11+ correlated models
+- **Model diversity over quantity**: 5 diverse models outperform 11+ correlated models
 - **Statistical appropriateness**: Optimized for N < 1000 (your dataset: N=756)
 - **Automatic optimal weighting**: Super Learner learns best combination
 - **Guaranteed coverage**: Conformal prediction provides 95% valid intervals
 - **No redundancy**: Each model captures different patterns (tree, linear, panel, Bayesian)
 
 **Key Features:**
-- **6 Model Types**: Gradient Boosting, linear, and advanced panel models
+- **5 Model Types**: Gradient Boosting, linear, and advanced panel models
 - **Super Learner**: Automatic optimal weighting via meta-learning
 - **Conformal Prediction**: Distribution-free 95% prediction intervals
 - **Distributional Forecasting**: Full predictive distributions via quantile forests
-- **Panel Data Methods**: VAR with fixed effects, hierarchical Bayesian partial pooling
+- **Panel Data Methods**: VAR with fixed effects
 - **Interpretable Non-Linearity**: Neural Additive Models with shape functions
 - **Temporal Feature Engineering**: Rich lag/rolling/momentum/trend features
 - **Time-Series Cross-Validation**: Proper temporal validation
@@ -49,10 +49,9 @@ Base Model Training (DIVERSE MODEL TYPES)
   ├── Bayesian Linear (1 model)
   │   └── Bayesian Ridge (posterior uncertainty)
   │
-  └── Advanced Panel Models (4 models)
+  └── Advanced Panel Models (3 models)
       ├── Quantile Random Forest (distributional forecasts)
       ├── Panel VAR (LSDV fixed effects + autoregressive)
-      ├── Hierarchical Bayesian (empirical Bayes pooling)
       └── Neural Additive Models (interpretable non-linearity)
   ↓
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -84,7 +83,6 @@ Output: Predictions + Calibrated Intervals + Diagnostics
   ├── Point predictions (Super Learner weighted)
   ├── Calibrated 95% prediction intervals (conformal)
   ├── Distributional forecasts (quantiles from QRF)
-  ├── Posterior uncertainty (Hierarchical Bayes)
   ├── Feature importance (aggregated across models)
   ├── Model contributions (meta-weights)
   ├── CV performance metrics
@@ -109,7 +107,6 @@ Output: Predictions + Calibrated Intervals + Diagnostics
   ├── Point predictions (ensemble-weighted)
   ├── Calibrated prediction intervals (conformal)
   ├── Distributional forecasts (quantiles from QRF)
-  ├── Posterior uncertainty (Hierarchical Bayes)
   ├── Feature importance (aggregated across models)
   ├── Model contributions (meta-weights)
   ├── CV performance metrics
@@ -120,16 +117,16 @@ Output: Predictions + Calibrated Intervals + Diagnostics
 
 The system uses a **single optimized configuration** designed for small-to-medium panel data (N < 1000):
 
-**Base Models (6):**
+**Base Models (5):**
 - Gradient Boosting (tree-based)
 - Bayesian Ridge (linear with uncertainty)
-- Quantile RF + Panel VAR + Hierarchical Bayes + NAM (panel-specific)
+- Quantile RF + Panel VAR + NAM (panel-specific)
 
 **Meta-Ensemble:** Super Learner (automatic optimal weighting)
 
 **Calibration:** Conformal Prediction (95% coverage guarantee)
 
-**Rationale:** For N=756 (your dataset), 6 diverse models with Super Learner meta-learning provides optimal bias-variance tradeoff and model diversity.
+**Rationale:** For N=756 (your dataset), 5 diverse models with Super Learner meta-learning provides optimal bias-variance tradeoff and model diversity.
 
 ---
 
@@ -221,8 +218,6 @@ $$
 
 ---
 
-### 1.3 Advanced Panel-Specific Models
-
 ### 1.3 Advanced Panel Models
 
 These state-of-the-art models are specifically designed for panel data and are included in **ADVANCED** mode (as well as BALANCED, ACCURATE, and ENSEMBLE modes).
@@ -231,7 +226,6 @@ These state-of-the-art models are specifically designed for panel data and are i
 
 For panel data (entities × time periods × components), these specialized models outperform generic ML:
 - **Panel VAR**: Captures entity heterogeneity + temporal autocorrelation
-- **Hierarchical Bayes**: Partial pooling prevents overfitting on small entity groups  
 - **Quantile RF**: Full predictive distributions, not just point estimates
 - **Neural Additive Models**: Interpretable non-linearity with visualizable shape functions
 
@@ -274,11 +268,16 @@ quantiles = [0.025, 0.5, 0.975]  # Default quantiles
 ```
 
 **Methods:**
-- `predict()`: Point prediction (median)
+- `predict()`: Point prediction (conditional mean — MSE-compatible, used by Super Learner meta-learner)
+- `predict_median()`: Conditional median (MAE-optimal; routes through `predict_quantiles([0.5])`)
+- `predict_mean()`: Conditional mean (standard RF average; same as `predict()`)
 - `predict_quantiles(quantiles)`: Multiple quantile predictions
-- `predict_intervals(alpha)`: Prediction intervals
 - `predict_uncertainty()`: IQR-based uncertainty
-- `get_prediction_distribution()`: Full distributional summary
+- `get_prediction_distribution()`: Full distributional summary (median, mean, IQR, all quantiles)
+
+> **Note (Bug Q-1 fix):** `get_prediction_distribution()["median"]` previously called `predict_mean()`,
+> causing the median and mean keys to be identical. It now routes through `predict_median()` (leaf-weight
+> weighted quantile at q=0.5), which correctly differs from the RF mean on asymmetric distributions.
 
 ---
 
@@ -339,72 +338,6 @@ criterion = 'bic'         # Lag selection criterion
 
 ---
 
-#### Hierarchical Bayesian Forecaster
-
-**Algorithm:** Empirical Bayes with partial pooling  
-**Library:** Custom implementation via Expectation-Maximization
-
-**Description:**  
-Implements **partial pooling** between entity-specific and global models via shrinkage estimation. Balances between complete pooling (all entities identical) and no pooling (all entities independent).
-
-**Hierarchical Model:**
-$$
-\begin{aligned}
-y_{it} &\sim \mathcal{N}(X_{it}\boldsymbol{\beta}_i, \sigma^2) \\
-\boldsymbol{\beta}_i &\sim \mathcal{N}(\boldsymbol{\mu}, \Sigma_{\text{group}})
-\end{aligned}
-$$
-
-Where:
-- $\boldsymbol{\beta}_i$ = entity-specific coefficients
-- $\boldsymbol{\mu}$ = population mean (global model)
-- $\Sigma_{\text{group}}$ = between-entity variance
-
-**Shrinkage Formula:**
-$$
-\hat{\boldsymbol{\beta}}_i = (1 - \kappa_i)\hat{\boldsymbol{\beta}}_i^{\text{indiv}} + \kappa_i \hat{\boldsymbol{\mu}}
-$$
-
-Where shrinkage factor:
-$$
-\kappa_i = \frac{\sigma^2_{\text{obs}}}{\sigma^2_{\text{obs}} + n_i \sigma^2_{\text{group}}}
-$$
-
-- $\kappa_i \to 0$: Entity has many observations → trust individual model
-- $\kappa_i \to 1$: Entity has few observations → trust global model
-
-**Estimation Algorithm:**
-1. **E-step**: Estimate entity coefficients given hyperparameters
-2. **M-step**: Update hyperparameters given entity estimates
-3. Iterate until convergence
-
-**Uncertainty Decomposition:**
-$$
-\text{Var}(y_*) = \underbrace{\sigma^2_{\text{obs}}}_{\text{observation noise}} + \underbrace{X_*^T\Sigma_w X_*}_{\text{parameter uncertainty}} + \underbrace{\sigma^2_{\text{group}}}_{\text{group variance}}
-$$
-
-**Advantages:**
-- Automatic regularization via shrinkage
-- Borrows strength across entities (partial pooling)
-- Principled uncertainty quantification
-- Handles imbalanced panels (varying $n_i$)
-- Posterior predictive distributions
-
-**Key Parameters:**
-```python
-n_em_iterations = 50      # EM algorithm iterations
-tol = 1e-4                # Convergence tolerance
-min_variance = 1e-6       # Numerical stability floor
-```
-
-**Methods:**
-- `predict()`: Posterior mean predictions
-- `predict_with_uncertainty()`: Full uncertainty decomposition
-- `predict_posterior_samples(n_samples)`: Monte Carlo samples
-- `get_shrinkage_summary()`: Entity-level shrinkage diagnostics
-
----
-
 #### Neural Additive Model Forecaster
 
 **Algorithm:** Neural Additive Models via Random Kitchen Sinks  
@@ -444,19 +377,32 @@ Repeat until convergence:
 **Shape Function Extraction:**
 After training, each $f_j(x_j)$ can be visualized as an interpretable curve showing the feature's effect.
 
+**Extended Model (NAM² with pairwise interactions):**
+
+When `include_interactions=True`, optional pairwise shape functions are fitted
+on the top-$K$ most important features:
+
+$$
+\hat{y} = \beta_0 + \sum_{j=1}^p f_j(x_j) + \sum_{j < k}^K g_{jk}(x_j, x_k)
+$$
+
+Each $g_{jk}$ is a separate `_PairwiseFeatureNetwork` mapping $(x_j, x_k)$ through
+a 2D Random Fourier basis + Ridge regression onto the additive residual.
+
 **Advantages:**
 - Interpretable: Each feature's effect is visualized
-- Non-linear: Learns complex relationships
-- Additive structure: No high-order interactions (regularization)
+- Non-linear: Learns complex shape functions per feature
+- Optional interactions: NAM² captures pairwise effects without losing interpretability
 - Suitable for small data: RKS reduces parameters
 - No optimization difficulties: Backfitting is stable
 
 **Key Parameters:**
 ```python
-n_basis_per_feature = 50  # RKS basis functions
-n_iterations = 10         # Backfitting iterations
-learning_rate = 0.8       # Step size damping
-kernel_sigma = 1.0        # RKS bandwidth
+n_basis_per_feature = 50    # RKS basis functions
+n_iterations = 10           # Backfitting iterations
+learning_rate = 0.8         # Step size damping
+include_interactions = False # Enable NAM² pairwise g_{jk} terms
+max_interaction_features = 5 # Top-K features for pairwise terms
 ```
 
 **Methods:**
@@ -525,7 +471,17 @@ Final prediction: ŷ = Σ α_i × ŷ_i
 - Theoretically principled
 
 **Cross-Validation Strategy:**
-Uses `TimeSeriesSplit` with 3-5 folds to preserve temporal ordering.
+Uses a **panel-aware temporal splitter** (`_PanelTemporalSplit`) that respects entity
+boundaries. Fold cut-points are derived from the **median entity length** (not the
+minimum), preventing short-history entities from capping the usable window of
+longer-history entities and wasting historical panel data. Each entity contributes
+its own rows up to its actual length; entities shorter than a fold's validation
+window simply contribute zero validation rows for that fold.
+Falls back to `TimeSeriesSplit` when entity indices are not provided.
+
+> **Note (Bug S-2 fix):** The previous implementation used `T = min(entity lengths)`,
+> which discarded up to 9 years of data for longer-history provinces when any province
+> had a short history. The median-based splitter recovers that data.
 
 **Key Parameters:**
 ```python
@@ -605,8 +561,14 @@ $$
 
 Where:
 - $\text{err}_t = \mathbb{1}(y_t \notin C_t)$ (miscoverage indicator)
-- $\gamma = 0.05$ (learning rate for exponential smoothing)
+- $\gamma = 0.02$ (additive step size — from Gibbs & Candès 2021, Eq. 3)
 - Target: $\mathbb{E}[\text{err}_t] = \alpha$
+
+> **Note (Bug C-3 fix):** The previous default $\gamma = 0.95$ was borrowed from
+> exponential-smoothing *forgetting factors* where the formula is multiplicative.
+> With the *additive* ACI update rule a single miss shifts $\alpha_t$ by $\gamma$,
+> so large values (e.g. 0.95) cause wild oscillation. The literature recommends
+> $\gamma \in [0.005, 0.05]$; the default is now 0.02.
 
 **Adaptive Quantile:**
 $$
@@ -619,8 +581,9 @@ Adapts to non-stationarity, heteroscedasticity, distribution shift.
 ---
 
 **Methods:**
-- `calibrate(model, X_cal, y_cal)`: Calibrate on data
-- `predict_intervals(X, alpha)`: Coverage-guaranteed intervals
+- `calibrate(model, X_cal, y_cal)`: Calibrate using raw data (fits model, computes conformity scores). For multi-output, calibrate one predictor per component with Bonferroni-corrected α.
+- `calibrate_residuals(residuals)`: Calibrate from **pre-computed OOF residuals** without re-fitting any model. Used by `UnifiedForecaster` to avoid deep-copying the full Super Learner ensemble during conformal calibration (performance fix U-2).
+- `predict_intervals(X)`: Return `(lower, upper)` coverage-guaranteed interval arrays
 - `evaluate_coverage(y_true, intervals)`: Empirical coverage check
 - `get_interval_width()`: Average interval width
 
@@ -757,14 +720,13 @@ pip install -e .[forecasting]
 ### 6.1 State-of-the-Art Advantages
 
 1. **Multi-Tier Architecture**
-   - 6 diverse base models capturing different patterns (tree, linear, panel)
+   - 5 diverse base models capturing different patterns (tree, linear, panel)
    - Super Learner meta-learning with automatic optimal weighting
    - Distribution-free calibrated uncertainty (conformal prediction)
    - Full 3-tier pipeline optimized for small-to-medium panel data (N < 1000)
 
 2. **Advanced Panel Data Methods**
    - **Panel VAR**: Fixed effects + cross-component dynamics
-   - **Hierarchical Bayes**: Partial pooling reduces overfitting
    - **Quantile RF**: Full distributional forecasts (not just point estimates)
    - **Neural Additive Models**: Interpretable non-linearity with shape functions
 
@@ -778,8 +740,7 @@ pip install -e .[forecasting]
    - **Conformal Prediction**: Guaranteed finite-sample coverage (≥ 1-α)
    - **Adaptive Conformal**: Tracks non-stationarity online
    - **Distributional Forecasts**: Full quantile predictions from QRF
-   - **Hierarchical Bayes**: Posterior predictive uncertainty decomposition
-   - **Multi-Source Uncertainty**: Observation noise + parameter + group variance
+   - **Multi-Source Uncertainty**: Observation noise + parameter variance
 
 5. **Comprehensive Evaluation**
    - **7 Metrics**: R², RMSE, MAE, MedAE, MAPE, Max Error, Bias
@@ -798,20 +759,18 @@ pip install -e .[forecasting]
    - Feature importance (aggregated across models)
    - Neural Additive Models (visualizable shape functions)
    - Meta-weights show model contributions
-   - Shrinkage diagnostics (Hierarchical Bayes)
 
 ### 6.2 Limitations
 
 1. **Computational Cost**
-   - Trains 6 models + Super Learner + Conformal (moderate speed, ~2-5 min)
+   - Trains 5 models + Super Learner + Conformal (moderate speed, ~2-5 min)
    - Feature engineering increases dimensionality
    - For large-scale production (N > 10,000), consider simplified configurations
 
 2. **Data Requirements**
-   - Hierarchical Bayes requires ≥3 observations per entity for shrinkage
    - Panel VAR requires ≥3-4 time periods for lag estimation
    - Conformal calibration needs ≥30 calibration samples (guideline)
-   - For N < 1000: 5-6 diverse models optimal (confirmed by statistical theory)
+   - For N < 1000: 5 diverse models optimal (confirmed by statistical theory)
 
 3. **Optional Dependency Requirements**
    - **Mapie** optional for alternative conformal implementation
@@ -840,14 +799,13 @@ pip install -e .[forecasting]
 
 - ✅ Panel VAR with fixed effects and lag selection
 - ✅ Quantile Random Forest (distributional forecasts)
-- ✅ Hierarchical Bayesian (empirical Bayes partial pooling)
 - ✅ Neural Additive Models (interpretable non-linearity)
 - ✅ Super Learner (stacked generalization)
 - ✅ Conformal Prediction (split, CV+, adaptive)
 - ✅ Comprehensive evaluation suite
 - ✅ Temporal feature engineering (lag, rolling, momentum, trend, cross-entity)
 - ✅ Time-series cross-validation
-- ✅ Optimized ensemble size for small data (5-6 diverse models)
+- ✅ Optimized ensemble size for small data (5 diverse models)
 
 #### 🔄 Planned Future Enhancements
 

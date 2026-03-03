@@ -33,16 +33,15 @@ This framework combines state-of-the-art Multi-Criteria Decision Making (MCDM) m
 - **Temporal Stability**: Split-half validation
 
 ### 🤖 Machine Learning Forecasting
-- **State-of-the-Art Ensemble**: 6 diverse models optimized for N<1000
+- **State-of-the-Art Ensemble**: 5 diverse models optimized for N<1000
   - Gradient Boosting (Huber loss)
   - Bayesian Ridge (uncertainty quantification)
   - Quantile Random Forest (distributional forecasting)
   - Panel VAR (panel-specific dynamics)
-  - Hierarchical Bayesian (partial pooling)
   - Neural Additive Models (interpretable non-linearity)
 - **Super Learner**: Automatic optimal model weighting via meta-learning
 - **Conformal Prediction**: Distribution-free 95% prediction intervals
-- **Feature Importance**: Aggregated across all 6 models
+- **Feature Importance**: Aggregated across all 5 models
 
 ### 📊 Analysis & Validation
 - **Hierarchical Sensitivity Analysis**: Multi-level robustness testing
@@ -228,7 +227,7 @@ Combines two complementary objective weighting methods:
 
 The pipeline integrates state-of-the-art ensemble forecasting with 6 diverse
 models (Gradient Boosting, Bayesian Ridge, Quantile Forest, Panel VAR,
-Hierarchical Bayes, Neural Additive Models). Super Learner meta-ensemble
+Neural Additive Models). Super Learner meta-ensemble
 automatically optimizes model weights, with conformal prediction providing
 distribution-free uncertainty intervals.
 
