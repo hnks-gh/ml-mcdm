@@ -2,16 +2,22 @@
   "n_models": 5,
   "n_predictions": 61,
   "model_weights": {
-    "GradientBoosting": 0.40571151941347683,
-    "BayesianRidge": 0.056009609454500384,
-    "QuantileRF": 0.24223511047315305,
-    "PanelVAR": 0.23416144376313844,
-    "NAM": 0.06188231689573116
+    "GradientBoosting": 0.2,
+    "BayesianRidge": 0.2,
+    "QuantileRF": 0.2,
+    "PanelVAR": 0.2,
+    "NAM": 0.2
   },
-  "holdout_performance": null,
+  "holdout_performance": {
+    "r2": 0.9905821541494145,
+    "rmse": 0.04931073034940624,
+    "mae": 0.03129863782148889
+  },
   "training_info": {
     "n_samples": 126,
     "n_features": 464,
+    "n_features_reduced": 25,
+    "pca_variance_retained": 0.8634352794485767,
     "mode": "advanced",
     "ensemble_method": "super_learner",
     "conformal_calibrated": true

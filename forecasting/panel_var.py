@@ -310,9 +310,12 @@ class PanelVARForecaster(BaseForecaster):
             y_fit = y
 
         # Guard: ensure enough effective training rows after lag removal.
-        # With very short training windows (e.g. 3 years per entity),
-        # lag removal can leave too few rows for meaningful regression.
-        min_required = max(2 * X_fit.shape[1] // 3, 10)
+        # Use the *original* feature count (before entity-dummy expansion
+        # and lag multiplication) so that the threshold stays feasible
+        # even with many entities.  The old formula used X_fit.shape[1]
+        # (post-expansion), which grew to ~174 columns with 63 entities
+        # and made the threshold geometrically impossible in CV folds.
+        min_required = max(self._n_base_features + self.selected_lags_ + 5, 10)
         if X_fit.shape[0] < min_required:
             raise ValueError(
                 f"PanelVAR: only {X_fit.shape[0]} effective training rows "

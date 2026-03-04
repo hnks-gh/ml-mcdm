@@ -617,7 +617,7 @@ class ForecastPlotter(BasePlotter):
         if cross_validation_scores:
             for m, scores in cross_validation_scores.items():
                 if scores:
-                    cv_means[m] = float(np.mean(scores))
+                    cv_means[m] = float(np.nanmean(scores))
         if not cv_means and model_performance:
             for m, metrics in model_performance.items():
                 if 'R2' in metrics:

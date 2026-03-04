@@ -18,8 +18,8 @@ date: "2026-03-04"
 - [10. Methodological Notes and References](#methodological-notes-and-references)
 - [A. Output File Inventory](#output-file-inventory)
 
-> **Generated:** 2026-03-04 09:10:26  
-> **Runtime:** 986.06 s  
+> **Generated:** 2026-03-04 11:36:40  
+> **Runtime:** 583.43 s  
 > **Framework:** ML-MCDM v4.0
 
 # 1. Executive Summary
@@ -411,11 +411,11 @@ A Super Learner meta-ensemble (van der Laan et al., 2007) forecasts provincial s
 
 | Model | Weight | Contribution |
 | :--- | ---: | ---: |
-| GradientBoosting | 0.4057 | 40.6% |
-| QuantileRF | 0.2422 | 24.2% |
-| PanelVAR | 0.2342 | 23.4% |
-| NAM | 0.0619 | 6.2% |
-| BayesianRidge | 0.0560 | 5.6% |
+| GradientBoosting | 0.2000 | 20.0% |
+| BayesianRidge | 0.2000 | 20.0% |
+| QuantileRF | 0.2000 | 20.0% |
+| PanelVAR | 0.2000 | 20.0% |
+| NAM | 0.2000 | 20.0% |
 
 ## 8.2 Individual Model Performance
 
@@ -423,11 +423,11 @@ A Super Learner meta-ensemble (van der Laan et al., 2007) forecasts provincial s
 
 | Model | MEAN_R2 | STD_R2 |
 | :--- | ---: | ---: |
-| BayesianRidge | -25.4586 | 125.3398 |
-| GradientBoosting | -10.3869 | 55.3986 |
-| NAM | -21.0926 | 107.6307 |
-| PanelVAR | -30.1803 | 93.0344 |
-| QuantileRF | -9.7281 | 51.6582 |
+| BayesianRidge | -9.9617 | 0.0000 |
+| GradientBoosting | -14.4837 | 0.0000 |
+| NAM | -11.0078 | 0.0000 |
+| PanelVAR | -1.0000 | 0.0000 |
+| QuantileRF | -1.0000 | 0.0000 |
 
 ## 8.3 Cross-Validation Results
 
@@ -435,18 +435,24 @@ A Super Learner meta-ensemble (van der Laan et al., 2007) forecasts provincial s
 
 | Model | Mean | Std Dev | Min | Max |
 | :--- | ---: | ---: | ---: | ---: |
-| BayesianRidge | -25.4586 | 125.3398 | -688.6256 | 0.5466 |
-| GradientBoosting | -10.3869 | 55.3986 | -303.5218 | 0.7773 |
-| NAM | -21.0926 | 107.6307 | -590.6115 | 0.0793 |
-| PanelVAR | -30.1803 | 93.0344 | -516.0715 | 0.1860 |
-| QuantileRF | -9.7281 | 51.6582 | -283.0736 | 0.3244 |
+| BayesianRidge | -9.9617 | 0.0000 | -9.9617 | -9.9617 |
+| GradientBoosting | -14.4837 | 0.0000 | -14.4837 | -14.4837 |
+| NAM | -11.0078 | 0.0000 | -11.0078 | -11.0078 |
+| PanelVAR | -1.0000 | 0.0000 | -1.0000 | -1.0000 |
+| QuantileRF | -1.0000 | 0.0000 | -1.0000 | -1.0000 |
+
+## 8.4 Holdout Validation
+
+- **r2:** 0.9906
+- **rmse:** 0.0493
+- **mae:** 0.0313
 
 ## 8.6 Conformal Prediction Interval Diagnostics
 
 - **Nominal Coverage:** 95%
-- **Mean Width:** 0.7966
-- **Median Width:** 0.6160
-- **Range:** [0.2835, 1.7996]
+- **Mean Width:** 0.8177
+- **Median Width:** 0.6209
+- **Range:** [0.2286, 2.7668]
 
 # 9. Validity Assessment
 
@@ -487,6 +493,7 @@ Super Learner (van der Laan, Polley & Hubbard, 2007) constructs an optimal conve
 - `cross_validation_scores.csv`
 - `feature_importance.csv`
 - `forecast_predictions.csv`
+- `holdout_performance.csv`
 - `individual_model_predictions.csv`
 - `model_contributions.csv`
 - `model_performance.csv`

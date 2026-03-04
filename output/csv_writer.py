@@ -371,8 +371,8 @@ class CsvWriter:
                 rows = {}
                 for model, scores in cv.items():
                     row = {f'Fold_{i+1}': s for i, s in enumerate(scores)}
-                    row.update(Mean=np.mean(scores), StdDev=np.std(scores),
-                               Min=np.min(scores), Max=np.max(scores))
+                    row.update(Mean=np.nanmean(scores), StdDev=np.nanstd(scores),
+                               Min=np.nanmin(scores), Max=np.nanmax(scores))
                     rows[model] = row
                 df = pd.DataFrame(rows).T
                 df.index.name = 'Model'

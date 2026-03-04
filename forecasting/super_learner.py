@@ -337,15 +337,14 @@ class SuperLearner:
                 except Exception as e:
                     if self.verbose:
                         print(f"    Warning: {name} failed on fold {fold_idx}: {e}")
-                    self._cv_scores[name].append(-1.0)
+                    self._cv_scores[name].append(np.nan)
 
-        # Compute OOF R² for each model
-        valid_mask = ~np.isnan(oof_predictions).any(axis=1)
+        # Compute OOF R² for each model (per-model valid mask, not joint)
         for m_idx, name in enumerate(self.base_models):
             model_cols = slice(
                 m_idx * self._n_outputs, (m_idx + 1) * self._n_outputs
             )
-            valid = valid_mask & ~np.isnan(oof_predictions[:, model_cols]).any(axis=1)
+            valid = ~np.isnan(oof_predictions[:, model_cols]).any(axis=1)
             if valid.sum() > 0:
                 r2_vals = []
                 for out_col in range(self._n_outputs):
@@ -359,18 +358,25 @@ class SuperLearner:
         # ============================================================
         # Stage 2: Train meta-learner on OOF predictions
         # ============================================================
-        # Use only rows with valid OOF predictions
-        valid_rows = valid_mask
-        if valid_rows.sum() < 5:
+        # Check if ANY model produced enough valid OOF rows (per-model,
+        # not joint).  The old joint mask excluded every row when a
+        # single model (e.g. QuantileRF or PanelVAR) failed, poisoning
+        # all rows even for models that succeeded.
+        max_valid_per_model = max(
+            (~np.isnan(
+                oof_predictions[:, m * self._n_outputs:(m + 1) * self._n_outputs]
+            ).any(axis=1)).sum()
+            for m in range(n_models)
+        )
+        if max_valid_per_model < 5:
             # Fallback: use simple averaging if not enough OOF data
             if self.verbose:
                 print("  Warning: Not enough OOF data, falling back to weighted avg")
             self._meta_weights = self._fallback_weights()
         else:
-            oof_X = oof_predictions[valid_rows]
-            oof_y = y[valid_rows]
-
-            self._fit_meta_learner(oof_X, oof_y)
+            # Pass full OOF matrix; _fit_meta_learner handles NaN
+            # per-model via its own per-output valid filter.
+            self._fit_meta_learner(oof_predictions, y)
 
         # ----------------------------------------------------------
         # Cache ensemble OOF predictions for conformal calibration
@@ -444,7 +450,17 @@ class SuperLearner:
         return model.predict(X)
 
     def _fit_meta_learner(self, oof_X: np.ndarray, oof_y: np.ndarray):
-        """Fit the second-level meta-learner on OOF predictions."""
+        """Fit the second-level meta-learner on OOF predictions.
+
+        Handles partial OOF data gracefully: models whose OOF columns are
+        entirely NaN (because they failed on every fold) are excluded from
+        the NNLS / meta-learner fit and receive weight 0.  Only models
+        with valid predictions participate, so one crashed model no longer
+        poisons the meta-weight estimation for the remaining models.
+        """
+        n_models = len(self.base_models)
+        model_names = list(self.base_models.keys())
+
         # Fit per output column, average weights
         all_coefs = []
 
@@ -452,19 +468,34 @@ class SuperLearner:
             # Extract model predictions for this output
             model_preds = np.column_stack([
                 oof_X[:, m_idx * self._n_outputs + out_col]
-                for m_idx in range(len(self.base_models))
+                for m_idx in range(n_models)
             ])
 
             y_col = oof_y[:, out_col]
 
-            # Handle NaN values
-            valid = ~np.isnan(model_preds).any(axis=1) & ~np.isnan(y_col)
-            if valid.sum() < 3:
-                all_coefs.append(np.ones(len(self.base_models)) / len(self.base_models))
+            # Identify models that have *any* valid OOF predictions
+            model_has_data = [
+                (~np.isnan(model_preds[:, m])).sum() > 0
+                for m in range(n_models)
+            ]
+            active_indices = [m for m in range(n_models) if model_has_data[m]]
+
+            if not active_indices:
+                all_coefs.append(np.ones(n_models) / n_models)
                 continue
 
-            model_preds_valid = model_preds[valid]
+            # Build sub-matrix using only active (non-failed) models
+            active_preds = model_preds[:, active_indices]
+            valid = ~np.isnan(active_preds).any(axis=1) & ~np.isnan(y_col)
+            if valid.sum() < 3:
+                all_coefs.append(np.ones(n_models) / n_models)
+                continue
+
+            active_preds_valid = active_preds[valid]
             y_valid = y_col[valid]
+
+            # Compute coefficients for active models only
+            active_coefs = None
 
             if self.meta_learner_type == "elasticnet":
                 meta = ElasticNetCV(
@@ -478,54 +509,49 @@ class SuperLearner:
             elif self.meta_learner_type == "bayesian_stacking":
                 # Bayesian stacking: softmax-weighted by OOF R²
                 scores = np.array([
-                    np.mean(self._cv_scores[name])
-                    for name in self.base_models
+                    float(np.nanmean(self._cv_scores[model_names[m]]))
+                    if not np.all(np.isnan(self._cv_scores[model_names[m]]))
+                    else 0.0
+                    for m in active_indices
                 ])
                 scores = np.clip(scores, 0, None)
                 exp_scores = np.exp(self.temperature * scores)
-                weights = exp_scores / exp_scores.sum()
-                all_coefs.append(weights)
-                continue
+                active_coefs = exp_scores / exp_scores.sum()
             else:  # ridge
                 if self.positive_weights:
                     # Use NNLS for a proper non-negative least-squares
                     # solution instead of post-hoc clipping of Ridge coefs.
                     try:
-                        coefs_nnls, _ = nnls(model_preds_valid, y_valid)
-                        all_coefs.append(coefs_nnls)
+                        coefs_nnls, _ = nnls(active_preds_valid, y_valid)
+                        active_coefs = coefs_nnls
                         if out_col == 0:
                             self._meta_learner = None  # no sklearn meta object
-                        continue
                     except Exception:
                         pass  # fall through to RidgeCV
 
-                meta = RidgeCV(
-                    alphas=self.meta_alpha_range,
-                    # Use TimeSeriesSplit on the OOF meta-features.
-                    # Meta-features are already temporally ordered OOF
-                    # predictions, so this preserves the temporal guarantee
-                    # at the meta-learning stage.
-                    cv=TimeSeriesSplit(n_splits=max(2, min(3, valid.sum() // 2))),
-                )
+                if active_coefs is None:
+                    meta = RidgeCV(
+                        alphas=self.meta_alpha_range,
+                        cv=TimeSeriesSplit(n_splits=max(2, min(3, valid.sum() // 2))),
+                    )
 
-            try:
-                meta.fit(model_preds_valid, y_valid)
-                coefs = meta.coef_.copy()
+            # Fit sklearn meta-learner if active_coefs not already set
+            if active_coefs is None:
+                try:
+                    meta.fit(active_preds_valid, y_valid)
+                    active_coefs = meta.coef_.copy()
+                    if self.positive_weights:
+                        active_coefs = np.maximum(active_coefs, 0)
+                    if out_col == 0:
+                        self._meta_learner = meta
+                except Exception:
+                    active_coefs = np.ones(len(active_indices)) / len(active_indices)
 
-                # Enforce non-negative weights if required
-                # (only reached for ridge when NNLS failed, or elasticnet
-                #  which already enforces positive= natively)
-                if self.positive_weights:
-                    coefs = np.maximum(coefs, 0)
-
-                all_coefs.append(coefs)
-
-                if out_col == 0:
-                    self._meta_learner = meta
-            except Exception:
-                all_coefs.append(
-                    np.ones(len(self.base_models)) / len(self.base_models)
-                )
+            # Scatter active coefficients back into full-model vector
+            full_coefs = np.zeros(n_models)
+            for i, m_idx in enumerate(active_indices):
+                full_coefs[m_idx] = active_coefs[i]
+            all_coefs.append(full_coefs)
 
         # Normalize each per-output coefficient vector to sum to 1 before
         # averaging so that outputs whose prediction scale is larger do not
@@ -548,13 +574,21 @@ class SuperLearner:
         self._meta_weights = dict(zip(self.base_models.keys(), avg_coefs))
 
     def _fallback_weights(self) -> Dict[str, float]:
-        """Compute fallback weights from CV scores when meta-learner fails."""
-        scores = {
-            name: max(0, np.mean(s)) for name, s in self._cv_scores.items()
-        }
+        """Compute fallback weights from CV scores when meta-learner fails.
+
+        Failed folds are stored as ``np.nan`` and excluded via
+        ``np.nanmean``.  Models whose folds all failed get weight 0.
+        """
+        scores = {}
+        for name, s in self._cv_scores.items():
+            arr = np.array(s, dtype=float)
+            if np.all(np.isnan(arr)):
+                scores[name] = 0.0
+            else:
+                scores[name] = max(0.0, float(np.nanmean(arr)))
         total = sum(scores.values())
         if total > 0:
-            return {name: s / total for name, s in scores.items()}
+            return {name: v / total for name, v in scores.items()}
         return {name: 1.0 / len(scores) for name in scores}
 
     def predict(self, X: np.ndarray, entity_indices: Optional[np.ndarray] = None) -> np.ndarray:
@@ -691,7 +725,7 @@ class SuperLearner:
             "meta_weights": self._meta_weights,
             "oof_r2": self._oof_r2,
             "mean_cv_scores": {
-                name: np.mean(scores)
+                name: float(np.nanmean(scores))
                 for name, scores in self._cv_scores.items()
             },
             "positive_weights": self.positive_weights,

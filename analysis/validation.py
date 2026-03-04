@@ -423,8 +423,8 @@ class Validator:
         aggregated = {}
         for model, scores in cv_scores.items():
             if isinstance(scores, list) and len(scores) > 0:
-                aggregated[f'{model}_mean'] = np.mean(scores)
-                aggregated[f'{model}_std'] = np.std(scores)
+                aggregated[f'{model}_mean'] = np.nanmean(scores)
+                aggregated[f'{model}_std'] = np.nanstd(scores)
         
         return aggregated if aggregated else None
     

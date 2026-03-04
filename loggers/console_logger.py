@@ -245,9 +245,13 @@ class ConsoleLogger:
         if result.forecast_result:
             self._write(self._c('\n  ML FORECASTING', Colors.BOLD))
             cv_scores = result.forecast_result.cross_validation_scores
-            all_cv = [s for scores in cv_scores.values() for s in scores]
-            self.metric('Mean CV R²', np.mean(all_cv))
-            self.metric('Std  CV R²', np.std(all_cv))
+            all_cv = [s for scores in cv_scores.values() for s in scores
+                       if not np.isnan(s)]
+            if all_cv:
+                self.metric('Mean CV R²', np.mean(all_cv))
+                self.metric('Std  CV R²', np.std(all_cv))
+            else:
+                self.metric('Mean CV R²', 'N/A (all folds failed)')
 
         # Runtime
         self._write(self._c(f'\n  RUNTIME : {result.execution_time:.2f}s', Colors.BOLD))

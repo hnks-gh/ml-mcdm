@@ -1,6 +1,6 @@
 Rank,Model,Weight,Weight_Pct
-1,GradientBoosting,0.405712,40.6%
-2,QuantileRF,0.242235,24.2%
-3,PanelVAR,0.234161,23.4%
-4,NAM,0.061882,6.2%
-5,BayesianRidge,0.056010,5.6%
+1,GradientBoosting,0.200000,20.0%
+2,BayesianRidge,0.200000,20.0%
+3,QuantileRF,0.200000,20.0%
+4,PanelVAR,0.200000,20.0%
+5,NAM,0.200000,20.0%

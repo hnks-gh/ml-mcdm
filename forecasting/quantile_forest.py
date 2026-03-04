@@ -91,6 +91,7 @@ class QuantileRandomForestForecaster(BaseForecaster):
         self.n_jobs = n_jobs
 
         self.model_: Optional[RandomForestQuantileRegressor] = None
+        self._models_per_output_: List[RandomForestQuantileRegressor] = []
         self.scaler_ = RobustScaler()
         self.feature_importance_: Optional[np.ndarray] = None
         self._is_multi_output: bool = False
@@ -117,21 +118,34 @@ class QuantileRandomForestForecaster(BaseForecaster):
         self._n_outputs = y.shape[1]
         self._is_multi_output = y.shape[1] > 1
 
-        # RandomForestQuantileRegressor handles both single- and multi-output.
-        # It stores training observations per leaf internally and computes
-        # weighted empirical quantiles natively (no manual leaf bookkeeping).
-        self.model_ = RandomForestQuantileRegressor(
-            n_estimators=self.n_estimators,
-            max_depth=self.max_depth,
-            min_samples_split=self.min_samples_split,
-            min_samples_leaf=self.min_samples_leaf,
-            random_state=self.random_state,
-            n_jobs=self.n_jobs,
-            bootstrap=True,
-            oob_score=True,
+        # RandomForestQuantileRegressor only supports single-output targets.
+        # For multi-output (n_outputs > 1), fit one QRF per output column
+        # independently.  We avoid MultiOutputRegressor because RFQR's
+        # overridden predict() requires quantiles and is incompatible with
+        # sklearn's generic MultiOutputRegressor.predict() delegation.
+        self._models_per_output_ = []
+        for col in range(self._n_outputs):
+            qrf = RandomForestQuantileRegressor(
+                n_estimators=self.n_estimators,
+                max_depth=self.max_depth,
+                min_samples_split=self.min_samples_split,
+                min_samples_leaf=self.min_samples_leaf,
+                random_state=self.random_state,
+                n_jobs=self.n_jobs,
+                bootstrap=True,
+                oob_score=True,
+            )
+            qrf.fit(X_scaled, y[:, col])
+            self._models_per_output_.append(qrf)
+
+        # For API compat, keep model_ pointing to the first estimator
+        self.model_ = self._models_per_output_[0]
+
+        # Average feature importance across per-output estimators
+        self.feature_importance_ = np.mean(
+            [est.feature_importances_ for est in self._models_per_output_],
+            axis=0,
         )
-        self.model_.fit(X_scaled, y.ravel() if y.shape[1] == 1 else y)
-        self.feature_importance_ = self.model_.feature_importances_
 
         return self
 
@@ -185,7 +199,17 @@ class QuantileRandomForestForecaster(BaseForecaster):
             Predictions of shape (n_samples,) or (n_samples, n_outputs)
         """
         X_scaled = self.scaler_.transform(X)
-        return self.model_.predict(X_scaled)
+        # Each per-output QRF's predict() requires quantiles; use the
+        # underlying sklearn RandomForestRegressor.predict (via super)
+        # which returns the tree-averaged conditional mean.
+        from sklearn.ensemble import RandomForestRegressor
+        if self._is_multi_output:
+            cols = [
+                RandomForestRegressor.predict(est, X_scaled)
+                for est in self._models_per_output_
+            ]
+            return np.column_stack(cols)
+        return RandomForestRegressor.predict(self.model_, X_scaled)
 
     def predict_quantiles(
         self,
@@ -215,21 +239,35 @@ class QuantileRandomForestForecaster(BaseForecaster):
         X_scaled = self.scaler_.transform(X)
         q_array = np.asarray(quantiles, dtype=np.float64)
 
-        # RandomForestQuantileRegressor.predict(X, quantiles=q) returns:
-        #   single-output : (n_quantiles, n_samples)
-        #   multi-output  : (n_quantiles, n_samples, n_outputs)
-        raw = self.model_.predict(X_scaled, quantiles=q_array)
-        raw = np.asarray(raw)  # ensure ndarray
+        if self._is_multi_output:
+            # One QRF per output column — set q then call predict on each.
+            per_output = []
+            for est in self._models_per_output_:
+                est.q = q_array
+                raw_col = np.asarray(est.predict(X_scaled))
+                # When len(q)==1, sklearn_quantile returns (n_samples,)
+                # instead of (1, n_samples).  Normalise to 2-D.
+                if raw_col.ndim == 1:
+                    raw_col = raw_col.reshape(1, -1)  # (1, n_samples)
+                per_output.append(raw_col)
+
+            results: Dict[float, np.ndarray] = {}
+            for i, q in enumerate(quantiles):
+                # Stack the i-th quantile across outputs → (n_samples, n_outputs)
+                col = np.column_stack([po[i] for po in per_output])
+                results[float(q)] = col
+            return results
+
+        # Single-output path
+        self.model_.q = q_array
+        raw = np.asarray(self.model_.predict(X_scaled))
+        # Normalise to 2-D when a single quantile was requested
+        if raw.ndim == 1:
+            raw = raw.reshape(1, -1)
 
         results: Dict[float, np.ndarray] = {}
         for i, q in enumerate(quantiles):
-            if raw.ndim == 2:          # (n_quantiles, n_samples) — single output
-                col = raw[i]           # (n_samples,)
-            else:                      # (n_quantiles, n_samples, n_outputs)
-                col = raw[i]           # (n_samples, n_outputs)
-                if self._n_outputs == 1:
-                    col = col.ravel()
-            results[float(q)] = col
+            results[float(q)] = raw[i]  # (n_samples,)
 
         return results
 
@@ -281,6 +319,11 @@ class QuantileRandomForestForecaster(BaseForecaster):
         """Get out-of-bag R² score."""
         if self.model_ is None:
             raise ValueError("Model not fitted yet")
+        if self._is_multi_output:
+            # Average OOB score across per-output estimators
+            return float(np.mean(
+                [est.oob_score_ for est in self._models_per_output_]
+            ))
         return self.model_.oob_score_
 
     def get_prediction_distribution(

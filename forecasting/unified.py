@@ -137,8 +137,8 @@ class UnifiedForecastResult:
         ])
         
         for model, scores in self.cross_validation_scores.items():
-            mean_r2 = np.mean(scores)
-            std_r2 = np.std(scores)
+            mean_r2 = np.nanmean(scores)
+            std_r2 = np.nanstd(scores)
             lines.append(f"  {model:25s}: R² = {mean_r2:.4f} ± {std_r2:.4f}")
         
         if self.holdout_performance:
@@ -623,8 +623,8 @@ class UnifiedForecaster:
         for name, scores in cv_scores.items():
             if scores:
                 model_performance[name] = {
-                    'mean_r2': np.mean(scores),
-                    'std_r2': np.std(scores)
+                    'mean_r2': float(np.nanmean(scores)),
+                    'std_r2': float(np.nanstd(scores))
                 }
 
         # ===== Stage 6b: Temporal holdout evaluation =====
