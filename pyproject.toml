@@ -64,6 +64,7 @@ dependencies = [
     "pillow>=8.0.0",               # Image processing
     "openpyxl>=3.0.0",             # Excel support
     "statsmodels>=0.13.0",         # Statistical models
+    "sklearn-quantile>=0.0.22",    # Quantile Random Forest (QRF)
 ]
 
 [project.optional-dependencies]

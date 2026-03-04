@@ -59,6 +59,7 @@ from .quantile_forest import QuantileRandomForestForecaster
 from .neural_additive import NeuralAdditiveForecaster
 from .super_learner import SuperLearner
 from .conformal import ConformalPredictor
+from .preprocessing import PanelFeatureReducer
 from .evaluation import ForecastEvaluator, AblationStudy
 import functools
 
@@ -321,6 +322,7 @@ class UnifiedForecaster:
         self.models_: Dict[str, BaseForecaster] = {}
         self.model_weights_: Dict[str, float] = {}
         self.feature_engineer_ = TemporalFeatureEngineer()
+        self.feature_reducer_: Optional[PanelFeatureReducer] = None
         self.super_learner_: Optional[SuperLearner] = None
         self.conformal_predictor_: Optional[ConformalPredictor] = None
         self.evaluator_: Optional[ForecastEvaluator] = None
@@ -342,11 +344,11 @@ class UnifiedForecaster:
             n_estimators=100, random_state=self.random_state
         )
         models['PanelVAR'] = PanelVARForecaster(
-            n_lags=2, alpha=1.0, use_fixed_effects=True,
+            n_lags=1, alpha=0.5, use_fixed_effects=True,
             random_state=self.random_state
         )
         models['NAM'] = NeuralAdditiveForecaster(
-            n_basis_per_feature=10, n_iterations=3,
+            n_basis_per_feature=10, n_iterations=5,
             random_state=self.random_state
         )
 
@@ -411,9 +413,23 @@ class UnifiedForecaster:
             for name in self.models_:
                 print(f"    - {name}")
 
-        # ===== Stage 3: Super Learner meta-ensemble =====
+        # ===== Stage 2b: Dimensionality reduction =====
+        if self.verbose:
+            print("  Stage 2b: Reducing feature dimensionality (PCA)...")
+
         X_arr = X_train.values
         y_arr = y_train.values
+
+        self.feature_reducer_ = PanelFeatureReducer()
+        X_arr = self.feature_reducer_.fit_transform(
+            X_arr, feature_names=self.feature_engineer_.get_feature_names()
+        )
+        X_pred_arr = self.feature_reducer_.transform(X_pred.values)
+
+        if self.verbose:
+            print(f"    {self.feature_reducer_.get_summary()}")
+
+        # ===== Stage 3: Super Learner meta-ensemble =====
         
         if self.verbose:
             print("  Stage 3: Training Super Learner meta-ensemble...")
@@ -434,7 +450,7 @@ class UnifiedForecaster:
 
         predictions_arr, uncertainty_arr = (
             self.super_learner_.predict_with_uncertainty(
-                X_pred.values, entity_indices=pred_entity_indices
+                X_pred_arr, entity_indices=pred_entity_indices
             )
         )
 
@@ -597,6 +613,7 @@ class UnifiedForecaster:
             self.conformal_predictor_ = None
 
         # ===== Stage 6: Aggregate results =====
+        # Map PCA-space feature importance back to original feature names
         feature_importance = self._aggregate_feature_importance(
             self.feature_engineer_.get_feature_names(),
             y_train.columns.tolist()
@@ -610,12 +627,48 @@ class UnifiedForecaster:
                     'std_r2': np.std(scores)
                 }
 
+        # ===== Stage 6b: Temporal holdout evaluation =====
+        holdout_performance = None
+        try:
+            holdout_year = target_year - 1
+            available_years = sorted(panel_data.years)
+            if holdout_year in available_years and holdout_year > available_years[2]:
+                if self.verbose:
+                    print(f"  Stage 6b: Holdout evaluation (year {holdout_year})...")
+                X_ho, y_ho, _, _ = self.feature_engineer_.fit_transform(
+                    panel_data, holdout_year
+                )
+                X_ho_arr = self.feature_reducer_.transform(X_ho.values)
+                y_ho_arr = y_ho.values
+                y_ho_pred = self.super_learner_.predict(X_ho_arr)
+                if y_ho_pred.ndim == 1:
+                    y_ho_pred = y_ho_pred.reshape(-1, 1)
+                holdout_performance = {
+                    'r2': float(r2_score(
+                        y_ho_arr.ravel(), y_ho_pred[:, :y_ho_arr.shape[1]].ravel()
+                    )),
+                    'rmse': float(np.sqrt(mean_squared_error(
+                        y_ho_arr, y_ho_pred[:, :y_ho_arr.shape[1]]
+                    ))),
+                    'mae': float(mean_absolute_error(
+                        y_ho_arr, y_ho_pred[:, :y_ho_arr.shape[1]]
+                    )),
+                }
+                if self.verbose:
+                    print(f"    Holdout R\u00b2 = {holdout_performance['r2']:.4f}, "
+                          f"RMSE = {holdout_performance['rmse']:.4f}")
+        except Exception as e:
+            if self.verbose:
+                print(f"    Holdout evaluation skipped: {e}")
+
         # Build training info
         training_info = {
             'n_samples': len(X_train),
             'n_features': X_train.shape[1],
-            'mode': 'advanced',  # Always use ADVANCED mode
-            'ensemble_method': 'super_learner',  # Always use Super Learner
+            'n_features_reduced': self.feature_reducer_.n_components if self.feature_reducer_ else X_train.shape[1],
+            'pca_variance_retained': self.feature_reducer_.explained_variance_ratio if self.feature_reducer_ else 1.0,
+            'mode': 'advanced',
+            'ensemble_method': 'super_learner',
             'conformal_calibrated': self.conformal_predictor_ is not None,
         }
 
@@ -630,7 +683,7 @@ class UnifiedForecaster:
             model_performance=model_performance,
             feature_importance=feature_importance,
             cross_validation_scores=cv_scores,
-            holdout_performance=None,
+            holdout_performance=holdout_performance,
             training_info=training_info,
             data_summary={
                 'n_entities': len(X_pred),
@@ -644,13 +697,11 @@ class UnifiedForecaster:
                                      ) -> pd.DataFrame:
         """Aggregate per-component feature importance across fitted models.
 
-        For each output component independently, the importances from all
-        base models are averaged, forming a ``(n_features, n_components)``
-        DataFrame.  Each model contributes its **per-output** importances via
-        :func:`_get_per_output_importance`, so components with different
-        feature-sensitivity profiles are reflected correctly (U-4 fix).
+        When a ``PanelFeatureReducer`` is active, base models operate in
+        PCA-space.  Importances are first computed in PC-space, then
+        mapped back to the original feature names via
+        ``inverse_importance()``.
         """
-        n_features = len(feature_names)
         n_components = len(component_names)
 
         # Use the FITTED base models from SuperLearner, not the unfitted originals
@@ -663,13 +714,18 @@ class UnifiedForecaster:
         if not fitted_models:
             return pd.DataFrame()
 
-        # Accumulate (n_features, n_components) matrices from each model
+        # When PCA is active, models see n_pca features, not n_original
+        if self.feature_reducer_ is not None and self.feature_reducer_._fitted:
+            n_model_features = self.feature_reducer_.n_components
+        else:
+            n_model_features = len(feature_names)
+
+        # Accumulate (n_model_features, n_components) matrices from each model
         matrices: List[np.ndarray] = []
         for name, model in fitted_models.items():
             try:
-                per_out = _get_per_output_importance(model, n_components, n_features)
-                # per_out shape: (n_features, n_components)
-                if per_out.shape == (n_features, n_components):
+                per_out = _get_per_output_importance(model, n_components, n_model_features)
+                if per_out.shape == (n_model_features, n_components):
                     matrices.append(per_out)
             except Exception:
                 pass
@@ -678,9 +734,17 @@ class UnifiedForecaster:
             return pd.DataFrame()
 
         # Average across models, then re-normalise each component column
-        avg = np.mean(matrices, axis=0)  # (n_features, n_components)
+        avg = np.mean(matrices, axis=0)  # (n_model_features, n_components)
         col_sums = avg.sum(axis=0, keepdims=True)
         col_sums[col_sums == 0] = 1.0
         avg /= col_sums
+
+        # Map PCA-space importance back to original features if needed
+        if self.feature_reducer_ is not None and self.feature_reducer_._fitted:
+            avg = self.feature_reducer_.inverse_importance(avg)
+            # Re-normalise after inverse mapping
+            col_sums = avg.sum(axis=0, keepdims=True)
+            col_sums[col_sums == 0] = 1.0
+            avg /= col_sums
 
         return pd.DataFrame(avg, index=feature_names, columns=component_names)

@@ -128,11 +128,8 @@ class MCDMPlotter(BasePlotter):
             f'{title}\nAverage pairwise ρ = {avg_corr:.4f}',
             pad=10, fontsize=12, fontweight='bold')
 
-        import matplotlib as mpl
-        norm = mpl.colors.Normalize(vmin=-1, vmax=1)
-        mpl.colorbar.ColorbarBase(ax_cbar, cmap=plt.get_cmap('RdBu_r'),
-                                  norm=norm, orientation='vertical')
-        ax_cbar.set_ylabel('Spearman ρ', fontsize=10)
+        cb = fig.colorbar(im, cax=ax_cbar, orientation='vertical')
+        cb.set_label('Spearman ρ', fontsize=10)
 
         fig.tight_layout()
         return self._save(fig, save_name)

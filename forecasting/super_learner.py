@@ -137,8 +137,11 @@ class _PanelTemporalSplit:
             yield from TimeSeriesSplit(n_splits=self.n_splits).split(X)
             return
 
-        # Reserve at least 1 time step as the initial training window
-        min_train_T = max(1, T_median // (self.n_splits + 1))
+        # Reserve at least half the timeline as the initial training window
+        # so that even the first fold has enough data relative to the feature
+        # dimensionality.  The old formula ``max(1, T // (K+1))`` gave only
+        # 3 years for T=14, K=3 — far too small for 400+ features.
+        min_train_T = max(T_median // 2, T_median // (self.n_splits + 1))
         fold_size = max(1, (T_median - min_train_T) // self.n_splits)
 
         for fold in range(self.n_splits):
@@ -321,11 +324,15 @@ class SuperLearner:
                         pred_col = min(out_col, pred.shape[1] - 1)
                         oof_predictions[val_idx, col_idx] = pred[:, pred_col]
 
-                    # Compute CV score
+                    # Compute CV score: mean R² across all output columns
+                    # for this fold (one value per fold, not per output).
+                    fold_r2s = []
                     for out_col in range(y_val_cv.shape[1]):
                         pred_col = min(out_col, pred.shape[1] - 1)
-                        r2 = r2_score(y_val_cv[:, out_col], pred[:, pred_col])
-                        self._cv_scores[name].append(r2)
+                        fold_r2s.append(
+                            r2_score(y_val_cv[:, out_col], pred[:, pred_col])
+                        )
+                    self._cv_scores[name].append(float(np.mean(fold_r2s)))
 
                 except Exception as e:
                     if self.verbose:

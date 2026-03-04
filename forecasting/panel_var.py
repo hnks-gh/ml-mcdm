@@ -309,6 +309,17 @@ class PanelVARForecaster(BaseForecaster):
             X_fit = X_panel
             y_fit = y
 
+        # Guard: ensure enough effective training rows after lag removal.
+        # With very short training windows (e.g. 3 years per entity),
+        # lag removal can leave too few rows for meaningful regression.
+        min_required = max(2 * X_fit.shape[1] // 3, 10)
+        if X_fit.shape[0] < min_required:
+            raise ValueError(
+                f"PanelVAR: only {X_fit.shape[0]} effective training rows "
+                f"after lag removal (need >= {min_required}). "
+                f"Reduce n_lags or provide more training data."
+            )
+
         # Store per-entity training tails so that predict() can prepend the
         # correct lag history for each entity without cross-entity leakage.
         if entity_indices is not None:

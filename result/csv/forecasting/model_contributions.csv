@@ -3,5 +3,4 @@ Rank,Model,Weight,Weight_Pct
 2,QuantileRF,0.242235,24.2%
 3,PanelVAR,0.234161,23.4%
 4,NAM,0.061882,6.2%
-5,BayesianRidge,0.052488,5.2%
-6,HierarchicalBayes,0.003521,0.4%
+5,BayesianRidge,0.056010,5.6%

@@ -1,7 +1,7 @@
 ---
 title: "Multi-Criteria Decision Analysis of Vietnamese Provincial Competitiveness"
 subtitle: "A Traditional MCDM + Evidential Reasoning Approach with Machine-Learning Forecasting"
-date: "2026-03-01"
+date: "2026-03-04"
 ---
 
 ## Table of Contents
@@ -18,8 +18,8 @@ date: "2026-03-01"
 - [10. Methodological Notes and References](#methodological-notes-and-references)
 - [A. Output File Inventory](#output-file-inventory)
 
-> **Generated:** 2026-03-01 19:44:42  
-> **Runtime:** 2500.59 s  
+> **Generated:** 2026-03-04 09:10:26  
+> **Runtime:** 986.06 s  
 > **Framework:** ML-MCDM v4.0
 
 # 1. Executive Summary
@@ -415,8 +415,7 @@ A Super Learner meta-ensemble (van der Laan et al., 2007) forecasts provincial s
 | QuantileRF | 0.2422 | 24.2% |
 | PanelVAR | 0.2342 | 23.4% |
 | NAM | 0.0619 | 6.2% |
-| BayesianRidge | 0.0525 | 5.2% |
-| HierarchicalBayes | 0.0035 | 0.4% |
+| BayesianRidge | 0.0560 | 5.6% |
 
 ## 8.2 Individual Model Performance
 
@@ -426,7 +425,6 @@ A Super Learner meta-ensemble (van der Laan et al., 2007) forecasts provincial s
 | :--- | ---: | ---: |
 | BayesianRidge | -25.4586 | 125.3398 |
 | GradientBoosting | -10.3869 | 55.3986 |
-| HierarchicalBayes | -25.4586 | 125.3398 |
 | NAM | -21.0926 | 107.6307 |
 | PanelVAR | -30.1803 | 93.0344 |
 | QuantileRF | -9.7281 | 51.6582 |
@@ -439,7 +437,6 @@ A Super Learner meta-ensemble (van der Laan et al., 2007) forecasts provincial s
 | :--- | ---: | ---: | ---: | ---: |
 | BayesianRidge | -25.4586 | 125.3398 | -688.6256 | 0.5466 |
 | GradientBoosting | -10.3869 | 55.3986 | -303.5218 | 0.7773 |
-| HierarchicalBayes | -25.4586 | 125.3398 | -688.6256 | 0.5466 |
 | NAM | -21.0926 | 107.6307 | -590.6115 | 0.0793 |
 | PanelVAR | -30.1803 | 93.0344 | -516.0715 | 0.1860 |
 | QuantileRF | -9.7281 | 51.6582 | -283.0736 | 0.3244 |
@@ -447,9 +444,9 @@ A Super Learner meta-ensemble (van der Laan et al., 2007) forecasts provincial s
 ## 8.6 Conformal Prediction Interval Diagnostics
 
 - **Nominal Coverage:** 95%
-- **Mean Width:** 0.7367
-- **Median Width:** 0.6282
-- **Range:** [0.1853, 2.6609]
+- **Mean Width:** 0.7966
+- **Median Width:** 0.6160
+- **Range:** [0.2835, 1.7996]
 
 # 9. Validity Assessment
 
@@ -530,7 +527,7 @@ Super Learner (van der Laan, Polley & Hubbard, 2007) constructs an optimal conve
 - `config_snapshot.json`
 - `execution_summary.json`
 
-### Figures (46 files)
+### Figures (56 files)
 
 - `fig16b_ensemble_architecture.png`
 - `fig18_feature_importance.png`
@@ -577,6 +574,16 @@ Super Learner (van der Laan, Polley & Hubbard, 2007) constructs an optimal conve
 - `fig03c_criterion_weights.png`
 - `fig03d_weight_deviation.png`
 - `fig04_weight_radar.png`
+- `fig04a_weight_radar_criteria.png`
+- `fig04b_C01_radar.png`
+- `fig04b_C02_radar.png`
+- `fig04b_C03_radar.png`
+- `fig04b_C04_radar.png`
+- `fig04b_C05_radar.png`
+- `fig04b_C06_radar.png`
+- `fig04b_C07_radar.png`
+- `fig04b_C08_radar.png`
+- `fig04c_weight_hierarchical_rose.png`
 - `fig05_weight_heatmap.png`
 
 ---

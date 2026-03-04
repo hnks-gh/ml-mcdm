@@ -41,6 +41,7 @@ from sklearn.metrics import (
     median_absolute_error,
 )
 from sklearn.model_selection import TimeSeriesSplit
+from .super_learner import _PanelTemporalSplit
 import copy
 import warnings
 import functools
@@ -108,6 +109,7 @@ class ForecastEvaluator:
         y: np.ndarray,
         X_test: Optional[np.ndarray] = None,
         y_test: Optional[np.ndarray] = None,
+        entity_indices: Optional[np.ndarray] = None,
     ) -> Dict[str, Any]:
         """
         Run comprehensive evaluation.
@@ -118,6 +120,7 @@ class ForecastEvaluator:
             y: Training targets
             X_test: Optional test features for holdout evaluation
             y_test: Optional test targets
+            entity_indices: Optional entity group IDs for panel-aware CV
 
         Returns:
             Dictionary with evaluation results
@@ -127,7 +130,8 @@ class ForecastEvaluator:
         # Cross-validation evaluation
         if self.verbose:
             print("  Evaluating: Cross-validation...")
-        results["cv"] = self._cross_validate(model, X, y)
+        results["cv"] = self._cross_validate(model, X, y,
+                                              entity_indices=entity_indices)
 
         # Holdout evaluation
         if X_test is not None and y_test is not None:
@@ -138,31 +142,33 @@ class ForecastEvaluator:
         # Residual diagnostics
         if self.verbose:
             print("  Evaluating: Residual diagnostics...")
-        results["diagnostics"] = self._residual_diagnostics(model, X, y)
+        results["diagnostics"] = self._residual_diagnostics(
+            model, X, y, entity_indices=entity_indices)
 
         return results
 
     def _cross_validate(
-        self, model, X: np.ndarray, y: np.ndarray
+        self, model, X: np.ndarray, y: np.ndarray,
+        entity_indices: Optional[np.ndarray] = None,
     ) -> Dict[str, Any]:
         """Run time-series cross-validation.
 
-        .. warning::
-
-           When *X* / *y* are stacked from multiple entities (panel data),
-           ``TimeSeriesSplit`` operates on row order only and may include
-           future observations from entity A in the training fold while
-           predicting past observations for entity B.  For strict
-           temporal validity the caller should pre-sort by time and
-           ideally use a panel-aware splitter (e.g. group-based).
+        When *entity_indices* is provided, uses ``_PanelTemporalSplit``
+        to avoid cross-entity temporal leakage.  Otherwise falls back
+        to ``TimeSeriesSplit``.
         """
         if y.ndim == 1:
             y = y.reshape(-1, 1)
 
-        tscv = TimeSeriesSplit(n_splits=self.n_folds)
+        if entity_indices is not None:
+            splitter = _PanelTemporalSplit(n_splits=self.n_folds)
+            splits = list(splitter.split(X, entity_indices=entity_indices))
+        else:
+            tscv = TimeSeriesSplit(n_splits=self.n_folds)
+            splits = list(tscv.split(X))
         fold_results = []
 
-        for fold_idx, (train_idx, val_idx) in enumerate(tscv.split(X)):
+        for fold_idx, (train_idx, val_idx) in enumerate(splits):
             try:
                 model_copy = copy.deepcopy(model)
 
@@ -242,14 +248,14 @@ class ForecastEvaluator:
         return results
 
     def _residual_diagnostics(
-        self, model, X: np.ndarray, y: np.ndarray
+        self, model, X: np.ndarray, y: np.ndarray,
+        entity_indices: Optional[np.ndarray] = None,
     ) -> Dict[str, Any]:
         """
         Perform residual diagnostic tests using out-of-fold residuals.
 
-        Uses TimeSeriesSplit cross-validation to compute genuine
-        out-of-sample residuals, avoiding the overfitting bias that
-        arises when diagnostics are computed on in-sample residuals.
+        Uses panel-aware temporal CV (when entity_indices provided) to
+        compute genuine out-of-sample residuals.
 
         Tests:
             - Normality (skewness and excess kurtosis)
@@ -260,17 +266,20 @@ class ForecastEvaluator:
         if y.ndim == 1:
             y = y.reshape(-1, 1)
 
-        # Collect out-of-fold predictions via TimeSeriesSplit
+        # Collect out-of-fold predictions
         n = X.shape[0]
-        tscv = TimeSeriesSplit(n_splits=min(self.n_folds, max(2, n // 5)))
+        n_splits_diag = min(self.n_folds, max(2, n // 5))
+        if entity_indices is not None:
+            splitter = _PanelTemporalSplit(n_splits=n_splits_diag)
+            splits = list(splitter.split(X, entity_indices=entity_indices))
+        else:
+            splits = list(TimeSeriesSplit(n_splits=n_splits_diag).split(X))
 
         oof_residuals = np.full(n, np.nan)
         oof_pred_mean = np.full(n, np.nan)
-        # Collect per-fold residual arrays (each is a contiguous, temporally
-        # ordered block from TimeSeriesSplit) for per-fold Durbin-Watson.
         fold_residuals: list = []
 
-        for train_idx, val_idx in tscv.split(X):
+        for train_idx, val_idx in splits:
             try:
                 model_copy = copy.deepcopy(model)
                 if hasattr(model_copy, "fit"):
