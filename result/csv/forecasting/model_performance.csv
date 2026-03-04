@@ -1,6 +1,6 @@
 Model,mean_r2,std_r2
 GradientBoosting,-14.4837,0.0000
 BayesianRidge,-9.9617,0.0000
-QuantileRF,-1.0000,0.0000
-PanelVAR,-1.0000,0.0000
+QuantileRF,-10.6493,0.0000
+PanelVAR,-9.2047,0.0000
 NAM,-11.0078,0.0000

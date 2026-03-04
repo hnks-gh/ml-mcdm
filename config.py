@@ -275,23 +275,65 @@ class EvidentialReasoningConfig:
 class ForecastConfig:
     """
     State-of-the-art forecasting configuration for UnifiedForecaster.
-    
-    Uses 6 diverse models + Super Learner + Conformal Prediction.
-    Optimized for small-to-medium panel data (N < 1000).
+
+    Uses 5 diverse base models + Super Learner meta-ensemble + Conformal
+    Prediction calibration.  Optimised for small-to-medium panel data (N < 1000).
+
+    Model hyperparameters
+    ---------------------
+    gb_max_depth / gb_n_estimators
+        GradientBoostingForecaster (Huber-loss sequential trees).
+        ``max_depth=5`` is the principled midpoint between the underfitting
+        depth-4 and the overfitting depth-6 at n≈756: depth-5 yields
+        32 leaves ≈ 24 samples/leaf, providing a healthy bias-variance
+        trade-off.  ``n_estimators=200`` aligns the ensemble build with
+        the standalone class default (previously hardcoded to 100 in
+        ``_create_models``).
+
+    nam_n_basis / nam_n_iterations
+        NeuralAdditiveForecaster Random Fourier Feature (RFF) basis count
+        and backfitting iterations.  With 60 PCA components in the reduced
+        space, a basis of 10 yields only 20 effective parameters per shape
+        function; 30 gives 60 effective parameters (parity with the PCA
+        dimensionality) while remaining computationally fast.
+
+    pvar_lag_selection_method
+        PanelVARForecaster lag-order selection.  The only valid value is
+        ``"cv"`` (hold-out CV MSE).  Passing ``"bic"`` or ``"aic"`` raises
+        a ``DeprecationWarning`` inside ``PanelVARForecaster`` and maps
+        silently to ``"cv"``; classic penalised-likelihood criteria are
+        invalid under Ridge regularisation because the effective
+        degrees-of-freedom ``tr(X(X'X+λI)⁻¹X') ≪ raw parameter count``.
     """
     enabled: bool = True
     target_year: Optional[int] = None  # Auto-set to latest_year + 1
-    
-    # Conformal prediction settings
+
+    # ── Conformal prediction ─────────────────────────────────────────────
     conformal_method: str = 'cv_plus'  # 'split', 'cv_plus', 'adaptive'
-    conformal_alpha: float = 0.05  # 95% coverage
-    
-    # Cross-validation
+    conformal_alpha: float = 0.05      # 95% joint coverage (Bonferroni across components)
+
+    # ── Cross-validation ─────────────────────────────────────────────────
     cv_folds: int = 3
-    
-    # Ensemble settings (6 models fixed)
+
+    # ── Reproducibility ──────────────────────────────────────────────────
     random_state: int = 42
     verbose: bool = True
+
+    # ── GradientBoosting hyperparameters ─────────────────────────────────
+    gb_max_depth: int = 5
+    """Tree depth. 5 ≈ 32 leaves → ~24 samples/leaf at n=756."""
+    gb_n_estimators: int = 200
+    """Number of boosting stages; aligned with GradientBoostingForecaster default."""
+
+    # ── NeuralAdditiveModel hyperparameters ──────────────────────────────
+    nam_n_basis: int = 30
+    """RFF basis functions per shape function (30→60 effective params in 60-dim PCA space)."""
+    nam_n_iterations: int = 10
+    """Backfitting passes; 5 is insufficient for 60 PCA dimensions."""
+
+    # ── PanelVAR lag selection ────────────────────────────────────────────
+    pvar_lag_selection_method: str = "cv"
+    """Hold-out CV MSE lag selection. Only valid method for Ridge-regularised VAR."""
 
 
 # =========================================================================

@@ -18,8 +18,8 @@ date: "2026-03-04"
 - [10. Methodological Notes and References](#methodological-notes-and-references)
 - [A. Output File Inventory](#output-file-inventory)
 
-> **Generated:** 2026-03-04 11:36:40  
-> **Runtime:** 583.43 s  
+> **Generated:** 2026-03-04 14:45:40  
+> **Runtime:** 877.52 s  
 > **Framework:** ML-MCDM v4.0
 
 # 1. Executive Summary
@@ -411,11 +411,11 @@ A Super Learner meta-ensemble (van der Laan et al., 2007) forecasts provincial s
 
 | Model | Weight | Contribution |
 | :--- | ---: | ---: |
-| GradientBoosting | 0.2000 | 20.0% |
-| BayesianRidge | 0.2000 | 20.0% |
-| QuantileRF | 0.2000 | 20.0% |
-| PanelVAR | 0.2000 | 20.0% |
-| NAM | 0.2000 | 20.0% |
+| BayesianRidge | 0.3911 | 39.1% |
+| QuantileRF | 0.2051 | 20.5% |
+| GradientBoosting | 0.1566 | 15.7% |
+| NAM | 0.1332 | 13.3% |
+| PanelVAR | 0.1140 | 11.4% |
 
 ## 8.2 Individual Model Performance
 
@@ -426,8 +426,8 @@ A Super Learner meta-ensemble (van der Laan et al., 2007) forecasts provincial s
 | BayesianRidge | -9.9617 | 0.0000 |
 | GradientBoosting | -14.4837 | 0.0000 |
 | NAM | -11.0078 | 0.0000 |
-| PanelVAR | -1.0000 | 0.0000 |
-| QuantileRF | -1.0000 | 0.0000 |
+| PanelVAR | -9.2047 | 0.0000 |
+| QuantileRF | -10.6493 | 0.0000 |
 
 ## 8.3 Cross-Validation Results
 
@@ -438,21 +438,21 @@ A Super Learner meta-ensemble (van der Laan et al., 2007) forecasts provincial s
 | BayesianRidge | -9.9617 | 0.0000 | -9.9617 | -9.9617 |
 | GradientBoosting | -14.4837 | 0.0000 | -14.4837 | -14.4837 |
 | NAM | -11.0078 | 0.0000 | -11.0078 | -11.0078 |
-| PanelVAR | -1.0000 | 0.0000 | -1.0000 | -1.0000 |
-| QuantileRF | -1.0000 | 0.0000 | -1.0000 | -1.0000 |
+| PanelVAR | -9.2047 | 0.0000 | -9.2047 | -9.2047 |
+| QuantileRF | -10.6493 | 0.0000 | -10.6493 | -10.6493 |
 
 ## 8.4 Holdout Validation
 
-- **r2:** 0.9906
-- **rmse:** 0.0493
-- **mae:** 0.0313
+- **r2:** 0.9730
+- **rmse:** 0.0834
+- **mae:** 0.0523
 
 ## 8.6 Conformal Prediction Interval Diagnostics
 
 - **Nominal Coverage:** 95%
-- **Mean Width:** 0.8177
-- **Median Width:** 0.6209
-- **Range:** [0.2286, 2.7668]
+- **Mean Width:** 0.8324
+- **Median Width:** 0.6654
+- **Range:** [0.2407, 2.4363]
 
 # 9. Validity Assessment
 

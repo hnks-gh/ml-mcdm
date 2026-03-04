@@ -43,8 +43,17 @@ References:
 
 import numpy as np
 from typing import Dict, List, Optional, Tuple, Union
-from sklearn_quantile import RandomForestQuantileRegressor
 from sklearn.preprocessing import RobustScaler
+
+# sklearn_quantile is listed as a core dependency in pyproject.toml
+# (sklearn-quantile >= 0.0.22).  The try/except converts a cryptic
+# ModuleNotFoundError at import time into a clear, actionable message.
+try:
+    from sklearn_quantile import RandomForestQuantileRegressor
+    _SKLEARN_QUANTILE_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    _SKLEARN_QUANTILE_AVAILABLE = False
+    RandomForestQuantileRegressor = None  # type: ignore[assignment,misc]
 
 from .base import BaseForecaster
 
@@ -82,6 +91,13 @@ class QuantileRandomForestForecaster(BaseForecaster):
         random_state: int = 42,
         n_jobs: int = -1,
     ):
+        if not _SKLEARN_QUANTILE_AVAILABLE:
+            raise ImportError(
+                "QuantileRandomForestForecaster requires the 'sklearn-quantile' package.\n"
+                "Install it with:  pip install sklearn-quantile\n"
+                "It is listed as a core dependency in pyproject.toml; if you are "
+                "working in a custom environment ensure it is installed there."
+            )
         self.n_estimators = n_estimators
         self.max_depth = max_depth
         self.min_samples_split = min_samples_split

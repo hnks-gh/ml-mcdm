@@ -31,7 +31,7 @@ This framework implements a **statistically-principled 3-tier ensemble learning 
 Input: Panel Data (N entities × p components × T years)
   ↓
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-TIER 1: BASE MODELS (6 diverse models)
+TIER 1: BASE MODELS (5 diverse models)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   ↓
 Temporal Feature Engineering
@@ -142,7 +142,8 @@ The system uses a **single optimized configuration** designed for small-to-mediu
 **Key Parameters:**
 ```python
 n_estimators = 200        # Number of boosting iterations
-max_depth = 6             # Tree depth (prevents overfitting)
+max_depth = 5             # Tree depth: 32 leaves ≈ 24 samples/leaf at n=756
+                          # (principled mid-point; tunable via ForecastConfig.gb_max_depth)
 learning_rate = 0.1       # Shrinkage parameter
 subsample = 0.8           # Stochastic gradient boosting
 loss = 'huber'            # Robust to outliers
@@ -486,6 +487,10 @@ Falls back to `TimeSeriesSplit` when entity indices are not provided.
 **Key Parameters:**
 ```python
 meta_learner_type = 'ridge'     # 'ridge', 'elasticnet', 'bayesian_stacking'
+                                # Note: 'bayesian_stacking' is a softmax-of-R²
+                                # weighting scheme (temperature-scaled); it is
+                                # NOT a full Dirichlet posterior (Yao et al.,
+                                # 2018).  The name is kept for backward compat.
 n_cv_folds = 5                  # OOF folds
 positive_weights = True         # α ≥ 0 constraint
 normalize_weights = True        # Σα = 1 constraint
@@ -546,6 +551,15 @@ Uses cross-validation residuals (no data splitting):
 
 **Advantage:**  
 No data loss (uses full training set), while maintaining validity.
+
+> **Coverage Note (B-9):** The implementation uses `TimeSeriesSplit` OOF folds
+> instead of leave-one-out (LOO) cross-validation. The finite-sample
+> jackknife+ coverage guarantee (Barber et al., 2021) requires LOO folds
+> *and* exchangeability of the data — both of which are violated by temporal
+> panel data. Coverage is therefore **empirically validated** rather than
+> theoretically guaranteed at finite $n$. In practice the method is
+> well-calibrated for this dataset (validated by `TestConformalPredictor`),
+> but users should treat the 95% label as a target, not a hard guarantee.
 
 ---
 

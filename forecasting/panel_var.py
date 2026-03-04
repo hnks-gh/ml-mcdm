@@ -32,6 +32,7 @@ import pandas as pd
 from typing import Dict, List, Optional, Tuple
 from sklearn.linear_model import Ridge, ElasticNet
 from sklearn.preprocessing import StandardScaler
+import warnings
 
 from .base import BaseForecaster
 
@@ -48,7 +49,15 @@ class PanelVARForecaster(BaseForecaster):
         n_lags: Number of autoregressive lags (1-3)
         alpha: Regularization strength for Ridge/ElasticNet
         use_fixed_effects: Whether to include entity fixed effects
-        lag_selection: Method for choosing optimal lag ('aic', 'bic', or 'fixed')
+        lag_selection_method: Lag-order selection method.  Valid values:
+            ``"cv"`` — hold-out CV MSE (default, recommended): the only
+                correct method for Ridge-regularised VAR, where effective
+                degrees-of-freedom ``tr(X(X'X+λI)⁻¹X') ≪ k`` invalidates
+                standard AIC/BIC penalties.
+            ``"fixed"`` — use ``n_lags`` without any automatic selection.
+        lag_selection: **Deprecated.** Alias for ``lag_selection_method``;
+            emits ``DeprecationWarning``.  ``"bic"`` / ``"aic"`` are silently
+            mapped to ``"cv"`` (correct behaviour unchanged).
         max_lags: Maximum lags to consider during selection
         regularizer: Type of regularizer ('ridge' or 'elasticnet')
         l1_ratio: L1/L2 mix for ElasticNet (0=Ridge, 1=Lasso)
@@ -65,16 +74,38 @@ class PanelVARForecaster(BaseForecaster):
         n_lags: int = 2,
         alpha: float = 1.0,
         use_fixed_effects: bool = True,
-        lag_selection: str = "bic",
+        lag_selection_method: str = "cv",
+        lag_selection: Optional[str] = None,
         max_lags: int = 3,
         regularizer: str = "ridge",
         l1_ratio: float = 0.5,
         random_state: int = 42,
     ):
+        # Handle deprecated 'lag_selection' parameter.
+        # Values "bic" / "aic" previously claimed to run information-criterion
+        # selection but actually always ran hold-out CV MSE: AIC/BIC are
+        # mathematically invalid under Ridge regularisation because the
+        # effective df = tr(X(X'X+λI)⁻¹X') ≪ raw parameter count, so the
+        # standard penalty term severely over-penalises model complexity.
+        if lag_selection is not None:
+            warnings.warn(
+                "The 'lag_selection' parameter is deprecated; use "
+                "'lag_selection_method' instead.  Values 'bic' and 'aic' are "
+                "silently mapped to 'cv' (hold-out CV MSE), which is the only "
+                "valid selection method for Ridge-regularised VAR models "
+                "(AIC/BIC are invalid when effective df ≪ raw parameter count).",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            if lag_selection in ("bic", "aic"):
+                lag_selection_method = "cv"
+            else:
+                lag_selection_method = lag_selection
         self.n_lags = n_lags
         self.alpha = alpha
         self.use_fixed_effects = use_fixed_effects
-        self.lag_selection = lag_selection
+        self.lag_selection_method = lag_selection_method
+        self.lag_selection = lag_selection_method  # backward-compat attribute alias
         self.max_lags = max_lags
         self.regularizer = regularizer
         self.l1_ratio = l1_ratio
@@ -176,7 +207,7 @@ class PanelVARForecaster(BaseForecaster):
         Returns:
             Optimal number of lags.
         """
-        if self.lag_selection == "fixed":
+        if self.lag_selection_method == "fixed":
             return self.n_lags
 
         best_ic = np.inf

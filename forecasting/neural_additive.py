@@ -257,6 +257,14 @@ class NeuralAdditiveForecaster(BaseForecaster):
             int, Dict[Tuple[int, int], _PairwiseFeatureNetwork]
         ] = {}
 
+        # Training-data means of each interaction term, keyed by
+        # output_idx -> (j, k) -> float.  Stored during fit() and used in
+        # predict() to preserve the identifiability constraint E_train[g_jk]=0
+        # without recomputing means on (non-representative) test data.
+        self._multi_output_interaction_centers: Dict[
+            int, Dict[Tuple[int, int], float]
+        ] = {}
+
         # Per-output feature importance: stored for unified.py U-4 extraction
         # Shape: (n_outputs, n_features)
         self._per_output_importance_: Optional[np.ndarray] = None
@@ -268,13 +276,16 @@ class NeuralAdditiveForecaster(BaseForecaster):
         float,
         np.ndarray,
         Dict[Tuple[int, int], "_PairwiseFeatureNetwork"],
+        Dict[Tuple[int, int], float],
     ]:
         """Fit NAM for a single output using backfitting.
 
         Returns:
-            Tuple of (shape_functions, intercept, importances, interaction_shapes)
-            where ``interaction_shapes`` is empty unless ``include_interactions``
-            is True.
+            Tuple of (shape_functions, intercept, importances,
+                      interaction_shapes, interaction_centers)
+            where ``interaction_shapes`` maps (j, k) -> _PairwiseFeatureNetwork
+            and   ``interaction_centers`` maps (j, k) -> training-data mean
+            (both empty dicts unless ``include_interactions`` is True).
         """
         n_samples, n_features = X.shape
 
@@ -331,8 +342,17 @@ class NeuralAdditiveForecaster(BaseForecaster):
         # Pairwise interaction fitting (NAM²)
         # Fit gⱼₖ(xⱼ, xₖ) on the residual of the additive-only model for
         # the top-K most important features.
+        #
+        # Identifiability constraint: each interaction term gⱼₖ must satisfy
+        # E_train[gⱼₖ] = 0 so that the intercept β₀ remains the global mean
+        # and the additive shape functions fⱼ remain interpretable.
+        # We achieve this by subtracting the *training-data* mean of each
+        # interaction term during fit(), storing that mean, and subtracting
+        # the same stored constant during predict() rather than recomputing
+        # a (potentially different and non-representative) test-data mean.
         # ------------------------------------------------------------------
         interaction_shapes: Dict[Tuple[int, int], _PairwiseFeatureNetwork] = {}
+        interaction_centers: Dict[Tuple[int, int], float] = {}
         if self.include_interactions and n_features >= 2:
             k = min(self.max_interaction_features, n_features)
             top_features = list(
@@ -352,12 +372,16 @@ class NeuralAdditiveForecaster(BaseForecaster):
                     )
                     net.fit(X2, interaction_residual, alpha=self.regularization)
                     interaction_shapes[pair_key] = net
-                    # Re-center and update additive_pred to avoid double-counting
+                    # Center on training data and store the offset so
+                    # predict() can subtract the same constant (not a
+                    # test-data mean) to preserve E_train[g_jk] = 0.
                     contrib_interaction = net.predict(X2)
-                    contrib_interaction -= np.mean(contrib_interaction)
+                    mean_train = float(np.mean(contrib_interaction))
+                    interaction_centers[pair_key] = mean_train
+                    contrib_interaction -= mean_train
                     additive_pred += contrib_interaction
 
-        return shape_functions, intercept, importances, interaction_shapes
+        return shape_functions, intercept, importances, interaction_shapes, interaction_centers
 
     def fit(self, X: np.ndarray, y: np.ndarray) -> "NeuralAdditiveForecaster":
         """
@@ -380,12 +404,13 @@ class NeuralAdditiveForecaster(BaseForecaster):
         all_importances = []
 
         for out_col in range(self._n_outputs):
-            shapes, intercept, importances, interaction_shapes = self._fit_single_output(
+            shapes, intercept, importances, interaction_shapes, interaction_centers = self._fit_single_output(
                 X_scaled, y[:, out_col], output_idx=out_col
             )
             self._multi_output_shapes[out_col] = shapes
             self._multi_output_intercepts[out_col] = intercept
             self._multi_output_interaction_shapes[out_col] = interaction_shapes
+            self._multi_output_interaction_centers[out_col] = interaction_centers
             all_importances.append(importances)
 
         # Average feature importance across outputs
@@ -429,12 +454,16 @@ class NeuralAdditiveForecaster(BaseForecaster):
                 if j in shapes:
                     pred += shapes[j].predict(X_scaled[:, j])
 
-            # Add pairwise interaction contributions (NAM² extension)
+            # Add pairwise interaction contributions (NAM² extension).
+            # Subtract the *training-data* center stored during fit(), not a
+            # test-data mean, so that the identifiability constraint
+            # E_train[g_jk] = 0 is preserved across train/test splits.
             if self.include_interactions and out_col in self._multi_output_interaction_shapes:
+                centers = self._multi_output_interaction_centers.get(out_col, {})
                 for (j, k), inet in self._multi_output_interaction_shapes[out_col].items():
                     if j < X_scaled.shape[1] and k < X_scaled.shape[1]:
                         interaction_contrib = inet.predict(X_scaled[:, [j, k]])
-                        interaction_contrib -= np.mean(interaction_contrib)
+                        interaction_contrib -= centers.get((j, k), 0.0)  # training mean
                         pred += interaction_contrib
 
             predictions[:, out_col] = pred

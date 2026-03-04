@@ -49,10 +49,13 @@ class GradientBoostingForecaster(BaseForecaster):
     
     def __init__(self,
                  n_estimators: int = 200,
-                 max_depth: int = 4,
+                 max_depth: int = 5,
                  learning_rate: float = 0.1,
                  subsample: float = 0.8,
                  random_state: int = 42):
+        # max_depth=5: 32 leaf nodes at n≈756 → ~24 samples/leaf, providing
+        # a principled bias-variance trade-off (underfitting at 4, overfitting
+        # at 6 for this sample size).  Configurable via ForecastConfig.gb_max_depth.
         self.n_estimators = n_estimators
         self.max_depth = max_depth
         self.learning_rate = learning_rate

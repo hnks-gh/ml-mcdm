@@ -1,46 +1,31 @@
-﻿# Monte Carlo Entropy–CRITIC Ensemble Weighting Strategy
+# Weighting Phase
 
 **Status:** Production  
-**Scope:** Full two-level hierarchical weight calculation — Level 1: 29 SC local weights per criterion group; Level 2: 8 criterion global weights (63 provinces × 14 years)
+**Scope:** Two-level hierarchical weight calculation — Level 1: 29 sub-criteria local weights per criterion group; Level 2: 8 criterion global weights (63 provinces × 14 years)
 
 ---
 
-## 1. Executive Summary
+## 1. Overview
 
-This project uses a **two-level hierarchical MCDM system**:
+### What this phase does
 
-- **Level 1 — Within-criterion sub-criteria weights:** For each of 8 criterion groups (C01–C08), the local importance of each SC column within that group must be determined (e.g. how important is SC11 vs SC12 vs SC13 vs SC14 inside C01). These local weights drive the 12 MCDM methods in Stage 1 ranking.
-- **Level 2 — Criterion weights:** The relative global importance of C01–C08 must be determined. These weights drive Stage 2 Evidential Reasoning aggregation.
+The weighting phase determines how important each sub-criterion (SC) and each criterion (C) is relative to the others. It produces two sets of weights:
 
-The new strategy computes **both levels independently** using a single **Probabilistic Monte Carlo Ensemble** built around two philosophically complementary objective weighting methods:
+- **Level 1 local weights** — within each of the 8 criterion groups (C01–C08), how much each SC contributes relative to the other SCs in that group. These drive the Stage 1 MCDM ranking.
+- **Level 2 criterion weights** — how important each of the 8 criteria is globally. These drive Stage 2 Evidential Reasoning aggregation.
 
-- **Shannon Entropy**: measures *within-criterion information content* - assigns higher weight to criteria with greater discriminating power (variance) across alternatives.
-- **CRITIC**: measures *contrast intensity × inter-criteria independence* — rewards criteria that are both highly variable AND uncorrelated with other criteria.
+A third set, **global SC weights**, is derived by multiplying the two levels together: $w_j = u_{k,j} \times v_k$. These 29 global weights are what `pipeline.py` ultimately receives.
 
-For each hierarchical level, the ensemble:
-
-1. **Perturbs the decision data** via panel-aware block bootstrap + column-wise log-normal multiplicative noise.
-2. **Samples a blending parameter** $\beta \sim \text{Beta}(\alpha_a, \alpha_b)$ each simulation to combine Entropy and CRITIC weights probabilistically.
-3. **Collects weight and ranking distributions** across all simulations for full uncertainty quantification.
-4. **Tunes** the Beta and noise hyperparameters to maximize ranking stability (Kendall's $\tau_b$) under perturbation.
-
-**Blend formula (primary - linear):** $\mathbf{w}^{(s)} = \beta^{(s)} \mathbf{w}_E^{(s)} + (1{-}\beta^{(s)}) \mathbf{w}_C^{(s)}$  
-**Fallback formula (multiplicative):** activated automatically if linear blend fails numerically - $w_j^{(s)} \propto w_{E,j}^{(s)} \cdot w_{C,j}^{(s)}$
-
----
-
-## 2. Hierarchical System Architecture
-
-### 2.1 Two-Level Hierarchy
+### Two-level hierarchy
 
 ```
-  LEVEL 2 (ER Stage 2)
+  LEVEL 2 (criterion weights — used by ER Stage 2)
   +------+------+------+------+------+------+------+------+
-  | C01 | C02 | C03 | C04 | C05 | C06 | C07 | C08 |   <- 8 criteria
-  |w_C1 |w_C2 |w_C3 |w_C4 |w_C5 |w_C6 |w_C7 |w_C8 |   <- Level 2 weights
+  | C01  | C02  | C03  | C04  | C05  | C06  | C07  | C08  |
+  | v_1  | v_2  | v_3  | v_4  | v_5  | v_6  | v_7  | v_8  |
   +--+---+--+---+--+---+--+---+--+---+--+---+--+---+--+---+
-    |    |    |    |    |    |    |    |
-  LEVEL 1 (MCDM Stage 1 — within each criterion group)
+     |      |      |      |      |      |      |      |
+  LEVEL 1 (local SC weights — used by MCDM Stage 1)
   [SC11   [SC21   [SC31   [SC41   [SC51   [SC61   [SC71   [SC81
    SC12    SC22    SC32    SC42    SC52    SC62    SC72    SC82
    SC13    SC23    SC33    SC43    SC53    SC63    SC73    SC83]
@@ -48,465 +33,426 @@ For each hierarchical level, the ensemble:
   4 SCs   4 SCs   3 SCs   4 SCs   4 SCs   4 SCs   3 SCs   3 SCs
 ```
 
-| Level | Weights Produced | Used In | Matrix Input |
+| Level | Weights produced | Sum constraint | Used in |
 |---|---|---|---|
-| Level 1 | Local SC weights per group (sum to 1 within Ck) | Stage 1: 5 MCDM methods per criterion | m × n_k sub-criteria data for Ck |
-| Level 2 | Criterion weights C01..C08 (sum to 1 globally) | Stage 2: Evidential Reasoning aggregation | m × 8 criterion composite matrix |
+| Level 1 | Local SC weights per group | Sums to 1 within each $C_k$ | Stage 1: MCDM ranking |
+| Level 2 | Criterion weights C01–C08 | Sums to 1 globally | Stage 2: ER aggregation |
+| Global | 29 SC weights | Sums to 1 globally | `pipeline.py` (`WeightResult.weights`) |
 
-### 2.2 Data Context and Constraints
+### Method: Probabilistic Monte Carlo Ensemble
 
-| Property | Value |
+Each level is computed independently via the same **Monte Carlo ensemble** that combines two complementary objective weighting methods:
+
+- **Shannon Entropy** — assigns higher weight to criteria with greater discriminating power (variance) across provinces.
+- **CRITIC** — rewards criteria that are both highly variable *and* uncorrelated with other criteria.
+
+For each simulation $s$, the ensemble:
+1. Perturbs the input data (panel block bootstrap + log-normal multiplicative noise).
+2. Computes Entropy weights $\mathbf{w}_E^{(s)}$ and CRITIC weights $\mathbf{w}_C^{(s)}$ on the perturbed data.
+3. Blends them with a randomly sampled $\beta^{(s)} \sim \text{Beta}(\alpha_a, \alpha_b)$: $\mathbf{w}^{(s)} = \beta^{(s)} \mathbf{w}_E^{(s)} + (1-\beta^{(s)}) \mathbf{w}_C^{(s)}$.
+4. Tracks the resulting ranking for stability measurement.
+
+The final weights are the posterior mean $\bar{\mathbf{w}} = \frac{1}{N} \sum_s \mathbf{w}^{(s)}$ across all $N$ simulations.
+
+### Input / Output summary
+
+| Item | Detail |
 |---|---|
-| Provinces (m) | 63 |
-| Years (T) | 2011–2024 (14 years) |
-| Level 1 groups | 8 criteria (C01–C08) |
-| Level 1 SCs per group | 4, 4, 3, 4, 4, 4, 3, 3 = 29 total |
-| Level 2 criteria | 8 columns (criterion composite scores) |
-| Criteria type | All benefit (higher is better, both levels) |
-| Panel structure | Long-format (`Province`, `Year`, SC columns) |
-| Normalization | Global min-max applied inside the ensemble |
+| Input | `panel_df` — long-format panel (Province, Year, SC11–SC83), pre-cleaned by `pipeline.py` |
+| Provinces $m$ | 63 |
+| Years $T$ | 2011–2024 (14 years) |
+| Total SCs $p$ | 29 (split 4-4-3-4-4-4-3-3 across 8 groups) |
+| Output | `WeightResult` — 29 global SC weights + full MC diagnostics |
 
-**Governing constraints:**
+---
 
-1. **Temporal panel dependence**: Province observations across years are correlated. Cross-sectional block bootstrap (resample whole province blocks) is the statistically valid exchangeability unit.
-2. **Positivity**: Entropy and CRITIC require strictly positive inputs. Log-normal multiplicative noise preserves positivity; additive Gaussian does not.
-3. **Benefit-only panel**: No direction reversal required at either level.
-4. **Dynamic exclusion pre-filtering**: `pipeline.py` drops all-NaN SC columns and incomplete province-year rows before calling this class. The class always receives a clean matrix.
-5. **Level 2 composite construction**: The criterion composite matrix (input to Level 2) is built from Level 1 *local* weights applied to the SC cross-section - not from precomputed composite columns. This ensures consistency between the two levels.
+## 2. Algorithm — Step by Step
 
-## 3. Workflow Flowchart
-
-The following Mermaid diagram shows how all functions and components work together from raw data to final `WeightResult`:
+### Workflow diagram
 
 ```mermaid
 flowchart TD
     A["panel_df\nProvince × Year × SC columns\n(pre-cleaned by pipeline.py)"]
-    --> B["STEP 0 · Data Preparation\nbuild province_blocks dict\nX_raw m×29"]
+    --> B["Step 0 · Data Preparation\nbuild province_blocks dict"]
 
-    B --> C["STEP 1 · Baseline Weights\nEntropyWeightCalculator on full X\nCRITICWeightCalculator on full X\nW_base = (W_E + W_C) / 2\nr_base = SAW baseline ranking"]
+    B --> C["Step 1 · Baseline Weights\nEntropy + CRITIC on full matrix\nW_base = equal blend\nr_base = SAW baseline ranking"]
 
     C --> D{"config.perform_tuning?"}
-    D -- Yes --> E["_tune_hyperparameters()\nGrid search 4×4×4 = 64 points\nN_tune=500 per point\nObjective: AvgKendall τ_b\n± Bayesian GP refinement"]
+    D -- Yes --> E["Step 2 · Hyperparameter Tuning\nGrid search 4×4×4 = 64 points\nObjective: AvgKendall τ_b\n± Bayesian GP refinement"]
     E --> F["θ* = best (α_a, α_b, σ_scale)"]
-    D -- No --> F2["θ* = config defaults\nalpha_a, alpha_b, sigma_scale"]
+    D -- No --> F2["θ* = config defaults"]
     F --> G
     F2 --> G
 
-    subgraph LEVEL1["LEVEL 1 · Per-Criterion MC Ensemble (×8 groups)"]
-      G["For each C_k in C01..C08\nextract X_k  m × n_k sub-matrix"]
-      --> H["_run_mc_ensemble( X_k, province_blocks, θ* )\nBlock bootstrap + log-normal noise per sim\nEntropy + CRITIC on perturbed X_k^(s)\nβ^(s) ~ Beta(α_a, α_b)\nLinear blend → auto-fallback to multiplicative\nSAW rank r^(s) for stability tracking"]
-      --> I["local_weights[C_k]\nn_k weights summing to 1 within C_k\n+ per-group MC diagnostics"]
+    subgraph L1["Step 3 · Level 1 MC Ensemble (×8 groups)"]
+      G["For each C_k: extract m × n_k sub-matrix"]
+      --> H["MC Ensemble on X_k\nBootstrap + noise per sim\nEntropy + CRITIC + Beta blend\nSAW rank for stability"]
+      --> I["local_weights[C_k] — n_k weights summing to 1"]
     end
 
-    I --> J["Build Criterion Composite Matrix  m × 8\ncomposite(i, C_k) = Σ_j local_w_j^(C_k) · x_ij\nfor each province i"]
+    I --> J["Step 4 · Build Criterion Composite Matrix m×8\nz_ik = Σ_j local_w_j · x_ij"]
 
-    subgraph LEVEL2["LEVEL 2 · Criterion MC Ensemble"]
-        J --> K["_run_mc_ensemble( composite_matrix, province_blocks, θ* )\nSame block bootstrap + noise procedure\nEntropy + CRITIC on perturbed composite^(s)\nβ^(s) ~ Beta(α_a, α_b)\nLinear blend → auto-fallback to multiplicative\nSAW rank r^(s) for stability tracking"]
-        --> L["criterion_weights\nC01..C08 weights summing to 1 globally\n+ Level 2 MC diagnostics"]
+    subgraph L2["Step 5 · Level 2 MC Ensemble"]
+        J --> K["MC Ensemble on composite matrix\nSame procedure as Level 1"]
+        --> L["criterion_weights — 8 weights summing to 1"]
     end
 
-    L --> M["Compute Global SC Weights\nglobal_w[SC_j] = local_w[SC_j in C_k] × criterion_w[C_k]\nRe-normalise → Σ = 1"]
+    L --> M["Step 6 · Global SC Weights\nglobal_w_j = local_w_j × criterion_w_k"]
 
-    M --> N["temporal_stability_verification()\nSplit-half test via TemporalStabilityValidator\nCallback uses θ*, perform_tuning=False, N=200"]
+    M --> N["Step 7 · Temporal Stability Verification\nSplit-half cosine similarity — threshold 0.95"]
 
-    N --> O["WeightResult\nweights: 29 global SC weights → pipeline.py\nmethod: 'monte_carlo_ensemble'\ndetails: level1 + level2 + global_sc_weights\n+ hyperparameters + stability + metadata"]
+    N --> O["Step 8 · Return WeightResult"]
 ```
 
 ---
 
-## 4. Mathematical Framework
+### Step 0 — Data Preparation
 
-### 4.1 Notation
+**Purpose:** Extract the raw data matrix and build the province-block index used by all subsequent bootstrap operations.
 
-| Symbol | Definition |
+The input `panel_df` is in long format with one row per (Province, Year) pair. This step groups all row indices belonging to each province into a `province_blocks` dictionary. These blocks are the exchangeability units for cross-sectional block bootstrap throughout the entire algorithm.
+
+```
+province_blocks ← {province_name: array_of_row_indices}   (63 entries)
+all_sc_cols     ← flatten(criteria_groups.values())       (29 SC column names)
+X_raw_all       ← panel_df[all_sc_cols].values            (m × 29 matrix)
+```
+
+> **Why province blocks?** Simple row-level bootstrap breaks the temporal correlation within each province (each province has 14 year-rows that are correlated). Since the ranking is *of provinces*, the correct bootstrap exchangeability unit is the entire province. Resampling complete province blocks preserves within-province temporal structure (Kunsch, 1989).
+
+---
+
+### Step 1 — Baseline Weights
+
+**Purpose:** Establish a deterministic baseline ranking used as the reference for stability measurement during tuning.
+
+Compute Entropy and CRITIC weights on the full, un-perturbed, globally normalized matrix, then blend them equally to produce a single baseline weight vector and a corresponding SAW ranking.
+
+$$X_{\text{norm}} = \text{GlobalMinMax}(X_\text{raw}, \varepsilon)$$
+$$\mathbf{W}_{\text{base}} = \frac{\mathbf{w}_E + \mathbf{w}_C}{2}, \quad \mathbf{W}_{\text{base}} \leftarrow \mathbf{W}_{\text{base}} / \|\mathbf{W}_{\text{base}}\|_1$$
+$$\mathbf{r}_{\text{base}} = \text{rank}(-X_{\text{norm}} \cdot \mathbf{W}_{\text{base}})$$
+
+This baseline ranking $\mathbf{r}_{\text{base}}$ is passed to the tuning step as the reference against which Kendall's $\tau_b$ is measured.
+
+---
+
+### Step 2 — Hyperparameter Tuning *(optional)*
+
+**Purpose:** Find the combination of Beta distribution parameters $(\alpha_a, \alpha_b)$ and noise scale $\sigma_\text{scale}$ that maximises ranking stability under data perturbation.
+
+**Activated only if** `config.perform_tuning = True`. Otherwise config defaults are used directly.
+
+#### 2a. Objective
+
+$$\theta^* = \arg\max_{\theta \in \Theta} \; \text{AvgKendall}(\theta), \quad \theta = (\alpha_a,\, \alpha_b,\, \sigma_{\text{scale}})$$
+
+Estimated by running the Level 2 MC ensemble at $N_\text{tune} = 500$ simulations per candidate and measuring how closely the perturbed rankings agree with $\mathbf{r}_\text{base}$.
+
+#### 2b. Coarse grid search
+
+| Parameter | Grid |
 |---|---|
-| $m$ | Number of alternatives (provinces after NaN exclusion) |
-| $K$ | Number of criterion groups = 8 (C01–C08) |
-| $n_k$ | Number of SCs in group $k$: $[4,4,3,4,4,4,3,3]$ |
-| $p = \sum_k n_k$ | Total active sub-criteria = 29 |
-| $X_k \in \mathbb{R}^{m \times n_k}$ | Level 1 sub-matrix for criterion group $k$ |
-| $Z \in \mathbb{R}^{m \times K}$ | Level 2 criterion composite matrix |
-| $\mathbf{u}_k \in \Delta^{n_k}$ | Level 1 local SC weights within group $k$ (sum to 1) |
-| $\mathbf{v} \in \Delta^K$ | Level 2 criterion weights (sum to 1 globally) |
-| $\mathbf{w} \in \Delta^p$ | Global SC weights: $w_j = u_{k,j} \cdot v_k$ for SC $j \in k$ |
-| $\mathbf{w}_E \in \Delta^p$ | Entropy weight vector (per-level baseline) |
-| $\mathbf{w}_C \in \Delta^p$ | CRITIC weight vector (per-level baseline) |
-| $\beta^{(s)} \in [0,1]$ | Blending parameter for simulation $s$ |
-| $\mathbf{w}^{(s)} \in \Delta^p$ | Per-simulation hybrid weight vector |
-| $\mathbf{r}^{(s)} \in \mathbb{Z}^m$ | Per-simulation province ranking vector |
-| $\Delta^p$ | Probability simplex: $\{w \in \mathbb{R}^p : w_j \geq 0, \sum_j w_j = 1\}$ |
-| $N$ | Number of Monte Carlo simulations per level |
-| $N_{\text{tune}}$ | MC simulations per hyperparameter tuning point |
-| $B$ | Number of provinces (block bootstrap units) = 63 |
+| $\alpha_a$ (Entropy side) | `[0.5, 1.0, 2.0, 4.0]` |
+| $\alpha_b$ (CRITIC side) | `[0.5, 1.0, 2.0, 4.0]` |
+| $\sigma_\text{scale}$ | `[0.01, 0.03, 0.06, 0.10]` |
 
-### 4.2 Level 1 - Local SC Weights Per Criterion Group
+Total: $4 \times 4 \times 4 = 64$ points. Points with $\alpha_a + \alpha_b > 8$ (extreme concentration) or $\sigma_\text{scale} > 0.10$ (unrealistic noise) are pruned.
 
-For each criterion group $k \in \{1,\ldots,K\}$ with sub-matrix $X_k \in \mathbb{R}^{m \times n_k}$:
+#### 2c. Bayesian refinement *(optional)*
 
-**Step 1 - Normalize:**
-$$\tilde{X}_k = \text{GlobalMinMax}(X_k, \varepsilon), \quad \tilde{x}_{ij} = \frac{x_{ij} - \min_j(X_k)}{\max_j(X_k) - \min_j(X_k)} + \varepsilon$$
+If `config.use_bayesian_tuning = True` (requires `scikit-optimize`): the top 5 grid results seed a Gaussian Process (Matérn $\nu=2.5$), then 20 Expected-Improvement-guided evaluations refine $\theta^*$ within $[0.5, 5.0]^2 \times [0.005, 0.15]$. Falls back to grid-only with a logged warning if `scikit-optimize` is absent.
 
-**Step 2 - Entropy weights:**
-$$p_{ij} = \frac{\tilde{x}_{ij}}{\sum_{i'} \tilde{x}_{i'j}}, \quad E_j = -\frac{1}{\ln m} \sum_{i=1}^{m} p_{ij} \ln(p_{ij} + \varepsilon)$$
-$$u_{E,j}^{(k)} = \frac{1 - E_j}{\sum_{j'=1}^{n_k} (1 - E_{j'})}, \quad \mathbf{u}_E^{(k)} \in \Delta^{n_k}$$
+#### 2d. Output
 
-**Step 3 - CRITIC weights:**
-$$C_j = \sigma_j \sum_{j'=1}^{n_k} (1 - r_{jj'}), \quad u_{C,j}^{(k)} = \frac{C_j}{\sum_{j''} C_{j''}}, \quad \mathbf{u}_C^{(k)} \in \Delta^{n_k}$$
+$\theta^* = (\alpha_a^*, \alpha_b^*, \sigma_\text{scale}^*)$ — shared by both Level 1 and Level 2 inference.
 
-**Step 4 - MC ensemble blend (per simulation $s$):**
-$$\beta^{(s)} \sim \text{Beta}(\alpha_a, \alpha_b), \quad \mathbf{u}^{(k,s)} = \beta^{(s)} \mathbf{u}_E^{(k,s)} + (1-\beta^{(s)}) \mathbf{u}_C^{(k,s)}$$
+---
 
-**Output:** Posterior mean $\bar{\mathbf{u}}_k = \frac{1}{N} \sum_s \mathbf{u}^{(k,s)} \in \Delta^{n_k}$, with $\sum_{j=1}^{n_k} \bar{u}_{k,j} = 1$.
+### Step 3 — Level 1: Per-Criterion MC Ensemble
 
-### 4.3 Level 2 - Criterion Composite Matrix Construction
+**Purpose:** For each of the 8 criterion groups, compute local SC weights — how much each SC contributes relative to the other SCs within its group.
 
-After Level 1 completes for all $k$, build the criterion composite matrix $Z \in \mathbb{R}^{m \times K}$:
+The groups are processed independently. For each criterion group $C_k$:
+
+1. **Extract sub-matrix** $X_k \in \mathbb{R}^{m \times n_k}$ using only the columns belonging to $C_k$.
+2. **Run the MC ensemble** (`_run_mc_ensemble`) on $X_k$ with hyperparameters $\theta^*$ for $N$ simulations. The subroutine is described in detail in [Section 3](#3-mc-ensemble-subroutine).
+3. **Store** the posterior mean weights $\bar{\mathbf{u}}_k \in \Delta^{n_k}$, which sum to 1 within the group.
+
+**Output of this step:**
+
+```
+local_weights = {
+    "C01": {"SC11": float, "SC12": float, "SC13": float, "SC14": float},  # sums to 1
+    "C02": {"SC21": float, ...},
+    ...
+    "C08": {"SC81": float, "SC82": float, "SC83": float},
+}
+```
+
+---
+
+### Step 4 — Build Criterion Composite Matrix
+
+**Purpose:** Collapse the $m \times 29$ SC panel into an $m \times 8$ criterion-level panel, where each column is a single score representing one criterion per province.
+
+Using the Level 1 posterior-mean local weights, each criterion's composite score for province $i$ is the weighted sum of its SC values:
 
 $$z_{ik} = \sum_{j \in \text{SC}_k} \bar{u}_{k,j} \cdot x_{ij}, \quad i = 1,\ldots,m, \quad k = 1,\ldots,K$$
 
-where $x_{ij}$ are the raw (pre-normalization) SC values and $\bar{u}_{k,j}$ are the Level 1 posterior-mean local weights.
+where $x_{ij}$ are the raw (pre-normalization) SC values and $\bar{u}_{k,j}$ are the Level 1 local weights.
 
-> **Design rationale:** The composite score $z_{ik}$ is a weighted sum of the SC sub-matrix for criterion $k$, weighted by Level 1 local importance. This converts the $m \times 29$ SC panel into an $m \times 8$ criterion-level panel that represents each criterion as a single score per province. The Level 2 MC ensemble then estimates how important each criterion is *relative to the others*, independently of the SC-level weights.
+> **Design rationale:** The composite matrix $Z \in \mathbb{R}^{m \times 8}$ represents each criterion as a single score that already encodes the relative importance of its sub-criteria. Level 2 then determines how important each criterion is *relative to the others*, independently of the SC-level weights. This ensures the two levels are conceptually orthogonal.
 
-**Level 2 MC ensemble** runs on $Z$ with the same protocol as Level 1:
-$$\bar{\mathbf{v}} = \frac{1}{N} \sum_{s=1}^{N} \mathbf{v}^{(s)} \in \Delta^K, \quad \text{with } \sum_{k=1}^{K} \bar{v}_k = 1$$
+---
 
-### 4.4 Global SC Weights
+### Step 5 — Level 2: Criterion MC Ensemble
 
-The final global SC weight for sub-criterion $j$ in group $k$ is:
+**Purpose:** Determine the global importance of each criterion C01–C08 relative to one another.
+
+Run the same MC ensemble subroutine on the composite matrix $Z \in \mathbb{R}^{m \times 8}$, treating each criterion column as if it were a sub-criterion. The province-block structure is identical; the same $\theta^*$ applies.
+
+**Output of this step:**
+
+```
+criterion_weights = {
+    "C01": float, "C02": float, ..., "C08": float   # sums to 1
+}
+```
+
+Level 2 also produces the full province rank distribution (mean rank, std, top-1 probability, pairwise win matrix) from its SAW surrogate, since this is the final ranking signal.
+
+---
+
+### Step 6 — Global SC Weights
+
+**Purpose:** Combine the two levels into a single weight for each of the 29 SCs that reflects both within-group and cross-group importance.
 
 $$w_j = \bar{u}_{k,j} \cdot \bar{v}_k, \quad j \in \text{SC}_k$$
 
-**Simplex property:**
+where $\bar{u}_{k,j}$ is the Level 1 local weight and $\bar{v}_k$ is the Level 2 criterion weight.
+
+**Simplex property** (proven):
 
 $$\sum_{k=1}^{K} \sum_{j \in \text{SC}_k} w_j = \sum_{k=1}^{K} \bar{v}_k \underbrace{\sum_{j \in \text{SC}_k} \bar{u}_{k,j}}_{=1} = \sum_{k=1}^{K} \bar{v}_k = 1$$
 
-These 29 global weights $\mathbf{w} \in \Delta^{29}$ are returned as `WeightResult.weights` and passed directly to `HierarchicalRankingPipeline.rank(subcriteria_weights=...)`.
+A floating-point re-normalization guard is applied (`global_sc_weights[sc] /= sum(...)`). By construction the sum is already $\approx 1.0$.
 
-### 4.5 Perturbation Model (both Level 1 and Level 2)
+These 29 weights are stored in `WeightResult.weights` and passed directly to `HierarchicalRankingPipeline.rank()`.
 
-The `_run_mc_ensemble` function applies the same two-component perturbation to whatever matrix it receives (either $X_k$ or $Z$):
+---
 
-**Component 1 - Cross-sectional block bootstrap:**
+### Step 7 — Temporal Stability Verification
 
-Let $\mathcal{I} = \{1, \ldots, B\}$ be the 63 province indices. Each province forms a *block* of all its year-rows. For simulation $s$:
+**Purpose:** Verify that the weights are stable across time by checking whether weights computed on the first half of the time series (2011–2017) are consistent with weights from the second half (2018–2024).
 
-$$\mathcal{I}^{(s)} \sim \text{Multinomial}(B;\, 1/B, \ldots, 1/B) \text{ with replacement}$$
+A `TemporalStabilityValidator` splits `panel_df` at the midpoint and calls `compute_weights` on each half via a callback. The callback uses the already-tuned $\theta^*$ with `perform_tuning=False` and `mc_n_simulations=200` to avoid re-running the expensive tuning grid.
 
-The resampled matrix stacks all year-rows for each selected province block, preserving within-province temporal structure.
+**Stability metrics:**
 
-> **Why cross-sectional block bootstrap?** Simple row bootstrap breaks temporal correlation within each province. The ranking is *of provinces*, so the bootstrap exchangeability unit is the province. Resampling complete province blocks is exchangeable under the null that provinces are i.i.d. draws from a population (Kunsch, 1989; Politis & Romano, 1994).
+| Field | Meaning |
+|---|---|
+| `cosine_similarity` | Cosine similarity between early-half and late-half weight vectors |
+| `pearson_correlation` | Pearson $r$ between early-half and late-half weight vectors |
+| `is_stable` | `True` if cosine similarity $\geq$ `config.stability_threshold` (default 0.95) |
+| `split_point` | Year used as split boundary |
 
-**Component 2 - Column-wise log-normal multiplicative noise:**
+---
 
-$$X^{(s)}_{ij} = X^{(s)}_{\text{boot},ij} \times \exp\!\left(\varepsilon_{ij}^{(s)}\right), \quad \varepsilon_{ij}^{(s)} \sim \mathcal{N}\!\left(0,\, \sigma_{\text{scale}}^2 \cdot \hat{\sigma}_j^2 \right)$$
+### Step 8 — Return `WeightResult`
 
-where $\hat{\sigma}_j$ is the sample std of column $j$ after global normalization.
+Assemble and return the final result object:
 
-> **Why log-normal multiplicative noise?** Additive Gaussian noise can produce negatives, violating the positivity assumption of Entropy and CRITIC. Log-normal multiplicative noise preserves positivity: $X^{(s)} = X_{\text{boot}} \odot e^E > 0$ always. It is the natural perturbation model for positive socioeconomic measurements.
+```python
+WeightResult(
+    weights = global_sc_weights,        # 29 global SC weights, sums to 1
+    method  = "monte_carlo_ensemble",
+    details = {
+        "level1":            ...,       # per-group local weights + MC diagnostics
+        "level2":            ...,       # criterion weights + MC diagnostics
+        "global_sc_weights": ...,       # same as .weights
+        "hyperparameters":   ...,       # θ* and tuning metadata
+        "stability":         ...,       # temporal stability result
+        "n_observations":    int,
+        "n_criteria_groups": 8,
+        "n_subcriteria":     29,
+        "n_provinces":       63,
+        "n_years":           14,
+    }
+)
+```
 
-### 4.6 Per-Simulation Weight Blend
+Full `details` schema is in [Section 5 — Output Specification](#5-output-specification).
+
+---
+
+## 3. MC Ensemble Subroutine
+
+The subroutine `_run_mc_ensemble(X, province_blocks, col_names, θ, config)` implements a single level's full Monte Carlo loop. It is called once per Level 1 criterion group and once for Level 2.
+
+### Per-simulation procedure
 
 For each simulation $s = 1, \ldots, N$:
 
-1. **Apply perturbation** (bootstrap + noise) - see §4.5.
-2. **Normalize:** $\tilde{X}^{(s)} = \text{GlobalMinMax}(X^{(s)}, \varepsilon)$.
-3. **Compute:** $\mathbf{w}_E^{(s)} = \text{Entropy}(\tilde{X}^{(s)})$, $\mathbf{w}_C^{(s)} = \text{CRITIC}(\tilde{X}^{(s)})$.
-4. **Sample:** $\beta^{(s)} \sim \text{Beta}(\alpha_a, \alpha_b)$.
-5. **Linear blend (primary):**
+#### 3a. Cross-sectional block bootstrap
 
-$$\mathbf{w}^{(s)}_{\text{raw}} = \beta^{(s)} \mathbf{w}_E^{(s)} + (1 - \beta^{(s)}) \mathbf{w}_C^{(s)}, \quad \mathbf{w}^{(s)} = \mathbf{w}^{(s)}_{\text{raw}} / \|\mathbf{w}^{(s)}_{\text{raw}}\|_1$$
+Resample the 63 province blocks with replacement to form a new $m$-row matrix:
 
-> Proof of simplex membership: since $\mathbf{w}_E^{(s)}, \mathbf{w}_C^{(s)} \in \Delta^p$ and $\beta^{(s)} \in [0,1]$, their convex combination is in $\Delta^p$ exactly. Re-normalization is a floating-point safety step only.
+$$\mathcal{I}^{(s)} \sim \text{Multinomial}(B;\, \tfrac{1}{B}, \ldots, \tfrac{1}{B}) \text{ with replacement}$$
 
-6. **Multiplicative fallback (automatic, triggered only on numerical failure):**
+Stack all year-rows for each selected province block. This preserves within-province temporal structure while introducing cross-sectional variability.
 
-If the linear blend raises any exception *or* produces a non-positive sum (numerical degeneration), the simulation automatically falls back to:
+> Resampling complete province blocks is the statistically valid exchangeability unit: under the null hypothesis that provinces are i.i.d. draws from a population, block-resampling is exchangeable (Kunsch, 1989; Politis & Romano, 1994).
 
-$$w_j^{(s)} = \frac{w_{E,j}^{(s)} \cdot w_{C,j}^{(s)}}{\sum_{k} w_{E,k}^{(s)} \cdot w_{C,k}^{(s)}}$$
+#### 3b. Log-normal multiplicative noise
 
-This is not a configurable mode - it is a silent numeric recovery path. A sub-criterion must score highly in *both* methods to receive high weight under this formula, making it more conservative. The `epsilon` clip inside each calculator prevents zero-denominator crashes.
+Apply column-wise noise to the bootstrapped matrix:
 
-7. **SAW surrogate ranking:**
+$$X^{(s)}_{ij} = X^{(s)}_{\text{boot},ij} \times \exp\!\left(\varepsilon_{ij}^{(s)}\right), \quad \varepsilon_{ij}^{(s)} \sim \mathcal{N}\!\left(0,\; \sigma_{\text{scale}}^2 \cdot \hat{\sigma}_j^2 \right)$$
 
-$$S_i^{(s)} = \sum_j w_j^{(s)} \tilde{x}_{ij}^{(s)}, \quad \mathbf{r}^{(s)} = \text{rank}(-\mathbf{S}^{(s)})$$
+where $\hat{\sigma}_j$ is the sample standard deviation of column $j$ after global normalization.
 
-Used for stability tracking; SAW is the linear scorer with maximum sensitivity to weight changes, making it the correct fast surrogate for detecting weight-induced rank instability.
+> **Why log-normal, not Gaussian?** Additive Gaussian noise can produce negative values, violating the strict positivity requirement of both Entropy and CRITIC. Log-normal multiplicative noise satisfies $X^{(s)} = X_\text{boot} \odot e^\varepsilon > 0$ always, and is the natural perturbation model for positive socioeconomic measurements.
 
----
+#### 3c. Normalize
 
-## 5. Robustness Metrics
+$$\tilde{X}^{(s)} = \text{GlobalMinMax}(X^{(s)}, \varepsilon), \quad \tilde{x}_{ij} = \frac{x_{ij} - \min(X^{(s)})}{\max(X^{(s)}) - \min(X^{(s)})} + \varepsilon$$
 
-The following metrics are computed from the $N$ simulation results $\{(\mathbf{w}^{(s)}, \mathbf{r}^{(s)})\}_{s=1}^{N}$.
+#### 3d. Compute base method weights
 
-### 5.1 Weight-Level Metrics (per sub-criterion $j$)
+**Entropy weight formula:**
 
-| Metric | Formula | Purpose |
+$$p_{ij} = \frac{\tilde{x}_{ij}}{\sum_{i'} \tilde{x}_{i'j}}, \quad E_j = -\frac{1}{\ln m} \sum_{i=1}^{m} p_{ij} \ln(p_{ij} + \varepsilon), \quad w_{E,j} = \frac{1 - E_j}{\sum_{j'}(1 - E_{j'})}$$
+
+**CRITIC weight formula:**
+
+$$C_j = \sigma_j \sum_{j'} (1 - r_{jj'}), \quad w_{C,j} = \frac{C_j}{\sum_{j''} C_{j''}}$$
+
+where $\sigma_j$ is the standard deviation of column $j$ and $r_{jj'}$ is the Pearson correlation between columns $j$ and $j'$.
+
+#### 3e. Sample blend parameter
+
+$$\beta^{(s)} \sim \text{Beta}(\alpha_a, \alpha_b)$$
+
+| $(\alpha_a, \alpha_b)$ | $\mathbb{E}[\beta]$ | Behaviour |
 |---|---|---|
-| Posterior mean | $\bar{w}_j = \frac{1}{N} \sum_s w_j^{(s)}$ | Point estimate |
-| Posterior std | $\hat{\sigma}_{w_j} = \sqrt{\frac{1}{N-1}\sum_s (w_j^{(s)} - \bar{w}_j)^2}$ | Weight uncertainty |
-| 95% ETI lower | $\hat{q}_{0.025}(w_j)$ via `np.percentile` | Credible interval lower |
-| 95% ETI upper | $\hat{q}_{0.975}(w_j)$ via `np.percentile` | Credible interval upper |
-| Coefficient of variation | $\text{CV}_j = \hat{\sigma}_{w_j} / \bar{w}_j$ | Relative uncertainty |
-
-> **Equal-tailed interval (ETI)** is used rather than HDI because: (a) the weight posterior is expected to be unimodal and near-symmetric; (b) ETI is the standard for bootstrap credible intervals (Davison & Hinkley, 1997); (c) numerically simpler. For $N = 2000$, the MCSE of the 2.5th percentile is $\approx 0.011\,\hat{\sigma}_{w_j}$, negligible in practice.
-
-### 5.2 Ranking-Level Metrics (primary robustness objective for tuning)
-
-**Average Kendall's $\tau_b$ against baseline:**
-
-$$\text{AvgKendall} = \frac{1}{N} \sum_{s=1}^{N} \tau_b\!\left(\mathbf{r}^{(0)}, \mathbf{r}^{(s)}\right)$$
-
-Kendall's $\tau_b$ handles ties via its correction term and is more appropriate than Spearman's $\rho$ for MCDM rankings because it measures concordance of *pairwise orderings*. Range $[-1, 1]$; target $\geq 0.85$.
-
-**Kendall's $W$ (overall concordance across all $N$ simulations):**
-
-$$W = \frac{12 \sum_{i=1}^{m} \left(\sum_{s=1}^{N} r_i^{(s)} - \frac{N(m+1)}{2}\right)^2}{N^2(m^3 - m)}$$
-
-Range $[0, 1]$; $W \geq 0.7$ is acceptable. A chi-squared test on $W$ with $p < 0.05$ confirms statistical significance (Kendall & Babington Smith, 1939).
-
-**Top-K rank variance:**
-
-$$\text{TopKVar} = \frac{1}{K} \sum_{i \in \text{Top-}K} \text{Var}_s\!\left[r_i^{(s)}\right]$$
-
-where Top-$K$ is the set of $K$ provinces with lowest mean rank across simulations. Default $K = 10$. Target $< 2.0$.
-
-**Pairwise win probability matrix** $\mathbf{P} \in [0,1]^{m \times m}$:
-
-$$P_{ij} = \frac{1}{N} \sum_{s=1}^{N} \mathbf{1}\!\left[r_i^{(s)} < r_j^{(s)}\right]$$
-
-By construction $P_{ij} + P_{ji} = 1$ (ties assigned 0.5). Stored in `details['level2']['mc_diagnostics']['rank_win_matrix']`.
-
-**Province rank distribution (per-province):**
-
-| Statistic | Formula |
-|---|---|
-| `mean_rank[i]` | $\bar{r}_i = \frac{1}{N}\sum_s r_i^{(s)}$ |
-| `std_rank[i]` | $\hat{\sigma}_{r_i} = \sqrt{\frac{1}{N-1}\sum_s(r_i^{(s)}-\bar{r}_i)^2}$ |
-| `prob_top1[i]` | $\frac{1}{N}\sum_s \mathbf{1}[r_i^{(s)} = 1]$ |
-| `prob_topK[i]` | $\frac{1}{N}\sum_s \mathbf{1}[r_i^{(s)} \leq K]$ |
-
-### 5.3 Convergence Criterion
-
-After every `conv_check_every = max(10, N//20)` successful iterations (starting from `conv_min_iters = max(30, N//6)`):
-
-$$\delta^{(b)} = \|\bar{\mathbf{w}}^{(b)} - \bar{\mathbf{w}}^{(b-1)}\|_\infty < \delta_{\text{tol}} = 5 \times 10^{-5}$$
-
-Two consecutive checks passing triggers early termination; `converged_at` is recorded.
-
----
-
-## 6. Hyperparameter Specification
-
-| Parameter | Symbol | Default | Search Range | Role |
-|---|---|---|---|---|
-| Beta shape 1 | $\alpha_a$ | 1.0 | [0.5, 5.0] | Controls $\beta$ distribution towards Entropy |
-| Beta shape 2 | $\alpha_b$ | 1.0 | [0.5, 5.0] | Controls $\beta$ distribution towards CRITIC |
-| Noise scale | $\sigma_{\text{scale}}$ | 0.02 | [0.005, 0.15] | Log-normal noise magnitude |
-| Bootstrap fraction | $f_{\text{boot}}$ | 1.0 | {0.8, 1.0} | Province bootstrap resample ratio |
-| MC simulations | $N$ | 2000 | 500–5000 | Inference iterations per level |
-| Tuning simulations | $N_{\text{tune}}$ | 500 | 200–1000 | Per-grid-point MC count |
-| Top-K for stability | $K$ | 10 | 5–20 | Rank variance window |
-
-> **Note:** There is no `blend_mode` parameter. The linear blend is always primary; multiplicative is a silent numeric fallback. This is not configurable.
-
-**Interpretation of Beta parameters:**
-
-| $(\alpha_a, \alpha_b)$ | $\mathbb{E}[\beta]$ | Effect |
-|---|---|---|
-| (1, 1) | 0.5 | Uniform prior - equal treatment of both methods |
+| (1, 1) | 0.5 | Uniform — equal treatment of both methods |
 | (2, 2) | 0.5 | Concentrated near equal blend |
 | (3, 1) | 0.75 | Entropy-dominant |
 | (1, 3) | 0.25 | CRITIC-dominant |
-| (0.5, 0.5) | 0.5 | Bimodal {0,1} - strong method preference |
+| (0.5, 0.5) | 0.5 | Bimodal — strong method preference per simulation |
 
-**Why $N = 2000$?** For $p = 29$ and 95% ETI, the MCSE of the CI endpoint is $\approx 0.011\,\hat{\sigma}_{w_j}$ - negligible. $N = 2000$ gives stable Kendall's $W$ for $m = 63$. Early-stopping typically terminates at 800–1200 iterations.
+#### 3f. Blend weights
 
----
+**Primary (linear):**
 
-## 7. Hyperparameter Tuning Strategy
+$$\mathbf{w}^{(s)}_\text{raw} = \beta^{(s)} \mathbf{w}_E^{(s)} + (1 - \beta^{(s)}) \mathbf{w}_C^{(s)}, \quad \mathbf{w}^{(s)} = \mathbf{w}^{(s)}_\text{raw} / \|\mathbf{w}^{(s)}_\text{raw}\|_1$$
 
-### 7.1 Primary Objective
+Since $\mathbf{w}_E^{(s)}, \mathbf{w}_C^{(s)} \in \Delta^p$ and $\beta^{(s)} \in [0,1]$, the convex combination is already in $\Delta^p$ exactly; re-normalization is a floating-point safety step only.
 
-$$\theta^* = \arg\max_{\theta \in \Theta} \; \text{AvgKendall}(\theta), \quad \theta = (\alpha_a, \alpha_b, \sigma_{\text{scale}})$$
+**Automatic multiplicative fallback** (triggered only on numerical failure of the linear blend):
 
-Estimated from $N_{\text{tune}} = 500$ MC simulations per grid point using the Level 2 (criterion-level) SAW stability as the signal, since it captures the final ranking output.
+$$w_j^{(s)} = \frac{w_{E,j}^{(s)} \cdot w_{C,j}^{(s)}}{\sum_{k} w_{E,k}^{(s)} \cdot w_{C,k}^{(s)}}$$
 
-### 7.2 Coarse Grid Search
+A sub-criterion must score highly in *both* methods to receive high weight under this formula. This is not a configurable mode — it is a silent numeric recovery path.
 
-| Parameter | Grid values |
+#### 3g. SAW surrogate ranking
+
+$$S_i^{(s)} = \sum_j w_j^{(s)} \tilde{x}_{ij}^{(s)}, \quad \mathbf{r}^{(s)} = \text{rank}(-\mathbf{S}^{(s)})$$
+
+SAW is used as the stability surrogate because it is the linear scorer most sensitive to weight changes, making it the correct fast proxy for detecting weight-induced rank instability.
+
+### Convergence check
+
+After every `conv_check_every = max(10, N//20)` successful iterations (starting from `conv_min_iters = max(30, N//6)`):
+
+$$\delta^{(b)} = \|\bar{\mathbf{w}}^{(b)} - \bar{\mathbf{w}}^{(b-1)}\|_\infty < \delta_\text{tol} = 5 \times 10^{-5}$$
+
+Two consecutive checks passing triggers early termination; `converged_at` is recorded in diagnostics.
+
+### Failed simulation handling
+
+If `EntropyWeightCalculator` or `CRITICWeightCalculator` raises any exception: catch, increment `failed_count`, continue. If success rate `OK / N < 0.80`, log `WARNING` and set `quality_flag = "low_convergence"` in MC diagnostics.
+
+### Subroutine output
+
+Returns a `DiagnosticsResult` containing:
+
+| Field | Description |
 |---|---|
-| $\alpha_a$ | `[0.5, 1.0, 2.0, 4.0]` |
-| $\alpha_b$ | `[0.5, 1.0, 2.0, 4.0]` |
-| $\sigma_{\text{scale}}$ | `[0.01, 0.03, 0.06, 0.10]` |
+| `mean_weights` | $\bar{\mathbf{w}} = \frac{1}{N}\sum_s \mathbf{w}^{(s)}$ — point estimate |
+| `std_weights` | Posterior standard deviation per weight |
+| `ci_lower_2_5`, `ci_upper_97_5` | 95% equal-tailed credible intervals (via `np.percentile`) |
+| `cv_weights` | Coefficient of variation $= \hat\sigma_{w_j} / \bar{w}_j$ |
+| `avg_kendall_tau` | Mean Kendall's $\tau_b$ against baseline ranking |
+| `avg_spearman_rho` | Mean Spearman $\rho$ against baseline ranking |
+| `kendall_w` | Kendall's $W$ concordance across all $N$ simulations |
+| `top_k_rank_var` | Mean rank variance for top-$K$ provinces |
+| `province_mean_rank`, `province_std_rank` | Per-province rank distribution |
+| `prob_top1`, `prob_topK` | Per-province probability of ranking 1st / top-$K$ |
+| `rank_win_matrix` | $m \times m$ pairwise win probability $P_{ij} = P(\text{province } i \text{ outranks } j)$ |
+| `converged_at` | Iteration at early stopping, or `None` |
+| `n_completed` | Number of successful simulations |
 
-Total: $4 \times 4 \times 4 = 64$ points. **Pruning:** skip $\alpha_a + \alpha_b > 8$ (extreme concentration) and $\sigma_{\text{scale}} > 0.10$ (distorts panel beyond realistic uncertainty bounds).
-
-### 7.3 Bayesian Refinement (Optional)
-
-If `use_bayesian_tuning=True` (requires `scikit-optimize`):
-
-1. Take top 5 grid points as GP prior observations.
-2. Fit Gaussian Process (MatÃ©rn $\nu=2.5$) over $[0.5, 5.0]^2 \times [0.005, 0.15]$ via `skopt.gp_minimize`.
-3. Run 20 EI-guided evaluations.
-4. Return best observed $\theta^*$.
-
-Falls back to grid-only with a logged warning if `scikit-optimize` is absent.
-
-### 7.4 Tuning Scope
-
-The tuning is run **once** before both Level 1 and Level 2 inference - both levels share the same $\theta^*$. The same hyperparameters apply to both sub-criteria perturbation (Level 1) and criterion composite perturbation (Level 2).
+> **ETI vs HDI:** Equal-tailed intervals are used because the weight posterior is expected to be unimodal and near-symmetric; ETI is the standard for bootstrap credible intervals (Davison & Hinkley, 1997). For $N = 2000$, the MCSE of the 2.5th percentile is $\approx 0.011\,\hat\sigma_{w_j}$, negligible in practice.
 
 ---
 
-## 8. Full Algorithm (Step-by-Step)
+## 4. Hyperparameters
 
-```
-INPUT:
-  panel_df        - long-format panel (Province, Year, SC11…SC83), pre-cleaned
-  criteria_groups - dict {Ck: [sc_col1, sc_col2, ...]} - 8 groups total
-  entity_col      - 'Province'
-  time_col        - 'Year'
-  config          - WeightingConfig
+| Parameter | Symbol | Default | Role |
+|---|---|---|---|
+| MC simulations | $N$ | 2000 | Full inference iterations per level |
+| Tuning simulations | $N_\text{tune}$ | 500 | Per grid-point iteration count |
+| Beta shape 1 | $\alpha_a$ | 1.0 | Blend distribution — Entropy side |
+| Beta shape 2 | $\alpha_b$ | 1.0 | Blend distribution — CRITIC side |
+| Noise scale | $\sigma_\text{scale}$ | 0.02 | Log-normal noise magnitude |
+| Bootstrap fraction | $f_\text{boot}$ | 1.0 | Province bootstrap resample ratio |
+| Top-K for stability | $K$ | 10 | Rank variance window size |
+| Stability threshold | — | 0.95 | Minimum cosine similarity for temporal stability pass |
+| Convergence tolerance | $\delta_\text{tol}$ | $5\times10^{-5}$ | $L^\infty$ threshold for early stopping |
 
-OUTPUT:
-  WeightResult with:
-    weights  - {sc: float} - 29 global SC weights ∈ Δ^29
-    method   - 'monte_carlo_ensemble'
-    details  - full diagnostics dict (see Section 9)
+> **Why $N = 2000$?** For $p = 29$ and a 95% ETI, the MCSE of the CI endpoint is $\approx 0.011\,\hat\sigma_{w_j}$ — negligible in practice. $N = 2000$ gives stable Kendall's $W$ for $m = 63$. Early stopping typically terminates at 800–1200 iterations.
 
-─────────────────────────────────────────────────────────────────────────────
-
-STEP 0 - DATA PREPARATION
-  province_blocks ← {prov: array_of_row_indices}   (B = 63 blocks)
-  all_sc_cols     ← flatten(criteria_groups.values())  # 29 cols
-
-STEP 1 - BASELINE (deterministic, on full unnormalized data)
-  X_all_norm ← GlobalMinMax(panel_df[all_sc_cols].values, ε)
-  W_E_base   ← Entropy(X_all_norm) → (29,)
-  W_C_base   ← CRITIC(X_all_norm)  → (29,)
-  W_base     ← (W_E_base + W_C_base) / 2; W_base /= W_base.sum()
-  r_base     ← rank(-X_all_norm @ W_base)          # baseline ranking for tuning
-
-STEP 2 - HYPERPARAMETER TUNING  (if config.perform_tuning)
-  θ* ← _tune_hyperparameters(panel_df, criteria_groups, province_blocks,
-                              r_base, config)
-  # Evaluates AvgKendall(τ_b) at 64 grid points using Level 2 composite
-  ELSE:
-  θ* ← (config.beta_a, config.beta_b, config.noise_sigma_scale)
-
-STEP 3 - LEVEL 1: Per-Criterion Group MC Ensemble
-  local_weights    ← {}    # {Ck: {sc: float}}  - Level 1 output
-  level1_diagnostics ← {}  # {Ck: mc_stats_dict}
-
-  FOR k = 1..8 (each criterion group C_k):
-    sc_cols_k ← criteria_groups[C_k]              # n_k SC columns
-    X_k       ← panel_df[sc_cols_k].values        # m × n_k
-
-    result_k ← _run_mc_ensemble(
-                  X=X_k, province_blocks=province_blocks,
-                  col_names=sc_cols_k, θ=θ*, config=config)
-
-    local_weights[C_k]    ← result_k.mean_weights   # {sc: float}, sums to 1
-    level1_diagnostics[C_k] ← result_k.diagnostics
-
-STEP 4 - BUILD CRITERION COMPOSITE MATRIX
-  X_raw_all ← panel_df[all_sc_cols].values        # m × 29
-  Z         ← zeros(m, 8)
-  FOR k = 1..8:
-    j_cols    ← column indices of criteria_groups[C_k] in X_raw_all
-    u_k       ← array([local_weights[C_k][sc] for sc in criteria_groups[C_k]])
-    Z[:, k-1] ← X_raw_all[:, j_cols] @ u_k        # m × 1 composite
-
-STEP 5 - LEVEL 2: Criterion MC Ensemble
-  criterion_names ← ['C01','C02','C03','C04','C05','C06','C07','C08']
-  result_L2 ← _run_mc_ensemble(
-                X=Z, province_blocks=province_blocks,
-                col_names=criterion_names, θ=θ*, config=config)
-
-  criterion_weights  ← result_L2.mean_weights     # {Ck: float}, sums to 1
-  level2_diagnostics ← result_L2.diagnostics
-
-STEP 6 - GLOBAL SC WEIGHTS
-  global_sc_weights ← {}
-  FOR k = 1..8:
-    v_k ← criterion_weights[C_k]
-    FOR sc in criteria_groups[C_k]:
-      global_sc_weights[sc] = local_weights[C_k][sc] * v_k
-
-  # Re-normalise (numerical guard)
-  total ← sum(global_sc_weights.values())
-  global_sc_weights ← {sc: w/total for sc, w in global_sc_weights.items()}
-  # By construction total ≈1.0; re-norm is floating-point safety only
-
-STEP 7 - TEMPORAL STABILITY VERIFICATION
-  stability ← temporal_stability_verification(
-                 panel_df, compute_weights_fn,   # callback: no tuning, N=200
-                 entity_col, time_col, all_sc_cols,
-                 threshold=config.stability_threshold)
-
-STEP 8 - RETURN
-  RETURN WeightResult(
-    weights = global_sc_weights,
-    method  = 'monte_carlo_ensemble',
-    details = build_details_dict(
-                level1_diagnostics, level2_diagnostics,
-                global_sc_weights, criterion_weights,
-                local_weights, θ*, stability, config)
-  )
-
-
-SUBROUTINE: _run_mc_ensemble(X, province_blocks, col_names, θ, config)
-
-  [Implements §4.5–4.6 perturbation + blend loop]
-  [Collects weight and rank samples for N iterations]
-  [Applies convergence check (§5.3)]
-  [Returns DiagnosticsResult: mean_weights, std_weights, ci_lower, ci_upper,
-   avg_kendall_tau, avg_spearman_rho, kendall_w, top_k_rank_var,
-   province_mean_rank, province_std_rank, prob_top1, prob_topK,
-   rank_win_matrix, converged_at, n_completed]
-```
+> **Why $\sigma_\text{scale} = 0.02$ default?** Approximately ±2% multiplicative noise relative to each column's standard deviation. On normalized scale (typical column std ≈ 0.2–0.4), absolute noise ≈ 0.004–0.008 — physically plausible for socioeconomic measurement uncertainty. The tuning grid finds the optimal $\sigma_\text{scale}$ for this specific panel.
 
 ---
 
-## 9. Output Specification (`WeightResult.details`)
-
-Clean new format - no backward-compatibility keys for old methods:
+## 5. Output Specification
 
 ```python
 details = {
-    # Level 1: per criterion group
+    # Level 1: per-criterion group results
     "level1": {
         "C01": {
-            "local_sc_weights": {"SC11": float, "SC12": float, ...},
+            "local_sc_weights": {"SC11": float, "SC12": float, ...},  # sums to 1
             "mc_diagnostics": {
                 "n_simulations_completed": int,
                 "converged_at":            int | None,
-                "mean_weights":  {"SC11": float, ...},
-                "std_weights":   {"SC11": float, ...},
-                "ci_lower_2_5":  {"SC11": float, ...},
-                "ci_upper_97_5": {"SC11": float, ...},
-                "cv_weights":    {"SC11": float, ...},
+                "mean_weights":   {"SC11": float, ...},
+                "std_weights":    {"SC11": float, ...},
+                "ci_lower_2_5":   {"SC11": float, ...},
+                "ci_upper_97_5":  {"SC11": float, ...},
+                "cv_weights":     {"SC11": float, ...},
                 "avg_kendall_tau":  float,
                 "avg_spearman_rho": float,
                 "kendall_w":        float,
                 "top_k_rank_var":   float,
             },
         },
-        # ... C02 through C08 identical structure ...
+        # C02 through C08 — identical structure
     },
 
-    # Level 2: criterion weights
+    # Level 2: criterion weights + province rank distributions
     "level2": {
-        "criterion_weights": {"C01": float, ..., "C08": float},   # sums to 1
+        "criterion_weights": {"C01": float, ..., "C08": float},  # sums to 1
         "mc_diagnostics": {
             "n_simulations_completed": int,
             "converged_at":            int | None,
-            "mean_weights":  {"C01": float, ...},
-            "std_weights":   {"C01": float, ...},
-            "ci_lower_2_5":  {"C01": float, ...},
-            "ci_upper_97_5": {"C01": float, ...},
-            "cv_weights":    {"C01": float, ...},
+            "mean_weights":   {"C01": float, ...},
+            "std_weights":    {"C01": float, ...},
+            "ci_lower_2_5":   {"C01": float, ...},
+            "ci_upper_97_5":  {"C01": float, ...},
+            "cv_weights":     {"C01": float, ...},
             "avg_kendall_tau":  float,
             "avg_spearman_rho": float,
             "kendall_w":        float,
@@ -516,15 +462,15 @@ details = {
             "province_std_rank":   {"Hanoi": float, ...},
             "province_prob_top1":  {"Hanoi": float, ...},
             "province_prob_topK":  {"Hanoi": float, ...},
-            # Pairwise win probability: rank_win_matrix[i][j] = P(i outranks j)
+            # P[i][j] = P(province i outranks province j) across simulations
             "rank_win_matrix": {"Hanoi": {"Ho Chi Minh City": float, ...}, ...},
         },
     },
 
-    # ── Global SC weights (Level 1 × Level 2 product) ─────────────────────
-    "global_sc_weights": {"SC11": float, ..., "SC83": float},   # sums to 1
+    # Global SC weights (Level 1 × Level 2 product)
+    "global_sc_weights": {"SC11": float, ..., "SC83": float},  # sums to 1
 
-    # ── Hyperparameters used ───────────────────────────────────────────────
+    # Hyperparameters used (θ* and tuning metadata)
     "hyperparameters": {
         "beta_a":              float,
         "beta_b":              float,
@@ -536,7 +482,7 @@ details = {
         "tuning_best_score":   float,
     },
 
-    # ── Temporal stability ─────────────────────────────────────────────────
+    # Temporal stability check result
     "stability": {
         "cosine_similarity":   float | None,
         "pearson_correlation": float | None,
@@ -545,7 +491,7 @@ details = {
         "note":                str,
     },
 
-    # ── Metadata ───────────────────────────────────────────────────────────
+    # Metadata
     "n_observations":    int,
     "n_criteria_groups": int,   # = 8
     "n_subcriteria":     int,   # = 29
@@ -556,53 +502,36 @@ details = {
 
 **What `pipeline.py` reads from `details`:**
 
-| `pipeline.py` read path | New location |
+| Read path | Used for |
 |---|---|
-| `details["global_sc_weights"][sc]` | Direct replacement for old per-method weight extraction |
-| `details["level2"]["criterion_weights"][ck]` | Passed to Stage 2 ER aggregation |
-| `details["level2"]["mc_diagnostics"]["avg_kendall_tau"]` | Final stability report |
+| `details["global_sc_weights"][sc]` | SC weights for Stage 1 MCDM |
+| `details["level2"]["criterion_weights"][ck]` | Criterion weights for Stage 2 ER |
+| `details["level2"]["mc_diagnostics"]["avg_kendall_tau"]` | Stability report |
 | `details["stability"]["is_stable"]` | Temporal stability flag |
-| `details["hyperparameters"]` | Logged in pipeline run summary |
+| `details["hyperparameters"]` | Pipeline run summary log |
 
 ---
 
-## 10. Configuration Changes (`config.py`)
-
-Replace the current `WeightingConfig` dataclass entirely - no compatibility aliases:
+## 6. Configuration (`WeightingConfig`)
 
 ```python
-from __future__ import annotations
-from dataclasses import dataclass, field
-from typing import Literal
-
-
 @dataclass
 class WeightingConfig:
+    """Monte Carlo Entropy–CRITIC Ensemble Weighting configuration."""
 
-    """Monte Carlo Entropy–CRITIC Ensemble Weighting configuration.
-
-    Two-level hierarchical design
-    ────────────────────────────────
-    Level 1 : MC ensemble on each of 8 criterion groups (m × n_k matrices)
-          → local SC weights summing to 1 within each group
-    Level 2 : MC ensemble on criterion composite matrix (m × 8)
-          → criterion weights summing to 1 globally
-    Global  : global_SC_weight = local_SC_weight × criterion_weight
-    """
-
-    # ── Core MC parameters ────────────────────────────────────────────────
+    # Core MC parameters
     mc_n_simulations: int = 2000        # N: full inference iterations per level
     mc_n_tuning_simulations: int = 500  # N_tune: per grid-point simulations
 
-    # ── Beta blending prior ───────────────────────────────────────────────
+    # Beta blending prior
     beta_a: float = 1.0    # α_a (Entropy side);  Beta(1,1) = Uniform(0,1)
     beta_b: float = 1.0    # α_b (CRITIC side)
 
-    # ── Data perturbation ────────────────────────────────────────────────
+    # Data perturbation
     noise_sigma_scale: float = 0.02   # σ_scale: fraction of column std
     boot_fraction: float = 1.0        # province resample ratio
 
-    # ── Tuning ───────────────────────────────────────────────────────────
+    # Tuning
     perform_tuning: bool = True
     use_bayesian_tuning: bool = False   # requires scikit-optimize
     tuning_objective: Literal[
@@ -612,140 +541,113 @@ class WeightingConfig:
     ] = "avg_kendall_tau"
     top_k_stability: int = 10
 
-    # ── Stability verification ──────────────────────────────────────────
+    # Stability verification
     stability_threshold: float = 0.95
 
-    # ── Convergence ─────────────────────────────────────────────────────
+    # Convergence
     convergence_tolerance: float = 5e-5
-    conv_min_iters_fraction: float = 1 / 6   # start after N//6 iters
+    conv_min_iters_fraction: float = 1 / 6   # start checking after N//6 iters
 
-    # ── Numerics ─────────────────────────────────────────────────────────
+    # Numerics
     epsilon: float = 1e-10
     seed: int | None = None             # RandomState seed for reproducibility
 ```
 
-> **Historical note:** Earlier versions of this project used a 4-method
-> Game Theory Weight Combination (GTWC) pipeline (Entropy + CRITIC +
-> MEREC + Standard Deviation). The pipeline was replaced with the current
-> two-method MC ensemble because GTWC's four-method fusion added complexity
-> without measurable ranking improvement, while the Beta-blended Entropy +
-> CRITIC ensemble provides full uncertainty quantification and is
-> hyperparameter-tuned end-to-end.
+---
+
+## 7. Module Structure
+
+| File | Role |
+|---|---|
+| `weighting/hybrid_weighting.py` | `HybridWeightingCalculator` — main two-level MC ensemble |
+| `weighting/entropy.py` | `EntropyWeightCalculator` — Shannon entropy weights |
+| `weighting/critic.py` | `CRITICWeightCalculator` — CRITIC weights |
+| `weighting/adaptive.py` | `AdaptiveWeightCalculator` — NaN-aware utility; `'hybrid'` mode = geometric mean of Entropy + CRITIC |
+| `weighting/bootstrap.py` | Bayesian bootstrap weight sampling |
+| `weighting/validation.py` | `temporal_stability_verification` — split-half cosine metric |
+| `weighting/normalization.py` | `global_min_max_normalize`, `GlobalNormalizer` |
+| `weighting/base.py` | `WeightResult` dataclass; `calculate_weights` convenience function |
+| `weighting/__init__.py` | Module exports |
+| `config.py` | `WeightingConfig` dataclass |
+| `pipeline.py` | Orchestration — calls `HybridWeightingCalculator`, reads `details` |
+| `ranking/pipeline.py` | `_derive_hierarchical_weights()` — receives criterion weights from `details["level2"]` |
+| `tests/test_weighting.py` | `TestHybridWeightingCalculator`, `TestEntropyWeightCalculator`, `TestCRITICWeightCalculator` |
 
 ---
 
-## 11. Module Structure Reference
+## 8. Implementation Notes
 
-| File | Action | Notes |
-|---|---|---|
-| `weighting/hybrid_weighting.py` | Primary pipeline | `HybridWeightingCalculator` — two-level MC ensemble |
-| `weighting/__init__.py` | Module entry point | Exports `HybridWeightingCalculator`, `EntropyWeightCalculator`, `CRITICWeightCalculator`, and utilities |
-| `weighting/base.py` | Base types | `WeightResult` dataclass; `calculate_weights` convenience function for `entropy` / `critic` / `equal` |
-| `weighting/entropy.py` | Base method | Shannon entropy weights; used by both the MC ensemble and `AdaptiveWeightCalculator` |
-| `weighting/critic.py` | Base method | CRITIC weights; used by both the MC ensemble and `AdaptiveWeightCalculator` |
-| `weighting/adaptive.py` | NaN-aware utility | `AdaptiveWeightCalculator` — excludes all-NaN rows/columns, imputes partial NaN; `'hybrid'` mode = geometric mean of Entropy + CRITIC |
-| `weighting/bootstrap.py` | Uncertainty | Bayesian bootstrap weight sampling |
-| `weighting/validation.py` | Stability | `temporal_stability_verification`; split-half cosine metric |
-| `weighting/normalization.py` | Normalization | `global_min_max_normalize`, `GlobalNormalizer` |
-| `config.py` | Configuration | `WeightingConfig` dataclass (see Section 10) |
-| `pipeline.py` | Orchestration | Calls `HybridWeightingCalculator`; reads `details["global_sc_weights"]` and `details["level2"]["criterion_weights"]` |
-| `ranking/pipeline.py` | Ranking | `_derive_hierarchical_weights()` uses externally supplied criterion weights from `details["level2"]["criterion_weights"]` |
-| `tests/test_weighting.py` | Tests | `TestHybridWeightingCalculator`, `TestEntropyWeightCalculator`, `TestCRITICWeightCalculator` |
+### Province-block bootstrap with variable block sizes
 
----
+Some province × year combinations are excluded by the pre-filter in `pipeline.py`. Province blocks are built from actual row indices in the pre-filtered `panel_df`. The stacked bootstrap matrix has $m = \sum_k |\text{block}[k]|$ rows, which may vary if blocks have different sizes. `GlobalMinMax` normalization is applied after stacking.
 
-## 12. Implementation Notes and Edge Cases
-
-### 12.1 Province-Block Bootstrap with Variable Block Sizes
-
-Some province × year combinations are excluded by the pre-filter in `pipeline.py`. Use actual row indices for each province from the pre-filtered `panel_df`. The stacked bootstrap matrix has $m = \sum_k |\text{block}[k]|$ rows (variable if blocks differ in size). Apply `GlobalMinMax` after stacking.
-
-### 12.2 Minimum Province Count Fallback
+### Minimum province count fallback
 
 If fewer than 10 distinct provinces remain after NaN exclusion, cross-sectional block bootstrap degenerates. Fall back to standard Dirichlet row-level resampling and log `WARNING`. Handles degenerate unit-test inputs.
 
-### 12.3 CRITIC Ill-Conditioning Under Extreme Bootstrap Draws
+### CRITIC ill-conditioning under extreme bootstrap draws
 
-Repeated province blocks may make columns near-constant ($\sigma_j \to 0$). Guard in `CRITICWeightCalculator`: constant columns get $C_j = \varepsilon$. No additional handling needed.
+Repeated province blocks may cause columns to become near-constant ($\sigma_j \to 0$). Guard in `CRITICWeightCalculator`: constant columns receive $C_j = \varepsilon$. No additional handling is needed.
 
-### 12.4 Failed Simulation Handling
-
-If `EntropyWeightCalculator` or `CRITICWeightCalculator` raises any exception: catch, increment `failed_count`, continue. If `OK / N < 0.80`, log `WARNING` and set `details["level1"][Ck]["mc_diagnostics"]["quality_flag"] = "low_convergence"` or analogously for Level 2.
-
-### 12.5 Log-Normal Noise Calibration
-
-Default $\sigma_{\text{scale}} = 0.02$: ≈ ±2% multiplicative noise relative to each column's std. On normalized scale (typical col std ≈ 0.2–0.4), absolute noise ≈ 0.004–0.008. Physically meaningful for socioeconomic measurement uncertainty. The tuning grid finds the optimal $\sigma_{\text{scale}}$ for this specific panel.
-
-### 12.6 `pipeline.py` and `PipelineResult` Migration
-
-Old `PipelineResult` fields `merec_weights` and `std_dev_weights` are **removed** - no zero-vector placeholders. New `pipeline.py` weight extraction logic:
+### `pipeline.py` weight extraction
 
 ```python
-# OLD (breaks with new system):
-merec_w = np.array([details["individual_weights"]["merec"][c] for c in subcriteria])
-
-# NEW:
+# Extract global SC weights and criterion weights from WeightResult.details:
 global_sc_w = result.details["global_sc_weights"]
-sc_weights = np.array([global_sc_w[c] for c in subcriteria])
+sc_weights  = np.array([global_sc_w[c] for c in subcriteria])
 
 criterion_w = result.details["level2"]["criterion_weights"]
 ```
 
 Add `mc_ensemble_diagnostics: Optional[Dict] = None` to `PipelineResult` to surface `details["level2"]["mc_diagnostics"]` for visualization and reporting.
 
-### 12.7 `ranking/pipeline.py` - `_derive_hierarchical_weights()` Update
+### `ranking/pipeline.py` — `_derive_hierarchical_weights()` update
 
-The current method derives criterion weights by summing SC weights within each group (deterministic derivation). After migration, this method receives criterion weights directly from `details["level2"]["criterion_weights"]` - it no longer derives them. Signature update:
+After migration, this method receives criterion weights directly from `details["level2"]["criterion_weights"]` rather than deriving them by summing SC weights:
 
 ```python
-# OLD:
-def _derive_hierarchical_weights(self, subcriteria_weights, hierarchy, ctx):
-    # ... sums local weights to get criterion weights ...
-
-# NEW (accepts externally computed criterion weights):
 def _derive_hierarchical_weights(
     self,
-    subcriteria_weights: Dict[str, float],    # 29 global SC weights
-    criterion_weights: Dict[str, float],      # 8 criterion weights from Level 2
+    subcriteria_weights: Dict[str, float],   # 29 global SC weights
+    criterion_weights: Dict[str, float],     # 8 criterion weights from Level 2
     hierarchy: HierarchyMapping,
     ctx: YearContext,
 ) -> HierarchicalWeights:
-    # Uses criterion_weights directly; no summation derivation
+    # Uses criterion_weights directly — no summation derivation
 ```
 
-### 12.8 Temporal Stability Verification Callback
+### Pairwise win matrix serialisation
 
-The `compute_weights_from_df` callback passed to `TemporalStabilityValidator` calls `MonteCarloEnsembleWeighting` with `perform_tuning=False` and `mc_n_simulations=200`, using the already-tuned $\theta^*$ from Step 2. This avoids re-running the expensive tuning grid on the split-half data.
+For $m = 63$: $63 \times 63 = 3{,}969$ floats — trivially small. Store as `{province: {province: float}}` nested dict in `details["level2"]["mc_diagnostics"]["rank_win_matrix"]`. Keep internally as an $(m, m)$ NumPy array.
 
-### 12.9 Pairwise Win Matrix Serialisation
+### Temporal stability verification callback
 
-For $m = 63$: $63 \times 63 = 3{,}969$ floats - trivially small. Store as `{province: {province: float}}` nested dict in `details["level2"]["mc_diagnostics"]["rank_win_matrix"]`. Keep as `(m, m)` NumPy array internally.
+The callback passed to `TemporalStabilityValidator` calls `MonteCarloEnsembleWeighting` with `perform_tuning=False` and `mc_n_simulations=200`, using the already-tuned $\theta^*$ from Step 2. This avoids re-running the expensive tuning grid on the split-half data.
 
 ---
 
-## 13. Statistical Validity Checklist
+## 9. Statistical Validity Checklist
 
 | Requirement | Status | Notes |
 |---|---|---|
-| Bootstrap exchangeability unit is correct | ✓ | Province-block resampling - provinces are the i.i.d. population units |
-| Positivity preservation | ✓ | Log-normal multiplicative noise: $X^{(s)} = X_{\text{boot}} \odot e^E > 0$ always |
-| Simplex constraint - Level 1 | ✓ | Each group's local weights sum to 1; proved via convex combination + re-normalization |
-| Simplex constraint - Level 2 | ✓ | Criterion weights sum to 1; same proof |
-| Simplex constraint - Global | ✓ | $\sum_k v_k \sum_{j \in k} u_{k,j} = \sum_k v_k \cdot 1 = 1$ |
+| Bootstrap exchangeability unit is correct | ✓ | Province-block resampling — provinces are the i.i.d. population units |
+| Positivity preservation | ✓ | Log-normal noise: $X^{(s)} = X_\text{boot} \odot e^\varepsilon > 0$ always |
+| Simplex constraint — Level 1 | ✓ | Each group's local weights sum to 1; proved via convex combination |
+| Simplex constraint — Level 2 | ✓ | Criterion weights sum to 1; same proof |
+| Simplex constraint — Global | ✓ | $\sum_k v_k \sum_{j \in k} u_{k,j} = \sum_k v_k \cdot 1 = 1$ |
 | CI width controlled by $N$ | ✓ | $N = 2000$: MCSE of 2.5th pct $< 1.1\%$ of posterior std |
 | Rank correlation handles ties | ✓ | Kendall's $\tau_b$ with tie correction via `scipy.stats.kendalltau` |
 | Convergence criterion on posterior mean | ✓ | $L^\infty < 5 \times 10^{-5}$; checked every $N/20$ from $N/6$ |
-| Tuning separated from inference | ✓ | Tuning uses $N_{\text{tune}} = 500$; inference uses $N = 2000$ on same data |
+| Tuning separated from inference | ✓ | Tuning uses $N_\text{tune} = 500$; inference uses $N = 2000$ on same data |
 | No future data leakage | ✓ | Tuning objective is a procedure property; no predictive outcome involved |
 | Level 2 input constructed from Level 1 | ✓ | Composite matrix $Z$ built from Level 1 posterior-mean local weights |
 | Failed-simulation robustness | ✓ | Try/except per simulation; quality flag if `OK/N < 0.80` |
 | Temporal stability verified | ✓ | Split-half test via `TemporalStabilityValidator`; callback uses $\theta^*$ |
 | Reproducibility | ✓ | Controlled by `config.seed` via `np.random.RandomState` |
-| No backward-compat bloat | ✓ | Old keys (`bootstrap`, `merec`, `std_dev`) fully removed from `details` |
 
 ---
 
-## 14. References
+## 10. References
 
 1. Shannon, C.E. (1948). A Mathematical Theory of Communication. *Bell System Technical Journal*, 27(3), 379–423.
 2. Diakoulaki, D., Mavrotas, G., & Papayannakis, L. (1995). Determining objective weights in multiple criteria problems: The CRITIC method. *Computers & Operations Research*, 22(7), 763–770.
@@ -756,4 +658,3 @@ For $m = 63$: $63 \times 63 = 3{,}969$ floats - trivially small. Store as `{prov
 7. Davison, A.C. & Hinkley, D.V. (1997). *Bootstrap Methods and Their Application*. Cambridge University Press.
 8. Mockus, J. (1994). Application of Bayesian approach to numerical methods of global and stochastic optimization. *Journal of Global Optimization*, 4(4), 347–365.
 9. Snoek, J., Larochelle, H., & Adams, R.P. (2012). Practical Bayesian Optimization of Machine Learning Algorithms. *NeurIPS 2012*, 2951–2959.
-

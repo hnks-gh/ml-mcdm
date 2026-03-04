@@ -63,6 +63,8 @@ from .preprocessing import PanelFeatureReducer
 from .evaluation import ForecastEvaluator, AblationStudy
 import functools
 
+from config import ForecastConfig
+
 
 def _silence_warnings(func):
     """Scope all warning filters to the duration of *func* only."""
@@ -312,12 +314,17 @@ class UnifiedForecaster:
                  conformal_alpha: float = 0.05,
                  cv_folds: int = 3,
                  random_state: int = 42,
-                 verbose: bool = True):
+                 verbose: bool = True,
+                 config: Optional[ForecastConfig] = None):
         self.conformal_method = conformal_method
         self.conformal_alpha = conformal_alpha
         self.cv_folds = cv_folds
         self.random_state = random_state
         self.verbose = verbose
+        # ForecastConfig instance for model-level hyperparameters (gb_max_depth,
+        # gb_n_estimators, nam_n_basis, nam_n_iterations, pvar_lag_selection_method).
+        # When None, _create_models() falls back to hardened production defaults.
+        self._config: Optional[ForecastConfig] = config
 
         self.models_: Dict[str, BaseForecaster] = {}
         self.model_weights_: Dict[str, float] = {}
@@ -328,27 +335,52 @@ class UnifiedForecaster:
         self.evaluator_: Optional[ForecastEvaluator] = None
     
     def _create_models(self) -> Dict[str, BaseForecaster]:
-        """Create all base model instances (5 diverse models)."""
+        """
+        Create all base model instances (5 diverse models).
+
+        Hyperparameters are resolved from the ForecastConfig passed to
+        ``__init__`` (if provided), otherwise production defaults are used.
+        All tunable parameters are exposed in ``ForecastConfig`` so they can
+        be adjusted without modifying source code.
+
+        Default decisions:
+            GradientBoosting : max_depth=5 (32 leaves ≈ 24 samples/leaf at
+                               n=756), n_estimators=200 (class default)
+            NAM              : n_basis=30 (60 effective params ≈ PCA dims),
+                               n_iterations=10 (sufficient backfitting)
+            PanelVAR         : lag_selection_method='cv' (hold-out MSE;
+                               only correct method for Ridge-regularised VAR)
+        """
+        # Resolve hyperparameters: config takes priority, else use defaults
+        cfg = self._config
+        gb_n_est    = cfg.gb_n_estimators           if cfg is not None else 200
+        gb_depth    = cfg.gb_max_depth              if cfg is not None else 5
+        nam_n_basis = cfg.nam_n_basis               if cfg is not None else 30
+        nam_n_iter  = cfg.nam_n_iterations          if cfg is not None else 10
+        pvar_method = cfg.pvar_lag_selection_method if cfg is not None else "cv"
+
         models = {}
 
-        # Tree-based model (1 model)
+        # --- Tier 1a: Tree-based -------------------------------------------
         models['GradientBoosting'] = GradientBoostingForecaster(
-            n_estimators=100, random_state=self.random_state
+            n_estimators=gb_n_est, max_depth=gb_depth,
+            random_state=self.random_state
         )
 
-        # Bayesian linear model (1 model)
+        # --- Tier 1b: Bayesian linear -------------------------------------
         models['BayesianRidge'] = BayesianForecaster()
 
-        # Advanced panel-specific models (4 models)
+        # --- Tier 1c: Advanced panel-specific models ----------------------
         models['QuantileRF'] = QuantileRandomForestForecaster(
             n_estimators=100, random_state=self.random_state
         )
         models['PanelVAR'] = PanelVARForecaster(
             n_lags=1, alpha=0.5, use_fixed_effects=True,
+            lag_selection_method=pvar_method,
             random_state=self.random_state
         )
         models['NAM'] = NeuralAdditiveForecaster(
-            n_basis_per_feature=10, n_iterations=5,
+            n_basis_per_feature=nam_n_basis, n_iterations=nam_n_iter,
             random_state=self.random_state
         )
 
@@ -398,9 +430,30 @@ class UnifiedForecaster:
         # Compute entity indices for the *prediction* frame.
         # X_pred.index contains province names (pred_entities from fit_transform).
         # Map each to the same integer index used during training so panel-aware
-        # base models (PanelVAR) apply the correct fixed
-        # effect and group intercept at prediction time.
+        # base models (PanelVAR) apply the correct fixed-effect and group
+        # intercept at prediction time.
         _ent_to_idx = {e: i for i, e in enumerate(panel_data.provinces)}
+
+        # ── B-7 guard: provinces absent from training entity map ──────────────
+        # Provinces not in _ent_to_idx fall back to index 0 (reference entity).
+        # In practice TemporalFeatureEngineer already excludes such provinces
+        # from X_pred, so this should never fire.  If it does, the log entry
+        # makes the hidden assumption auditable rather than silent.
+        if _ent_to_idx:
+            _missing_entities = [
+                e for e in X_pred.index if e not in _ent_to_idx
+            ]
+            if _missing_entities:
+                warnings.warn(
+                    f"UnifiedForecaster: {len(_missing_entities)} prediction "
+                    f"province(s) are absent from the training entity map and "
+                    f"will use the reference entity's fixed effects in "
+                    f"PanelVARForecaster.  Affected: {_missing_entities[:5]}"
+                    f"{'...' if len(_missing_entities) > 5 else ''}. "
+                    "Verify TemporalFeatureEngineer exclusion logic.",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
         pred_entity_indices = np.array(
             [_ent_to_idx.get(e, 0) for e in X_pred.index], dtype=int
         ) if _ent_to_idx else None
@@ -635,9 +688,15 @@ class UnifiedForecaster:
             if holdout_year in available_years and holdout_year > available_years[2]:
                 if self.verbose:
                     print(f"  Stage 6b: Holdout evaluation (year {holdout_year})...")
-                X_ho, y_ho, _, _ = self.feature_engineer_.fit_transform(
-                    panel_data, holdout_year
-                )
+
+                # B-5 fix: use a *fresh* TemporalFeatureEngineer instance so that
+                # calling fit_transform for holdout_year does not overwrite
+                # self.feature_engineer_.feature_names_ (which carries the
+                # target-year column list used in _aggregate_feature_importance
+                # and by callers inspecting get_feature_names() after fit_predict).
+                _ho_eng = TemporalFeatureEngineer()
+                X_ho, y_ho, _, _ = _ho_eng.fit_transform(panel_data, holdout_year)
+
                 X_ho_arr = self.feature_reducer_.transform(X_ho.values)
                 y_ho_arr = y_ho.values
                 y_ho_pred = self.super_learner_.predict(X_ho_arr)
@@ -657,9 +716,12 @@ class UnifiedForecaster:
                 if self.verbose:
                     print(f"    Holdout R\u00b2 = {holdout_performance['r2']:.4f}, "
                           f"RMSE = {holdout_performance['rmse']:.4f}")
-        except Exception as e:
+        except (ValueError, RuntimeError, AttributeError) as e:
+            # Catch shape mismatches (feature dim mismatch between holdout and
+            # target year), sklearn state errors, and attribute errors from an
+            # incompatible holdout year — but let unexpected errors propagate.
             if self.verbose:
-                print(f"    Holdout evaluation skipped: {e}")
+                print(f"    Holdout evaluation skipped: {type(e).__name__}: {e}")
 
         # Build training info
         training_info = {

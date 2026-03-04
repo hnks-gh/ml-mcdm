@@ -2,16 +2,16 @@
   "n_models": 5,
   "n_predictions": 61,
   "model_weights": {
-    "GradientBoosting": 0.2,
-    "BayesianRidge": 0.2,
-    "QuantileRF": 0.2,
-    "PanelVAR": 0.2,
-    "NAM": 0.2
+    "GradientBoosting": 0.15662512771676537,
+    "BayesianRidge": 0.3910655946355732,
+    "QuantileRF": 0.2051165599304858,
+    "PanelVAR": 0.11402708943338405,
+    "NAM": 0.13316562828379155
   },
   "holdout_performance": {
-    "r2": 0.9905821541494145,
-    "rmse": 0.04931073034940624,
-    "mae": 0.03129863782148889
+    "r2": 0.9730406226457095,
+    "rmse": 0.08342967944794512,
+    "mae": 0.05225544256172006
   },
   "training_info": {
     "n_samples": 126,

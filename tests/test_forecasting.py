@@ -785,3 +785,198 @@ class TestKnownAnswerForecasting:
             f"BayesianForecaster failed to recover y=2x; max relative error "
             f"= {rel_err.max():.3f}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Regression tests for Phase 1-11 audit fixes (P11)
+# ---------------------------------------------------------------------------
+
+class TestAuditRegressions:
+    """
+    Regression tests that pin the behaviour introduced by the Phase 1-11
+    production-hardening audit.  Each test documents exactly which bug it
+    guards against so that future changes to the production code will
+    immediately reveal a regression.
+    """
+
+    # -----------------------------------------------------------------------
+    # B-2  PanelVAR lag_selection deprecation (Phase 3)
+    # -----------------------------------------------------------------------
+
+    def test_b2_lag_selection_deprecated_bic_warns(self):
+        """Bug B-2: lag_selection='bic' must emit DeprecationWarning and map to 'cv'."""
+        from forecasting.panel_var import PanelVARForecaster
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            m = PanelVARForecaster(lag_selection="bic")
+
+        dep_warns = [w for w in caught if issubclass(w.category, DeprecationWarning)]
+        assert len(dep_warns) >= 1, "Expected DeprecationWarning for lag_selection='bic'"
+        assert "lag_selection_method" in str(dep_warns[0].message)
+        assert m.lag_selection_method == "cv"
+
+    def test_b2_lag_selection_deprecated_aic_warns(self):
+        """Bug B-2: lag_selection='aic' must also warn and map to 'cv'."""
+        from forecasting.panel_var import PanelVARForecaster
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            m = PanelVARForecaster(lag_selection="aic")
+
+        dep_warns = [w for w in caught if issubclass(w.category, DeprecationWarning)]
+        assert len(dep_warns) >= 1
+        assert m.lag_selection_method == "cv"
+
+    def test_b2_new_api_no_warning(self):
+        """Bug B-2: new lag_selection_method='cv' raises no DeprecationWarning."""
+        from forecasting.panel_var import PanelVARForecaster
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            m = PanelVARForecaster(lag_selection_method="cv")
+
+        dep_warns = [w for w in caught if issubclass(w.category, DeprecationWarning)]
+        assert len(dep_warns) == 0, "No DeprecationWarning expected for new API"
+        assert m.lag_selection_method == "cv"
+
+    # -----------------------------------------------------------------------
+    # B-4  NAM² identifiability — training-data mean centering (Phase 6)
+    # -----------------------------------------------------------------------
+
+    def test_b4_nam2_interaction_centered_on_training_data(self):
+        """Bug B-4: each interaction term g_jk must have E_train[g_jk]=0 (machine eps)."""
+        from forecasting.neural_additive import NeuralAdditiveForecaster
+
+        rng = np.random.RandomState(7)
+        X = rng.randn(80, 6)
+        y = rng.randn(80)
+
+        nam = NeuralAdditiveForecaster(
+            n_basis_per_feature=20, n_iterations=5,
+            include_interactions=True, max_interaction_features=3,
+            random_state=42,
+        )
+        nam.fit(X, y)
+
+        X_sc = nam._scaler.transform(X)
+        centers = nam._multi_output_interaction_centers.get(0, {})
+        assert len(centers) > 0, "Expected at least one interaction term with max_interaction_features=3"
+
+        for (j, k), net in nam._multi_output_interaction_shapes[0].items():
+            raw = net.predict(X_sc[:, [j, k]])
+            stored = centers[(j, k)]
+            bias = abs(float(np.mean(raw - stored)))
+            assert bias < 1e-9, (
+                f"E_train[g_{j}{k} - center] = {bias:.2e} (expected < 1e-9). "
+                "NAM\u00b2 identifiability constraint violated."
+            )
+
+    def test_b4_nam2_predict_is_stable_across_batches(self):
+        """Bug B-4: predict() on different test batches must NOT recompute centers."""
+        from forecasting.neural_additive import NeuralAdditiveForecaster
+
+        rng = np.random.RandomState(8)
+        X_tr = rng.randn(80, 6)
+        y_tr = rng.randn(80)
+
+        nam = NeuralAdditiveForecaster(
+            n_basis_per_feature=20, n_iterations=5,
+            include_interactions=True, max_interaction_features=3,
+            random_state=42,
+        )
+        nam.fit(X_tr, y_tr)
+
+        X_a = rng.randn(10, 6)
+        X_b = rng.randn(10, 6)
+
+        # Concatenated prediction must equal predictions done separately
+        pred_ab = nam.predict(np.vstack([X_a, X_b]))
+        pred_a  = nam.predict(X_a)
+        pred_b  = nam.predict(X_b)
+
+        np.testing.assert_allclose(
+            pred_ab, np.concatenate([pred_a, pred_b]),
+            atol=1e-12,
+            err_msg="NAM\u00b2 predict() result must be batch-invariant (no test-data recentering).",
+        )
+
+    # -----------------------------------------------------------------------
+    # B-6  sklearn_quantile graceful ImportError (Phase 5)
+    # -----------------------------------------------------------------------
+
+    def test_b6_qrf_raises_import_error_when_package_absent(self, monkeypatch):
+        """Bug B-6: QuantileRandomForestForecaster raises clear ImportError when
+        sklearn_quantile is unavailable (simulated via monkeypatch)."""
+        import forecasting.quantile_forest as qfmod
+        from forecasting.quantile_forest import QuantileRandomForestForecaster
+
+        monkeypatch.setattr(qfmod, "_SKLEARN_QUANTILE_AVAILABLE", False)
+
+        with pytest.raises(ImportError, match="pip install sklearn-quantile"):
+            QuantileRandomForestForecaster()
+
+    def test_b6_qrf_import_error_mentions_pyproject(self, monkeypatch):
+        """Bug B-6: ImportError message must mention pyproject.toml for discoverability."""
+        import forecasting.quantile_forest as qfmod
+        from forecasting.quantile_forest import QuantileRandomForestForecaster
+
+        monkeypatch.setattr(qfmod, "_SKLEARN_QUANTILE_AVAILABLE", False)
+
+        with pytest.raises(ImportError, match="pyproject.toml"):
+            QuantileRandomForestForecaster()
+
+    # -----------------------------------------------------------------------
+    # B-1 / Config round-trip (Phase 1-2)
+    # -----------------------------------------------------------------------
+
+    def test_config_forecast_fields_present_and_correct(self):
+        """Bug B-1 / Phase 1: ForecastConfig must expose all 5 new hyperparameter fields."""
+        from config import ForecastConfig
+
+        cfg = ForecastConfig()
+        assert cfg.gb_max_depth == 5,        f"gb_max_depth={cfg.gb_max_depth}"
+        assert cfg.gb_n_estimators == 200,   f"gb_n_estimators={cfg.gb_n_estimators}"
+        assert cfg.nam_n_basis == 30,        f"nam_n_basis={cfg.nam_n_basis}"
+        assert cfg.nam_n_iterations == 10,   f"nam_n_iterations={cfg.nam_n_iterations}"
+        assert cfg.pvar_lag_selection_method == "cv"
+
+    def test_config_forecast_custom_values_round_trip(self):
+        """Phase 1: ForecastConfig custom values survive to_dict() serialisation."""
+        from config import Config, ForecastConfig
+
+        cfg = ForecastConfig(gb_max_depth=6, nam_n_basis=50)
+        # Embed in master Config to exercise to_dict()
+        master = Config(forecast=cfg)
+        d = master.to_dict()
+        assert d["forecast"]["gb_max_depth"] == 6
+        assert d["forecast"]["nam_n_basis"] == 50
+
+    def test_config_wires_into_unified_create_models(self):
+        """Phase 2: UnifiedForecaster._create_models() reads from ForecastConfig."""
+        from forecasting.unified import UnifiedForecaster
+        from config import ForecastConfig
+
+        cfg = ForecastConfig(gb_max_depth=3, gb_n_estimators=50, nam_n_basis=15, nam_n_iterations=3)
+        uf = UnifiedForecaster(config=cfg)
+        models = uf._create_models()
+
+        assert models["GradientBoosting"].max_depth == 3
+        assert models["GradientBoosting"].n_estimators == 50
+        assert models["NAM"].n_basis_per_feature == 15
+        assert models["NAM"].n_iterations == 3
+
+    # -----------------------------------------------------------------------
+    # B-10  GradientBoosting class default max_depth=5 (Phase 10)
+    # -----------------------------------------------------------------------
+
+    def test_b10_gb_class_default_max_depth_is_5(self):
+        """Bug B-1 / Phase 10: GradientBoostingForecaster class default max_depth must be 5."""
+        from forecasting.gradient_boosting import GradientBoostingForecaster
+
+        gb = GradientBoostingForecaster()
+        assert gb.max_depth == 5, (
+            f"Class default max_depth={gb.max_depth}, expected 5. "
+            "The class default was aligned to n=756 sample-size optimum in Phase 10."
+        )
+        assert gb._base_model.max_depth == 5

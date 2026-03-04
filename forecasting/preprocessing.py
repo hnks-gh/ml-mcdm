@@ -109,18 +109,32 @@ class PanelFeatureReducer:
         self._scaler = StandardScaler()
         X_scaled = self._scaler.fit_transform(X_var)
 
-        # Stage C: PCA with adaptive component cap
+        # Stage C: PCA with adaptive component cap.
+        #
+        # The cap n_cap = min(n_samples // 5, max_components) enforces p/n <= 0.2
+        # in every CV fold, preventing over-fitting in the PCA-compressed space.
+        #
+        # Two-step logic:
+        #   Step 1 — fit using the variance-ratio criterion (0.95) so sklearn
+        #            automatically selects the minimal set of PCs that together
+        #            explain >= 95 % of variance.  This is the common case and
+        #            usually produces far fewer than n_cap components.
+        #   Step 2 — if the variance criterion selected more components than the
+        #            p/n cap allows, refit with the integer cap.  This happens
+        #            only when the feature space has very high intrinsic dimension
+        #            (e.g. many weakly correlated sub-criteria for very short panels).
         n_cap = min(n_samples // 5, self.max_components, X_var.shape[1])
         n_cap = max(n_cap, 2)  # always keep at least 2 components
 
+        # Step 1: variance-ratio criterion
         self._pca = PCA(
-            n_components=min(self.pca_variance_ratio, n_cap),
+            n_components=self.pca_variance_ratio,
             svd_solver="full",
             random_state=self.random_state,
         )
         self._pca.fit(X_scaled)
 
-        # If PCA chose more components than the cap, restrict
+        # Step 2: enforce the p/n <= 0.2 hard cap
         if self._pca.n_components_ > n_cap:
             self._pca = PCA(
                 n_components=n_cap,
