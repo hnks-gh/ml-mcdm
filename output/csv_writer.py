@@ -308,13 +308,14 @@ class CsvWriter:
                 lower = intervals.get('lower')
                 upper = intervals.get('upper')
                 if lower is not None and upper is not None:
-                    combined = pd.DataFrame(index=lower.index)
+                    cols_dict = {}
                     for col in lower.columns:
-                        combined[f'{col}_lower'] = lower[col]
-                        combined[f'{col}_upper'] = upper[col]
+                        cols_dict[f'{col}_lower'] = lower[col]
+                        cols_dict[f'{col}_upper'] = upper[col]
                         if col in forecast_result.predictions.columns:
-                            combined[f'{col}_point'] = forecast_result.predictions[col]
-                            combined[f'{col}_width'] = upper[col] - lower[col]
+                            cols_dict[f'{col}_point'] = forecast_result.predictions[col]
+                            cols_dict[f'{col}_width'] = upper[col] - lower[col]
+                    combined = pd.concat(cols_dict, axis=1)
                     combined.index.name = 'Entity'
                     saved['prediction_intervals'] = self._save_csv(
                         combined, 'prediction_intervals.csv',
