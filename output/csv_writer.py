@@ -640,32 +640,25 @@ class CsvWriter:
 
 
     # ==================================================================
-    # 12. METHOD WEIGHTS — entropy-only / critic-only / hybrid side-by-side
+    # 12. METHOD WEIGHTS — CRITIC weights at SC and criterion level
     # ==================================================================
 
     def save_method_weights(self, weights: Dict[str, Any]) -> Dict[str, str]:
         """
-        Write per-method weight tables so readers can compare Entropy, CRITIC,
-        and the hybrid ensemble side-by-side at both SC and criterion level.
+        Write CRITIC weight tables at both SC and criterion level.
 
         Files produced
         --------------
-        weighting/entropy_weights.csv
         weighting/critic_weights.csv
-        weighting/method_weights_comparison.csv
         """
         saved: Dict[str, str] = {}
-        subcriteria  = weights.get('subcriteria', [])
-        groups       = weights.get('criteria_groups', {})
-        details      = weights.get('details', {})
-        level1       = details.get('level1', {})
+        subcriteria = weights.get('subcriteria', [])
+        groups      = weights.get('criteria_groups', {})
+        details     = weights.get('details', {})
+        level1      = details.get('level1', {})
 
-        global_sc    = weights.get('global_sc_weights', {})
-        entropy_sc   = weights.get('entropy_sc_weights', {})
-        critic_sc    = weights.get('critic_sc_weights', {})
-        entropy_crit = weights.get('entropy_criterion_weights', {})
-        critic_crit  = weights.get('critic_criterion_weights', {})
-        hybrid_crit  = weights.get('criterion_weights', {})
+        global_sc   = weights.get('global_sc_weights', {})
+        critic_crit = weights.get('critic_criterion_weights', {})
 
         # Helper — resolve criterion ID for a given SC code
         sc_to_crit: Dict[str, str] = {}
@@ -673,41 +666,18 @@ class CsvWriter:
             for sc in scs:
                 sc_to_crit[sc] = crit_id
 
-        # ── entropy_weights.csv ─────────────────────────────────────────
-        try:
-            e_rows = []
-            for sc in subcriteria:
-                crit_id = sc_to_crit.get(sc, '')
-                l1e = level1.get(crit_id, {}).get('entropy_local_weights', {})
-                e_rows.append({
-                    'Subcriteria':           sc,
-                    'Criterion':             crit_id,
-                    'Entropy_Local_Weight':  float(l1e.get(sc, 0.0)),
-                    'Entropy_Crit_Weight':   float(entropy_crit.get(crit_id, 0.0)),
-                    'Entropy_Global_Weight': float(entropy_sc.get(sc, 0.0)),
-                    'Entropy_Rank':          0,
-                })
-            e_df = pd.DataFrame(e_rows).set_index('Subcriteria')
-            e_df['Entropy_Rank'] = e_df['Entropy_Global_Weight'].rank(
-                ascending=False, method='min').astype(int)
-            saved['entropy'] = self._save_csv(
-                e_df, 'entropy_weights.csv',
-                directory=self.weighting_dir, float_fmt='%.6f')
-        except Exception as _exc:
-            _logger.debug('entropy weights skipped: %s', _exc)
-
         # ── critic_weights.csv ──────────────────────────────────────────
         try:
             c_rows = []
             for sc in subcriteria:
                 crit_id = sc_to_crit.get(sc, '')
-                l1c = level1.get(crit_id, {}).get('critic_local_weights', {})
+                l1c = level1.get(crit_id, {}).get('local_sc_weights', {})
                 c_rows.append({
                     'Subcriteria':          sc,
                     'Criterion':            crit_id,
                     'Critic_Local_Weight':  float(l1c.get(sc, 0.0)),
                     'Critic_Crit_Weight':   float(critic_crit.get(crit_id, 0.0)),
-                    'Critic_Global_Weight': float(critic_sc.get(sc, 0.0)),
+                    'Critic_Global_Weight': float(global_sc.get(sc, 0.0)),
                     'Critic_Rank':          0,
                 })
             c_df = pd.DataFrame(c_rows).set_index('Subcriteria')
@@ -718,43 +688,6 @@ class CsvWriter:
                 directory=self.weighting_dir, float_fmt='%.6f')
         except Exception as _exc:
             _logger.debug('critic weights skipped: %s', _exc)
-
-        # ── method_weights_comparison.csv ───────────────────────────────
-        try:
-            cmp_rows = []
-            for sc in subcriteria:
-                crit_id = sc_to_crit.get(sc, '')
-                h_g = float(global_sc.get(sc, 0.0))
-                e_g = float(entropy_sc.get(sc, 0.0))
-                c_g = float(critic_sc.get(sc, 0.0))
-                cmp_rows.append({
-                    'Subcriteria':          sc,
-                    'Criterion':            crit_id,
-                    'Entropy_Global':       e_g,
-                    'Critic_Global':        c_g,
-                    'Hybrid_Global':        h_g,
-                    'Entropy_Crit_Weight':  float(entropy_crit.get(crit_id, 0.0)),
-                    'Critic_Crit_Weight':   float(critic_crit.get(crit_id, 0.0)),
-                    'Hybrid_Crit_Weight':   float(hybrid_crit.get(crit_id, 0.0)),
-                    'Entropy_Rank':         0,
-                    'Critic_Rank':          0,
-                    'Hybrid_Rank':          0,
-                    'Entropy_vs_Hybrid':    e_g - h_g,
-                    'Critic_vs_Hybrid':     c_g - h_g,
-                })
-            cmp_df = pd.DataFrame(cmp_rows).set_index('Subcriteria')
-            for col, rank_col in [
-                ('Entropy_Global', 'Entropy_Rank'),
-                ('Critic_Global',  'Critic_Rank'),
-                ('Hybrid_Global',  'Hybrid_Rank'),
-            ]:
-                cmp_df[rank_col] = cmp_df[col].rank(
-                    ascending=False, method='min').astype(int)
-            saved['comparison'] = self._save_csv(
-                cmp_df, 'method_weights_comparison.csv',
-                directory=self.weighting_dir, float_fmt='%.6f')
-        except Exception as _exc:
-            _logger.debug('method weights comparison skipped: %s', _exc)
 
         return saved
 

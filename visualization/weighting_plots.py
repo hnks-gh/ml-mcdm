@@ -4,13 +4,12 @@ Weighting Plots (fig03 – fig05)
 ================================
 
 Professional publication-quality figures for the objective-weighting phase.
-Six figures are produced:
+Five figures are produced:
 
-fig03  – Three-method grouped bar chart (Entropy / CRITIC / Hybrid) with MC CI
-fig03b – MC weight uncertainty: per-SC error bars with CI ribbons
-fig03c – Criterion-level three-method horizontal grouped bar + donut
-fig03d – Diverging deviation: Entropy / CRITIC vs Hybrid baseline
-fig04  – Radar (spider) with three methods overlay
+fig03  – CRITIC subcriteria bar chart (single method)
+fig03b – Weight uncertainty: per-SC error bars with CI ribbons (if CI supplied)
+fig03c – Criterion-level CRITIC horizontal bar + donut
+fig04  – Radar (spider) with CRITIC method
 fig05  – Annotated weight heatmap with optional dendrogram clustering
 """
 
@@ -27,11 +26,9 @@ from .base import (
 
 # Method display names and shared colour assignments
 _METHOD_COLORS = {
-    'Entropy': '#2E86AB',   # royal blue
-    'CRITIC':  '#C73E1D',   # crimson
-    'Hybrid':  '#17B169',   # emerald
+    'CRITIC': '#C73E1D',   # crimson
 }
-_METHOD_ORDER = ['Entropy', 'CRITIC', 'Hybrid']
+_METHOD_ORDER = ['CRITIC']
 
 _logger = logging.getLogger(__name__)
 
@@ -47,7 +44,7 @@ class WeightingPlotter(BasePlotter):
         self,
         weights: Dict[str, np.ndarray],
         component_names: List[str],
-        title: str = 'Subcriteria Weight Comparison — Entropy / CRITIC / Hybrid',
+        title: str = 'Subcriteria Weight Comparison — CRITIC',
         save_name: str = 'fig03_weights_comparison.png',
         ci_lower: Optional[np.ndarray] = None,
         ci_upper: Optional[np.ndarray] = None,
@@ -91,8 +88,8 @@ class WeightingPlotter(BasePlotter):
                        color=color, edgecolors='black', linewidths=0.4,
                        zorder=5)
 
-            # MC 95 % CI overlay on Hybrid bars only
-            if method == 'Hybrid' and ci_lower is not None and ci_upper is not None:
+            # MC 95 % CI overlay on CRITIC bars when ci arrays supplied
+            if method == 'CRITIC' and ci_lower is not None and ci_upper is not None:
                 lo = ci_lower[order]
                 hi = ci_upper[order]
                 ax.fill_between(x + offsets[idx], lo, hi,
@@ -187,12 +184,12 @@ class WeightingPlotter(BasePlotter):
 
         # 95 % CI ribbon
         ax.fill_between(x, lo_sorted, hi_sorted,
-                        alpha=0.25, color=_METHOD_COLORS['Hybrid'],
-                        label='95 % MC CI', zorder=1)
+                        alpha=0.25, color=_METHOD_COLORS['CRITIC'],
+                        label='95 % CI', zorder=1)
 
         # Mean ± 1 SD error bars
         ax.errorbar(x, mean_sorted, yerr=std_sorted,
-                    fmt='o', color=_METHOD_COLORS['Hybrid'],
+                    fmt='o', color=_METHOD_COLORS['CRITIC'],
                     ecolor='#555555', elinewidth=1.2, capsize=3,
                     markersize=5, zorder=4, label='Mean ± 1 SD')
 
@@ -222,70 +219,51 @@ class WeightingPlotter(BasePlotter):
 
     def plot_criterion_weights_comparison(
         self,
-        entropy_crit: Dict[str, float],
         critic_crit: Dict[str, float],
-        hybrid_crit: Dict[str, float],
         save_name: str = 'fig03c_criterion_weights.png',
     ) -> Optional[str]:
         """
-        Horizontal grouped bar (Entropy / CRITIC / Hybrid) for the 8 criteria
-        plus a Hybrid donut chart for at-a-glance weight shares.
+        Horizontal bar chart of CRITIC criterion weights plus a donut chart
+        showing weight shares at a glance.
         """
         if not HAS_MATPLOTLIB:
             return None
 
-        crit_ids = sorted(
-            set(hybrid_crit) | set(entropy_crit) | set(critic_crit))
         crit_ids_sorted = sorted(
-            crit_ids, key=lambda c: hybrid_crit.get(c, 0), reverse=True)
+            critic_crit, key=lambda c: critic_crit.get(c, 0), reverse=True)
         n = len(crit_ids_sorted)
         if n == 0:
             return None
 
-        methods_data: Dict[str, List[float]] = {
-            'Entropy': [entropy_crit.get(c, 0) for c in crit_ids_sorted],
-            'CRITIC':  [critic_crit.get(c, 0) for c in crit_ids_sorted],
-            'Hybrid':  [hybrid_crit.get(c, 0) for c in crit_ids_sorted],
-        }
-
-        bar_h = 0.22
-        offsets = np.array([-1, 0, 1]) * bar_h
+        vals = [critic_crit.get(c, 0) for c in crit_ids_sorted]
         y = np.arange(n)
+        color = _METHOD_COLORS['CRITIC']
 
         fig, (ax_bar, ax_pie) = plt.subplots(
             1, 2, figsize=(14, max(5, n * 0.65)),
             gridspec_kw={'width_ratios': [3, 1]})
 
-        for idx, method in enumerate(_METHOD_ORDER):
-            vals = methods_data[method]
-            color = _METHOD_COLORS[method]
-            ax_bar.barh(
-                y + offsets[idx], vals, bar_h,
-                label=method, color=color,
-                edgecolor='white', linewidth=0.4, alpha=0.88,
-            )
-            for yi, v in zip(y + offsets[idx], vals):
-                ax_bar.text(v + 0.001, yi, f'{v:.3f}', va='center',
-                            fontsize=7.5, color='#333333')
+        ax_bar.barh(y, vals, 0.6, color=color,
+                    edgecolor='white', linewidth=0.4, alpha=0.88)
+        for yi, v in zip(y, vals):
+            ax_bar.text(v + 0.001, yi, f'{v:.3f}', va='center',
+                        fontsize=7.5, color='#333333')
 
         ax_bar.set_yticks(y)
         ax_bar.set_yticklabels(crit_ids_sorted, fontsize=10)
         ax_bar.set_xlabel('Criterion Weight', fontsize=11)
-        ax_bar.set_title('Criterion-Level Weight Comparison',
+        ax_bar.set_title('Criterion-Level CRITIC Weights',
                          fontsize=13, fontweight='bold', pad=10)
-        ax_bar.legend(loc='lower right', fontsize=9)
         ax_bar.axvline(1.0 / n, ls=':', lw=1, color='gray')
-        vmax = max(max(v) for v in methods_data.values())
-        ax_bar.set_xlim(0, vmax * 1.28)
+        ax_bar.set_xlim(0, max(vals) * 1.28)
         ax_bar.xaxis.grid(True, linestyle='--', alpha=0.4)
         ax_bar.set_axisbelow(True)
 
-        # Hybrid donut (right panel)
-        hybrid_vals = methods_data['Hybrid']
+        # Donut (right panel)
         wedge_colors = [CATEGORICAL_COLORS[i % len(CATEGORICAL_COLORS)]
                         for i in range(n)]
         ax_pie.pie(
-            hybrid_vals, labels=crit_ids_sorted,
+            vals, labels=crit_ids_sorted,
             colors=wedge_colors, autopct='%1.1f%%',
             startangle=90, pctdistance=0.75,
             wedgeprops={'edgecolor': 'white', 'linewidth': 1.2},
@@ -293,7 +271,7 @@ class WeightingPlotter(BasePlotter):
         )
         circle = plt.Circle((0, 0), 0.55, color='white')
         ax_pie.add_patch(circle)
-        ax_pie.set_title('Hybrid\nWeight Share', fontsize=10,
+        ax_pie.set_title('CRITIC\nWeight Share', fontsize=10,
                          fontweight='bold', pad=6)
 
         fig.tight_layout()
@@ -311,67 +289,8 @@ class WeightingPlotter(BasePlotter):
         subcriteria: List[str],
         save_name: str = 'fig03d_weight_deviation.png',
     ) -> Optional[str]:
-        """
-        Diverging bar chart where each bar shows the signed deviation of
-        Entropy and CRITIC from the Hybrid baseline.  Sub-criteria are sorted
-        by |Entropy – Hybrid| descending so the most discrepant SCs come first.
-        """
-        if not HAS_MATPLOTLIB:
-            return None
-
-        from matplotlib.patches import Patch
-
-        n = len(subcriteria)
-        entropy_dev = np.array([entropy_sc.get(sc, 0) - hybrid_sc.get(sc, 0)
-                                for sc in subcriteria])
-        critic_dev  = np.array([critic_sc.get(sc, 0)  - hybrid_sc.get(sc, 0)
-                                for sc in subcriteria])
-
-        order = np.argsort(np.abs(entropy_dev))[::-1]
-        sc_sorted = [subcriteria[i] for i in order]
-        ed_sorted = entropy_dev[order]
-        cd_sorted = critic_dev[order]
-
-        x = np.arange(n)
-        bw = 0.35
-
-        fig, ax = plt.subplots(figsize=(max(16, n * 0.65), 7))
-
-        # Entropy deviation — blue tones
-        for xi, val in zip(x - bw / 2, ed_sorted):
-            col = '#2E86AB' if val >= 0 else '#A8D5EA'
-            ax.bar(xi, val, bw, color=col, edgecolor='white',
-                   linewidth=0.4, alpha=0.88)
-
-        # CRITIC deviation — red tones
-        for xi, val in zip(x + bw / 2, cd_sorted):
-            col = '#C73E1D' if val >= 0 else '#EEA090'
-            ax.bar(xi, val, bw, color=col, edgecolor='white',
-                   linewidth=0.4, alpha=0.88)
-
-        ax.axhline(0, color='black', lw=1.2, zorder=5)
-
-        legend_elems = [
-            Patch(facecolor='#2E86AB', label='Entropy > Hybrid'),
-            Patch(facecolor='#A8D5EA', label='Entropy < Hybrid'),
-            Patch(facecolor='#C73E1D', label='CRITIC > Hybrid'),
-            Patch(facecolor='#EEA090', label='CRITIC < Hybrid'),
-        ]
-        ax.legend(handles=legend_elems, loc='upper right', ncol=2, fontsize=9)
-
-        ax.set_xticks(x)
-        ax.set_xticklabels(
-            [self._truncate(s, 11) for s in sc_sorted],
-            rotation=55, ha='right', fontsize=8,
-        )
-        ax.set_ylabel('Deviation from Hybrid Weight', fontsize=11)
-        ax.set_title('Method Deviation from Hybrid Baseline (per Sub-Criterion)',
-                     pad=12, fontsize=13, fontweight='bold')
-        ax.yaxis.grid(True, linestyle='--', alpha=0.4, zorder=0)
-        ax.set_axisbelow(True)
-        ax.set_xlim(-0.6, n - 0.4)
-        fig.tight_layout()
-        return self._save(fig, save_name)
+        """Removed — no Hybrid baseline in deterministic CRITIC pipeline."""
+        return None
 
     # ==================================================================
     #  FIG 04 – Weight Radar Chart (up to 3 methods)

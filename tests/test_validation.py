@@ -36,14 +36,8 @@ class _MinimalPanel:
     # No other attributes needed for the weight-validation methods
 
 
-def _make_weights(methods: list[str] = ("entropy", "critic"),
-                  n_criteria: int = 4,
-                  seed: int = 0) -> dict:
-    """
-    Return a minimal weights dict for validator unit tests.
-    Uses the new HybridWeightingCalculator structure with 'details', 'subcriteria',
-    'global_sc_weights', 'sc_array', and 'criterion_weights'.
-    """
+def _make_weights(n_criteria: int = 4, seed: int = 0) -> dict:
+    """Return a minimal weights dict for validator unit tests."""
     rng = np.random.RandomState(seed)
     raw = rng.dirichlet(np.ones(n_criteria))
     subcriteria = [f"S{i}" for i in range(n_criteria)]

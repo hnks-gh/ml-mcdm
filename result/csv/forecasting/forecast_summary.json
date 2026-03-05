@@ -2,16 +2,16 @@
   "n_models": 5,
   "n_predictions": 61,
   "model_weights": {
-    "GradientBoosting": 0.15662512771676537,
-    "BayesianRidge": 0.3910655946355732,
-    "QuantileRF": 0.2051165599304858,
-    "PanelVAR": 0.11402708943338405,
-    "NAM": 0.13316562828379155
+    "GradientBoosting": 0.13538345968356333,
+    "BayesianRidge": 0.41000140820187453,
+    "QuantileRF": 0.2096050069336065,
+    "PanelVAR": 0.10384721734438516,
+    "NAM": 0.14116290783657046
   },
   "holdout_performance": {
-    "r2": 0.9730406226457095,
-    "rmse": 0.08342967944794512,
-    "mae": 0.05225544256172006
+    "r2": 0.9739741921120959,
+    "rmse": 0.0819724198851954,
+    "mae": 0.051411010051755614
   },
   "training_info": {
     "n_samples": 126,
@@ -20,7 +20,14 @@
     "pca_variance_retained": 0.8634352794485767,
     "mode": "advanced",
     "ensemble_method": "super_learner",
-    "conformal_calibrated": true
+    "conformal_calibrated": true,
+    "per_model_holdout_predictions": {
+      "GradientBoosting": "[0.7362548  1.4875219  1.58023704 ... 0.3706705  2.08304655 0.35417507]",
+      "BayesianRidge": "[0.77350481 1.47061623 1.55320876 ... 0.39604937 1.88298193 0.45160172]",
+      "QuantileRF": "[0.75527798 1.47981129 1.58522335 ... 0.38053994 1.86019991 0.38053059]",
+      "PanelVAR": "[0.77987491 1.48547921 1.61077596 ... 0.38868363 1.88875929 0.38642773]",
+      "NAM": "[0.73344816 1.48867344 1.58839294 ... 0.37057575 2.08552037 0.3520258 ]"
+    }
   },
   "data_summary": {
     "n_entities": 61,

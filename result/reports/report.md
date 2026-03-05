@@ -1,7 +1,7 @@
 ---
 title: "Multi-Criteria Decision Analysis of Vietnamese Provincial Competitiveness"
 subtitle: "A Traditional MCDM + Evidential Reasoning Approach with Machine-Learning Forecasting"
-date: "2026-03-04"
+date: "2026-03-05"
 ---
 
 ## Table of Contents
@@ -18,8 +18,8 @@ date: "2026-03-04"
 - [10. Methodological Notes and References](#methodological-notes-and-references)
 - [A. Output File Inventory](#output-file-inventory)
 
-> **Generated:** 2026-03-04 14:45:40  
-> **Runtime:** 877.52 s  
+> **Generated:** 2026-03-05 14:16:10  
+> **Runtime:** 1011.17 s  
 > **Framework:** ML-MCDM v4.0
 
 # 1. Executive Summary
@@ -411,11 +411,11 @@ A Super Learner meta-ensemble (van der Laan et al., 2007) forecasts provincial s
 
 | Model | Weight | Contribution |
 | :--- | ---: | ---: |
-| BayesianRidge | 0.3911 | 39.1% |
-| QuantileRF | 0.2051 | 20.5% |
-| GradientBoosting | 0.1566 | 15.7% |
-| NAM | 0.1332 | 13.3% |
-| PanelVAR | 0.1140 | 11.4% |
+| BayesianRidge | 0.4100 | 41.0% |
+| QuantileRF | 0.2096 | 21.0% |
+| NAM | 0.1412 | 14.1% |
+| GradientBoosting | 0.1354 | 13.5% |
+| PanelVAR | 0.1038 | 10.4% |
 
 ## 8.2 Individual Model Performance
 
@@ -424,8 +424,8 @@ A Super Learner meta-ensemble (van der Laan et al., 2007) forecasts provincial s
 | Model | MEAN_R2 | STD_R2 |
 | :--- | ---: | ---: |
 | BayesianRidge | -9.9617 | 0.0000 |
-| GradientBoosting | -14.4837 | 0.0000 |
-| NAM | -11.0078 | 0.0000 |
+| GradientBoosting | -17.3678 | 0.0000 |
+| NAM | -10.0646 | 0.0000 |
 | PanelVAR | -9.2047 | 0.0000 |
 | QuantileRF | -10.6493 | 0.0000 |
 
@@ -436,23 +436,23 @@ A Super Learner meta-ensemble (van der Laan et al., 2007) forecasts provincial s
 | Model | Mean | Std Dev | Min | Max |
 | :--- | ---: | ---: | ---: | ---: |
 | BayesianRidge | -9.9617 | 0.0000 | -9.9617 | -9.9617 |
-| GradientBoosting | -14.4837 | 0.0000 | -14.4837 | -14.4837 |
-| NAM | -11.0078 | 0.0000 | -11.0078 | -11.0078 |
+| GradientBoosting | -17.3678 | 0.0000 | -17.3678 | -17.3678 |
+| NAM | -10.0646 | 0.0000 | -10.0646 | -10.0646 |
 | PanelVAR | -9.2047 | 0.0000 | -9.2047 | -9.2047 |
 | QuantileRF | -10.6493 | 0.0000 | -10.6493 | -10.6493 |
 
 ## 8.4 Holdout Validation
 
-- **r2:** 0.9730
-- **rmse:** 0.0834
-- **mae:** 0.0523
+- **r2:** 0.9740
+- **rmse:** 0.0820
+- **mae:** 0.0514
 
 ## 8.6 Conformal Prediction Interval Diagnostics
 
 - **Nominal Coverage:** 95%
-- **Mean Width:** 0.8324
-- **Median Width:** 0.6654
-- **Range:** [0.2407, 2.4363]
+- **Mean Width:** 0.8435
+- **Median Width:** 0.6770
+- **Range:** [0.2412, 2.4786]
 
 # 9. Validity Assessment
 
@@ -534,18 +534,8 @@ Super Learner (van der Laan, Polley & Hubbard, 2007) constructs an optimal conve
 - `config_snapshot.json`
 - `execution_summary.json`
 
-### Figures (56 files)
+### Figures (47 files)
 
-- `fig16b_ensemble_architecture.png`
-- `fig18_feature_importance.png`
-- `fig19_model_weights.png`
-- `fig19b_model_contribution_dots.png`
-- `fig20_model_performance.png`
-- `fig21_cv_boxplots.png`
-- `fig22_prediction_intervals.png`
-- `fig23_rank_change_bubble.png`
-- `fig23b_province_forecast_comparison.png`
-- `fig23c_score_trajectory.png`
 - `fig06_method_agreement.png`
 - `fig06b_agreement_per_criterion.png`
 - `fig07_criterion_parallel_grid.png`
@@ -576,12 +566,13 @@ Super Learner (van der Laan, Polley & Hubbard, 2007) constructs an optimal conve
 - `fig14b_rank_change_violin.png`
 - `fig15_er_uncertainty.png`
 - `fig25_robustness_summary.png`
-- `fig24_executive_dashboard.png`
 - `fig03_weights_comparison.png`
 - `fig03c_criterion_weights.png`
 - `fig03d_weight_deviation.png`
 - `fig04_weight_radar.png`
 - `fig04a_weight_radar_criteria.png`
+- `fig04a_weight_radar_criteria_critic.png`
+- `fig04a_weight_radar_criteria_entropy.png`
 - `fig04b_C01_radar.png`
 - `fig04b_C02_radar.png`
 - `fig04b_C03_radar.png`

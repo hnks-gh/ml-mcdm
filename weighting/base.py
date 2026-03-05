@@ -30,12 +30,12 @@ class WeightResult:
         return pd.Series(self.weights)
 
 
-def calculate_weights(data: pd.DataFrame, method: str = "entropy") -> WeightResult:
+def calculate_weights(data: pd.DataFrame, method: str = "critic") -> WeightResult:
     """
     Convenience function to calculate weights using a single base method.
 
-    For the full two-level MC ensemble used by the main pipeline, use
-    ``HybridWeightingCalculator`` directly.
+    For the full two-level deterministic CRITIC pipeline used by the main
+    pipeline, use ``CRITICWeightingCalculator`` directly.
 
     Parameters
     ----------
@@ -44,9 +44,6 @@ def calculate_weights(data: pd.DataFrame, method: str = "entropy") -> WeightResu
     method : str
         Weight calculation method.  Supported values:
 
-        ``'entropy'``
-            Shannon entropy weighting — assigns higher weight to criteria
-            with greater discriminating power across alternatives.
         ``'critic'``
             CRITIC weighting — rewards high variance *and* low correlation
             with other criteria (Diakoulaki et al., 1995).
@@ -61,20 +58,16 @@ def calculate_weights(data: pd.DataFrame, method: str = "entropy") -> WeightResu
     Raises
     ------
     ValueError
-        If *method* is ``'hybrid'`` / ``'ensemble'`` (requires the full
-        ``HybridWeightingCalculator`` pipeline), or an unknown string.
+        If *method* is no longer supported or unknown.
     """
-    from .entropy import EntropyWeightCalculator
     from .critic import CRITICWeightCalculator
 
-    if method == "entropy":
-        return EntropyWeightCalculator().calculate(data)
-    elif method == "critic":
+    if method == "critic":
         return CRITICWeightCalculator().calculate(data)
-    elif method in ("robust_global", "ensemble", "hybrid"):
+    elif method in ("robust_global", "ensemble", "hybrid", "entropy"):
         raise ValueError(
-            f"Method '{method}' requires panel data and criteria_groups. "
-            "Use HybridWeightingCalculator directly."
+            f"Method '{method}' is no longer supported or requires panel data "
+            "and criteria_groups.  Use CRITICWeightingCalculator directly."
         )
     elif method == "equal":
         cols = data.columns.tolist()
@@ -87,5 +80,5 @@ def calculate_weights(data: pd.DataFrame, method: str = "entropy") -> WeightResu
     else:
         raise ValueError(
             f"Unknown method: '{method}'.  "
-            "Supported: 'entropy', 'critic', 'equal'."
+            "Supported: 'critic', 'equal'."
         )

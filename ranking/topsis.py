@@ -18,7 +18,7 @@ import pandas as pd
 from typing import Dict, List, Optional, Tuple, Union
 from dataclasses import dataclass, field
 
-from weighting import WeightResult, EntropyWeightCalculator
+from weighting import WeightResult, CRITICWeightCalculator
 
 
 @dataclass
@@ -126,7 +126,7 @@ class TOPSISCalculator:
         """
         # Get weights
         if weights is None:
-            weight_calc = EntropyWeightCalculator()
+            weight_calc = CRITICWeightCalculator()
             weight_result = weight_calc.calculate(data)
             weights = weight_result.weights
         elif isinstance(weights, WeightResult):

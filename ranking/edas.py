@@ -20,7 +20,7 @@ from typing import Dict, List, Optional, Union
 from dataclasses import dataclass
 from scipy import stats
 
-from weighting import WeightResult, EntropyWeightCalculator
+from weighting import WeightResult, CRITICWeightCalculator
 
 
 @dataclass
@@ -141,7 +141,7 @@ class EDASCalculator:
         """
         # Get weights
         if weights is None:
-            weight_calc = EntropyWeightCalculator()
+            weight_calc = CRITICWeightCalculator()
             weight_result = weight_calc.calculate(data)
             weights = weight_result.weights
         elif isinstance(weights, WeightResult):
@@ -415,8 +415,8 @@ class ModifiedEDAS(EDASCalculator):
 
         # ---- weights (same logic as parent) ----
         if weights is None:
-            from weighting import EntropyWeightCalculator
-            weights = EntropyWeightCalculator().calculate(data).weights
+            from weighting import CRITICWeightCalculator
+            weights = CRITICWeightCalculator().calculate(data).weights
         elif isinstance(weights, WeightResult):
             weights = weights.weights
         weights = {col: weights.get(col, 1.0 / len(data.columns))

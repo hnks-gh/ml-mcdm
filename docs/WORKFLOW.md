@@ -23,8 +23,7 @@ The ML-MCDM pipeline analyzes panel data (entities × time periods × criteria) 
 
 - **6 MCDM Methods**: TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS, SAW
 - **Two-Stage Aggregation**: Within-criterion ER → Global ER
-- **Hybrid MC Ensemble Weighting**: Entropy + CRITIC with Bayesian Bootstrap
-- **MC Ensemble**: 2000 simulations for weight uncertainty quantification
+- **CRITIC Two-Level Weighting**: Deterministic two-level CRITIC pipeline
 - **ML Forecasting**: 6-model ensemble + Super Learner + Conformal Prediction
 - **Temporal Stability**: Split-half validation for robustness
 
@@ -52,8 +51,7 @@ The ML-MCDM pipeline analyzes panel data (entities × time periods × criteria) 
 │                           │                                              │
 │  Phase 2: Weight Calculation                                            │
 │  ┌──────────────────────────────────────────────────────────┐           │
-│  │ Hybrid MC Ensemble: Entropy + CRITIC                    │           │
-│  │ → Bayesian Bootstrap (200 iterations)                   │           │
+│  │ CRITIC Two-Level: Deterministic deterministic pipeline  │           │
 │  └────────────────────────┬─────────────────────────────────┘           │
 │                           │                                              │
 │  Phase 3: Hierarchical Ranking (ER)                                     │
@@ -142,36 +140,30 @@ PanelData
 
 ---
 
-### Phase 2: Hybrid MC Ensemble Weight Calculation
+### Phase 2: CRITIC Two-Level Weight Calculation
 
-**Purpose:** Calculate objective criterion weights using a Hybrid Monte Carlo Ensemble.
+**Purpose:** Calculate objective criterion weights using a deterministic two-level CRITIC pipeline.
 
-**Two Base Methods:**
+**Method:**
 
 | Method | Description | Formula |
 |--------|-------------|--------|
-| **Entropy** | Information content | $w_j = \frac{1 - E_j}{\sum_k (1 - E_k)}$ |
 | **CRITIC** | Contrast + correlation | $w_j = \frac{\sigma_j \sum_k (1 - r_{jk})}{\sum_m \sigma_m \sum_k (1 - r_{mk})}$ |
 
-**Hybrid MC Ensemble Combination:**
+**Two-Level Procedure:**
 
-1. **Per-subcriteria weight computation** using both Entropy and CRITIC
-2. **Reliability-weighted fusion** accounting for inter-method agreement
-3. **Final weights** reflecting both information content and inter-criteria contrast
-
-**Bayesian Bootstrap (200) iterations):**
-- Uncertainty quantification via Dirichlet resampling
-- 95% confidence intervals for each criterion weight
-- Cosine similarity validation (should be > 0.95)
+1. **Level 1** — CRITIC per criterion group → local SC weights (sum to 1 within each group)
+2. **Level 2** — CRITIC on criterion composite matrix → criterion weights (sum to 1 globally)
+3. **Global SC weights** — $w_j = u_{k,j} \times v_k$ (Level 1 × Level 2 product)
 
 **Temporal Stability Check:**
 - Split-half validation (first 7 vs last 7 years)
-- Cosine similarity threshold: 0.85
+- Cosine similarity threshold: 0.95
 - Flags unstable weights for review
 
 **Output Files:**
-- `criterion_weights.csv`: Mean weights ± bootstrap std
-- `weights_analysis.csv`: Full 2-method breakdown + ensemble weights
+- `criterion_weights.csv`: CRITIC criterion-level weights
+- `weights_analysis.csv`: Global + local weights per subcriteria
 
 ---
 
@@ -335,7 +327,7 @@ result/
 │
 ├── csv/                              # Numerical data, split by phase
 │   ├── weighting/
-│   │   ├── weights_analysis.csv       # Global + local weights with bootstrap CI
+│   │   ├── weights_analysis.csv       # Global + local weights per subcriteria
 │   │   └── criterion_weights.csv      # Ensemble criterion-level weights
 │   ├── ranking/
 │   │   ├── final_rankings.csv         # Main output: rank + ER utility + province
@@ -407,7 +399,7 @@ print(f"Robustness: {result.analysis['sensitivity'].overall_robustness:.4f}")
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `bootstrap_iterations` | 200 | Bayesian bootstrap for weight uncertainty |
+| `stability_threshold` | 0.95 | Minimum cosine similarity for temporal stability pass |
 | `cv_folds` | 3 | Time-series CV folds for forecasting |
 | `n_simulations` | 1000 | Monte Carlo sensitivity simulations |
 | `random_state` | 42 | Reproducibility seed |
@@ -421,7 +413,7 @@ print(f"Robustness: {result.analysis['sensitivity'].overall_robustness:.4f}")
 
 | Component | Time | Notes |
 |-----------|------|-------|
-| Weighting | ~90s | MC Ensemble (2000 simulations) |
+| Weighting | ~2s | Deterministic CRITIC (two levels) |
 | Ranking | ~10s | 6 MCDM + 2-stage ER |
 | ML Forecasting | ~15s | 6 models + Super Learner |
 | Sensitivity Analysis | ~20s | Monte Carlo (1000 sims) |
@@ -464,7 +456,7 @@ print(f"Robustness: {result.analysis['sensitivity'].overall_robustness:.4f}")
   ✓ Completed in 0.91s
 
 ▶ Phase 2/7: Weight Calculation
-  Hybrid MC Ensemble: Entropy + CRITIC with 2000 MC simulations
+  CRITIC Two-Level: Deterministic deterministic pipeline
   Weights: [0.142, 0.118, 0.095, 0.158, 0.127, 0.109, 0.132, 0.119]
   Cosine similarity: 0.9915 (stable)
   ✓ Completed in 19.51s
@@ -510,7 +502,7 @@ Outputs: result/
 The ML-MCDM pipeline provides:
 
 1. **Rigorous Methodology**: Two-stage ER with adaptive zero-handling
-2. **Objective Weighting**: Hybrid MC Ensemble (2 methods) with Bayesian Bootstrap uncertainty
+2. **Objective Weighting**: CRITIC Two-Level deterministic pipeline
 3. **Multi-Method Consensus**: 6 MCDM methods (TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS, SAW)
 4. **ML Forecasting**: 6-model ensemble (optional) with Super Learner
 5. **Hierarchical Sensitivity**: Multi-level robustness analysis (1000 simulations)
@@ -525,5 +517,5 @@ The ML-MCDM pipeline provides:
 
 For methodology details, see:
 - [ranking.md](ranking.md) — ER hierarchical ranking
-- [weighting.md](weighting.md) — Hybrid MC Ensemble weight calculation
+- [weighting.md](weighting.md) — CRITIC Two-Level weight calculation
 - [objective.md](objective.md) — project objectives

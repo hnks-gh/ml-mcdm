@@ -15,9 +15,8 @@ Package Structure
 -----------------
 ml-mcdm/
 ├── weighting/          # Criterion weighting methods
-│   ├── entropy.py      # Shannon entropy weight calculation
-│   ├── critic.py       # CRITIC weight calculation
-│   ├── hybrid_weighting.py  # Two-level MC ensemble (primary pipeline)
+│   ├── critic.py       # CRITIC weight calculation (single-level)
+│   ├── critic_weighting.py  # Two-level deterministic CRITIC pipeline
 │   ├── adaptive.py     # NaN-aware adaptive weight utility
 │   ├── normalization.py
 │   ├── bootstrap.py

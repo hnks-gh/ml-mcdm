@@ -7,10 +7,8 @@ Provides weight calculation that:
 3. Imputes remaining partial NaN cells with the column mean before weight calculation
 4. Recalculates weights dynamically based on available data
 
-The two underlying base methods are:
-- ``'entropy'``  — Shannon entropy weighting.
+The underlying base method is:
 - ``'critic'``   — CRITIC (contrast intensity × inter-criteria independence).
-- ``'hybrid'``   — geometric mean of the two, used as the default.
 
 Notes
 -----
@@ -24,7 +22,6 @@ from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 
 from .base import WeightResult
-from .entropy import EntropyWeightCalculator
 from .critic import CRITICWeightCalculator
 
 
@@ -54,9 +51,7 @@ class AdaptiveWeightCalculator:
     Parameters
     ----------
     method : str
-        Base weighting method: ``'entropy'``, ``'critic'``, or ``'hybrid'``
-        (default).  The ``'hybrid'`` mode blends Entropy and CRITIC via their
-        geometric mean, requiring a sub-criterion to score well on both axes.
+        Base weighting method.  Currently only ``'critic'`` is supported.
     epsilon : float
         Small constant for numerical stability
     min_alternatives : int
@@ -64,10 +59,10 @@ class AdaptiveWeightCalculator:
     min_criteria : int
         Minimum number of criteria required for weight calculation
     """
-    
+
     def __init__(
-        self, 
-        method: str = "hybrid",
+        self,
+        method: str = "critic",
         epsilon: float = 1e-10,
         min_alternatives: int = 2,
         min_criteria: int = 2
@@ -77,8 +72,6 @@ class AdaptiveWeightCalculator:
         self.min_alternatives = min_alternatives
         self.min_criteria = min_criteria
 
-        # Initialize base calculators (Entropy + CRITIC)
-        self.entropy_calc = EntropyWeightCalculator(epsilon=epsilon)
         self.critic_calc = CRITICWeightCalculator(epsilon=epsilon)
     
     def calculate(
@@ -155,16 +148,12 @@ class AdaptiveWeightCalculator:
         filtered_data = filtered_data.fillna(col_means)
 
         # Step 3: Calculate weights on the cleaned, complete sub-matrix
-        if self.method == "entropy":
-            base_result = self.entropy_calc.calculate(filtered_data)
-        elif self.method == "critic":
+        if self.method == "critic":
             base_result = self.critic_calc.calculate(filtered_data)
-        elif self.method == "hybrid":
-            base_result = self._calculate_hybrid(filtered_data)
         else:
             raise ValueError(
                 f"Unknown method: '{self.method}'.  "
-                "Supported: 'entropy', 'critic', 'hybrid'."
+                "Supported: 'critic'."
             )
         
         # Step 4: Expand weights back to include excluded criteria (with zero weight)
@@ -203,47 +192,10 @@ class AdaptiveWeightCalculator:
             n_excluded=len(excluded_alternatives)
         )
     
-    def _calculate_hybrid(self, data: pd.DataFrame) -> WeightResult:
-        """Blend Entropy and CRITIC weights via their geometric mean.
-
-        Both methods are philosophically complementary:
-        - Entropy rewards *discriminating power* (high variance across
-          alternatives).
-        - CRITIC rewards *contrast intensity AND independence* from other
-          criteria.
-
-        The geometric mean is preferred over the arithmetic mean because it
-        requires a sub-criterion to score well on *both* axes to receive a
-        high combined weight, producing more conservative and robust results.
-        """
-        w_entropy = self.entropy_calc.calculate(data)
-        w_critic = self.critic_calc.calculate(data)
-
-        criteria = data.columns.tolist()
-        we = np.array([w_entropy.weights[c] for c in criteria])
-        wc = np.array([w_critic.weights[c] for c in criteria])
-
-        # Geometric mean of the two weight vectors, then re-normalise
-        fused = np.sqrt(we * wc)
-        total = fused.sum()
-        if total > 0:
-            fused /= total
-        else:
-            fused = np.ones(len(criteria)) / len(criteria)
-
-        return WeightResult(
-            weights={c: float(w) for c, w in zip(criteria, fused)},
-            method="hybrid",
-            details={
-                "entropy": w_entropy.weights,
-                "critic":  w_critic.weights,
-            },
-        )
-
 
 def calculate_adaptive_weights(
     data: pd.DataFrame,
-    method: str = "hybrid",
+    method: str = "critic",
     entity_col: str = "Province"
 ) -> AdaptiveWeightResult:
     """
@@ -254,7 +206,7 @@ def calculate_adaptive_weights(
     data : pd.DataFrame
         Decision matrix.
     method : str
-        Weighting method: ``'entropy'``, ``'critic'``, or ``'hybrid'``.
+        Weighting method: ``'critic'``.
     entity_col : str
         Name of the entity identifier column (used only when *data* contains
         a row-label column instead of using the DataFrame index).
@@ -281,7 +233,7 @@ class WeightCalculator:
     - Partial NaN cells are imputed with the column mean
     """
     
-    def __init__(self, method: str = "hybrid", epsilon: float = 1e-10):
+    def __init__(self, method: str = "critic", epsilon: float = 1e-10):
         self.method = method
         self.epsilon = epsilon
         self.adaptive_calc = AdaptiveWeightCalculator(method=method, epsilon=epsilon)

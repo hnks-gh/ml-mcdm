@@ -110,7 +110,7 @@ class OutputOrchestrator:
 
         # ── New B-series outputs ──────────────────────────────────────────
 
-        # 12. Per-method weight tables (Entropy / CRITIC / Hybrid)
+        # 12. CRITIC weight tables
         try:
             saved_mw = self.csv.save_method_weights(weights)
             for key in saved_mw:
@@ -118,13 +118,7 @@ class OutputOrchestrator:
         except Exception as _exc:
             logger.warning(f'save_method_weights failed: {_exc}')
 
-        # 13. MC province rank-uncertainty statistics
-        try:
-            path_mps = self.csv.save_mc_province_stats(weights)
-            if path_mps:
-                logger.info(f'Saved: {Path(path_mps).name}')
-        except Exception as _exc:
-            logger.warning(f'save_mc_province_stats failed: {_exc}')
+        # 13. (MC province stats removed — deterministic pipeline has no MC)
 
         # 14. All-years score / rank matrices + criterion ER long-format
         if multi_year_results:

@@ -28,7 +28,7 @@ import pandas as pd
 from typing import Dict, List, Optional, Union
 from dataclasses import dataclass
 
-from weighting import WeightResult, EntropyWeightCalculator
+from weighting import WeightResult, CRITICWeightCalculator
 
 
 @dataclass
@@ -106,7 +106,7 @@ class SAWCalculator:
         SAWResult
         """
         if weights is None:
-            wc = EntropyWeightCalculator()
+            wc = CRITICWeightCalculator()
             weights = wc.calculate(data).weights
         elif isinstance(weights, WeightResult):
             weights = weights.weights

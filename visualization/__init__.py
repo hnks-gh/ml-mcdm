@@ -329,68 +329,24 @@ class VisualizationOrchestrator:
         l1 = details.get('level1', {})
         crit_groups_map = weights.get('criteria_groups', {})
 
-        # Retrieve entropy / CRITIC / hybrid SC weight arrays
-        entropy_sc_d  = weights.get('entropy_sc_weights', {})
-        critic_sc_d   = weights.get('critic_sc_weights', {})
-        hybrid_sc_d   = dict(zip(subcriteria, sc_arr))
-        entropy_sc_arr = np.array([float(entropy_sc_d.get(sc, 0.0)) for sc in subcriteria])
-        critic_sc_arr  = np.array([float(critic_sc_d.get(sc, 0.0))  for sc in subcriteria])
+        # Build w_dict with CRITIC weights
+        w_dict: Dict[str, np.ndarray] = {'CRITIC': sc_arr}
 
-        # Build w_dict for comparison (only include methods with data)
-        w_dict: Dict[str, np.ndarray] = {'Hybrid': sc_arr}
-        if entropy_sc_arr.sum() > 1e-9:
-            w_dict['Entropy'] = entropy_sc_arr
-        if critic_sc_arr.sum() > 1e-9:
-            w_dict['CRITIC'] = critic_sc_arr
-
-        # MC CI arrays from level2 diagnostics
-        l2mc = details.get('level2', {}).get('mc_diagnostics', {})
-        mc_means_full = np.array([float(l2mc.get('mean_weights', {}).get(sc, sc_arr[i]))
-                                   for i, sc in enumerate(subcriteria)])
-        mc_stds_full  = np.array([float(l2mc.get('std_weights',  {}).get(sc, 0.0))
-                                   for i, sc in enumerate(subcriteria)])
-        ci_lo = np.array([float(l2mc.get('ci_lower_2_5',  {}).get(sc, sc_arr[i]))
-                          for i, sc in enumerate(subcriteria)])
-        ci_hi = np.array([float(l2mc.get('ci_upper_97_5', {}).get(sc, sc_arr[i]))
-                          for i, sc in enumerate(subcriteria)])
-
-        # fig03 — Three-method grouped bar with CI
+        # fig03 — CRITIC grouped bar
         _safe(self.weighting.plot_weights_comparison,
             w_dict, subcriteria,
-            ci_lower=ci_lo if ci_lo.any() else None,
-            ci_upper=ci_hi if ci_hi.any() else None,
         )
 
-        # fig03b — MC weight uncertainty error-bar chart
-        if mc_stds_full.any():
-            _safe(self.weighting.plot_mc_weight_uncertainty,
-                subcriteria,
-                mc_means=mc_means_full,
-                mc_stds=mc_stds_full,
-                ci_lower=ci_lo,
-                ci_upper=ci_hi,
-                criteria_groups=crit_groups_map if crit_groups_map else None,
-            )
+        # fig03b — (MC weight uncertainty removed — deterministic pipeline)
 
-        # fig03c — Criterion-level three-method horizontal bar + donut
-        entropy_crit_d = weights.get('entropy_criterion_weights', {})
-        critic_crit_d  = weights.get('critic_criterion_weights', {})
-        hybrid_crit_d  = weights.get('criterion_weights', {})
-        if entropy_crit_d or critic_crit_d:
+        # fig03c — Criterion-level CRITIC bar + donut
+        critic_crit_d = weights.get('critic_criterion_weights', {})
+        if critic_crit_d:
             _safe(self.weighting.plot_criterion_weights_comparison,
-                entropy_crit=entropy_crit_d,
                 critic_crit=critic_crit_d,
-                hybrid_crit=hybrid_crit_d,
             )
 
-        # fig03d — Diverging deviation from hybrid baseline
-        if entropy_sc_arr.sum() > 1e-9 or critic_sc_arr.sum() > 1e-9:
-            _safe(self.weighting.plot_weight_deviation,
-                entropy_sc=entropy_sc_d,
-                critic_sc=critic_sc_d,
-                hybrid_sc=hybrid_sc_d,
-                subcriteria=subcriteria,
-            )
+        # fig03d — (Diverging deviation removed — no Hybrid baseline)
 
         # fig04 — Radar (all 3 methods, all 29 sub-criteria)
         _safe(self.weighting.plot_weight_radar, w_dict, subcriteria)

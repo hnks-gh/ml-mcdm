@@ -199,53 +199,25 @@ class VIKORConfig:
 
 @dataclass
 class WeightingConfig:
-    """Hybrid Weighting (Monte Carlo Entropy–CRITIC Ensemble) configuration.
+    """CRITIC Weighting configuration.
 
-    Two-level hierarchical design
-    ─────────────────────────────
-    Level 1 : MC ensemble on each of 8 criterion groups (m × n_k matrices)
+    Two-level deterministic design
+    ──────────────────────────────
+    Level 1 : CRITIC on each criterion group (m × n_k matrices)
               → local SC weights summing to 1 within each group
-    Level 2 : MC ensemble on criterion composite matrix (m × 8)
+    Level 2 : CRITIC on criterion composite matrix
               → criterion weights summing to 1 globally
     Global  : global_SC_weight = local_SC_weight × criterion_weight
 
-    Blend formula (primary — linear):
-        w^(s) = β^(s)·w_E^(s) + (1−β^(s))·w_C^(s),  β^(s) ~ Beta(α_a, α_b)
-    Fallback (multiplicative, silent):
-        w_j^(s) ∝ w_{E,j}^(s) · w_{C,j}^(s)
+    Fully deterministic — no Monte Carlo, no Beta blending, no tuning grid.
+    Temporal stability analysis is handled separately in ``analysis/``.
     """
-    # ── Core MC parameters ──────────────────────────────────────────────
-    mc_n_simulations:       int   = 2000   # N: inference iterations per level
-    mc_n_tuning_simulations: int  = 500    # N_tune: per grid-point simulations
-
-    # ── Beta blending prior ─────────────────────────────────────────────
-    beta_a: float = 1.0    # α_a (Entropy side); Beta(1,1) = Uniform(0,1)
-    beta_b: float = 1.0    # α_b (CRITIC side)
-
-    # ── Data perturbation ───────────────────────────────────────────────
-    noise_sigma_scale: float = 0.02   # σ_scale: fraction of column std
-    boot_fraction:     float = 1.0    # province resample ratio
-
-    # ── Tuning ──────────────────────────────────────────────────────────
-    perform_tuning:      bool  = True
-    use_bayesian_tuning: bool  = False   # requires scikit-optimize
-    tuning_objective: Literal[
-        "avg_kendall_tau",
-        "avg_spearman_rho",
-        "top_k_rank_var",
-    ] = "avg_kendall_tau"
-    top_k_stability: int = 10
-
-    # ── Stability verification ───────────────────────────────────────────
-    stability_threshold: float = 0.95
-
-    # ── Convergence ─────────────────────────────────────────────────────
-    convergence_tolerance:    float = 5e-5
-    conv_min_iters_fraction:  float = 1.0 / 6   # start after N//6 iters
-
     # ── Numerics ────────────────────────────────────────────────────────
-    epsilon: float    = 1e-10
-    seed:    Optional[int] = None   # RandomState seed; None = non-reproducible
+    epsilon: float = 1e-10
+
+    # ── Stability (analytical, not MC-based) ────────────────────────────
+    stability_threshold:     float = 0.95
+    perform_stability_check: bool  = True
 
 
 # =========================================================================
@@ -430,9 +402,6 @@ class Config:
 
     def __post_init__(self):
         self.paths.ensure_directories()
-        # Propagate the global random seed to weighting if not explicitly overridden
-        if self.weighting.seed is None:
-            self.weighting.seed = self.random.seed
 
     # --- convenience properties ---
 

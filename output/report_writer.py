@@ -212,10 +212,11 @@ class ReportWriter:
         L.append('# 3. Objective Weight Derivation')
         L.append('')
         L.append(
-            'Subcriteria weights are derived through a two-level hierarchical Monte Carlo '
-            'ensemble that blends Shannon Entropy and CRITIC via a Beta-distributed mixing '
-            'coefficient.  Level 1 produces local SC weights within each criterion group; '
-            'Level 2 determines criterion-level weights from a composite matrix.  '
+            'Subcriteria weights are derived through a two-level deterministic CRITIC '
+            'pipeline.  Level 1 runs CRITIC on each criterion group independently, '
+            'producing local SC weights that sum to 1 within each group.  '
+            'Level 2 runs CRITIC on a criterion composite matrix, producing '
+            'criterion-level weights that sum to 1 globally.  '
             'Global SC weights are the product of local and criterion weights, re-normalised '
             'to the simplex.'
         )
@@ -230,55 +231,43 @@ class ReportWriter:
         L.append('where $u_j^{(k)}$ is the Level-1 local SC weight and $v_k$ is the Level-2 criterion weight.')
         L.append('')
 
-        # Hybrid weighting table — global SC weights with MC diagnostics
+        # CRITIC weighting table — global SC weights
         details = weights.get('details', {})
         l1_diag = details.get('level1', {})
         crit_w  = weights.get('criterion_weights', {})
-        L.append('**Table 3. Subcriteria global weights (Hybrid MC Ensemble).**')
+        L.append('**Table 3. Subcriteria global weights (CRITIC two-level).**')
         L.append('')
-        L.append('| Subcriteria | Criterion | Criterion Weight | Local Weight | Global Weight | MC Std | MC CV |')
-        L.append('| :--- | :--- | ---: | ---: | ---: | ---: | ---: |')
+        L.append('| Subcriteria | Criterion | Criterion Weight | Local Weight | Global Weight |')
+        L.append('| :--- | :--- | ---: | ---: | ---: |')
         sc_to_crit = {}
         for cid, cdata in l1_diag.items():
             for sc in cdata.get('local_sc_weights', {}):
                 sc_to_crit[sc] = cid
         for sc in subcriteria:
-            cid = sc_to_crit.get(sc, '')
-            local_w   = l1_diag.get(cid, {}).get('local_sc_weights', {}).get(sc, 0.0)
-            mc_diag   = l1_diag.get(cid, {}).get('mc_diagnostics', {})
-            mc_std    = mc_diag.get('std_weights', {}).get(sc, 0.0)
-            mc_cv     = mc_diag.get('cv_weights',  {}).get(sc, 0.0)
-            gw        = weights['global_sc_weights'].get(sc, 0.0)
-            v_k       = crit_w.get(cid, 0.0)
+            cid     = sc_to_crit.get(sc, '')
+            local_w = l1_diag.get(cid, {}).get('local_sc_weights', {}).get(sc, 0.0)
+            gw      = weights['global_sc_weights'].get(sc, 0.0)
+            v_k     = crit_w.get(cid, 0.0)
             L.append(
-                f'| {sc} | {cid} | {v_k:.4f} | {local_w:.4f} | {gw:.4f} | {mc_std:.4f} | {mc_cv:.4f} |'
+                f'| {sc} | {cid} | {v_k:.4f} | {local_w:.4f} | {gw:.4f} |'
             )
         L.append('')
 
         L.append(f'- **Sum of global weights:** {fused.sum():.6f}')
         L.append(f'- **Max weight:** {fused.max():.6f} ({subcriteria[np.argmax(fused)]})')
         L.append(f'- **Min weight:** {fused.min():.6f} ({subcriteria[np.argmin(fused)]})')
-        L.append(f'- **Shannon entropy $H(\\mathbf{{{{w}}}})$:** {-np.sum(fused * np.log(fused + 1e-12)):.4f}')
+        L.append(f'- **Weight entropy $H(\\mathbf{{{{w}}}})$:** {-np.sum(fused * np.log(fused + 1e-12)):.4f}')
         L.append('')
 
-        # Level 2 MC diagnostics summary
-        l2_diag = details.get('level2', {}).get('mc_diagnostics', {})
-        if l2_diag:
-            L.append('**Table 4. Level-2 criterion weights (MC diagnostics).**')
+        # Level 2 criterion weights summary
+        l2_crit = details.get('level2', {}).get('criterion_weights', {})
+        if l2_crit:
+            L.append('**Table 4. Level-2 criterion weights.**')
             L.append('')
-            L.append('| Criterion | Weight | MC Mean | MC Std | 95% CI Lower | 95% CI Upper |')
-            L.append('| :--- | ---: | ---: | ---: | ---: | ---: |')
-            for cid, v_k in sorted(crit_w.items()):
-                mc_mean = l2_diag.get('mean_weights',   {}).get(cid, v_k)
-                mc_std  = l2_diag.get('std_weights',    {}).get(cid, 0.0)
-                ci_lo   = l2_diag.get('ci_lower_2_5',  {}).get(cid, 0.0)
-                ci_hi   = l2_diag.get('ci_upper_97_5', {}).get(cid, 0.0)
-                L.append(f'| {cid} | {v_k:.4f} | {mc_mean:.4f} | {mc_std:.4f} | {ci_lo:.4f} | {ci_hi:.4f} |')
-            L.append('')
-            tau = l2_diag.get('avg_kendall_tau', 0)
-            kw  = l2_diag.get('kendall_w', 0)
-            L.append(f'- **Level-2 Avg Kendall τ:** {tau:.4f}')
-            L.append(f"- **Level-2 Kendall's W:** {kw:.4f}")
+            L.append('| Criterion | Weight |')
+            L.append('| :--- | ---: |')
+            for cid, v_k in sorted(l2_crit.items()):
+                L.append(f'| {cid} | {v_k:.6f} |')
             L.append('')
 
         # ============================================================
@@ -648,12 +637,11 @@ class ReportWriter:
         L.append('## 10.1 Objective Weighting Methods')
         L.append('')
         notes = [
-            ('**Entropy**', 'Shannon (1948). Information-theoretic derivation exploiting '
-             'probability-distribution diversity across alternatives.'),
             ('**CRITIC**', 'Diakoulaki, Mavrotas & Papayannakis (1995). Weights based on '
              'contrast intensity and conflicting inter-criteria correlation.'),
-            ('**Hybrid MC Ensemble**', 'Reliability-weighted Bayesian bootstrap combination '
-             'accounting for inter-method agreement at the subcriteria level.'),
+            ('**Two-Level Deterministic Pipeline**', 'Level 1: CRITIC per criterion group '
+             '→ local SC weights. Level 2: CRITIC on criterion composite matrix '
+             '→ criterion weights. Fully deterministic — no Monte Carlo, no Beta blending.'),
         ]
         for name, desc in notes:
             L.append(f'- {name} — {desc}')

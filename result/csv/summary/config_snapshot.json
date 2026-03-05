@@ -147,7 +147,12 @@
     "conformal_alpha": 0.05,
     "cv_folds": 3,
     "random_state": 42,
-    "verbose": true
+    "verbose": true,
+    "gb_max_depth": 5,
+    "gb_n_estimators": 200,
+    "nam_n_basis": 30,
+    "nam_n_iterations": 10,
+    "pvar_lag_selection_method": "cv"
   },
   "validation": {
     "n_simulations": 1000,

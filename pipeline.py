@@ -396,25 +396,25 @@ class MLMCDMPipeline:
     # -----------------------------------------------------------------
 
     def _calculate_weights(self, panel_data: PanelData) -> Dict[str, Any]:
-        """Run two-level hierarchical hybrid weighting on the full panel.
+        """Run two-level deterministic CRITIC weighting on the full panel.
 
         Dynamic exclusion rules applied **before** weighting:
 
         1. Sub-criteria columns that are all-NaN across the *entire* panel are
-           dropped (``HybridWeightingCalculator`` also guards internally).
+           dropped (``CRITICWeightingCalculator`` also guards internally).
         2. Province-year rows where **any** *year-active* SC is NaN are
            dropped.  A SC is year-active if it has ≥1 valid value for that
            specific year (per ``YearContext``).  Rows from years with
            structural Type-1 SC gaps (e.g. SC71-SC83 absent 2011-2017, SC52
            absent 2021-2024) are **kept** — those rows carry NaN only for the
-           absent SCs, which the downstream Entropy/CRITIC calculators handle
-           via column-mean imputation.  Using a naïve global
+           absent SCs, which the downstream CRITIC calculator handles via
+           column-mean imputation.  Using a naïve global
            ``notna().all()`` across all 29 SCs would reduce the effective
            weighting panel to ~2 years and severely bias the weights.
 
         The resulting weight vector spans only *active* sub-criteria.
         """
-        from .weighting import HybridWeightingCalculator
+        from .weighting import CRITICWeightingCalculator
 
         subcriteria = panel_data.hierarchy.all_subcriteria
         panel_df    = panel_data.subcriteria_long.copy()
@@ -479,11 +479,11 @@ class MLMCDMPipeline:
                 active_groups[crit_id] = active
 
         self.logger.info(
-            "Hybrid Weighting (MC Ensemble): %d obs, %d active SCs, %d criterion groups",
+            "CRITIC Weighting: %d obs, %d active SCs, %d criterion groups",
             len(panel_df), len(subcriteria), len(active_groups),
         )
 
-        calc   = HybridWeightingCalculator(config=self.config.weighting)
+        calc   = CRITICWeightingCalculator(config=self.config.weighting)
         result = calc.calculate(
             panel_df        = panel_df,
             criteria_groups = active_groups,
@@ -492,67 +492,29 @@ class MLMCDMPipeline:
         )
 
         # ── Extract weights ───────────────────────────────────────────────
-        global_sc_weights     = result.details['global_sc_weights']
-        entropy_sc_weights    = result.details.get('entropy_sc_weights', {})
-        critic_sc_weights     = result.details.get('critic_sc_weights', {})
-        criterion_weights     = result.details['level2']['criterion_weights']
-        entropy_criterion_w   = result.details.get('entropy_criterion_weights', {})
-        critic_criterion_w    = result.details.get('critic_criterion_weights', {})
+        global_sc_weights  = result.details['global_sc_weights']
+        critic_sc_weights  = result.details.get('critic_sc_weights', {})
+        criterion_weights  = result.details['level2']['criterion_weights']
+        critic_criterion_w = result.details.get('critic_criterion_weights', {})
         sc_arr = np.array([global_sc_weights.get(sc, 0.0) for sc in subcriteria])
 
         self.logger.info(
             "  Global SC weights: [%.4f, %.4f]", sc_arr.min(), sc_arr.max()
         )
         self.logger.info(
-            "  Criterion weights (hybrid): %s",
+            "  Criterion weights (CRITIC): %s",
             ', '.join(f"{k}={v:.3f}" for k, v in sorted(criterion_weights.items())),
         )
-        if entropy_criterion_w:
-            self.logger.info(
-                "  Criterion weights (entropy): %s",
-                ', '.join(f"{k}={v:.3f}" for k, v in sorted(entropy_criterion_w.items())),
-            )
-        if critic_criterion_w:
-            self.logger.info(
-                "  Criterion weights (critic): %s",
-                ', '.join(f"{k}={v:.3f}" for k, v in sorted(critic_criterion_w.items())),
-            )
-        l2_diag = result.details.get('level2', {}).get('mc_diagnostics', {})
-        if l2_diag:
-            self.logger.info(
-                "  Level 2 Kendall \u03c4=%.4f, W=%.4f",
-                l2_diag.get('avg_kendall_tau', 0),
-                l2_diag.get('kendall_w', 0),
-            )
-        stab = result.details.get('stability', {})
-        if stab.get('is_stable') is not None:
-            self.logger.info(
-                "  Stability: cosine=%.4f, stable=%s",
-                stab.get('cosine_similarity', 0), stab.get('is_stable'),
-            )
-
-        # ── Extract MC province stats from Level 2 ────────────────────────
-        mc_province_stats: Dict[str, Any] = {}
-        if getattr(self.config.ranking, 'expose_mc_province_stats', True):
-            _l2mc = result.details.get('level2', {}).get('mc_diagnostics', {})
-            for _field in ('province_mean_rank', 'province_std_rank',
-                           'province_prob_top1', 'province_prob_topK',
-                           'rank_win_matrix'):
-                if _field in _l2mc and _l2mc[_field] is not None:
-                    mc_province_stats[_field] = _l2mc[_field]
 
         return {
-            'global_sc_weights':         global_sc_weights,
-            'entropy_sc_weights':        entropy_sc_weights,
-            'critic_sc_weights':         critic_sc_weights,
-            'criterion_weights':         criterion_weights,
-            'entropy_criterion_weights': entropy_criterion_w,
-            'critic_criterion_weights':  critic_criterion_w,
-            'mc_province_stats':         mc_province_stats,
-            'sc_array':                  sc_arr,
-            'subcriteria':               subcriteria,
-            'criteria_groups':           active_groups,
-            'details':                   result.details,
+            'global_sc_weights':        global_sc_weights,
+            'critic_sc_weights':        critic_sc_weights,
+            'criterion_weights':        criterion_weights,
+            'critic_criterion_weights': critic_criterion_w,
+            'sc_array':                 sc_arr,
+            'subcriteria':              subcriteria,
+            'criteria_groups':          active_groups,
+            'details':                  result.details,
         }
 
     # -----------------------------------------------------------------
