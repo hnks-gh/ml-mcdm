@@ -333,3 +333,42 @@ def has_complete_target(target: "np.ndarray | list") -> bool:
     """
     arr = np.asarray(target, dtype=float)
     return not bool(np.any(np.isnan(arr)))
+
+
+def has_sufficient_target(
+    target: "np.ndarray | list",
+    min_valid_fraction: float = 0.5,
+) -> bool:
+    """Return ``True`` if *target* has at least *min_valid_fraction* non-NaN values.
+
+    A relaxed version of :func:`has_complete_target` that allows samples with
+    partial sub-criterion coverage to be retained as training examples.  NaN
+    target values are later imputed by the pipeline (e.g. with column medians)
+    before model fitting.
+
+    Using a lower threshold dramatically expands the effective training set when
+    sub-criteria are systematically absent for certain years (e.g. newly-
+    introduced indicators that only appear from a certain year onwards).
+
+    Parameters
+    ----------
+    target : array-like
+        Target vector (sub-criterion scores for a single province-year).
+    min_valid_fraction : float
+        Minimum fraction of non-NaN values required.  Default ``0.5`` means at
+        least half the sub-criteria must be present; use ``1.0`` for the strict
+        complete-target behaviour of :func:`has_complete_target`.
+
+    Returns
+    -------
+    bool
+        ``True`` if the fraction of finite values meets the threshold.
+    """
+    arr = np.asarray(target, dtype=float)
+    if arr.size == 0:
+        return False
+    n_valid = int(np.sum(~np.isnan(arr)))
+    if n_valid == 0:
+        return False  # always reject entirely-missing targets
+    valid_fraction = n_valid / arr.size
+    return valid_fraction >= min_valid_fraction

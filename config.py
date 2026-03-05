@@ -296,10 +296,15 @@ class ForecastConfig:
     verbose: bool = True
 
     # ── GradientBoosting hyperparameters ─────────────────────────────────
-    gb_max_depth: int = 5
-    """Tree depth. 5 ≈ 32 leaves → ~24 samples/leaf at n=756."""
-    gb_n_estimators: int = 200
-    """Number of boosting stages; aligned with GradientBoostingForecaster default."""
+    gb_max_depth: int = 3
+    """Tree depth.  Reduced to 3 (8 leaves) for better generalization on
+    small-to-medium panels (previously 5; depth-5 tends to overfit when CV
+    folds have fewer than ~200 samples)."""
+    gb_n_estimators: int = 100
+    """Number of boosting stages.  100 trees with depth-3 gives a compact,
+    well-regularized ensemble suitable for panels with n < 1000 training rows
+    (previously 200; extra trees provided marginal lift at higher overfitting
+    cost)."""
 
     # ── NeuralAdditiveModel hyperparameters ──────────────────────────────
     nam_n_basis: int = 30
@@ -310,6 +315,18 @@ class ForecastConfig:
     # ── PanelVAR lag selection ────────────────────────────────────────────
     pvar_lag_selection_method: str = "cv"
     """Hold-out CV MSE lag selection. Only valid method for Ridge-regularised VAR."""
+
+    # ── Training data completeness ────────────────────────────────────────
+    min_target_fraction: float = 0.5
+    """Minimum fraction of non-NaN sub-criteria required for a training sample
+    to be included.  Values below 1.0 allow samples whose target vectors are
+    partially missing (e.g. newly-introduced indicators absent before a certain
+    year); NaN entries are imputed by the pipeline with per-column medians.
+
+    Setting this to 0.5 (default) increases the effective training set from
+    ~2 complete years to all available years, providing a much richer temporal
+    signal for the ensemble models.  Set to 1.0 to revert to the strict
+    complete-target-only behaviour."""
 
 
 # =========================================================================

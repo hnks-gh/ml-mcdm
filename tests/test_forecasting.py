@@ -931,15 +931,24 @@ class TestAuditRegressions:
     # -----------------------------------------------------------------------
 
     def test_config_forecast_fields_present_and_correct(self):
-        """Bug B-1 / Phase 1: ForecastConfig must expose all 5 new hyperparameter fields."""
+        """Bug B-1 / Phase 1: ForecastConfig must expose all hyperparameter fields.
+
+        NOTE: gb_max_depth and gb_n_estimators were lowered from (5, 200) to
+        (3, 100) to reduce overfitting on small CV folds (audit finding: panels
+        with systematic sub-criteria gaps produce only ~120 training samples
+        when strict complete-target filtering is applied, causing depth-5 GB
+        to overfit severely).  The min_target_fraction field was also added to
+        allow partial targets, expanding training to ~790 samples.
+        """
         from config import ForecastConfig
 
         cfg = ForecastConfig()
-        assert cfg.gb_max_depth == 5,        f"gb_max_depth={cfg.gb_max_depth}"
-        assert cfg.gb_n_estimators == 200,   f"gb_n_estimators={cfg.gb_n_estimators}"
+        assert cfg.gb_max_depth == 3,        f"gb_max_depth={cfg.gb_max_depth}"
+        assert cfg.gb_n_estimators == 100,   f"gb_n_estimators={cfg.gb_n_estimators}"
         assert cfg.nam_n_basis == 30,        f"nam_n_basis={cfg.nam_n_basis}"
         assert cfg.nam_n_iterations == 10,   f"nam_n_iterations={cfg.nam_n_iterations}"
         assert cfg.pvar_lag_selection_method == "cv"
+        assert cfg.min_target_fraction == 0.5, f"min_target_fraction={cfg.min_target_fraction}"
 
     def test_config_forecast_custom_values_round_trip(self):
         """Phase 1: ForecastConfig custom values survive to_dict() serialisation."""
@@ -980,3 +989,174 @@ class TestAuditRegressions:
             "The class default was aligned to n=756 sample-size optimum in Phase 10."
         )
         assert gb._base_model.max_depth == 5
+
+
+# ---------------------------------------------------------------------------
+# Ensemble audit improvement tests
+# ---------------------------------------------------------------------------
+
+class TestEnsembleAuditImprovements:
+    """Tests verifying the ensemble audit fixes.
+
+    Covers:
+    - has_sufficient_target allows partial targets
+    - TemporalFeatureEngineer respects min_target_fraction
+    - ForecastConfig exposes min_target_fraction
+    - Target imputation expands training data (more samples than strict filter)
+    - UnifiedForecaster propagates min_target_fraction from config
+    """
+
+    # -----------------------------------------------------------------------
+    # has_sufficient_target
+    # -----------------------------------------------------------------------
+
+    def test_has_sufficient_target_full_target(self):
+        """All non-NaN → always passes any threshold."""
+        from data.missing_data import has_sufficient_target
+
+        target = np.array([0.5, 0.8, 0.3])
+        assert has_sufficient_target(target, min_valid_fraction=1.0)
+        assert has_sufficient_target(target, min_valid_fraction=0.5)
+        assert has_sufficient_target(target, min_valid_fraction=0.0)
+
+    def test_has_sufficient_target_partial_nans(self):
+        """75% valid → passes 0.5 threshold, fails 0.9."""
+        from data.missing_data import has_sufficient_target
+
+        target = np.array([0.5, np.nan, 0.3, 0.7])  # 3/4 = 75% valid
+        assert has_sufficient_target(target, min_valid_fraction=0.5)
+        assert has_sufficient_target(target, min_valid_fraction=0.75)
+        assert not has_sufficient_target(target, min_valid_fraction=0.9)
+
+    def test_has_sufficient_target_all_nan(self):
+        """All NaN → always rejected regardless of threshold."""
+        from data.missing_data import has_sufficient_target
+
+        target = np.array([np.nan, np.nan, np.nan])
+        assert not has_sufficient_target(target, min_valid_fraction=0.5)
+        # Even threshold=0.0: all-NaN targets are useless for training → False
+        assert not has_sufficient_target(target, min_valid_fraction=0.0)
+
+    def test_has_sufficient_target_empty(self):
+        """Empty array → returns False."""
+        from data.missing_data import has_sufficient_target
+
+        assert not has_sufficient_target(np.array([]), min_valid_fraction=0.0)
+
+    def test_has_complete_target_unchanged(self):
+        """has_complete_target still works as before (no regression)."""
+        from data.missing_data import has_complete_target
+
+        assert has_complete_target(np.array([0.1, 0.5]))
+        assert not has_complete_target(np.array([0.1, np.nan]))
+
+    # -----------------------------------------------------------------------
+    # TemporalFeatureEngineer min_target_fraction
+    # -----------------------------------------------------------------------
+
+    @staticmethod
+    def _make_partial_panel(n_entities=4, n_years=6, n_components=4,
+                            missing_components_early=2):
+        """Panel where the last ``missing_components_early`` columns are NaN
+        for the first 3 years (simulating newly-introduced indicators).
+        """
+        import pandas as pd
+        from types import SimpleNamespace
+
+        years = list(range(2011, 2011 + n_years))
+        provinces = [f"P{i}" for i in range(n_entities)]
+        components = [f"x{i}" for i in range(n_components)]
+        rng = np.random.RandomState(7)
+
+        data_store: Dict[str, "pd.DataFrame"] = {}
+        cutoff = 2011 + n_years // 2  # first "complete" year
+        for p in provinces:
+            df = pd.DataFrame(
+                rng.rand(n_years, n_components),
+                index=years,
+                columns=components,
+            )
+            # Set last `missing_components_early` columns to NaN for early years
+            for yr in years:
+                if yr < cutoff:
+                    df.loc[yr, components[-missing_components_early:]] = np.nan
+            data_store[p] = df
+
+        panel = SimpleNamespace()
+        panel.provinces = provinces
+        panel.subcriteria_names = components
+        panel.years = years
+
+        panel.get_province = lambda name: data_store[name]
+        cs = {}
+        for y in years:
+            rows = [{"Province": p, **data_store[p].loc[y].to_dict()} for p in provinces]
+            cs[y] = pd.DataFrame(rows)
+        panel.cross_section = cs
+        # Don't set year_contexts so getattr fallback to {} works correctly
+        return panel
+
+    def test_partial_targets_increase_training_samples(self):
+        """With min_target_fraction=0.5, partial-target years are retained,
+        producing more training rows than strict complete-target filtering."""
+        from forecasting.features import TemporalFeatureEngineer
+
+        panel = self._make_partial_panel(
+            n_entities=4, n_years=6, n_components=4, missing_components_early=2
+        )
+        # Strict: only complete years (last 3 → 4 entities × 3 pairs = 12 rows)
+        eng_strict = TemporalFeatureEngineer(lag_periods=[1], rolling_windows=[2],
+                                             min_target_fraction=1.0)
+        X_strict, y_strict, _, _ = eng_strict.fit_transform(panel, target_year=2017)
+
+        # Relaxed: allow 50 % missing (2/4 present) → all years valid
+        eng_partial = TemporalFeatureEngineer(lag_periods=[1], rolling_windows=[2],
+                                              min_target_fraction=0.5)
+        X_partial, y_partial, _, _ = eng_partial.fit_transform(panel, target_year=2017)
+
+        assert X_partial.shape[0] > X_strict.shape[0], (
+            f"Expected more samples with partial targets: "
+            f"{X_partial.shape[0]} vs {X_strict.shape[0]}"
+        )
+
+    def test_partial_targets_contain_nans_in_y(self):
+        """When partial targets are retained, y_train contains NaN entries."""
+        from forecasting.features import TemporalFeatureEngineer
+
+        panel = self._make_partial_panel(
+            n_entities=4, n_years=6, n_components=4, missing_components_early=2
+        )
+        eng = TemporalFeatureEngineer(lag_periods=[1], rolling_windows=[2],
+                                     min_target_fraction=0.5)
+        _, y_train, _, _ = eng.fit_transform(panel, target_year=2017)
+        # Some target rows should have NaN for the early-missing columns
+        assert np.isnan(y_train.values).any(), (
+            "Expected NaN in y_train for early years with missing components."
+        )
+
+    # -----------------------------------------------------------------------
+    # ForecastConfig min_target_fraction propagates to TemporalFeatureEngineer
+    # -----------------------------------------------------------------------
+
+    def test_config_min_target_fraction_propagates(self):
+        """UnifiedForecaster reads min_target_fraction from ForecastConfig."""
+        from forecasting.unified import UnifiedForecaster
+        from config import ForecastConfig
+
+        cfg = ForecastConfig(min_target_fraction=0.7)
+        uf = UnifiedForecaster(config=cfg)
+        assert uf.feature_engineer_.min_target_fraction == 0.7, (
+            "min_target_fraction not propagated to TemporalFeatureEngineer"
+        )
+
+    def test_config_default_min_target_fraction_is_0_5(self):
+        """Default ForecastConfig min_target_fraction is 0.5."""
+        from config import ForecastConfig
+        cfg = ForecastConfig()
+        assert cfg.min_target_fraction == 0.5
+
+    def test_unified_default_min_target_fraction_is_0_5(self):
+        """UnifiedForecaster without config uses min_target_fraction=0.5."""
+        from forecasting.unified import UnifiedForecaster
+        uf = UnifiedForecaster()
+        assert uf.feature_engineer_.min_target_fraction == 0.5

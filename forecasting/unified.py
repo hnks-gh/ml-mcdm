@@ -45,6 +45,7 @@ from typing import Dict, List, Optional, Tuple, Union, Any
 from dataclasses import dataclass, field
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+from sklearn.impute import SimpleImputer
 import warnings
 import copy
 
@@ -322,17 +323,25 @@ class UnifiedForecaster:
         self.random_state = random_state
         self.verbose = verbose
         # ForecastConfig instance for model-level hyperparameters (gb_max_depth,
-        # gb_n_estimators, nam_n_basis, nam_n_iterations, pvar_lag_selection_method).
+        # gb_n_estimators, nam_n_basis, nam_n_iterations, pvar_lag_selection_method,
+        # min_target_fraction).
         # When None, _create_models() falls back to hardened production defaults.
         self._config: Optional[ForecastConfig] = config
 
+        # Resolve min_target_fraction from config (default: 0.5 to allow
+        # samples with partially-missing sub-criteria)
+        _min_frac = config.min_target_fraction if config is not None else 0.5
+
         self.models_: Dict[str, BaseForecaster] = {}
         self.model_weights_: Dict[str, float] = {}
-        self.feature_engineer_ = TemporalFeatureEngineer()
+        self.feature_engineer_ = TemporalFeatureEngineer(
+            min_target_fraction=_min_frac
+        )
         self.feature_reducer_: Optional[PanelFeatureReducer] = None
         self.super_learner_: Optional[SuperLearner] = None
         self.conformal_predictor_: Optional[ConformalPredictor] = None
         self.evaluator_: Optional[ForecastEvaluator] = None
+        self._target_imputer_ = None  # set by fit_predict when imputation is needed
     
     def _create_models(self) -> Dict[str, BaseForecaster]:
         """
@@ -353,8 +362,8 @@ class UnifiedForecaster:
         """
         # Resolve hyperparameters: config takes priority, else use defaults
         cfg = self._config
-        gb_n_est    = cfg.gb_n_estimators           if cfg is not None else 200
-        gb_depth    = cfg.gb_max_depth              if cfg is not None else 5
+        gb_n_est    = cfg.gb_n_estimators           if cfg is not None else 100
+        gb_depth    = cfg.gb_max_depth              if cfg is not None else 3
         nam_n_basis = cfg.nam_n_basis               if cfg is not None else 30
         nam_n_iter  = cfg.nam_n_iterations          if cfg is not None else 10
         pvar_method = cfg.pvar_lag_selection_method if cfg is not None else "cv"
@@ -472,6 +481,33 @@ class UnifiedForecaster:
 
         X_arr = X_train.values
         y_arr = y_train.values
+
+        # ── Target imputation ────────────────────────────────────────────────
+        # When TemporalFeatureEngineer.min_target_fraction < 1.0 some target
+        # rows will contain NaN entries for sub-criteria that are systematically
+        # absent in certain years (e.g. newly-introduced indicators).  sklearn
+        # base models cannot ingest NaN targets, so impute with the per-column
+        # median computed over the available (non-NaN) observations.
+        #
+        # This imputation is intentionally applied BEFORE PCA and CV so that
+        # every CV fold sees a consistent, NaN-free target matrix.  The imputed
+        # values will be somewhat biased (they encode "average behaviour" for
+        # years where the sub-criterion was not yet measured), but this is
+        # strongly preferable to discarding 80–90 % of the available training
+        # data (which was the previous behaviour).
+        if np.isnan(y_arr).any():
+            _n_nan_targets = int(np.isnan(y_arr).sum())
+            _target_imputer = SimpleImputer(strategy='median')
+            y_arr = _target_imputer.fit_transform(y_arr)
+            # Store imputer so holdout targets can be handled consistently
+            self._target_imputer_ = _target_imputer
+            if self.verbose:
+                print(
+                    f"  Stage 2a: Imputed {_n_nan_targets} NaN target values "
+                    f"(column medians) across {y_arr.shape[1]} sub-criteria."
+                )
+        else:
+            self._target_imputer_ = None
 
         self.feature_reducer_ = PanelFeatureReducer()
         X_arr = self.feature_reducer_.fit_transform(
@@ -681,6 +717,19 @@ class UnifiedForecaster:
                 }
 
         # ===== Stage 6b: Temporal holdout evaluation =====
+        #
+        # Evaluation strategy: use the model to predict each entity's value at
+        # ``holdout_year`` (= target_year − 1) from features at the year prior
+        # (holdout_year − 1).  This mirrors exactly how the model will be used
+        # at inference time (predict year T+1 from year T features).
+        #
+        # KNOWN LIMITATION: when target imputation is active (min_target_fraction
+        # < 1.0), the training set includes the (holdout_year−1 → holdout_year)
+        # training pair, so this evaluation is not strictly out-of-sample.  The
+        # OOF R² reported in the cross-validation table is the appropriate
+        # out-of-sample performance metric.  The figure here is useful for
+        # sanity-checking prediction magnitudes and direction, not for unbiased
+        # generalisation estimates.
         holdout_performance = None
         _holdout_y_test = None
         _holdout_y_pred = None
@@ -689,7 +738,11 @@ class UnifiedForecaster:
         try:
             holdout_year = target_year - 1
             available_years = sorted(panel_data.years)
-            if holdout_year in available_years and holdout_year > available_years[2]:
+            # Need both holdout_year AND the year before it to be in the panel
+            pred_from_year = holdout_year - 1
+            if (holdout_year in available_years
+                    and pred_from_year in available_years
+                    and holdout_year > available_years[2]):
                 if self.verbose:
                     print(f"  Stage 6b: Holdout evaluation (year {holdout_year})...")
 
@@ -698,45 +751,78 @@ class UnifiedForecaster:
                 # self.feature_engineer_.feature_names_ (which carries the
                 # target-year column list used in _aggregate_feature_importance
                 # and by callers inspecting get_feature_names() after fit_predict).
-                _ho_eng = TemporalFeatureEngineer()
-                X_ho, y_ho, _, _ = _ho_eng.fit_transform(panel_data, holdout_year)
+                #
+                # Holdout approach: call fit_transform with target_year = pred_from_year
+                # to obtain prediction features at pred_from_year (3rd return value).
+                # These are the correct inputs for predicting holdout_year values.
+                _ho_eng = TemporalFeatureEngineer(
+                    min_target_fraction=self.feature_engineer_.min_target_fraction
+                )
+                _, _, X_ho_pred, _ = _ho_eng.fit_transform(panel_data, pred_from_year)
 
-                X_ho_arr = self.feature_reducer_.transform(X_ho.values)
-                y_ho_arr = y_ho.values
-                y_ho_pred = self.super_learner_.predict(X_ho_arr)
+                # Transform prediction features with the fitted PCA reducer
+                X_ho_pred_arr = self.feature_reducer_.transform(X_ho_pred.values)
+                ho_entities = list(X_ho_pred.index)
+
+                # Fetch actual values at holdout_year for each entity
+                _components_list = y_train.columns.tolist()
+                y_ho_actual_rows: List[np.ndarray] = []
+                for _ent in ho_entities:
+                    _edata = panel_data.get_province(_ent)
+                    if holdout_year in _edata.index:
+                        _row = _edata.loc[holdout_year, _components_list].values.astype(float)
+                    else:
+                        _row = np.full(len(_components_list), np.nan)
+                    y_ho_actual_rows.append(_row)
+                y_ho_arr = np.vstack(y_ho_actual_rows)
+
+                # Impute any NaN in holdout actuals for consistent comparison
+                if np.isnan(y_ho_arr).any() and self._target_imputer_ is not None:
+                    y_ho_arr = self._target_imputer_.transform(y_ho_arr)
+                elif np.isnan(y_ho_arr).any():
+                    _ho_imp = SimpleImputer(strategy='median')
+                    y_ho_arr = _ho_imp.fit_transform(y_ho_arr)
+
+                y_ho_pred = self.super_learner_.predict(X_ho_pred_arr)
                 if y_ho_pred.ndim == 1:
                     y_ho_pred = y_ho_pred.reshape(-1, 1)
-                holdout_performance = {
-                    'r2': float(r2_score(
-                        y_ho_arr.ravel(), y_ho_pred[:, :y_ho_arr.shape[1]].ravel()
-                    )),
-                    'rmse': float(np.sqrt(mean_squared_error(
-                        y_ho_arr, y_ho_pred[:, :y_ho_arr.shape[1]]
-                    ))),
-                    'mae': float(mean_absolute_error(
-                        y_ho_arr, y_ho_pred[:, :y_ho_arr.shape[1]]
-                    )),
-                }
+                y_ho_pred_trunc = y_ho_pred[:, :y_ho_arr.shape[1]]
 
-                # Store holdout arrays for downstream visualisation
-                _holdout_y_test = y_ho_arr[:, :y_ho_arr.shape[1]].ravel()
-                _holdout_y_pred = y_ho_pred[:, :y_ho_arr.shape[1]].ravel()
-                _holdout_entities = list(X_ho.index)
+                # Only include rows where we have actual values
+                valid_rows = ~np.isnan(y_ho_arr).any(axis=1)
+                if valid_rows.sum() >= 3:
+                    holdout_performance = {
+                        'r2': float(r2_score(
+                            y_ho_arr[valid_rows].ravel(),
+                            y_ho_pred_trunc[valid_rows].ravel()
+                        )),
+                        'rmse': float(np.sqrt(mean_squared_error(
+                            y_ho_arr[valid_rows], y_ho_pred_trunc[valid_rows]
+                        ))),
+                        'mae': float(mean_absolute_error(
+                            y_ho_arr[valid_rows], y_ho_pred_trunc[valid_rows]
+                        )),
+                    }
 
-                # Per-model holdout predictions for comparison figure
-                for mname, model in self.super_learner_._fitted_base_models.items():
-                    try:
-                        mp = self.super_learner_._predict_model(
-                            model, X_ho_arr, entity_indices=None)
-                        if mp.ndim == 1:
-                            mp = mp.reshape(-1, 1)
-                        _holdout_per_model[mname] = mp[:, :y_ho_arr.shape[1]].ravel()
-                    except Exception:
-                        pass
+                    # Store holdout arrays for downstream visualisation
+                    _holdout_y_test = y_ho_arr[valid_rows].ravel()
+                    _holdout_y_pred = y_ho_pred_trunc[valid_rows].ravel()
+                    _holdout_entities = [ho_entities[i] for i in np.where(valid_rows)[0]]
 
-                if self.verbose:
-                    print(f"    Holdout R\u00b2 = {holdout_performance['r2']:.4f}, "
-                          f"RMSE = {holdout_performance['rmse']:.4f}")
+                    # Per-model holdout predictions for comparison figure
+                    for mname, model in self.super_learner_._fitted_base_models.items():
+                        try:
+                            mp = self.super_learner_._predict_model(
+                                model, X_ho_pred_arr, entity_indices=None)
+                            if mp.ndim == 1:
+                                mp = mp.reshape(-1, 1)
+                            _holdout_per_model[mname] = mp[valid_rows, :y_ho_arr.shape[1]].ravel()
+                        except Exception:
+                            pass
+
+                    if self.verbose:
+                        print(f"    Holdout R\u00b2 = {holdout_performance['r2']:.4f}, "
+                              f"RMSE = {holdout_performance['rmse']:.4f}")
         except (ValueError, RuntimeError, AttributeError) as e:
             # Catch shape mismatches (feature dim mismatch between holdout and
             # target year), sklearn state errors, and attribute errors from an

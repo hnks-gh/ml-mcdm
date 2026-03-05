@@ -33,7 +33,7 @@ import numpy as np
 import pandas as pd
 from typing import Dict, List, Optional, Tuple
 
-from data.missing_data import fill_missing_features, has_complete_target
+from data.missing_data import fill_missing_features, has_complete_target, has_sufficient_target
 
 
 class TemporalFeatureEngineer:
@@ -52,6 +52,14 @@ class TemporalFeatureEngineer:
         rolling_windows: Window sizes for rolling statistics [2, 3]
         include_momentum: Whether to include rate of change features
         include_cross_entity: Whether to include relative position features
+        min_target_fraction: Minimum fraction of non-NaN values a target vector
+            must contain to be accepted as a training sample (default: 0.5).
+            Setting this below 1.0 retains samples with partially-missing
+            sub-criteria; NaN target entries are imputed downstream (e.g. with
+            column medians in the unified pipeline).  Using the default of 0.5
+            dramatically expands the training set when some sub-criteria are
+            systematically absent for certain years (newly-introduced indicators,
+            data gaps).  Set to 1.0 to restore the previous strict behaviour.
     
     Example:
         >>> engineer = TemporalFeatureEngineer(lag_periods=[1, 2])
@@ -62,11 +70,13 @@ class TemporalFeatureEngineer:
                  lag_periods: List[int] = [1, 2],
                  rolling_windows: List[int] = [2, 3],
                  include_momentum: bool = True,
-                 include_cross_entity: bool = True):
+                 include_cross_entity: bool = True,
+                 min_target_fraction: float = 0.5):
         self.lag_periods = lag_periods
         self.rolling_windows = rolling_windows
         self.include_momentum = include_momentum
         self.include_cross_entity = include_cross_entity
+        self.min_target_fraction = min_target_fraction
         self.feature_names_: List[str] = []
     
     def fit_transform(self,
@@ -176,9 +186,9 @@ class TemporalFeatureEngineer:
                     continue
 
                 target = entity_data.loc[next_yr, components].values.astype(float)
-                if not has_complete_target(target):
+                if not has_sufficient_target(target, self.min_target_fraction):
                     n_skipped_train += 1
-                    continue  # Incomplete target — exclude rather than impute
+                    continue  # Too many NaN targets — exclude this sample
 
                 # Guard: entity must also be present in the feature year.
                 # If the province was absent from the CSV for `year` (not just

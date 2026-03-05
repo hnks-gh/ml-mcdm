@@ -667,6 +667,7 @@ class MLMCDMPipeline:
             cv_folds=self.config.forecast.cv_folds,
             random_state=self.config.forecast.random_state,
             verbose=self.config.forecast.verbose,
+            config=self.config.forecast,
         )
         
         result = forecaster.fit_predict(panel_data, target_year=target_year)
