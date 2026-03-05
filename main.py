@@ -11,7 +11,7 @@ Usage
 Pipeline Phases
 ---------------
 1. Data Loading        – yearly CSVs from data/
-2. Weight Calculation  – Hybrid MC Ensemble (Entropy + CRITIC)
+2. Weight Calculation  – Deterministic CRITIC
 3. Hierarchical Ranking – 5 MCDM + two-stage ER
 4. ML Forecasting       – 6-model ensemble + Super Learner + Conformal
 5. Sensitivity Analysis  – Monte Carlo weight perturbation

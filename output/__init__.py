@@ -3,13 +3,13 @@
 Output Package
 ==============
 
-Centralises all persistence logic: CSV/JSON data, Markdown reports, and
-orchestration thereof.
+Centralises all persistence logic: CSV/JSON data, Markdown reports,
+visualization figures, and orchestration thereof.
 
 Quick start::
 
     from output import OutputOrchestrator
-    orch = OutputOrchestrator('result')
+    orch = OutputOrchestrator('output/result')
     orch.save_all(panel_data, weights, ranking_result, ...)
 """
 
@@ -58,6 +58,7 @@ def _sanitize_output_dir(raw: str, *, anchor: _Path | None = None) -> _Path:
 from .csv_writer import CsvWriter
 from .report_writer import ReportWriter
 from .orchestrator import OutputOrchestrator
+from .visualization import VisualizationOrchestrator, create_visualizer
 
 __all__ = ['CsvWriter', 'ReportWriter', 'OutputOrchestrator',
            '_sanitize_output_dir']

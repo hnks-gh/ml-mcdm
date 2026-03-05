@@ -26,7 +26,6 @@ def global_min_max_normalize(
         Input data matrix to normalize.
     epsilon : float, default=1e-10
         Small constant added after normalization to avoid exact zeros.
-        Critical for entropy calculation where log(0) is undefined.
     
     Returns
     -------

@@ -27,8 +27,8 @@ def sample_data():
     return pd.DataFrame(
         {
             "C1": [0.8, 0.6, 0.9, 0.4],
-            "C2": [0.5, 0.5, 0.5, 0.5],  # constant → low entropy weight
-            "C3": [0.2, 0.8, 0.5, 0.9],  # high variation → high entropy weight
+            "C2": [0.5, 0.5, 0.5, 0.5],  # constant → low CRITIC weight
+            "C3": [0.2, 0.8, 0.5, 0.9],  # high variation → high CRITIC weight
         }
     )
 

@@ -66,8 +66,8 @@ def calculate_weights(data: pd.DataFrame, method: str = "critic") -> WeightResul
         return CRITICWeightCalculator().calculate(data)
     elif method in ("robust_global", "ensemble", "hybrid", "entropy"):
         raise ValueError(
-            f"Method '{method}' is no longer supported or requires panel data "
-            "and criteria_groups.  Use CRITICWeightingCalculator directly."
+            f"Method '{method}' is no longer supported.  "
+            "Use CRITICWeightingCalculator directly."
         )
     elif method == "equal":
         cols = data.columns.tolist()

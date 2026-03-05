@@ -279,7 +279,7 @@ For **each of 8 criteria** (C01 through C08):
 4. `04_sensitivity_analysis.png` — Rank stability heatmap
 5. `05_forecast_feature_importance.png` — Aggregated feature importance (if forecasting enabled)
 
-**Output:** PNG files in `result/figures/<phase>/`
+**Output:** PNG files in `output/result/figures/<phase>/`
 
 ---
 
@@ -294,7 +294,7 @@ See [Output Structure](#4-output-structure) below.
 ## 4. Output Structure
 
 ```
-result/
+output/result/
 ├── figures/                          # High-resolution visualizations, split by phase
 │   ├── ranking/
 │   │   ├── fig01_final_er_ranking.png
@@ -431,7 +431,7 @@ print(f"Robustness: {result.analysis['sensitivity'].overall_robustness:.4f}")
 
 ### Debug Log File
 
-- **Location:** `result/logs/debug.log`
+- **Location:** `output/result/logs/debug.log`
 - **Level:** DEBUG (captures everything)
 - **Format:** `timestamp | level | module | function:line | message`
 
@@ -448,7 +448,7 @@ print(f"Robustness: {result.analysis['sensitivity'].overall_robustness:.4f}")
   MCDM methods      : 6 (TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS, SAW)
   MC simulations    : 2000
   Sensitivity sims  : 1000
-  Output            : result/
+  Output            : output/result/
 ======================================================================
 
 ▶ Phase 1/7: Data Loading
@@ -491,7 +491,7 @@ print(f"Robustness: {result.analysis['sensitivity'].overall_robustness:.4f}")
 
 ======================================================================
 Pipeline completed successfully in 32.82s
-Outputs: result/
+Outputs: output/result/
 ======================================================================
 ```
 

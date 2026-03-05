@@ -33,7 +33,7 @@ try:
     from .ranking import TOPSISCalculator
     from .ranking import HierarchicalRankingPipeline, HierarchicalRankingResult
     from .analysis import SensitivityAnalysis
-    from .visualization import VisualizationOrchestrator
+    from .output.visualization import VisualizationOrchestrator
     from .output import OutputOrchestrator
 except ImportError:
     from config import Config, get_default_config
@@ -43,7 +43,7 @@ except ImportError:
     from ranking import TOPSISCalculator
     from ranking import HierarchicalRankingPipeline, HierarchicalRankingResult
     from analysis import SensitivityAnalysis
-    from visualization import VisualizationOrchestrator
+    from output.visualization import VisualizationOrchestrator
     from output import OutputOrchestrator
 
 
@@ -118,7 +118,7 @@ class MLMCDMPipeline:
 
     Integrates
     ----------
-    * Two-Level Hybrid Weighting (Entropy + CRITIC MC Ensemble)
+    * Two-Level Deterministic CRITIC Weighting
     * 6 traditional MCDM methods per criterion group:
         TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS, SAW
     * Two-stage Evidential Reasoning aggregation (Yang & Xu, 2002)

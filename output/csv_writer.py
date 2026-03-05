@@ -5,7 +5,7 @@ CSV & JSON Data Writer for ML-MCDM Pipeline
 
 All structured numerical output (weights, rankings, scores, forecasts,
 sensitivity analysis) is persisted through this single writer class.
-Files are organised under ``result/csv/<phase>/``:
+Files are organised under ``output/result/csv/<phase>/``:
 
   - weighting/   — weights_analysis.csv, criterion_weights.csv
   - ranking/     — final_rankings.csv, prediction_uncertainty_er.csv
@@ -34,7 +34,7 @@ class CsvWriter:
     # Canonical phase names
     PHASES = ('weighting', 'ranking', 'mcdm', 'forecasting', 'sensitivity', 'summary')
 
-    def __init__(self, base_output_dir: str = 'result'):
+    def __init__(self, base_output_dir: str = 'output/result'):
         from . import _sanitize_output_dir
         base = _sanitize_output_dir(base_output_dir)
         self.csv_dir = base / 'csv'
@@ -80,7 +80,7 @@ class CsvWriter:
 
     def save_weights(self, weights: Dict[str, Any],
                      subcriteria: List[str]) -> str:
-        """Save hybrid weighting results to weights_analysis.csv."""
+        """Save CRITIC weighting results to weights_analysis.csv."""
         global_sc_w  = weights.get('global_sc_weights', {})
         criterion_w  = weights.get('criterion_weights', {})
         sc_arr       = np.asarray(weights.get('sc_array', [global_sc_w.get(sc, 0.0) for sc in subcriteria]))

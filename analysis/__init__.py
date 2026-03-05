@@ -3,55 +3,60 @@
 Analysis Module
 ===============
 
-Production-grade validation and sensitivity analysis for MCDM rankings and ML models.
+Centralised analysis layer for the ML-MCDM pipeline.
 
 Components
 ----------
-Sensitivity Analysis (PRODUCTION-READY)
-    State-of-the-art hierarchical sensitivity for traditional MCDM + ER + Forecasting pipeline
+Sensitivity Analysis
+    Hierarchical sensitivity for traditional MCDM + ER + Forecasting pipeline.
     - Multi-level analysis (subcriteria → criteria → final)
     - Temporal stability across years
     - Forecast robustness testing
-    
-Validation (PRODUCTION-READY)
-    Comprehensive validation for hierarchical MCDM + ER pipeline
+
+Validation
+    Comprehensive validation for hierarchical MCDM + ER pipeline.
     - Cross-level consistency checking
     - Weight scheme robustness
     - Forecast quality metrics
     - End-to-end pipeline validation
 
-Example
--------
->>> from analysis import (
-...     SensitivityAnalysis, run_sensitivity_analysis,
-...     Validator, run_validation
-... )
->>> 
->>> # Production sensitivity analysis
->>> sens_result = run_sensitivity_analysis(
-...     panel_data, ranking_pipeline, weights, ranking_result, forecast_result
-... )
->>> print(f"Robustness: {sens_result.overall_robustness:.3f}")
->>> 
->>> # Production validation
->>> val_result = run_validation(
-...     panel_data, weights, ranking_result, forecast_result
-... )
->>> print(f"Validity: {val_result.overall_validity:.3f}")
+Bootstrap
+    Bayesian Bootstrap (Rubin, 1981) for weight uncertainty quantification.
+    - Dirichlet resampling via continuous observation weights
+    - Posterior mean / std / 95 % credible intervals
+    - Early-stopping convergence detection
+
+Stability
+    Split-half temporal stability validation for weight vectors.
+    - Cosine similarity and Spearman rank correlation
+    - Configurable stability threshold
 """
 
-# Sensitivity Analysis (production-ready)
+# Sensitivity Analysis
 from .sensitivity import (
     SensitivityAnalysis,
     SensitivityResult,
-    run_sensitivity_analysis
+    run_sensitivity_analysis,
 )
 
-# Validation (production-ready)
+# Validation
 from .validation import (
     Validator,
     ValidationResult,
-    run_validation
+    run_validation,
+)
+
+# Bootstrap — weight uncertainty quantification
+from .bootstrap import (
+    bayesian_bootstrap_weights,
+    BayesianBootstrap,
+)
+
+# Stability — temporal stability testing
+from .stability import (
+    StabilityResult,
+    TemporalStabilityValidator,
+    temporal_stability_verification,
 )
 
 __all__ = [
@@ -59,9 +64,18 @@ __all__ = [
     'SensitivityAnalysis',
     'SensitivityResult',
     'run_sensitivity_analysis',
-    
+
     # Validation
     'Validator',
     'ValidationResult',
     'run_validation',
+
+    # Bootstrap
+    'bayesian_bootstrap_weights',
+    'BayesianBootstrap',
+
+    # Stability
+    'StabilityResult',
+    'TemporalStabilityValidator',
+    'temporal_stability_verification',
 ]

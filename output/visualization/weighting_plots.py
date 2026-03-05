@@ -59,7 +59,7 @@ class WeightingPlotter(BasePlotter):
             return None
 
         n_c = len(component_names)
-        # Canonical order: Entropy first, CRITIC second, Hybrid last
+        # Canonical order: CRITIC first
         methods = [m for m in _METHOD_ORDER if m in weights]
         if not methods:
             methods = list(weights.keys())
@@ -278,14 +278,12 @@ class WeightingPlotter(BasePlotter):
         return self._save(fig, save_name)
 
     # ==================================================================
-    #  FIG 03d – Diverging deviation: Entropy / CRITIC vs Hybrid baseline
+    #  FIG 03d – removed (required Hybrid baseline)
     # ==================================================================
 
     def plot_weight_deviation(
         self,
-        entropy_sc: Dict[str, float],
         critic_sc: Dict[str, float],
-        hybrid_sc: Dict[str, float],
         subcriteria: List[str],
         save_name: str = 'fig03d_weight_deviation.png',
     ) -> Optional[str]:
@@ -443,8 +441,7 @@ class WeightingPlotter(BasePlotter):
           (weights aggregated by summing SC global weights per group).
         * **fig04b_C01_radar.png … fig04b_C08_radar.png** – one radar per
           criterion group using sub-criteria weights *locally normalised*
-          (summing to 1 within each group).  All radars overlay Entropy,
-          CRITIC and Hybrid.
+          (summing to 1 within each group).
         """
         if not HAS_MATPLOTLIB:
             return []
@@ -477,28 +474,12 @@ class WeightingPlotter(BasePlotter):
 
         saved: List[Optional[str]] = []
 
-        # fig04a – criteria-level radar (all three methods)
+        # fig04a – criteria-level radar (CRITIC)
         saved.append(self._draw_radar(
             crit_w, crit_labels, methods,
-            title='Criterion-Level Weight Radar — Entropy / CRITIC / Hybrid',
+            title='Criterion-Level Weight Radar — CRITIC',
             save_name=f'{save_prefix}a_weight_radar_criteria.png',
         ))
-
-        # fig04a-entropy – criteria-level radar (Entropy only)
-        if 'Entropy' in crit_w:
-            saved.append(self._draw_radar(
-                {'Entropy': crit_w['Entropy']}, crit_labels, ['Entropy'],
-                title='Criterion-Level Weight Radar — Entropy',
-                save_name=f'{save_prefix}a_weight_radar_criteria_entropy.png',
-            ))
-
-        # fig04a-critic – criteria-level radar (CRITIC only)
-        if 'CRITIC' in crit_w:
-            saved.append(self._draw_radar(
-                {'CRITIC': crit_w['CRITIC']}, crit_labels, ['CRITIC'],
-                title='Criterion-Level Weight Radar — CRITIC',
-                save_name=f'{save_prefix}a_weight_radar_criteria_critic.png',
-            ))
 
         # fig04b_C0X – group radars with locally-normalised weights
         for d in crit_digits:
@@ -512,7 +493,7 @@ class WeightingPlotter(BasePlotter):
             saved.append(self._draw_radar(
                 local_w, sc_names, methods,
                 title=(f'C0{d} Sub-Criterion Weights (locally normalised) '
-                       '— Entropy / CRITIC / Hybrid'),
+                       '— CRITIC'),
                 save_name=f'{save_prefix}b_C0{d}_radar.png',
             ))
 

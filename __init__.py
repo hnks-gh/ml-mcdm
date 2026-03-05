@@ -50,10 +50,11 @@ ml-mcdm/
 │   ├── sensitivity.py  # Monte Carlo sensitivity analysis
 │   └── validation.py   # Cross-validation, bootstrap
 │
-└── output/             # Result export
+└── output/             # Result export + visualization
     ├── csv_writer.py
     ├── report_writer.py
-    └── orchestrator.py
+    ├── orchestrator.py
+    └── visualization/  # Publication-quality figures
 
 Quick Start
 -----------
@@ -84,7 +85,7 @@ try:
     from .data import DataLoader, PanelData, HierarchyMapping, load_data
     from .pipeline import MLMCDMPipeline, run_pipeline, PipelineResult
     from .output import OutputOrchestrator, CsvWriter, ReportWriter
-    from .visualization import VisualizationOrchestrator, create_visualizer
+    from .output.visualization import VisualizationOrchestrator, create_visualizer
 except ImportError as _import_err:
     import warnings as _warnings
     _warnings.warn(

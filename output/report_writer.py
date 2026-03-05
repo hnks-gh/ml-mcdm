@@ -3,7 +3,7 @@
 Publication-Quality Markdown + LaTeX Report Writer
 ===================================================
 
-Generates ``result/reports/report.md`` — a comprehensive analysis
+Generates ``output/result/reports/report.md`` — a comprehensive analysis
 report using proper Markdown headings, pipe tables, and LaTeX math
 blocks for equations.  Renderable with any Markdown viewer or
 convertible to PDF via Pandoc.

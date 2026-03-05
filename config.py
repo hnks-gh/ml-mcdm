@@ -42,9 +42,7 @@ class NormalizationType(Enum):
 
 class WeightMethod(Enum):
     """Supported weighting method families."""
-    ENTROPY = "entropy"
     CRITIC = "critic"
-    ENSEMBLE = "ensemble"
     EQUAL = "equal"
 
 
@@ -74,7 +72,7 @@ class PathConfig:
 
     @property
     def output_dir(self) -> Path:
-        return self.base_dir / "result"
+        return self.base_dir / "output" / "result"
 
     @property
     def figures_dir(self) -> Path:
@@ -460,7 +458,7 @@ class Config:
             f"    TOPSIS norm     : {self.topsis.normalization.value}\n"
             f"    VIKOR v         : {self.vikor.v}\n\n"
             f"  WEIGHTING\n"
-            f"    Strategy        : Hybrid MC Ensemble (Entropy + CRITIC)\n"
+            f"    Strategy        : Deterministic CRITIC\n"
             f"    MC simulations  : {self.weighting.mc_n_simulations}\n"
             f"    Stability thr   : {self.weighting.stability_threshold}\n\n"
             f"  RANKING\n"

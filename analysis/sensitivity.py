@@ -200,7 +200,7 @@ class SensitivityAnalysis:
         ranking_pipeline : HierarchicalRankingPipeline
             Ranking system instance
         weights : Dict
-            Weight dictionary with 'fused', 'entropy', etc.
+            Weight dictionary with 'fused', etc.
         ranking_result : HierarchicalRankingResult
             Current ranking results
         forecast_result : UnifiedForecastResult, optional

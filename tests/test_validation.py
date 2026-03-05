@@ -1,7 +1,7 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """
 Unit tests for analysis/validation.py and weighting/validation.py
-— Phase 6 coverage.
+â€” Phase 6 coverage.
 
 Covers the Phase 5 bug-fixes:
   - M9:  Spearman rank correlation used in TemporalStabilityValidator
@@ -46,12 +46,12 @@ def _make_weights(n_criteria: int = 4, seed: int = 0) -> dict:
         "sc_array": raw.copy(),
         "subcriteria": subcriteria,
         "criterion_weights": {},
-        "details": {},   # no stability info — overridden per-test
+        "details": {},   # no stability info â€” overridden per-test
     }
 
 
 # ---------------------------------------------------------------------------
-# M11 — _validate_weight_temporal_stability fallback is 0.0, not 0.90
+# M11 â€” _validate_weight_temporal_stability fallback is 0.0, not 0.90
 # ---------------------------------------------------------------------------
 
 class TestValidatorTemporalStability:
@@ -59,8 +59,8 @@ class TestValidatorTemporalStability:
 
     def test_no_details_returns_zero(self):
         """
-        weights['details'] is empty → no bootstrap or stability info
-        → must return 0.0, not 0.90.
+        weights['details'] is empty â†’ no bootstrap or stability info
+        â†’ must return 0.0, not 0.90.
         """
         validator = Validator()
         panel = _MinimalPanel(n_years=3)
@@ -75,7 +75,7 @@ class TestValidatorTemporalStability:
         )
 
     def test_missing_details_key_returns_zero(self):
-        """weights has no 'details' key at all → fallback is 0.0."""
+        """weights has no 'details' key at all â†’ fallback is 0.0."""
         validator = Validator()
         panel = _MinimalPanel(n_years=3)
         weights = _make_weights()
@@ -85,7 +85,7 @@ class TestValidatorTemporalStability:
         assert result == 0.0, f"Expected 0.0, got {result}"
 
     def test_empty_bootstrap_returns_zero(self):
-        """details.bootstrap present but empty → no std_weights → returns 0.0."""
+        """details.bootstrap present but empty â†’ no std_weights â†’ returns 0.0."""
         validator = Validator()
         panel = _MinimalPanel(n_years=3)
         weights = _make_weights()
@@ -116,7 +116,7 @@ class TestValidatorTemporalStability:
         validator = Validator()
         panel = _MinimalPanel(n_years=3)
         weights = _make_weights()
-        # cv_weights: S0→0.10, S1→0.20, S2→0.00, S3→0.00
+        # cv_weights: S0â†’0.10, S1â†’0.20, S2â†’0.00, S3â†’0.00
         # mean_cv = (0.10 + 0.20 + 0.00 + 0.00) / 4 = 0.075
         # stability = 1 - 0.075 = 0.925
         weights["details"] = {
@@ -132,12 +132,12 @@ class TestValidatorTemporalStability:
         result = validator._validate_weight_temporal_stability(panel, weights)
         expected = float(np.clip(1.0 - np.mean([0.10, 0.20, 0.00, 0.00]), 0.0, 1.0))
         assert abs(result - expected) < 1e-6, (
-            f"Expected stability≈{expected:.4f}, got {result:.4f}"
+            f"Expected stabilityâ‰ˆ{expected:.4f}, got {result:.4f}"
         )
 
     def test_single_year_returns_one(self):
         """
-        panel.years has only 1 year → len(years) < 2 guard triggers → returns 1.0.
+        panel.years has only 1 year â†’ len(years) < 2 guard triggers â†’ returns 1.0.
         """
         validator = Validator()
         panel = _MinimalPanel(n_years=1)
@@ -150,7 +150,7 @@ class TestValidatorTemporalStability:
 
 
 # ---------------------------------------------------------------------------
-# M11 — _validate_weight_method_agreement returns 0.0, not 0.85
+# M11 â€” _validate_weight_method_agreement returns 0.0, not 0.85
 # ---------------------------------------------------------------------------
 
 class TestValidatorMethodAgreement:
@@ -158,11 +158,11 @@ class TestValidatorMethodAgreement:
 
     def test_single_method_returns_zero(self):
         """
-        Only one weighting method available → cannot compute pairwise
-        correlation → must return 0.0 (not 0.85).
+        Only one weighting method available â†’ cannot compute pairwise
+        correlation â†’ must return 0.0 (not 0.85).
         """
         validator = Validator()
-        weights = {"entropy": np.array([0.3, 0.4, 0.3])}
+        weights = {"critic": np.array([0.3, 0.4, 0.3])}
 
         result = validator._validate_weight_method_agreement(weights)
         assert result == 0.0, (
@@ -171,21 +171,21 @@ class TestValidatorMethodAgreement:
         )
 
     def test_no_methods_returns_zero(self):
-        """Empty weights dict → 0 methods → must return 0.0."""
+        """Empty weights dict â†’ 0 methods â†’ must return 0.0."""
         validator = Validator()
         result = validator._validate_weight_method_agreement({})
         assert result == 0.0, f"Expected 0.0, got {result}"
 
     def test_all_constant_arrays_returns_zero(self):
         """
-        Constant arrays → Spearman is NaN → all correlations are NaN
-        → must return 0.0 (not 0.85).
+        Constant arrays â†’ Spearman is NaN â†’ all correlations are NaN
+        â†’ must return 0.0 (not 0.85).
         """
         validator = Validator()
         constant = np.array([0.25, 0.25, 0.25, 0.25])
         weights = {
-            "entropy": constant.copy(),
             "critic":  constant.copy(),
+            "critic2": constant.copy(),
         }
 
         result = validator._validate_weight_method_agreement(weights)
@@ -195,7 +195,7 @@ class TestValidatorMethodAgreement:
 
     def test_zero_cv_weights_return_one(self):
         """
-        When all criterion cv_weights are zero → mean_cv = 0 → 1 - 0 = 1.0.
+        When all criterion cv_weights are zero â†’ mean_cv = 0 â†’ 1 - 0 = 1.0.
         """
         validator = Validator()
         weights = {
@@ -216,7 +216,7 @@ class TestValidatorMethodAgreement:
     def test_known_cv_weights_return_expected_agreement(self):
         """
         Known cv_weights: mean_cv = (0.05 + 0.15) / 2 = 0.10
-        → agreement = 1 - 0.10 = 0.90.
+        â†’ agreement = 1 - 0.10 = 0.90.
         """
         validator = Validator()
         weights = {
@@ -235,7 +235,7 @@ class TestValidatorMethodAgreement:
         )
 
     def test_low_cv_gives_positive_agreement(self):
-        """Low coefficient of variation in criterion weights → agreement > 0.5."""
+        """Low coefficient of variation in criterion weights â†’ agreement > 0.5."""
         validator = Validator()
         weights = {
             "details": {
@@ -254,12 +254,12 @@ class TestValidatorMethodAgreement:
     def test_two_methods_with_length_two_returns_zero(self):
         """
         Arrays shorter than 3 elements: Spearman not computable (skipped)
-        → no valid correlations → returns 0.0.
+        â†’ no valid correlations â†’ returns 0.0.
         """
         validator = Validator()
         weights = {
-            "entropy": np.array([0.6, 0.4]),
-            "critic":  np.array([0.3, 0.7]),
+            "method_a": np.array([0.6, 0.4]),
+            "critic":   np.array([0.3, 0.7]),
         }
         # The condition `len(weight_arrays[i]) > 2` means len=2 is skipped
         result = validator._validate_weight_method_agreement(weights)
@@ -269,7 +269,7 @@ class TestValidatorMethodAgreement:
 
 
 # ---------------------------------------------------------------------------
-# M9 — TemporalStabilityValidator uses Spearman (weighting/validation.py)
+# M9 â€” TemporalStabilityValidator uses Spearman (weighting/validation.py)
 # ---------------------------------------------------------------------------
 
 class TestTemporalStabilityValidatorSpearman:
@@ -280,13 +280,13 @@ class TestTemporalStabilityValidatorSpearman:
         If w1 == w2, Spearman rank correlation must be 1.0 (or as close as
         the nan_to_num guard permits for degenerate identical vectors).
         """
-        from weighting.validation import TemporalStabilityValidator
+        from analysis.stability import TemporalStabilityValidator
 
         w = np.array([0.1, 0.4, 0.2, 0.3])
         tsv = TemporalStabilityValidator(threshold=0.9)
         result = tsv.validate(w.copy(), w.copy())
 
-        # Identical → Spearman = 1.0 (not NaN because numpy would give NaN
+        # Identical â†’ Spearman = 1.0 (not NaN because numpy would give NaN
         # for identical vectors via corrcoef too, but spearmanr gives NaN
         # only when all ranks are tied)
         # In scipy.stats.spearmanr: identical vectors actually give 1.0
@@ -296,8 +296,8 @@ class TestTemporalStabilityValidatorSpearman:
         )
 
     def test_reversed_vectors_give_minus_one(self):
-        """w2 is w1 reversed → Spearman = -1.0."""
-        from weighting.validation import TemporalStabilityValidator
+        """w2 is w1 reversed â†’ Spearman = -1.0."""
+        from analysis.stability import TemporalStabilityValidator
 
         w1 = np.array([0.4, 0.3, 0.2, 0.1])
         w2 = w1[::-1].copy()
@@ -310,7 +310,7 @@ class TestTemporalStabilityValidatorSpearman:
 
     def test_correlation_in_minus_one_plus_one(self):
         """Spearman correlation must lie in [-1, 1]."""
-        from weighting.validation import TemporalStabilityValidator
+        from analysis.stability import TemporalStabilityValidator
 
         rng = np.random.RandomState(99)
         for _ in range(10):
@@ -321,8 +321,8 @@ class TestTemporalStabilityValidatorSpearman:
             assert -1.0 - 1e-9 <= result.correlation <= 1.0 + 1e-9
 
     def test_single_element_returns_one(self):
-        """Single-element vectors: len(w) == 1 → correlation defaults to 1.0."""
-        from weighting.validation import TemporalStabilityValidator
+        """Single-element vectors: len(w) == 1 â†’ correlation defaults to 1.0."""
+        from analysis.stability import TemporalStabilityValidator
 
         tsv = TemporalStabilityValidator(threshold=0.9)
         result = tsv.validate(np.array([1.0]), np.array([1.0]))
@@ -330,12 +330,12 @@ class TestTemporalStabilityValidatorSpearman:
 
     def test_stability_flag_based_on_cosine_similarity(self):
         """
-        is_stable is determined by cosine similarity ≥ threshold;
+        is_stable is determined by cosine similarity â‰¥ threshold;
         correlation value does not affect the flag.
         """
-        from weighting.validation import TemporalStabilityValidator
+        from analysis.stability import TemporalStabilityValidator
 
-        # High cosine similarity → stable even if correlation is not 1
+        # High cosine similarity â†’ stable even if correlation is not 1
         w1 = np.array([0.3, 0.4, 0.3])
         w2 = np.array([0.31, 0.39, 0.30])  # very close to w1
         tsv = TemporalStabilityValidator(threshold=0.99)
@@ -352,7 +352,7 @@ class TestTemporalStabilityValidatorSpearman:
 # ---------------------------------------------------------------------------
 
 class TestTOPSISDegenerate:
-    """M3 — TOPSIS degenerate case: all identical rows → score = 0.5 (not 0.0)."""
+    """M3 â€” TOPSIS degenerate case: all identical rows â†’ score = 0.5 (not 0.0)."""
 
     def test_identical_rows_score_half(self):
         from ranking.topsis import TOPSISCalculator
@@ -371,7 +371,7 @@ class TestTOPSISDegenerate:
 
 
 class TestSAWZeroCost:
-    """H2 — SAW: zero-cost value must not get worst (0) score in max/sum modes."""
+    """H2 â€” SAW: zero-cost value must not get worst (0) score in max/sum modes."""
 
     def test_max_mode_zero_cost_not_worst(self):
         """
@@ -388,7 +388,7 @@ class TestSAWZeroCost:
         calc = SAWCalculator(normalization="max", cost_criteria=["cost"])
         res = calc.calculate(dm, {"benefit": 0.5, "cost": 0.5})
 
-        # 'Best' has highest benefit and lowest cost → should be ranked 1
+        # 'Best' has highest benefit and lowest cost â†’ should be ranked 1
         assert res.ranks["Best"] == 1, (
             f"Expected 'Best' to be rank 1 (zero cost + high benefit), got rank {res.ranks['Best']}"
         )
@@ -396,7 +396,7 @@ class TestSAWZeroCost:
     def test_sum_mode_zero_cost_not_crash(self):
         """
         With normalization='sum' and a cost column containing zero,
-        replacing zeros with ε before inversion prevents divide-by-zero.
+        replacing zeros with Îµ before inversion prevents divide-by-zero.
         """
         from ranking.saw import SAWCalculator
 
@@ -411,7 +411,7 @@ class TestSAWZeroCost:
 
 
 class TestVIKORCompromiseSetC2:
-    """M2 — VIKOR compromise set must include best_by_S and best_by_R when C2 fails."""
+    """M2 â€” VIKOR compromise set must include best_by_S and best_by_R when C2 fails."""
 
     def test_compromise_set_is_subset_of_alternatives(self):
         from ranking.vikor import VIKORCalculator
@@ -443,7 +443,7 @@ class TestVIKORCompromiseSetC2:
 
 
 class TestModifiedEDASTrimmeanPath:
-    """H3 — ModifiedEDAS with trimmed mean must produce a valid result."""
+    """H3 â€” ModifiedEDAS with trimmed mean must produce a valid result."""
 
     def test_trimmed_mean_differs_from_regular_mean(self):
         """ModifiedEDAS(use_trimmed_mean=True) must use the trimmed path."""
@@ -465,7 +465,7 @@ class TestModifiedEDASTrimmeanPath:
         # Appraisal scores must differ from the regular path
         assert not np.allclose(res_regular.AS.values, res_trimmed.AS.values), (
             "ModifiedEDAS trimmed-mean path returned same scores as regular EDAS "
-            "— H3 fix may not be applied"
+            "â€” H3 fix may not be applied"
         )
 
 
@@ -475,15 +475,15 @@ class TestModifiedEDASTrimmeanPath:
 
 class TestEvidentialReasoningKConstant:
     """
-    C2 — ER combine() must use the correct normalisation constant
-    K = 1 / (∑∏A − (N−1)·∏B), not 1 / (1 − ∏B).
+    C2 â€” ER combine() must use the correct normalisation constant
+    K = 1 / (âˆ‘âˆA âˆ’ (Nâˆ’1)Â·âˆB), not 1 / (1 âˆ’ âˆB).
     """
 
     def test_k_constant_correct_for_two_independent_sources(self):
         """
         For two fully certain sources with disjoint dominant grades,
-        the ER result must still be valid (beliefs sum ≤ 1).
-        With the wrong K = 1/(1−∏B) several mass configurations produce
+        the ER result must still be valid (beliefs sum â‰¤ 1).
+        With the wrong K = 1/(1âˆ’âˆB) several mass configurations produce
         beliefs > 1.
         """
         from evidential_reasoning.base import BeliefDistribution, EvidentialReasoningEngine

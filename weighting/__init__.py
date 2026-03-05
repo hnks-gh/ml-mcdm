@@ -23,15 +23,15 @@ Objective weight calculation methods for MCDM:
 **Utilities:**
 - global_min_max_normalize: Global min-max normalization function
 - GlobalNormalizer: Stateful normalizer (fit/transform pattern)
-- bayesian_bootstrap_weights: Bayesian bootstrap weight sampling
-- temporal_stability_verification: Temporal stability validation
+
+**Analysis utilities** live in the ``analysis`` package:
+- ``analysis.bootstrap`` — Bayesian bootstrap weight sampling
+- ``analysis.stability`` — temporal stability validation
 """
 
 from .critic_weighting import CRITICWeightingCalculator
 from .critic import CRITICWeightCalculator
 from .normalization import global_min_max_normalize, GlobalNormalizer
-from .bootstrap import bayesian_bootstrap_weights, BayesianBootstrap
-from .validation import temporal_stability_verification, TemporalStabilityValidator, StabilityResult
 from .base import WeightResult, calculate_weights
 from .adaptive import (
     AdaptiveWeightCalculator,
@@ -56,16 +56,9 @@ __all__ = [
     'WeightCalculator',
     'calculate_adaptive_weights',
 
-    # Normalization & bootstrap utilities
+    # Normalization utilities
     'global_min_max_normalize',
     'GlobalNormalizer',
-    'bayesian_bootstrap_weights',
-    'BayesianBootstrap',
-
-    # Stability validation
-    'temporal_stability_verification',
-    'TemporalStabilityValidator',
-    'StabilityResult',
 
     # Convenience dispatcher
     'calculate_weights',
