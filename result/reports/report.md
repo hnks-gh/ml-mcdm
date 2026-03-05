@@ -18,8 +18,8 @@ date: "2026-03-05"
 - [10. Methodological Notes and References](#methodological-notes-and-references)
 - [A. Output File Inventory](#output-file-inventory)
 
-> **Generated:** 2026-03-05 14:16:10  
-> **Runtime:** 1011.17 s  
+> **Generated:** 2026-03-05 16:19:55  
+> **Runtime:** 539.99 s  
 > **Framework:** ML-MCDM v4.0
 
 # 1. Executive Summary
@@ -34,24 +34,24 @@ Final provincial rankings are obtained via a two-stage Evidential Reasoning (ER)
 
 | Rank | Province | ER Score |
 | ---: | :--- | ---: |
-| 1 | P39 | 0.6310 |
-| 2 | P12 | 0.5956 |
-| 3 | P46 | 0.5894 |
-| 4 | P30 | 0.5892 |
-| 5 | P38 | 0.5819 |
+| 1 | P39 | 0.6553 |
+| 2 | P46 | 0.6287 |
+| 3 | P12 | 0.6198 |
+| 4 | P14 | 0.6110 |
+| 5 | P38 | 0.6099 |
 
 **Table 1(b). Lowest-ranked provinces.**
 
 | Rank | Province | ER Score |
 | ---: | :--- | ---: |
-| 61 | P54 | 0.3282 |
-| 60 | P40 | 0.3497 |
-| 59 | P58 | 0.3603 |
-| 58 | P59 | 0.3614 |
-| 57 | P43 | 0.3633 |
+| 61 | P58 | 0.3476 |
+| 60 | P54 | 0.3503 |
+| 59 | P40 | 0.3525 |
+| 58 | P59 | 0.3673 |
+| 57 | P43 | 0.3725 |
 
-- **Kendall's $W$ (concordance):** 0.3818
-- **Overall Robustness Index:** 0.8584
+- **Kendall's $W$ (concordance):** 0.4243
+- **Overall Robustness Index:** 0.8608
 - **Confidence Level:** 95%
 
 # 2. Data Description and Descriptive Statistics
@@ -103,7 +103,7 @@ The dataset comprises a balanced panel of 61 provinces observed annually from 20
 
 # 3. Objective Weight Derivation
 
-Subcriteria weights are derived through a two-level hierarchical Monte Carlo ensemble that blends Shannon Entropy and CRITIC via a Beta-distributed mixing coefficient.  Level 1 produces local SC weights within each criterion group; Level 2 determines criterion-level weights from a composite matrix.  Global SC weights are the product of local and criterion weights, re-normalised to the simplex.
+Subcriteria weights are derived through a two-level deterministic CRITIC pipeline.  Level 1 runs CRITIC on each criterion group independently, producing local SC weights that sum to 1 within each group.  Level 2 runs CRITIC on a criterion composite matrix, producing criterion-level weights that sum to 1 globally.  Global SC weights are the product of local and criterion weights, re-normalised to the simplex.
 
 The global weight of subcriteria $j$ in criterion group $C_k$ is:
 
@@ -111,60 +111,57 @@ $$w_j = \frac{u_j^{(k)} \cdot v_k}{\sum_{k^{\prime}} \sum_{j^{\prime} \in C_{k^{
 
 where $u_j^{(k)}$ is the Level-1 local SC weight and $v_k$ is the Level-2 criterion weight.
 
-**Table 3. Subcriteria global weights (Hybrid MC Ensemble).**
+**Table 3. Subcriteria global weights (CRITIC two-level).**
 
-| Subcriteria | Criterion | Criterion Weight | Local Weight | Global Weight | MC Std | MC CV |
-| :--- | :--- | ---: | ---: | ---: | ---: | ---: |
-| SC11 | C01 | 0.1108 | 0.2652 | 0.0294 | 0.0283 | 0.1068 |
-| SC12 | C01 | 0.1108 | 0.2105 | 0.0233 | 0.0177 | 0.0842 |
-| SC13 | C01 | 0.1108 | 0.2124 | 0.0235 | 0.0158 | 0.0744 |
-| SC14 | C01 | 0.1108 | 0.3119 | 0.0346 | 0.0217 | 0.0697 |
-| SC21 | C02 | 0.0792 | 0.5342 | 0.0423 | 0.0488 | 0.0913 |
-| SC22 | C02 | 0.0792 | 0.1805 | 0.0143 | 0.0165 | 0.0915 |
-| SC23 | C02 | 0.0792 | 0.1855 | 0.0147 | 0.0173 | 0.0935 |
-| SC24 | C02 | 0.0792 | 0.0998 | 0.0079 | 0.0274 | 0.2740 |
-| SC31 | C03 | 0.2592 | 0.1660 | 0.0430 | 0.0319 | 0.1922 |
-| SC32 | C03 | 0.2592 | 0.5944 | 0.1541 | 0.0531 | 0.0894 |
-| SC33 | C03 | 0.2592 | 0.2395 | 0.0621 | 0.0246 | 0.1029 |
-| SC41 | C04 | 0.0968 | 0.2219 | 0.0215 | 0.0246 | 0.1108 |
-| SC42 | C04 | 0.0968 | 0.2004 | 0.0194 | 0.0222 | 0.1108 |
-| SC43 | C04 | 0.0968 | 0.3349 | 0.0324 | 0.0370 | 0.1105 |
-| SC44 | C04 | 0.0968 | 0.2428 | 0.0235 | 0.0424 | 0.1747 |
-| SC51 | C05 | 0.0819 | 0.2107 | 0.0173 | 0.0204 | 0.0969 |
-| SC52 | C05 | 0.0819 | 0.1962 | 0.0161 | 0.0463 | 0.2360 |
-| SC53 | C05 | 0.0819 | 0.2242 | 0.0184 | 0.0204 | 0.0909 |
-| SC54 | C05 | 0.0819 | 0.3690 | 0.0302 | 0.0402 | 0.1090 |
-| SC61 | C06 | 0.1227 | 0.2136 | 0.0262 | 0.0184 | 0.0862 |
-| SC62 | C06 | 0.1227 | 0.1969 | 0.0242 | 0.0144 | 0.0730 |
-| SC63 | C06 | 0.1227 | 0.2852 | 0.0350 | 0.0202 | 0.0707 |
-| SC64 | C06 | 0.1227 | 0.3043 | 0.0373 | 0.0219 | 0.0720 |
-| SC71 | C07 | 0.1184 | 0.3813 | 0.0451 | 0.0241 | 0.0631 |
-| SC72 | C07 | 0.1184 | 0.1740 | 0.0206 | 0.0384 | 0.2210 |
-| SC73 | C07 | 0.1184 | 0.4448 | 0.0526 | 0.0402 | 0.0905 |
-| SC81 | C08 | 0.1309 | 0.2434 | 0.0319 | 0.0179 | 0.0734 |
-| SC82 | C08 | 0.1309 | 0.1735 | 0.0227 | 0.0330 | 0.1900 |
-| SC83 | C08 | 0.1309 | 0.5830 | 0.0763 | 0.0488 | 0.0836 |
+| Subcriteria | Criterion | Criterion Weight | Local Weight | Global Weight |
+| :--- | :--- | ---: | ---: | ---: |
+| SC11 | C01 | 0.1225 | 0.2311 | 0.0283 |
+| SC12 | C01 | 0.1225 | 0.2303 | 0.0282 |
+| SC13 | C01 | 0.1225 | 0.2290 | 0.0281 |
+| SC14 | C01 | 0.1225 | 0.3095 | 0.0379 |
+| SC21 | C02 | 0.0968 | 0.3974 | 0.0385 |
+| SC22 | C02 | 0.0968 | 0.2248 | 0.0218 |
+| SC23 | C02 | 0.0968 | 0.2182 | 0.0211 |
+| SC24 | C02 | 0.0968 | 0.1596 | 0.0155 |
+| SC31 | C03 | 0.1936 | 0.2592 | 0.0502 |
+| SC32 | C03 | 0.1936 | 0.4513 | 0.0874 |
+| SC33 | C03 | 0.1936 | 0.2895 | 0.0561 |
+| SC41 | C04 | 0.1264 | 0.2226 | 0.0281 |
+| SC42 | C04 | 0.1264 | 0.1897 | 0.0240 |
+| SC43 | C04 | 0.1264 | 0.2547 | 0.0322 |
+| SC44 | C04 | 0.1264 | 0.3330 | 0.0421 |
+| SC51 | C05 | 0.1087 | 0.2023 | 0.0220 |
+| SC52 | C05 | 0.1087 | 0.3218 | 0.0350 |
+| SC53 | C05 | 0.1087 | 0.2103 | 0.0229 |
+| SC54 | C05 | 0.1087 | 0.2656 | 0.0289 |
+| SC61 | C06 | 0.1491 | 0.2470 | 0.0368 |
+| SC62 | C06 | 0.1491 | 0.2140 | 0.0319 |
+| SC63 | C06 | 0.1491 | 0.2685 | 0.0400 |
+| SC64 | C06 | 0.1491 | 0.2705 | 0.0403 |
+| SC71 | C07 | 0.1083 | 0.3786 | 0.0410 |
+| SC72 | C07 | 0.1083 | 0.2678 | 0.0290 |
+| SC73 | C07 | 0.1083 | 0.3535 | 0.0383 |
+| SC81 | C08 | 0.0945 | 0.2867 | 0.0271 |
+| SC82 | C08 | 0.0945 | 0.2694 | 0.0255 |
+| SC83 | C08 | 0.0945 | 0.4439 | 0.0419 |
 
 - **Sum of global weights:** 1.000000
-- **Max weight:** 0.154093 (SC32)
-- **Min weight:** 0.007912 (SC24)
-- **Shannon entropy $H(\mathbf{{w}})$:** 3.1533
+- **Max weight:** 0.087395 (SC32)
+- **Min weight:** 0.015454 (SC24)
+- **Weight entropy $H(\mathbf{{w}})$:** 3.3018
 
-**Table 4. Level-2 criterion weights (MC diagnostics).**
+**Table 4. Level-2 criterion weights.**
 
-| Criterion | Weight | MC Mean | MC Std | 95% CI Lower | 95% CI Upper |
-| :--- | ---: | ---: | ---: | ---: | ---: |
-| C01 | 0.1108 | 0.1108 | 0.0063 | 0.0978 | 0.1230 |
-| C02 | 0.0792 | 0.0792 | 0.0067 | 0.0657 | 0.0915 |
-| C03 | 0.2592 | 0.2592 | 0.0198 | 0.2209 | 0.2963 |
-| C04 | 0.0968 | 0.0968 | 0.0111 | 0.0758 | 0.1180 |
-| C05 | 0.0819 | 0.0819 | 0.0140 | 0.0572 | 0.1084 |
-| C06 | 0.1227 | 0.1227 | 0.0108 | 0.1007 | 0.1429 |
-| C07 | 0.1184 | 0.1184 | 0.0091 | 0.1022 | 0.1379 |
-| C08 | 0.1309 | 0.1309 | 0.0109 | 0.1105 | 0.1534 |
-
-- **Level-2 Avg Kendall τ:** 0.9695
-- **Level-2 Kendall's W:** 0.9959
+| Criterion | Weight |
+| :--- | ---: |
+| C01 | 0.122495 |
+| C02 | 0.096823 |
+| C03 | 0.193632 |
+| C04 | 0.126407 |
+| C05 | 0.108750 |
+| C06 | 0.149087 |
+| C07 | 0.108331 |
+| C08 | 0.094474 |
 
 # 4. Hierarchical Evidential Reasoning Ranking
 
@@ -176,90 +173,90 @@ where $K = \sum_{H_i \cap H_j = \varnothing} m_1(H_i) m_2(H_j)$ is the conflict 
 
 - **Aggregation:** Evidential Reasoning (Yang & Xu, 2002)
 - **MCDM Methods:** 5
-- **Kendall's $W$:** 0.3818
+- **Kendall's $W$:** 0.4243
 - **Target Year:** 2024
 
 **Table 5. Complete provincial ranking by ER composite score.**
 
 | Rank | Province | ER Score | $z$-Score | Quartile |
 | ---: | :--- | ---: | ---: | :---: |
-| 1 | P39 | 0.6310 | +2.200 | Q1 |
-| 2 | P12 | 0.5956 | +1.707 | Q1 |
-| 3 | P46 | 0.5894 | +1.619 | Q1 |
-| 4 | P30 | 0.5892 | +1.617 | Q1 |
-| 5 | P38 | 0.5819 | +1.515 | Q1 |
-| 6 | P49 | 0.5720 | +1.378 | Q1 |
-| 7 | P14 | 0.5567 | +1.164 | Q1 |
-| 8 | P28 | 0.5559 | +1.153 | Q1 |
-| 9 | P22 | 0.5533 | +1.116 | Q1 |
-| 10 | P63 | 0.5522 | +1.101 | Q1 |
-| 11 | P29 | 0.5447 | +0.996 | Q1 |
-| 12 | P26 | 0.5426 | +0.968 | Q1 |
-| 13 | P18 | 0.5384 | +0.909 | Q1 |
-| 14 | P60 | 0.5361 | +0.877 | Q1 |
-| 15 | P31 | 0.5337 | +0.843 | Q1 |
-| 16 | P62 | 0.5283 | +0.767 | Q1 |
-| 17 | P04 | 0.5261 | +0.738 | Q2 |
-| 18 | P47 | 0.5163 | +0.600 | Q2 |
-| 19 | P21 | 0.5135 | +0.561 | Q2 |
-| 20 | P24 | 0.5127 | +0.551 | Q2 |
-| 21 | P56 | 0.5123 | +0.545 | Q2 |
-| 22 | P27 | 0.5095 | +0.505 | Q2 |
-| 23 | P13 | 0.5017 | +0.397 | Q2 |
-| 24 | P15 | 0.4996 | +0.367 | Q2 |
-| 25 | P34 | 0.4935 | +0.282 | Q2 |
-| 26 | P11 | 0.4919 | +0.260 | Q2 |
-| 27 | P09 | 0.4907 | +0.243 | Q2 |
-| 28 | P32 | 0.4897 | +0.229 | Q2 |
-| 29 | P02 | 0.4865 | +0.184 | Q2 |
-| 30 | P16 | 0.4843 | +0.154 | Q2 |
-| 31 | P61 | 0.4834 | +0.141 | Q2 |
-| 32 | P35 | 0.4786 | +0.074 | Q3 |
-| 33 | P25 | 0.4744 | +0.016 | Q3 |
-| 34 | P05 | 0.4706 | -0.037 | Q3 |
-| 35 | P42 | 0.4616 | -0.162 | Q3 |
-| 36 | P01 | 0.4586 | -0.205 | Q3 |
-| 37 | P23 | 0.4545 | -0.261 | Q3 |
-| 38 | P07 | 0.4509 | -0.312 | Q3 |
-| 39 | P37 | 0.4470 | -0.366 | Q3 |
-| 40 | P08 | 0.4305 | -0.596 | Q3 |
-| 41 | P33 | 0.4291 | -0.615 | Q3 |
-| 42 | P55 | 0.4279 | -0.632 | Q3 |
-| 43 | P19 | 0.4223 | -0.711 | Q3 |
-| 44 | P06 | 0.4219 | -0.716 | Q3 |
-| 45 | P10 | 0.4188 | -0.759 | Q3 |
-| 46 | P57 | 0.4188 | -0.759 | Q3 |
-| 47 | P20 | 0.4153 | -0.808 | Q4 |
-| 48 | P50 | 0.4105 | -0.875 | Q4 |
-| 49 | P51 | 0.4074 | -0.918 | Q4 |
-| 50 | P36 | 0.4062 | -0.935 | Q4 |
-| 51 | P45 | 0.3922 | -1.130 | Q4 |
-| 52 | P53 | 0.3891 | -1.174 | Q4 |
-| 53 | P41 | 0.3890 | -1.175 | Q4 |
-| 54 | P03 | 0.3824 | -1.268 | Q4 |
-| 55 | P48 | 0.3706 | -1.431 | Q4 |
-| 56 | P44 | 0.3641 | -1.522 | Q4 |
-| 57 | P43 | 0.3633 | -1.533 | Q4 |
-| 58 | P59 | 0.3614 | -1.560 | Q4 |
-| 59 | P58 | 0.3603 | -1.575 | Q4 |
-| 60 | P40 | 0.3497 | -1.723 | Q4 |
-| 61 | P54 | 0.3282 | -2.022 | Q4 |
+| 1 | P39 | 0.6553 | +2.164 | Q1 |
+| 2 | P46 | 0.6287 | +1.818 | Q1 |
+| 3 | P12 | 0.6198 | +1.702 | Q1 |
+| 4 | P14 | 0.6110 | +1.588 | Q1 |
+| 5 | P38 | 0.6099 | +1.574 | Q1 |
+| 6 | P49 | 0.6009 | +1.457 | Q1 |
+| 7 | P30 | 0.5835 | +1.231 | Q1 |
+| 8 | P28 | 0.5778 | +1.158 | Q1 |
+| 9 | P18 | 0.5720 | +1.082 | Q1 |
+| 10 | P22 | 0.5683 | +1.034 | Q1 |
+| 11 | P26 | 0.5633 | +0.969 | Q1 |
+| 12 | P63 | 0.5623 | +0.955 | Q1 |
+| 13 | P31 | 0.5584 | +0.906 | Q1 |
+| 14 | P62 | 0.5485 | +0.777 | Q1 |
+| 15 | P60 | 0.5406 | +0.675 | Q1 |
+| 16 | P21 | 0.5404 | +0.672 | Q1 |
+| 17 | P47 | 0.5371 | +0.629 | Q2 |
+| 18 | P24 | 0.5336 | +0.584 | Q2 |
+| 19 | P56 | 0.5322 | +0.565 | Q2 |
+| 20 | P13 | 0.5292 | +0.526 | Q2 |
+| 21 | P04 | 0.5284 | +0.516 | Q2 |
+| 22 | P29 | 0.5245 | +0.466 | Q2 |
+| 23 | P61 | 0.5229 | +0.444 | Q2 |
+| 24 | P15 | 0.5220 | +0.433 | Q2 |
+| 25 | P16 | 0.5131 | +0.317 | Q2 |
+| 26 | P09 | 0.5126 | +0.311 | Q2 |
+| 27 | P25 | 0.5081 | +0.252 | Q2 |
+| 28 | P27 | 0.5073 | +0.242 | Q2 |
+| 29 | P32 | 0.5038 | +0.197 | Q2 |
+| 30 | P02 | 0.5019 | +0.171 | Q2 |
+| 31 | P11 | 0.4999 | +0.146 | Q2 |
+| 32 | P34 | 0.4959 | +0.094 | Q3 |
+| 33 | P35 | 0.4829 | -0.075 | Q3 |
+| 34 | P42 | 0.4809 | -0.101 | Q3 |
+| 35 | P37 | 0.4805 | -0.106 | Q3 |
+| 36 | P01 | 0.4770 | -0.152 | Q3 |
+| 37 | P05 | 0.4754 | -0.172 | Q3 |
+| 38 | P23 | 0.4746 | -0.182 | Q3 |
+| 39 | P08 | 0.4532 | -0.461 | Q3 |
+| 40 | P19 | 0.4474 | -0.536 | Q3 |
+| 41 | P57 | 0.4469 | -0.542 | Q3 |
+| 42 | P55 | 0.4436 | -0.584 | Q3 |
+| 43 | P20 | 0.4371 | -0.669 | Q3 |
+| 44 | P07 | 0.4354 | -0.691 | Q3 |
+| 45 | P50 | 0.4310 | -0.749 | Q3 |
+| 46 | P10 | 0.4273 | -0.796 | Q3 |
+| 47 | P51 | 0.4241 | -0.838 | Q4 |
+| 48 | P06 | 0.4168 | -0.933 | Q4 |
+| 49 | P33 | 0.4107 | -1.013 | Q4 |
+| 50 | P53 | 0.4078 | -1.049 | Q4 |
+| 51 | P36 | 0.4071 | -1.059 | Q4 |
+| 52 | P45 | 0.4038 | -1.101 | Q4 |
+| 53 | P48 | 0.3911 | -1.266 | Q4 |
+| 54 | P41 | 0.3893 | -1.290 | Q4 |
+| 55 | P03 | 0.3880 | -1.307 | Q4 |
+| 56 | P44 | 0.3727 | -1.506 | Q4 |
+| 57 | P43 | 0.3725 | -1.508 | Q4 |
+| 58 | P59 | 0.3673 | -1.575 | Q4 |
+| 59 | P40 | 0.3525 | -1.768 | Q4 |
+| 60 | P54 | 0.3503 | -1.796 | Q4 |
+| 61 | P58 | 0.3476 | -1.831 | Q4 |
 
 ### Distributional Properties
 
 | Statistic | Value |
 | :--- | ---: |
-| Mean | 0.4732 |
-| Median | 0.4834 |
-| Std Dev | 0.0717 |
-| Skewness | -0.0204 |
-| Excess Kurtosis | -0.8249 |
-| IQR | 0.1095 |
+| Mean | 0.4887 |
+| Median | 0.4999 |
+| Std Dev | 0.0770 |
+| Skewness | -0.0026 |
+| Excess Kurtosis | -0.7941 |
+| IQR | 0.1131 |
 
 ### Evidential Reasoning Uncertainty
 
-- **Mean Belief Entropy:** 1.3552 (SD = 0.1423)
-- **Mean Utility Interval Width:** 0.4623 (SD = 0.0063)
+- **Mean Belief Entropy:** 1.3374 (SD = 0.1367)
+- **Mean Utility Interval Width:** 0.4659 (SD = 0.0062)
 
 # 5. Criterion-Level MCDM Evaluation
 
@@ -269,46 +266,46 @@ Each of the 8 criteria groups is independently evaluated by 5 MCDM methods.
 
 | Criterion | Weight |
 | :--- | ---: |
-| C01 | 0.110850 |
-| C02 | 0.079242 |
-| C03 | 0.259231 |
-| C04 | 0.096792 |
-| C05 | 0.081916 |
-| C06 | 0.122719 |
-| C07 | 0.118361 |
-| C08 | 0.130889 |
+| C01 | 0.122495 |
+| C02 | 0.096823 |
+| C03 | 0.193632 |
+| C04 | 0.126407 |
+| C05 | 0.108750 |
+| C06 | 0.149087 |
+| C07 | 0.108331 |
+| C08 | 0.094474 |
 
-**C01** — top 3: P28 (1.0000), P12 (0.9728), P15 (0.9549)
-**C02** — top 3: P39 (1.0000), P12 (0.9650), P01 (0.8483)
-**C03** — top 3: P29 (0.9948), P12 (0.8609), P30 (0.8467)
-**C04** — top 3: P46 (1.0000), P14 (0.8944), P39 (0.7988)
-**C05** — top 3: P49 (1.0000), P18 (0.9851), P56 (0.9581)
-**C06** — top 3: P14 (0.9844), P49 (0.9599), P18 (0.9074)
-**C07** — top 3: P56 (0.9604), P60 (0.9489), P57 (0.9086)
-**C08** — top 3: P47 (0.9911), P49 (0.9828), P01 (0.7554)
+**C01** — top 3: P28 (1.0000), P15 (0.9838), P12 (0.9738)
+**C02** — top 3: P39 (1.0000), P12 (0.9339), P46 (0.8605)
+**C03** — top 3: P29 (0.9762), P12 (0.9381), P63 (0.8551)
+**C04** — top 3: P46 (1.0000), P14 (0.9212), P39 (0.7767)
+**C05** — top 3: P49 (0.9971), P18 (0.9738), P46 (0.9724)
+**C06** — top 3: P49 (0.9691), P14 (0.9601), P18 (0.9397)
+**C07** — top 3: P57 (0.9426), P56 (0.9354), P60 (0.9174)
+**C08** — top 3: P47 (1.0000), P49 (0.9216), P01 (0.7899)
 
 # 6. Inter-Method Agreement and Concordance Analysis
 
-Kendall's coefficient of concordance $W = 0.3818$ indicates **fair** agreement among the 5 methods.
+Kendall's coefficient of concordance $W = 0.4243$ indicates **fair** agreement among the 5 methods.
 
 **Table 7. Provinces most frequently ranked in the top 5.**
 
 | Province | Count | Frequency |
 | :--- | ---: | ---: |
-| P46 | 18 | 45.0% |
-| P49 | 16 | 40.0% |
+| P46 | 20 | 50.0% |
+| P49 | 18 | 45.0% |
+| P39 | 16 | 40.0% |
 | P12 | 15 | 37.5% |
 | P14 | 15 | 37.5% |
-| P39 | 15 | 37.5% |
 | P01 | 10 | 25.0% |
 | P18 | 10 | 25.0% |
-| P56 | 10 | 25.0% |
 | P47 | 9 | 22.5% |
-| P61 | 8 | 20.0% |
+| P56 | 8 | 20.0% |
+| P28 | 7 | 17.5% |
 
 # 7. Sensitivity and Robustness Analysis
 
-- **Overall Robustness Index:** 0.8584
+- **Overall Robustness Index:** 0.8608
 - **Confidence Level:** 95%
 
 ## 7.1 Criteria Weight Sensitivity
@@ -317,14 +314,14 @@ Kendall's coefficient of concordance $W = 0.3818$ indicates **fair** agreement a
 
 | Criterion | Sensitivity | Classification |
 | :--- | ---: | :---: |
-| C03 | 1.0000 | High |
-| C07 | 0.9225 | High |
-| C06 | 0.7819 | High |
-| C08 | 0.7239 | High |
-| C01 | 0.6723 | High |
-| C04 | 0.5554 | High |
-| C02 | 0.4448 | High |
-| C05 | 0.3972 | High |
+| C06 | 1.0000 | High |
+| C08 | 0.9963 | High |
+| C03 | 0.9793 | High |
+| C01 | 0.9782 | High |
+| C04 | 0.9746 | High |
+| C02 | 0.9596 | High |
+| C07 | 0.9177 | High |
+| C05 | 0.8845 | High |
 
 ## 7.2 Subcriteria Weight Sensitivity (Top 15)
 
@@ -332,21 +329,21 @@ Kendall's coefficient of concordance $W = 0.3818$ indicates **fair** agreement a
 
 | Subcriteria | Sensitivity |
 | :--- | ---: |
-| SC32 | 1.0000 |
-| SC73 | 0.6742 |
-| SC83 | 0.6067 |
-| SC24 | 0.5974 |
-| SC22 | 0.5829 |
-| SC71 | 0.5807 |
-| SC42 | 0.5780 |
-| SC11 | 0.5768 |
-| SC61 | 0.5768 |
-| SC13 | 0.5723 |
-| SC72 | 0.5672 |
-| SC12 | 0.5625 |
-| SC81 | 0.5625 |
-| SC43 | 0.5618 |
-| SC82 | 0.5618 |
+| SC82 | 1.0000 |
+| SC81 | 0.9962 |
+| SC51 | 0.9906 |
+| SC83 | 0.9877 |
+| SC24 | 0.9863 |
+| SC41 | 0.9847 |
+| SC44 | 0.9782 |
+| SC43 | 0.9768 |
+| SC22 | 0.9759 |
+| SC42 | 0.9750 |
+| SC23 | 0.9741 |
+| SC54 | 0.9741 |
+| SC31 | 0.9735 |
+| SC63 | 0.9722 |
+| SC61 | 0.9659 |
 
 ## 7.3 Top-N Ranking Stability
 
@@ -354,9 +351,9 @@ Kendall's coefficient of concordance $W = 0.3818$ indicates **fair** agreement a
 
 | Tier | Index | Percentage |
 | :--- | ---: | ---: |
-| Top-3 | 0.4710 | 47.1% |
+| Top-3 | 0.9760 | 97.6% |
 | Top-5 | 1.0000 | 100.0% |
-| Top-10 | 0.9190 | 91.9% |
+| Top-10 | 0.9960 | 99.6% |
 
 ## 7.4 Temporal Rank Stability
 
@@ -364,10 +361,10 @@ Kendall's coefficient of concordance $W = 0.3818$ indicates **fair** agreement a
 
 | Year Pair | Spearman $\rho$ | Strength |
 | :--- | ---: | :---: |
-| 2020-2021 | 0.3146 | Weak |
-| 2021-2022 | 0.7582 | Moderate |
-| 2022-2023 | 0.6504 | Moderate |
-| 2023-2024 | 0.6595 | Moderate |
+| 2020-2021 | 0.3017 | Weak |
+| 2021-2022 | 0.7781 | Moderate |
+| 2022-2023 | 0.6453 | Moderate |
+| 2023-2024 | 0.6656 | Moderate |
 
 ## 7.5 Provincial Rank Stability
 
@@ -375,31 +372,31 @@ Kendall's coefficient of concordance $W = 0.3818$ indicates **fair** agreement a
 
 | Province | Stability |
 | :--- | ---: |
-| P14 | 0.9549 |
-| P56 | 0.9561 |
-| P57 | 0.9561 |
-| P47 | 0.9577 |
-| P59 | 0.9614 |
-| P32 | 0.9616 |
-| P27 | 0.9634 |
-| P06 | 0.9646 |
-| P61 | 0.9658 |
-| P29 | 0.9676 |
+| P29 | 0.9561 |
+| P01 | 0.9651 |
+| P61 | 0.9673 |
+| P56 | 0.9713 |
+| P37 | 0.9719 |
+| P23 | 0.9741 |
+| P47 | 0.9747 |
+| P42 | 0.9749 |
+| P32 | 0.9753 |
+| P05 | 0.9755 |
 
 **Table 12(b). Ten most stable provinces.**
 
 | Province | Stability |
 | :--- | ---: |
-| P62 | 0.9882 |
-| P35 | 0.9912 |
-| P12 | 0.9914 |
-| P03 | 0.9982 |
-| P38 | 0.9990 |
-| P49 | 0.9990 |
+| P10 | 0.9951 |
+| P28 | 0.9971 |
+| P51 | 0.9979 |
+| P34 | 0.9979 |
+| P06 | 0.9982 |
+| P46 | 0.9990 |
+| P30 | 1.0000 |
 | P39 | 1.0000 |
-| P40 | 1.0000 |
-| P48 | 1.0000 |
-| P54 | 1.0000 |
+| P49 | 1.0000 |
+| P62 | 1.0000 |
 
 # 8. Machine-Learning Forecasting
 
@@ -470,9 +467,8 @@ A Super Learner meta-ensemble (van der Laan et al., 2007) forecasts provincial s
 
 ## 10.1 Objective Weighting Methods
 
-- **Entropy** — Shannon (1948). Information-theoretic derivation exploiting probability-distribution diversity across alternatives.
 - **CRITIC** — Diakoulaki, Mavrotas & Papayannakis (1995). Weights based on contrast intensity and conflicting inter-criteria correlation.
-- **Hybrid MC Ensemble** — Reliability-weighted Bayesian bootstrap combination accounting for inter-method agreement at the subcriteria level.
+- **Two-Level Deterministic Pipeline** — Level 1: CRITIC per criterion group → local SC weights. Level 2: CRITIC on criterion composite matrix → criterion weights. Fully deterministic — no Monte Carlo, no Beta blending.
 
 ## 10.2 MCDM Methods
 
@@ -522,9 +518,6 @@ Super Learner (van der Laan, Polley & Hubbard, 2007) constructs an optimal conve
 - `data_summary_statistics.csv`
 - `criterion_weights.csv`
 - `critic_weights.csv`
-- `entropy_weights.csv`
-- `mc_province_rankings.csv`
-- `method_weights_comparison.csv`
 - `weights_analysis.csv`
 
 ### JSON Metadata Files
@@ -534,7 +527,7 @@ Super Learner (van der Laan, Polley & Hubbard, 2007) constructs an optimal conve
 - `config_snapshot.json`
 - `execution_summary.json`
 
-### Figures (47 files)
+### Figures (44 files)
 
 - `fig06_method_agreement.png`
 - `fig06b_agreement_per_criterion.png`
@@ -554,7 +547,6 @@ Super Learner (van der Laan, Polley & Hubbard, 2007) constructs an optimal conve
 - `fig01d_belief_heatmap.png`
 - `fig01e_rank_uncertainty_scatter.png`
 - `fig02_score_distribution.png`
-- `fig02b_mc_rank_uncertainty.png`
 - `fig09_criteria_sensitivity.png`
 - `fig09b_tornado_butterfly.png`
 - `fig09c_subcriteria_dotstrip.png`
@@ -568,11 +560,9 @@ Super Learner (van der Laan, Polley & Hubbard, 2007) constructs an optimal conve
 - `fig25_robustness_summary.png`
 - `fig03_weights_comparison.png`
 - `fig03c_criterion_weights.png`
-- `fig03d_weight_deviation.png`
 - `fig04_weight_radar.png`
 - `fig04a_weight_radar_criteria.png`
 - `fig04a_weight_radar_criteria_critic.png`
-- `fig04a_weight_radar_criteria_entropy.png`
 - `fig04b_C01_radar.png`
 - `fig04b_C02_radar.png`
 - `fig04b_C03_radar.png`

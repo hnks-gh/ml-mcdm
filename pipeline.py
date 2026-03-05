@@ -183,7 +183,7 @@ class MLMCDMPipeline:
                           f'{panel_data.n_subcriteria} subcriteria')
 
             # Phase 2: Weight Calculation
-            with self.console.phase('Weight Calculation (Hybrid Weighting)') as ph:
+            with self.console.phase('CRITIC Weight Calculation') as ph:
                 weights = self._calculate_weights(panel_data)
 
             # Phase 3: Hierarchical Ranking (6 MCDM methods + ER)
@@ -223,7 +223,7 @@ class MLMCDMPipeline:
 
             # Phase 4: ML Forecasting (6 models + Super Learner + Conformal)
             forecast_result = None
-            with self.console.phase('ML Forecasting (SOTA Ensemble)') as ph:
+            with self.console.phase('Ensemble ML Forecasting') as ph:
                 try:
                     forecast_result = self._run_forecasting(panel_data)
                 except Exception as e:

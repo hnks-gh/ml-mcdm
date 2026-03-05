@@ -107,21 +107,9 @@
     "v": 0.5
   },
   "weighting": {
-    "mc_n_simulations": 2000,
-    "mc_n_tuning_simulations": 500,
-    "beta_a": 1.0,
-    "beta_b": 1.0,
-    "noise_sigma_scale": 0.02,
-    "boot_fraction": 1.0,
-    "perform_tuning": true,
-    "use_bayesian_tuning": false,
-    "tuning_objective": "avg_kendall_tau",
-    "top_k_stability": 10,
-    "stability_threshold": 0.95,
-    "convergence_tolerance": 5e-05,
-    "conv_min_iters_fraction": 0.16666666666666666,
     "epsilon": 1e-10,
-    "seed": 42
+    "stability_threshold": 0.95,
+    "perform_stability_check": true
   },
   "er": {
     "n_grades": 5,
