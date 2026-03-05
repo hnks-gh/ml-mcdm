@@ -1,11 +1,14 @@
 # -*- coding: utf-8 -*-
-"""Adaptive weighting with missing-data (NaN) handling.
+"""NaN-aware weighting layer (weighting phase).
 
-Provides weight calculation that:
-1. Excludes provinces with all-NaN values from calculations
-2. Excludes criteria/subcriteria where every province is NaN from calculations
-3. Imputes remaining partial NaN cells with the column mean before weight calculation
-4. Recalculates weights dynamically based on available data
+Delegates all missing-data filtering to :mod:`data.missing_data` and adds
+the weighting-specific result dataclass and calculator on top:
+
+- :class:`AdaptiveWeightResult` — extends :class:`~weighting.base.WeightResult`
+  with metadata about which rows/columns were included or excluded.
+- :class:`AdaptiveWeightCalculator` — filter → impute → CRITIC weight loop.
+- :class:`WeightCalculator` — two-level (subcriteria + criteria) wrapper.
+- :func:`calculate_adaptive_weights` — convenience entry point.
 
 The underlying base method is:
 - ``'critic'``   — CRITIC (contrast intensity × inter-criteria independence).
@@ -14,6 +17,11 @@ Notes
 -----
 The dataset uses NaN (not zero) to represent missing observations.  A value of
 exactly 0.0 is a legitimate governance score and is NEVER excluded.
+
+See Also
+--------
+data.missing_data : centralized NaN-handling primitives shared by
+    weighting, ranking, and forecasting phases.
 """
 
 import numpy as np
@@ -23,6 +31,7 @@ from dataclasses import dataclass
 
 from .base import WeightResult
 from .critic import CRITICWeightCalculator
+from data.missing_data import prepare_decision_matrix, MatrixFilterReport
 
 
 @dataclass
@@ -75,13 +84,18 @@ class AdaptiveWeightCalculator:
         self.critic_calc = CRITICWeightCalculator(epsilon=epsilon)
     
     def calculate(
-        self, 
+        self,
         data: pd.DataFrame,
         entity_col: str = "Province"
     ) -> AdaptiveWeightResult:
         """
-        Calculate weights adaptively, excluding all-NaN rows.
-        
+        Calculate weights with NaN-aware filtering and imputation.
+
+        Delegates matrix cleaning to :func:`data.missing_data.prepare_decision_matrix`,
+        then runs CRITIC on the cleaned sub-matrix, and finally expands the
+        resulting weights back to the original criterion set (excluded criteria
+        receive weight 0).
+
         Parameters
         ----------
         data : pd.DataFrame
@@ -90,64 +104,25 @@ class AdaptiveWeightCalculator:
             stripped before weight calculation.
         entity_col : str
             Name of entity identifier column (if present).
-        
+
         Returns
         -------
         AdaptiveWeightResult
-            Weights with adaptive calculation metadata
+            Weights with NaN-filtering metadata.
         """
-        # Separate entity column if present
-        if entity_col in data.columns:
-            alternatives = data[entity_col].tolist()
-            criteria_data = data.drop(columns=[entity_col])
-        elif data.index.name == entity_col or entity_col == "index":
-            alternatives = data.index.tolist()
-            criteria_data = data
-        else:
-            alternatives = list(range(len(data)))
-            criteria_data = data
-        
-        original_criteria = criteria_data.columns.tolist()
-        
-        # Step 1: Identify and exclude alternatives where ALL criteria are NaN.
-        # NOTE: In pandas, (NaN != 0) evaluates to True, so the old
-        # `!= 0` check incorrectly passed all-NaN rows.  Use notna() instead.
-        valid_rows = criteria_data.notna().any(axis=1)
+        original_criteria = [
+            c for c in data.columns if c != entity_col
+        ] if entity_col in data.columns else list(data.columns)
 
-        included_alternatives = [alternatives[i] for i, v in enumerate(valid_rows) if v]
-        excluded_alternatives = [alternatives[i] for i, v in enumerate(valid_rows) if not v]
+        # Delegate all NaN filtering + mean imputation to the centralised utility
+        filtered_data, report = prepare_decision_matrix(
+            data,
+            entity_col=entity_col,
+            min_rows=self.min_alternatives,
+            min_cols=self.min_criteria,
+        )
 
-        if sum(valid_rows) < self.min_alternatives:
-            raise ValueError(
-                f"Insufficient alternatives after missing-data exclusion: "
-                f"{sum(valid_rows)} < {self.min_alternatives}"
-            )
-
-        # Filter data to valid rows
-        filtered_data = criteria_data[valid_rows].copy()
-
-        # Step 2: Identify and exclude criteria where ALL alternatives are NaN.
-        valid_cols = filtered_data.notna().any(axis=0)
-
-        included_criteria = [c for c, v in zip(original_criteria, valid_cols) if v]
-        excluded_criteria = [c for c, v in zip(original_criteria, valid_cols) if not v]
-
-        if sum(valid_cols) < self.min_criteria:
-            raise ValueError(
-                f"Insufficient criteria after missing-data exclusion: "
-                f"{sum(valid_cols)} < {self.min_criteria}"
-            )
-
-        # Filter data to valid columns
-        filtered_data = filtered_data.loc[:, valid_cols].copy()
-
-        # Step 2b: Impute remaining partial NaN cells with column mean.
-        # Column-mean imputation preserves each criterion's central tendency
-        # without artificially reducing its variance.
-        col_means = filtered_data.mean(skipna=True)
-        filtered_data = filtered_data.fillna(col_means)
-
-        # Step 3: Calculate weights on the cleaned, complete sub-matrix
+        # Calculate weights on the cleaned, complete sub-matrix
         if self.method == "critic":
             base_result = self.critic_calc.calculate(filtered_data)
         else:
@@ -155,41 +130,31 @@ class AdaptiveWeightCalculator:
                 f"Unknown method: '{self.method}'.  "
                 "Supported: 'critic'."
             )
-        
-        # Step 4: Expand weights back to include excluded criteria (with zero weight)
-        full_weights = {}
-        for criterion in original_criteria:
-            if criterion in base_result.weights:
-                full_weights[criterion] = base_result.weights[criterion]
-            else:
-                full_weights[criterion] = 0.0
-        
+
+        # Expand weights back to include excluded criteria (weight = 0)
+        full_weights = {
+            criterion: base_result.weights.get(criterion, 0.0)
+            for criterion in original_criteria
+        }
+
         # Ensure weights sum to 1
         weight_sum = sum(full_weights.values())
         if weight_sum > self.epsilon:
             full_weights = {k: v / weight_sum for k, v in full_weights.items()}
-        
+
         return AdaptiveWeightResult(
             weights=full_weights,
             method=f"adaptive_{self.method}",
             details={
                 **base_result.details,
-                "adaptive_filtering": {
-                    "original_alternatives": len(alternatives),
-                    "included_alternatives": len(included_alternatives),
-                    "excluded_alternatives": len(excluded_alternatives),
-                    "original_criteria": len(original_criteria),
-                    "included_criteria": len(included_criteria),
-                    "excluded_criteria": len(excluded_criteria),
-                    "note": "excluded = all-NaN; partial NaN filled with column mean",
-                }
+                "adaptive_filtering": report.to_dict(),
             },
-            included_alternatives=included_alternatives,
-            excluded_alternatives=excluded_alternatives,
-            included_criteria=included_criteria,
-            excluded_criteria=excluded_criteria,
-            n_included=len(included_alternatives),
-            n_excluded=len(excluded_alternatives)
+            included_alternatives=report.included_rows,
+            excluded_alternatives=report.excluded_rows,
+            included_criteria=report.included_columns,
+            excluded_criteria=report.excluded_columns,
+            n_included=report.n_included_rows,
+            n_excluded=report.n_excluded_rows,
         )
     
 

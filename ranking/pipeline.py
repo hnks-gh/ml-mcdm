@@ -31,7 +31,8 @@ from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass, field
 import logging
 
-from data_loader import PanelData, HierarchyMapping
+from data import PanelData, HierarchyMapping
+from data.missing_data import impute_neutral_score
 from .topsis import TOPSISCalculator
 from .vikor import VIKORCalculator
 from .promethee import PROMETHEECalculator
@@ -640,9 +641,7 @@ class HierarchicalRankingPipeline:
 
         # Fill any NaN cells (partially missing rows) with the neutral 0.5
         # so all MCDM algorithms receive a fully numeric matrix.
-        result = result.fillna(0.5)
-
-        return result
+        return impute_neutral_score(result)
 
     @staticmethod
     def _normalize_scores(

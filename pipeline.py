@@ -29,7 +29,7 @@ try:
     from .config import Config, get_default_config
     from .loggers import setup_logging
     from .loggers.context import PhaseMetrics
-    from .data_loader import DataLoader, PanelData
+    from .data import DataLoader, PanelData
     from .ranking import TOPSISCalculator
     from .ranking import HierarchicalRankingPipeline, HierarchicalRankingResult
     from .analysis import SensitivityAnalysis
@@ -39,7 +39,7 @@ except ImportError:
     from config import Config, get_default_config
     from loggers import setup_logging
     from loggers.context import PhaseMetrics
-    from data_loader import DataLoader, PanelData
+    from data import DataLoader, PanelData
     from ranking import TOPSISCalculator
     from ranking import HierarchicalRankingPipeline, HierarchicalRankingResult
     from analysis import SensitivityAnalysis

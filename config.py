@@ -64,7 +64,13 @@ class PathConfig:
 
     @property
     def data_dir(self) -> Path:
+        """Root of the data/ directory (codebook, csv/ sub-dir)."""
         return self.base_dir / "data"
+
+    @property
+    def data_csv_dir(self) -> Path:
+        """Input CSV files directory (``data/csv/YYYY.csv``)."""
+        return self.data_dir / "csv"
 
     @property
     def output_dir(self) -> Path:

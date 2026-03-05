@@ -33,6 +33,8 @@ import numpy as np
 import pandas as pd
 from typing import Dict, List, Optional, Tuple
 
+from data.missing_data import fill_missing_features, has_complete_target
+
 
 class TemporalFeatureEngineer:
     """
@@ -174,7 +176,7 @@ class TemporalFeatureEngineer:
                     continue
 
                 target = entity_data.loc[next_yr, components].values.astype(float)
-                if np.any(np.isnan(target)):
+                if not has_complete_target(target):
                     n_skipped_train += 1
                     continue  # Incomplete target — exclude rather than impute
 
@@ -261,14 +263,13 @@ class TemporalFeatureEngineer:
 
         Calls ``_create_features`` and replaces any remaining NaN values
         (arising from missing lag years or absent cross-entity data) with
-        ``0.0`` — which encodes "no prior information" for the ML model.
-        This is distinct from *imputation*: we are not fabricating a plausible
-        value, merely telling the model that a feature is unavailable.
+        ``0.0`` via :func:`data.missing_data.fill_missing_features`, encoding
+        "no prior information" for the ML model without fabricating data.
         """
         features = self._create_features(
             entity_data, entity, years, current_year, all_entities, panel_data
         )
-        return np.where(np.isnan(features), 0.0, features)
+        return fill_missing_features(features)
 
     def _create_features(self,
                          entity_data: pd.DataFrame,

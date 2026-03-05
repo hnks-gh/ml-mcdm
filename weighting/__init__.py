@@ -13,7 +13,7 @@ Objective weight calculation methods for MCDM:
 **Individual Base Method:**
 - CRITICWeightCalculator: Contrast intensity + inter-criteria correlation
 
-**Adaptive Weighting (NaN-aware utility):**
+**NaN-aware weighting layer** (delegates filtering to ``data.missing_data``):
 - AdaptiveWeightCalculator: NaN-aware CRITIC weight calculation (excludes
   all-NaN rows/columns; imputes partial NaN cells with column mean).
 - WeightCalculator: Hierarchical (two-level) weight calculation built on

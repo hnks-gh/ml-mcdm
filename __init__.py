@@ -81,7 +81,7 @@ try:
         log_context,
         timed_operation,
     )
-    from .data_loader import DataLoader, PanelData, HierarchyMapping, load_data
+    from .data import DataLoader, PanelData, HierarchyMapping, load_data
     from .pipeline import MLMCDMPipeline, run_pipeline, PipelineResult
     from .output import OutputOrchestrator, CsvWriter, ReportWriter
     from .visualization import VisualizationOrchestrator, create_visualizer
