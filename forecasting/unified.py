@@ -682,6 +682,10 @@ class UnifiedForecaster:
 
         # ===== Stage 6b: Temporal holdout evaluation =====
         holdout_performance = None
+        _holdout_y_test = None
+        _holdout_y_pred = None
+        _holdout_entities = None
+        _holdout_per_model = {}
         try:
             holdout_year = target_year - 1
             available_years = sorted(panel_data.years)
@@ -713,6 +717,23 @@ class UnifiedForecaster:
                         y_ho_arr, y_ho_pred[:, :y_ho_arr.shape[1]]
                     )),
                 }
+
+                # Store holdout arrays for downstream visualisation
+                _holdout_y_test = y_ho_arr[:, :y_ho_arr.shape[1]].ravel()
+                _holdout_y_pred = y_ho_pred[:, :y_ho_arr.shape[1]].ravel()
+                _holdout_entities = list(X_ho.index)
+
+                # Per-model holdout predictions for comparison figure
+                for mname, model in self.super_learner_._fitted_base_models.items():
+                    try:
+                        mp = self.super_learner_._predict_model(
+                            model, X_ho_arr, entity_indices=None)
+                        if mp.ndim == 1:
+                            mp = mp.reshape(-1, 1)
+                        _holdout_per_model[mname] = mp[:, :y_ho_arr.shape[1]].ravel()
+                    except Exception:
+                        pass
+
                 if self.verbose:
                     print(f"    Holdout R\u00b2 = {holdout_performance['r2']:.4f}, "
                           f"RMSE = {holdout_performance['rmse']:.4f}")
@@ -732,6 +753,11 @@ class UnifiedForecaster:
             'mode': 'advanced',
             'ensemble_method': 'super_learner',
             'conformal_calibrated': self.conformal_predictor_ is not None,
+            # Holdout test data for downstream visualisation
+            'y_test': _holdout_y_test,
+            'y_pred': _holdout_y_pred,
+            'test_entities': _holdout_entities,
+            'per_model_holdout_predictions': _holdout_per_model if _holdout_per_model else None,
         }
 
         if self.verbose:

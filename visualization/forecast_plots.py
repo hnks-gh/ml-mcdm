@@ -455,6 +455,277 @@ class ForecastPlotter(BasePlotter):
 
 
     # ==================================================================
+    #  FIG 16c – Holdout Forecast Comparison (Predicted vs Test, all models)
+    # ==================================================================
+
+    def plot_holdout_comparison(
+        self,
+        y_test: np.ndarray,
+        y_pred: np.ndarray,
+        per_model_predictions: Optional[Dict[str, np.ndarray]] = None,
+        entity_names: Optional[List[str]] = None,
+        model_contributions: Optional[Dict[str, float]] = None,
+        save_name: str = 'fig16c_holdout_comparison.png',
+    ) -> Optional[str]:
+        """Comprehensive holdout forecast comparison: per-model predicted vs actual.
+
+        This is the primary diagnostic for evaluating how well each base model
+        and the Super Learner ensemble predict scores on the temporal holdout
+        set (the last observed year used as a pseudo-test split).
+
+        The figure contains four panels:
+
+        1. **Top-left — Predicted vs Actual scatter per model** with perfect-line
+           reference along with R² and MAE annotations per model.
+        2. **Top-right — Residual box/violin per model** showing the error
+           distribution (median, IQR, outliers) for every model + ensemble.
+        3. **Bottom-left — Per-province residual heatmap** (Model × Province)
+           showing signed residuals so analysts can spot which provinces
+           each model struggles with.
+        4. **Bottom-right — Model ranking bar chart** of holdout R² with
+           contribution weight encoded as bar opacity (heavier models darker).
+        """
+        if not HAS_MATPLOTLIB:
+            return None
+
+        y_test = np.asarray(y_test, dtype=float).ravel()
+        y_pred = np.asarray(y_pred, dtype=float).ravel()
+        n = len(y_test)
+        if n < 3:
+            return None
+
+        # Build model dict (include ensemble)
+        model_preds: Dict[str, np.ndarray] = {}
+        if per_model_predictions:
+            for name, arr in per_model_predictions.items():
+                model_preds[name] = np.asarray(arr, dtype=float).ravel()[:n]
+        model_preds['Super Learner'] = y_pred
+
+        model_names = list(model_preds.keys())
+        n_models = len(model_names)
+
+        # Contribution weights (for bar opacity)
+        contribs = model_contributions or {}
+
+        # Model family colour mapping
+        _family_color = {
+            'lightgbm': '#2ECC71', 'lgbm': '#2ECC71',
+            'xgboost': '#E74C3C', 'xgb': '#E74C3C',
+            'random': '#3498DB', 'rf': '#3498DB', 'forest': '#3498DB',
+            'neural': '#9B59B6', 'nam': '#9B59B6', 'additive': '#9B59B6',
+            'bayesian': '#F39C12', 'bayes': '#F39C12', 'hierarchical': '#F39C12',
+            'var': '#1ABC9C', 'panel': '#1ABC9C',
+            'super': '#E67E22', 'learner': '#E67E22', 'ensemble': '#E67E22',
+            'quantile': '#E91E63', 'qrf': '#E91E63',
+        }
+        def _model_color(name: str) -> str:
+            nl = name.lower()
+            for key, col in _family_color.items():
+                if key in nl:
+                    return col
+            return '#95A5A6'
+
+        colors = [_model_color(m) for m in model_names]
+
+        fig = plt.figure(figsize=(22, 18))
+        gs = fig.add_gridspec(2, 2, hspace=0.30, wspace=0.30)
+
+        # ── Panel 1: Predicted vs Actual scatter per model ───────────
+        ax1 = fig.add_subplot(gs[0, 0])
+        lo = min(y_test.min(), min(p.min() for p in model_preds.values()))
+        hi = max(y_test.max(), max(p.max() for p in model_preds.values()))
+        margin = (hi - lo) * 0.05
+        ax1.plot([lo - margin, hi + margin], [lo - margin, hi + margin],
+                 'k--', lw=1.5, alpha=0.6, label='Perfect', zorder=1)
+
+        for i, (name, pred) in enumerate(model_preds.items()):
+            col = colors[i]
+            is_ensemble = (name == 'Super Learner')
+            marker = '*' if is_ensemble else 'o'
+            ms = 80 if is_ensemble else 40
+            zorder = 6 if is_ensemble else 3
+
+            ss_res = np.sum((y_test - pred) ** 2)
+            ss_tot = np.sum((y_test - y_test.mean()) ** 2)
+            r2 = 1 - ss_res / (ss_tot + 1e-12)
+            mae = np.mean(np.abs(y_test - pred))
+
+            ax1.scatter(y_test, pred, s=ms, c=col, marker=marker,
+                        alpha=0.80, edgecolors='white', linewidths=0.6,
+                        zorder=zorder,
+                        label=f'{self._truncate(name, 14)} (R²={r2:.4f})')
+
+        ax1.set_xlabel('Actual Score (Holdout)')
+        ax1.set_ylabel('Predicted Score')
+        ax1.set_title('Predicted vs Actual — All Models', fontsize=12,
+                       fontweight='bold', pad=8)
+        ax1.legend(fontsize=7.5, loc='upper left', ncol=1, framealpha=0.9)
+        ax1.set_xlim(lo - margin, hi + margin)
+        ax1.set_ylim(lo - margin, hi + margin)
+        ax1.set_aspect('equal', adjustable='box')
+        ax1.grid(alpha=0.25)
+
+        # ── Panel 2: Residual violin / box per model ─────────────────
+        ax2 = fig.add_subplot(gs[0, 1])
+        residuals_per_model = []
+        for name in model_names:
+            residuals_per_model.append(y_test - model_preds[name])
+
+        parts = ax2.violinplot(residuals_per_model, positions=range(n_models),
+                               showmedians=False, showextrema=False)
+        for i, pc in enumerate(parts['bodies']):
+            pc.set_facecolor(colors[i])
+            pc.set_alpha(0.35)
+
+        bp = ax2.boxplot(residuals_per_model, positions=range(n_models),
+                         patch_artist=True, widths=0.35,
+                         boxprops=dict(linewidth=1.0),
+                         medianprops=dict(color='black', lw=2),
+                         whiskerprops=dict(color='gray'),
+                         flierprops=dict(marker='D', ms=3, alpha=0.5))
+        for i, patch in enumerate(bp['boxes']):
+            patch.set_facecolor(colors[i])
+            patch.set_alpha(0.55)
+
+        # Annotate RMSE & MAE under each box
+        for i, resid in enumerate(residuals_per_model):
+            rmse = float(np.sqrt(np.mean(resid ** 2)))
+            mae = float(np.mean(np.abs(resid)))
+            ax2.text(i, ax2.get_ylim()[0], f'RMSE={rmse:.4f}\nMAE={mae:.4f}',
+                     ha='center', va='top', fontsize=6.5, color=colors[i],
+                     fontweight='bold')
+
+        ax2.axhline(0, color='black', lw=1.2, ls='-', zorder=0)
+        ax2.set_xticks(range(n_models))
+        ax2.set_xticklabels([self._truncate(m, 12) for m in model_names],
+                            rotation=40, ha='right', fontsize=8)
+        ax2.set_ylabel('Residual (Actual − Predicted)')
+        ax2.set_title('Residual Distribution per Model', fontsize=12,
+                       fontweight='bold', pad=8)
+        ax2.yaxis.grid(True, linestyle='--', alpha=0.3)
+        ax2.set_axisbelow(True)
+
+        # ── Panel 3: Province × Model residual heatmap ───────────────
+        ax3 = fig.add_subplot(gs[1, 0])
+
+        if entity_names and len(entity_names) == n:
+            prov_labels = entity_names
+        else:
+            prov_labels = [f'#{i}' for i in range(n)]
+
+        # Sort provinces by ensemble residual magnitude
+        ensemble_resid = y_test - y_pred
+        sort_idx = np.argsort(np.abs(ensemble_resid))[::-1]
+        # Show top 30 at most
+        show_n = min(30, n)
+        show_idx = sort_idx[:show_n]
+
+        resid_matrix = np.column_stack([
+            (y_test - model_preds[m])[show_idx] for m in model_names
+        ])  # shape: (show_n, n_models)
+
+        vabs = max(abs(resid_matrix.min()), abs(resid_matrix.max()))
+        if vabs < 1e-12:
+            vabs = 1.0
+        im = ax3.imshow(resid_matrix, aspect='auto', cmap='RdBu_r',
+                        vmin=-vabs, vmax=vabs)
+
+        ax3.set_xticks(range(n_models))
+        ax3.set_xticklabels([self._truncate(m, 10) for m in model_names],
+                            rotation=40, ha='right', fontsize=7.5)
+        ax3.set_yticks(range(show_n))
+        ax3.set_yticklabels([self._truncate(str(prov_labels[i]), 14)
+                             for i in show_idx], fontsize=7)
+
+        # Annotate cells
+        for ri in range(show_n):
+            for ci in range(n_models):
+                val = resid_matrix[ri, ci]
+                txt_col = 'white' if abs(val) > vabs * 0.55 else 'black'
+                ax3.text(ci, ri, f'{val:.3f}', ha='center', va='center',
+                         fontsize=5.5, color=txt_col)
+
+        cbar = fig.colorbar(im, ax=ax3, shrink=0.7, pad=0.02)
+        cbar.set_label('Residual (Actual − Predicted)', fontsize=9)
+        ax3.set_title(f'Province × Model Residual Heatmap (Top {show_n} by |error|)',
+                       fontsize=12, fontweight='bold', pad=8)
+
+        # ── Panel 4: Model R² ranking + contribution weight ──────────
+        ax4 = fig.add_subplot(gs[1, 1])
+
+        r2_scores = []
+        for name in model_names:
+            pred = model_preds[name]
+            ss_res = np.sum((y_test - pred) ** 2)
+            ss_tot = np.sum((y_test - y_test.mean()) ** 2)
+            r2_scores.append(1 - ss_res / (ss_tot + 1e-12))
+
+        # Sort by R²
+        sort_order = np.argsort(r2_scores)[::-1]
+        sorted_names = [model_names[i] for i in sort_order]
+        sorted_r2 = [r2_scores[i] for i in sort_order]
+        sorted_colors = [colors[i] for i in sort_order]
+        sorted_weights = [contribs.get(model_names[i], 0.0)
+                          for i in sort_order]
+
+        # Normalize alphas: ensemble weight → opacity
+        max_w = max(max(sorted_weights), 1e-9)
+        alphas = [0.40 + 0.60 * (w / max_w) for w in sorted_weights]
+
+        bars = ax4.barh(range(len(sorted_names)), sorted_r2,
+                        color=sorted_colors, edgecolor='white',
+                        linewidth=0.5, zorder=2)
+        for bar, alpha in zip(bars, alphas):
+            bar.set_alpha(alpha)
+
+        for i, (r2, w) in enumerate(zip(sorted_r2, sorted_weights)):
+            label = f'R²={r2:.4f}'
+            if w > 0:
+                label += f'  (w={w:.3f})'
+            ax4.text(max(r2 + 0.005, 0.01), i, label,
+                     va='center', fontsize=8, color='#333333',
+                     fontweight='bold')
+
+        ax4.set_yticks(range(len(sorted_names)))
+        ax4.set_yticklabels(
+            [self._truncate(n, 16) for n in sorted_names], fontsize=9)
+        ax4.invert_yaxis()
+        ax4.set_xlabel('Holdout R²', fontsize=11)
+        ax4.set_title('Model Ranking — Holdout R² (bar opacity ∝ weight)',
+                       fontsize=12, fontweight='bold', pad=8)
+        ax4.xaxis.grid(True, linestyle='--', alpha=0.3, zorder=0)
+        ax4.set_axisbelow(True)
+        ax4.axvline(0, color='gray', lw=0.8)
+
+        # Overall stats annotation
+        ss_res_ens = np.sum((y_test - y_pred) ** 2)
+        ss_tot_ens = np.sum((y_test - y_test.mean()) ** 2)
+        r2_ens = 1 - ss_res_ens / (ss_tot_ens + 1e-12)
+        mae_ens = np.mean(np.abs(y_test - y_pred))
+        rmse_ens = np.sqrt(np.mean((y_test - y_pred) ** 2))
+        mape_safe = np.mean(
+            np.abs((y_test - y_pred) / np.where(np.abs(y_test) < 1e-9, 1, y_test))
+        ) * 100
+
+        stats_text = (
+            f'Ensemble Holdout Metrics\n'
+            f'{"─" * 28}\n'
+            f'R²   = {r2_ens:.6f}\n'
+            f'MAE  = {mae_ens:.6f}\n'
+            f'RMSE = {rmse_ens:.6f}\n'
+            f'MAPE = {mape_safe:.2f}%\n'
+            f'N    = {n}'
+        )
+        fig.text(0.99, 0.01, stats_text, fontsize=9,
+                 fontfamily='monospace', va='bottom', ha='right',
+                 bbox=dict(boxstyle='round,pad=0.5', fc='#F8F8FF',
+                           ec='#CCCCCC', alpha=0.95))
+
+        fig.suptitle('Holdout Forecast Comparison — Predicted vs Test Set',
+                     fontsize=15, fontweight='bold', y=0.99)
+        return self._save(fig, save_name)
+
+    # ==================================================================
     #  FIG 16b – Ensemble Architecture Flowchart
     # ==================================================================
 

@@ -392,81 +392,111 @@ class MCDMPlotter(BasePlotter):
         return self._save(fig, save_name)
 
     # ==================================================================
-    #  FIG 08 – Per-Criterion Method Score Panels
+    #  FIG 08 – Per-Criterion Grouped Bar (Top 5, All Methods in One)
     # ==================================================================
 
     def plot_criterion_scores(
         self,
         scores: Dict[str, pd.Series],
         criterion_name: str,
-        top_n: int = 20,
+        top_n: int = 5,
         save_name: str = 'fig08_criterion_scores.png',
     ) -> Optional[str]:
         """
-        Grid of horizontal bar panels — one per MCDM method — showing
-        normalised scores for the top-N provinces within a criterion.
-        Each bar is coloured by its rank position via the viridis colormap.
+        Grouped horizontal bar chart showing the top-5 provinces for a
+        criterion across all MCDM methods in a single panel.
+
+        Provinces are ranked by their *mean normalised score* across the
+        five methods.  Each province gets one horizontal bar per method,
+        colour-coded by the method.  This provides a compact 5-in-1 view
+        that replaces the former five-panel layout.
         """
         if not HAS_MATPLOTLIB:
             return None
 
-        methods = list(scores.keys())
+        methods = [m for m in _METHODS if m in scores]
+        if not methods:
+            methods = list(scores.keys())
         n_methods = len(methods)
-        n_cols = min(n_methods, 5)
-        n_rows = int(np.ceil(n_methods / n_cols))
+        if n_methods == 0:
+            return None
 
-        fig, axes = plt.subplots(
-            n_rows, n_cols,
-            figsize=(4.5 * n_cols, max(8, top_n * 0.30) * n_rows),
-            sharey=True,
-        )
-        # Normalise axes to always be 2-D
-        axes = np.array(axes).reshape(n_rows, n_cols)
-
-        for idx, method in enumerate(methods):
-            row, col = divmod(idx, n_cols)
-            ax = axes[row][col]
-            series = scores[method]
-            sorted_s = (series.sort_values(ascending=False).head(top_n)
-                        if hasattr(series, 'sort_values')
-                        else pd.Series(np.asarray(series)).sort_values(
-                            ascending=False).head(top_n))
-
-            vmin, vmax = sorted_s.min(), sorted_s.max()
-            cmap_ = plt.colormaps['viridis']
-            norm_ = (plt.Normalize(vmin, vmax)
-                     if vmax > vmin else plt.Normalize(0, 1))
-            bar_colors = [cmap_(norm_(v)) for v in sorted_s.values]
-
-            ax.barh(range(len(sorted_s)), sorted_s.values,
-                    color=bar_colors, edgecolor='white', linewidth=0.3,
-                    zorder=2)
-
-            # Score labels on bars
-            for bi, val in enumerate(sorted_s.values):
-                ax.text(val + 0.002, bi, f'{val:.3f}',
-                        va='center', fontsize=6.5, color='#333333')
-
-            ax.set_yticks(range(len(sorted_s)))
-            ax.set_yticklabels(
-                [self._truncate(str(nm), 15) for nm in sorted_s.index],
-                fontsize=8,
+        # --- Determine top-N provinces by mean score across methods ------
+        # Build province -> list-of-scores; compute mean
+        all_provinces: set = set()
+        for m in methods:
+            s = scores[m]
+            all_provinces |= set(
+                s.index.tolist() if hasattr(s, 'index') else range(len(s))
             )
-            ax.invert_yaxis()
-            ax.set_xlabel('Normalised Score', fontsize=9)
-            ax.set_title(method, fontsize=11, fontweight='bold')
-            ax.xaxis.grid(True, linestyle='--', alpha=0.35, zorder=0)
-            ax.set_axisbelow(True)
 
-        # Hide any unused subplot panels
-        for idx in range(n_methods, n_rows * n_cols):
-            row, col = divmod(idx, n_cols)
-            axes[row][col].set_visible(False)
+        prov_means: Dict[str, float] = {}
+        for prov in all_provinces:
+            vals = []
+            for m in methods:
+                s = scores[m]
+                if hasattr(s, 'index') and prov in s.index:
+                    vals.append(float(s.loc[prov]))
+                elif isinstance(prov, int) and prov < len(s):
+                    vals.append(float(s.iloc[prov]))
+            prov_means[prov] = float(np.mean(vals)) if vals else 0.0
 
-        fig.suptitle(
-            f'{criterion_name} — Per-Method Scores (Top {top_n})',
-            fontsize=14, fontweight='bold', y=1.01,
+        top_provs = sorted(prov_means, key=prov_means.get, reverse=True)[:top_n]
+        n_show = len(top_provs)
+        if n_show == 0:
+            return None
+
+        # --- Build data matrix: (n_show, n_methods) ----------------------
+        data = np.zeros((n_show, n_methods))
+        for mi, m in enumerate(methods):
+            s = scores[m]
+            for pi, prov in enumerate(top_provs):
+                if hasattr(s, 'index') and prov in s.index:
+                    data[pi, mi] = float(s.loc[prov])
+                elif isinstance(prov, int) and prov < len(s):
+                    data[pi, mi] = float(s.iloc[prov])
+
+        # --- Plot ---------------------------------------------------------
+        bar_h = 0.14
+        y = np.arange(n_show)
+        offsets = np.linspace(-(n_methods - 1) / 2,
+                              (n_methods - 1) / 2,
+                              n_methods) * bar_h
+
+        fig, ax = plt.subplots(figsize=(12, max(5, n_show * 1.2)))
+
+        for mi, method in enumerate(methods):
+            color = _METHOD_COLORS.get(method, CATEGORICAL_COLORS[mi])
+            bars = ax.barh(
+                y + offsets[mi], data[:, mi], bar_h,
+                label=method, color=color,
+                edgecolor='white', linewidth=0.5, alpha=0.88, zorder=3,
+            )
+            # Value labels
+            for bi, val in enumerate(data[:, mi]):
+                ax.text(val + 0.003, y[bi] + offsets[mi],
+                        f'{val:.3f}', va='center', fontsize=7.5,
+                        color='#333333')
+
+        # Mean marker (diamond) for each province
+        for pi in range(n_show):
+            mean_v = prov_means[top_provs[pi]]
+            ax.plot(mean_v, y[pi], 'D', color='black', markersize=6,
+                    zorder=5, label='Mean' if pi == 0 else '_')
+
+        ax.set_yticks(y)
+        ax.set_yticklabels(
+            [self._truncate(str(p), 18) for p in top_provs], fontsize=10,
         )
+        ax.invert_yaxis()
+        ax.set_xlabel('Normalised Score', fontsize=11)
+        ax.set_title(
+            f'{criterion_name} — Top {n_show} Provinces (All Methods)',
+            fontsize=13, fontweight='bold', pad=10,
+        )
+        ax.legend(fontsize=9, loc='lower right', ncol=min(n_methods + 1, 3))
+        ax.xaxis.grid(True, linestyle='--', alpha=0.35, zorder=0)
+        ax.set_axisbelow(True)
         fig.tight_layout()
         return self._save(fig, save_name)
 

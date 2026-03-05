@@ -383,37 +383,23 @@ class WeightingPlotter(BasePlotter):
         component_names: List[str],
         save_name: str = 'fig04_weight_radar.png',
     ) -> Optional[str]:
+        """Polygon radar (all sub-criteria, all methods).
+
+        Uses the shared ``_draw_radar`` helper so the polygon grid,
+        north-start, and clockwise spoke order are applied.
+        """
         if not HAS_MATPLOTLIB:
             return None
-
-        n = len(component_names)
-        angles = np.linspace(0, 2 * np.pi, n, endpoint=False).tolist()
-        angles += angles[:1]   # close the polygon
 
         methods = [m for m in _METHOD_ORDER if m in weights]
         if not methods:
             methods = list(weights.keys())
 
-        fig, ax = plt.subplots(figsize=(11, 11), subplot_kw={'projection': 'polar'})
-
-        for i, method in enumerate(methods):
-            w = weights[method]
-            vals = list(w) + [w[0]]
-            color = _METHOD_COLORS.get(method, CATEGORICAL_COLORS[i])
-            ax.plot(angles, vals, 'o-', lw=2.2, label=method,
-                    color=color, markersize=5, alpha=0.9)
-            ax.fill(angles, vals, alpha=0.08, color=color)
-
-        ax.set_xticks(angles[:-1])
-        ax.set_xticklabels(
-            [self._truncate(c, 10) for c in component_names], fontsize=8,
+        return self._draw_radar(
+            weights, component_names, methods,
+            title='Weight Profiles — Radar Comparison',
+            save_name=save_name,
         )
-        ax.set_rlabel_position(30)
-        ax.tick_params(axis='y', labelsize=7)
-        ax.set_title('Weight Profiles — Radar Comparison', y=1.08,
-                     fontsize=14, fontweight='bold')
-        ax.legend(loc='upper right', bbox_to_anchor=(1.38, 1.12), fontsize=10)
-        return self._save(fig, save_name)
 
     # ==================================================================
     #  FIG 05 – Annotated Weight Heatmap (sequential SC order, no dendrogram)
@@ -572,12 +558,28 @@ class WeightingPlotter(BasePlotter):
 
         saved: List[Optional[str]] = []
 
-        # fig04a – criteria-level radar
+        # fig04a – criteria-level radar (all three methods)
         saved.append(self._draw_radar(
             crit_w, crit_labels, methods,
             title='Criterion-Level Weight Radar — Entropy / CRITIC / Hybrid',
             save_name=f'{save_prefix}a_weight_radar_criteria.png',
         ))
+
+        # fig04a-entropy – criteria-level radar (Entropy only)
+        if 'Entropy' in crit_w:
+            saved.append(self._draw_radar(
+                {'Entropy': crit_w['Entropy']}, crit_labels, ['Entropy'],
+                title='Criterion-Level Weight Radar — Entropy',
+                save_name=f'{save_prefix}a_weight_radar_criteria_entropy.png',
+            ))
+
+        # fig04a-critic – criteria-level radar (CRITIC only)
+        if 'CRITIC' in crit_w:
+            saved.append(self._draw_radar(
+                {'CRITIC': crit_w['CRITIC']}, crit_labels, ['CRITIC'],
+                title='Criterion-Level Weight Radar — CRITIC',
+                save_name=f'{save_prefix}a_weight_radar_criteria_critic.png',
+            ))
 
         # fig04b_C0X – group radars with locally-normalised weights
         for d in crit_digits:
@@ -605,16 +607,53 @@ class WeightingPlotter(BasePlotter):
         title: str,
         save_name: str,
     ) -> Optional[str]:
-        """Low-level helper: draw a single polar radar chart and save it."""
+        """Low-level helper: draw a single polar radar chart and save it.
+
+        Grid lines are drawn as polygons (octagon for 8 spokes, etc.)
+        instead of the default circular grid.  Spoke order starts at
+        north (top, π/2) and proceeds clockwise so that C01 appears at
+        the 12-o'clock position when the labels are C01–C08.
+        """
         n = len(labels)
         if n < 3:
             return None
 
-        angles        = np.linspace(0, 2 * np.pi, n, endpoint=False).tolist()
-        angles_closed = angles + angles[:1]
+        # Angles: start at π/2 (north), go clockwise (negative direction).
+        angles = [(np.pi / 2 - i * 2 * np.pi / n) % (2 * np.pi)
+                  for i in range(n)]
+        angles_closed = angles + [angles[0]]
 
         fig, ax = plt.subplots(figsize=(9, 9),
                                subplot_kw={'projection': 'polar'})
+
+        # --- polygon grid lines instead of circular ones ----------------
+        ax.set_yticklabels([])            # hide default radial labels
+        ax.yaxis.grid(False)              # hide default circular grid
+        ax.xaxis.grid(False)              # hide default spoke grid
+        ax.spines['polar'].set_visible(False)
+
+        # Determine nice radial ticks
+        all_vals = np.concatenate([weights[m] for m in methods])
+        r_max = float(np.max(all_vals)) * 1.12
+        n_rings = 5
+        r_ticks = np.linspace(0, r_max, n_rings + 1)[1:]
+
+        for r in r_ticks:
+            polygon_pts = [(a, r) for a in angles] + [(angles[0], r)]
+            theta_pts = [p[0] for p in polygon_pts]
+            r_pts     = [p[1] for p in polygon_pts]
+            ax.plot(theta_pts, r_pts, color='#CCCCCC', lw=0.7,
+                    linestyle='-', zorder=0)
+            # Radial tick label on first spoke
+            ax.text(angles[0], r + r_max * 0.015, f'{r:.3f}',
+                    ha='center', va='bottom', fontsize=6.5,
+                    color='#888888')
+
+        # Spoke lines from centre to max ring
+        for a in angles:
+            ax.plot([a, a], [0, r_max], color='#CCCCCC', lw=0.5, zorder=0)
+
+        # --- data polygons ------------------------------------------------
         for i, method in enumerate(methods):
             w    = weights[method]
             vals = list(w) + [w[0]]
@@ -627,7 +666,8 @@ class WeightingPlotter(BasePlotter):
         ax.set_xticklabels(
             [self._truncate(lb, 10) for lb in labels], fontsize=9)
         ax.set_rlabel_position(15)
-        ax.tick_params(axis='y', labelsize=7)
+        ax.tick_params(axis='y', labelsize=0)  # keep ticks invisible
+        ax.set_rlim(0, r_max)
         ax.set_title(title, y=1.10, fontsize=13, fontweight='bold')
         ax.legend(loc='upper right', bbox_to_anchor=(1.38, 1.12), fontsize=10)
         return self._save(fig, save_name)

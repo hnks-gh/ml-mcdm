@@ -211,6 +211,9 @@ class VisualizationOrchestrator:
     def plot_ensemble_architecture(self, *a, **kw):
         return self.forecast.plot_ensemble_architecture(*a, **kw)
 
+    def plot_holdout_comparison(self, *a, **kw):
+        return self.forecast.plot_holdout_comparison(*a, **kw)
+
     def plot_model_contribution_dots(self, *a, **kw):
         return self.forecast.plot_model_contribution_dots(*a, **kw)
 
@@ -426,7 +429,7 @@ class VisualizationOrchestrator:
         # fig08 — per-criterion method score panels (one file per criterion)
         for crit_id, method_scores in ranking_result.criterion_method_scores.items():
             _safe(self.mcdm.plot_criterion_scores,
-                method_scores, crit_id, top_n=20,
+                method_scores, crit_id, top_n=5,
                 save_name=f'fig08_{crit_id}_scores.png',
             )
 
@@ -527,10 +530,8 @@ class VisualizationOrchestrator:
                 _pred_df   = getattr(_fr, 'predictions', None)
                 _pred_year = getattr(_fr, 'target_year', max(panel_data.years) + 1)
 
-                # fig16b — ensemble architecture flowchart (static)
-                _inc(self.forecast.plot_ensemble_architecture(
-                    model_contributions=_contribs or None,
-                ))
+                # Holdout per-model predictions
+                _per_model_ho = _ti.get('per_model_holdout_predictions')
 
                 # fig16 — actual vs predicted scatter
                 if _actual is not None and _predicted is not None:
@@ -543,6 +544,13 @@ class VisualizationOrchestrator:
                     _inc(self.forecast.plot_forecast_residuals(_a, _p))
                     # fig22b — conformal coverage calibration curve
                     _inc(self.forecast.plot_conformal_coverage(_a, _p))
+                    # fig16c — comprehensive holdout comparison
+                    _inc(self.forecast.plot_holdout_comparison(
+                        _a, _p,
+                        per_model_predictions=_per_model_ho,
+                        entity_names=_ent,
+                        model_contributions=_contribs or None,
+                    ))
 
                 # fig18 — feature importance lollipop
                 if hasattr(_fr, 'feature_importance'):
@@ -610,33 +618,6 @@ class VisualizationOrchestrator:
                     ))
             except Exception as _exc:
                 _logger.warning('Forecast visualization failed: %s', _exc)
-
-        # ── Executive dashboard ───────────────────────────────────
-        try:
-            top10_idx = np.argsort(ranks)[:10]
-            top10 = [(provinces[i], scores[i]) for i in top10_idx]
-            kpis = {
-                'Provinces': len(provinces),
-                'Years': len(panel_data.years),
-                'Subcriteria': panel_data.n_subcriteria,
-                'MCDM Methods': len(ranking_result.methods_used),
-            }
-            rob_text = ''
-            if sens and hasattr(sens, 'overall_robustness'):
-                rob_text = (
-                    f'Overall Robustness : {sens.overall_robustness:.4f}\n'
-                    f'Confidence Level   : '
-                    f'{getattr(sens, "confidence_level", 0.95):.0%}\n'
-                )
-            _inc(self.summary.plot_executive_dashboard({
-                'kpis': kpis,
-                'top_10': top10,
-                'fused_weights': weights['sc_array'],
-                'subcriteria_names': subcriteria,
-                'robustness_text': rob_text,
-            }))
-        except Exception as _exc:
-            _logger.debug('Executive dashboard skipped: %s', _exc)
 
         return count
 
