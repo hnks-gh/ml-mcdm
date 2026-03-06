@@ -127,12 +127,11 @@ ml-mcdm/
 │   │   ├── edas.py
 │   │   └── saw.py
 │
-├── evidential_reasoning/  # ER aggregation
-│   ├── base.py            # BeliefDistribution, ER engine
-│   └── hierarchical_er.py # Two-stage hierarchical ER
-│
-├── ranking/               # Ranking orchestrator
-│   └── pipeline.py        # Hierarchical ranking pipeline
+├── ranking/               # Ranking orchestrator + ER aggregation
+│   ├── pipeline.py        # Hierarchical ranking pipeline
+│   └── evidential_reasoning/
+│       ├── base.py            # BeliefDistribution, ER engine
+│       └── hierarchical_er.py # Two-stage hierarchical ER
 │
 ├── analysis/              # Production-ready analysis
 │   ├── sensitivity.py     # Hierarchical sensitivity (565 lines)

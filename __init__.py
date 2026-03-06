@@ -29,11 +29,10 @@ ml-mcdm/
 │   ├── promethee.py    # PROMETHEE II
 │   ├── copras.py       # COPRAS
 │   ├── edas.py         # EDAS
-│   └── saw.py          # Simple Additive Weighting (ensemble surrogate)
-│
-├── evidential_reasoning/  # ER aggregation
-│   ├── base.py            # BeliefDistribution, ER engine
-│   └── hierarchical_er.py # Two-stage hierarchical ER
+│   ├── saw.py          # Simple Additive Weighting (ensemble surrogate)
+│   └── evidential_reasoning/  # ER aggregation
+│       ├── base.py            # BeliefDistribution, ER engine
+│       └── hierarchical_er.py # Two-stage hierarchical ER
 │
 ├── forecasting/        # ML forecasting methods
 │   ├── base.py

@@ -53,7 +53,7 @@ class VisualizationOrchestrator:
         self._ranking_top_n: int = max(1, int(ranking_top_n))
 
         # Each plotter writes into its own phase subfolder
-        self.ranking = RankingPlotter(f'{output_dir}/ranking', dpi)
+        self.ranking = RankingPlotter(f'{output_dir}/mcdm', dpi)
         self.weighting = WeightingPlotter(f'{output_dir}/weighting', dpi)
         self.mcdm = MCDMPlotter(f'{output_dir}/mcdm', dpi)
         self.sensitivity = SensitivityPlotter(f'{output_dir}/sensitivity', dpi)

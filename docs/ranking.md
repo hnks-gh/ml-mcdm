@@ -123,8 +123,8 @@ Score = (u_min + u_max) / 2
 
 | File | Role |
 |---|---|
-| `evidential_reasoning/base.py` | BeliefDistribution, EvidentialReasoningEngine, score_to_belief() |
-| `evidential_reasoning/hierarchical_er.py` | HierarchicalEvidentialReasoning, Kendall W |
+| `ranking/evidential_reasoning/base.py` | BeliefDistribution, EvidentialReasoningEngine, score_to_belief() |
+| `ranking/evidential_reasoning/hierarchical_er.py` | HierarchicalEvidentialReasoning, Kendall W |
 | `ranking/pipeline.py` | HierarchicalRankingPipeline |
 | `ranking/topsis.py` | TOPSISCalculator |
 | `ranking/vikor.py` | VIKORCalculator |

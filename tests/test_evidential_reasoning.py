@@ -12,7 +12,7 @@ Covers:
 import numpy as np
 import pytest
 
-from evidential_reasoning.base import BeliefDistribution, EvidentialReasoningEngine
+from ranking.evidential_reasoning.base import BeliefDistribution, EvidentialReasoningEngine
 
 
 # ---------------------------------------------------------------------------

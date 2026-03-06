@@ -38,7 +38,7 @@ from .vikor import VIKORCalculator
 from .promethee import PROMETHEECalculator
 from .copras import COPRASCalculator
 from .edas import EDASCalculator
-from evidential_reasoning import (
+from .evidential_reasoning import (
     HierarchicalEvidentialReasoning, HierarchicalERResult,
     BeliefDistribution, EvidentialReasoningEngine,
 )

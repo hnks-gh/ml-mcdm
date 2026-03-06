@@ -8,8 +8,8 @@ sensitivity analysis) is persisted through this single writer class.
 Files are organised under ``output/result/csv/<phase>/``:
 
   - weighting/   — weights_analysis.csv, criterion_weights.csv
-  - ranking/     — final_rankings.csv, prediction_uncertainty_er.csv
-  - mcdm/        — mcdm_scores_*.csv, mcdm_rank_comparison.csv
+  - mcdm/        — final_rankings.csv, prediction_uncertainty_er.csv,
+                   mcdm_scores_*.csv, mcdm_rank_comparison.csv
   - forecasting/ — forecast_*, model_*, feature_importance, cv scores
   - sensitivity/ — sensitivity_*.csv, sensitivity_summary.json
   - summary/     — data_summary_statistics.csv, execution/config JSON
@@ -32,7 +32,7 @@ class CsvWriter:
     """Write CSV / JSON result files into ``<base_dir>/csv/<phase>/``."""
 
     # Canonical phase names
-    PHASES = ('weighting', 'ranking', 'mcdm', 'forecasting', 'sensitivity', 'summary')
+    PHASES = ('weighting', 'mcdm', 'forecasting', 'sensitivity', 'summary')
 
     def __init__(self, base_output_dir: str = 'output/result'):
         from . import _sanitize_output_dir
@@ -196,7 +196,7 @@ class CsvWriter:
         df.index = df.index + 1
         df.index.name = 'Position'
         return self._save_csv(df, 'final_rankings.csv', float_fmt='%.4f',
-                                directory=self.ranking_dir)
+                                directory=self.mcdm_dir)
 
     # ==================================================================
     #  3. MCDM SCORES PER CRITERION
@@ -524,7 +524,7 @@ class CsvWriter:
             unc = ranking_result.er_result.uncertainty.copy()
             unc.index.name = 'Province'
             return self._save_csv(unc, 'prediction_uncertainty_er.csv',
-                                    directory=self.ranking_dir, float_fmt='%.6f')
+                                    directory=self.mcdm_dir, float_fmt='%.6f')
         except Exception as _exc:
             _logger.debug('er_uncertainty skipped: %s', _exc)
             return None
@@ -794,7 +794,7 @@ class CsvWriter:
                     axis=1)
                 saved['scores'] = self._save_csv(
                     score_df, 'rankings_all_years.csv',
-                    directory=self.ranking_dir, float_fmt='%.4f')
+                    directory=self.mcdm_dir, float_fmt='%.4f')
 
             if rank_data:
                 rank_df = pd.DataFrame(rank_data)
@@ -806,7 +806,7 @@ class CsvWriter:
                 rank_df['Best_Year'] = best_yr
                 saved['ranks'] = self._save_csv(
                     rank_df, 'ranks_all_years.csv',
-                    directory=self.ranking_dir, float_fmt='%.2f')
+                    directory=self.mcdm_dir, float_fmt='%.2f')
         except Exception as _exc:
             _logger.debug('all-years score/rank matrix skipped: %s', _exc)
 
@@ -832,7 +832,7 @@ class CsvWriter:
                 long_df = pd.DataFrame(long_rows)
                 saved['criterion_er'] = self._save_csv(
                     long_df, 'criterion_er_scores_all_years.csv',
-                    directory=self.ranking_dir, float_fmt='%.4f')
+                    directory=self.mcdm_dir, float_fmt='%.4f')
         except Exception as _exc:
             _logger.debug('criterion ER long-format skipped: %s', _exc)
 
@@ -891,7 +891,7 @@ class CsvWriter:
             df.index.name = 'RowID'
             return self._save_csv(
                 df, 'belief_distributions.csv',
-                directory=self.ranking_dir, float_fmt='%.6f')
+                directory=self.mcdm_dir, float_fmt='%.6f')
         except Exception as _exc:
             _logger.debug('belief distributions skipped: %s', _exc)
             return None

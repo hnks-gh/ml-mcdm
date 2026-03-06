@@ -486,7 +486,7 @@ class TestEvidentialReasoningKConstant:
         With the wrong K = 1/(1âˆ’âˆB) several mass configurations produce
         beliefs > 1.
         """
-        from evidential_reasoning.base import BeliefDistribution, EvidentialReasoningEngine
+        from ranking.evidential_reasoning.base import BeliefDistribution, EvidentialReasoningEngine
 
         engine = EvidentialReasoningEngine(grades=["H1", "H2", "H3"])
         # Source heavily in H1
@@ -504,7 +504,7 @@ class TestEvidentialReasoningKConstant:
 
     def test_three_sources_valid(self):
         """Three sources combined with correct K must produce valid beliefs."""
-        from evidential_reasoning.base import BeliefDistribution, EvidentialReasoningEngine
+        from ranking.evidential_reasoning.base import BeliefDistribution, EvidentialReasoningEngine
 
         engine = EvidentialReasoningEngine(grades=["A", "B", "C", "D"])
         sources = [
@@ -522,7 +522,7 @@ class TestEvidentialReasoningKConstant:
 
     def test_uniform_sources_stay_uniform(self):
         """When all sources are uniform, result should remain near-uniform."""
-        from evidential_reasoning.base import BeliefDistribution, EvidentialReasoningEngine
+        from ranking.evidential_reasoning.base import BeliefDistribution, EvidentialReasoningEngine
 
         engine = EvidentialReasoningEngine(grades=["A", "B", "C", "D"])
         beliefs = np.array([0.25, 0.25, 0.25, 0.25])

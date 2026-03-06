@@ -66,7 +66,7 @@ class TestCsvWriterInit:
     def test_phase_dir_attributes(self, tmp_path):
         writer = CsvWriter(base_output_dir=str(tmp_path))
         assert writer.weighting_dir == tmp_path / "csv" / "weighting"
-        assert writer.ranking_dir == tmp_path / "csv" / "ranking"
+        assert writer.mcdm_dir == tmp_path / "csv" / "mcdm"
         assert writer.forecasting_dir == tmp_path / "csv" / "forecasting"
 
     def test_saved_files_initially_empty(self, tmp_path):

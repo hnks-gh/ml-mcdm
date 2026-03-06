@@ -14,6 +14,8 @@ topsis, vikor, promethee, copras, edas
     Traditional MCDM method calculators.
 saw
     Simple Additive Weighting (used as a fast surrogate in the MC ensemble).
+evidential_reasoning
+    BeliefDistribution, EvidentialReasoningEngine, HierarchicalEvidentialReasoning.
 """
 
 from .pipeline import HierarchicalRankingPipeline, HierarchicalRankingResult
@@ -26,6 +28,10 @@ from .promethee import (
 from .copras import COPRASCalculator, COPRASResult
 from .edas import EDASCalculator, EDASResult
 from .saw import SAWCalculator, SAWResult
+from .evidential_reasoning import (
+    BeliefDistribution, EvidentialReasoningEngine,
+    HierarchicalEvidentialReasoning, HierarchicalERResult,
+)
 
 __all__ = [
     # Pipeline
@@ -43,4 +49,7 @@ __all__ = [
     "EDASCalculator", "EDASResult",
     # SAW
     "SAWCalculator", "SAWResult",
+    # Evidential Reasoning
+    "BeliefDistribution", "EvidentialReasoningEngine",
+    "HierarchicalEvidentialReasoning", "HierarchicalERResult",
 ]

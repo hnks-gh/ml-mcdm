@@ -18,8 +18,8 @@ date: "2026-03-05"
 - [10. Methodological Notes and References](#methodological-notes-and-references)
 - [A. Output File Inventory](#output-file-inventory)
 
-> **Generated:** 2026-03-05 16:19:55  
-> **Runtime:** 539.99 s  
+> **Generated:** 2026-03-05 17:45:15  
+> **Runtime:** 356.82 s  
 > **Framework:** ML-MCDM v4.0
 
 # 1. Executive Summary
@@ -527,7 +527,7 @@ Super Learner (van der Laan, Polley & Hubbard, 2007) constructs an optimal conve
 - `config_snapshot.json`
 - `execution_summary.json`
 
-### Figures (44 files)
+### Figures (43 files)
 
 - `fig06_method_agreement.png`
 - `fig06b_agreement_per_criterion.png`
@@ -562,7 +562,6 @@ Super Learner (van der Laan, Polley & Hubbard, 2007) constructs an optimal conve
 - `fig03c_criterion_weights.png`
 - `fig04_weight_radar.png`
 - `fig04a_weight_radar_criteria.png`
-- `fig04a_weight_radar_criteria_critic.png`
 - `fig04b_C01_radar.png`
 - `fig04b_C02_radar.png`
 - `fig04b_C03_radar.png`
