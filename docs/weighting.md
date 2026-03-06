@@ -309,7 +309,7 @@ class WeightingConfig:
 | `weighting/__init__.py` | Module exports |
 | `config.py` | `WeightingConfig` dataclass |
 | `pipeline.py` | Orchestration — calls `CRITICWeightingCalculator`, reads `details` |
-| `ranking/pipeline.py` | `_derive_hierarchical_weights()` — receives criterion weights from `details["level2"]` |
+| `ranking/hierarchical_pipeline.py` | `_derive_hierarchical_weights()` — receives criterion weights from `details["level2"]` |
 | `tests/test_weighting.py` | `TestCRITICWeightingCalculator`, `TestCRITICWeightCalculator` |
 
 ---
@@ -340,7 +340,7 @@ criterion_w = result.details["level2"]["criterion_weights"]
 
 Add `mc_ensemble_diagnostics: Optional[Dict] = None` to `PipelineResult` to surface `details["level2"]["mc_diagnostics"]` for visualization and reporting.
 
-### `ranking/pipeline.py` — `_derive_hierarchical_weights()` update
+### `ranking/hierarchical_pipeline.py` — `_derive_hierarchical_weights()` update
 
 After migration, this method receives criterion weights directly from `details["level2"]["criterion_weights"]` rather than deriving them by summing SC weights:
 

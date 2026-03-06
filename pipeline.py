@@ -186,6 +186,18 @@ class MLMCDMPipeline:
             with self.console.phase('CRITIC Weight Calculation') as ph:
                 weights = self._calculate_weights(panel_data)
 
+                # Per-year weights (cross-section, independent per year)
+                weight_all_years: Dict[int, Any] = {}
+                try:
+                    weight_all_years = self._calculate_weights_all_years(panel_data)
+                    ph.detail(
+                        f'Per-year CRITIC: {len(weight_all_years)}/{len(panel_data.years)} '
+                        f'years computed'
+                    )
+                except Exception as _wt_exc:
+                    self.logger.warning(
+                        'Per-year CRITIC weights failed (non-fatal): %s', _wt_exc)
+
             # Phase 3: Hierarchical Ranking (6 MCDM methods + ER)
             multi_year_results: Dict[int, Any] = {}
             ranking_result: Optional[HierarchicalRankingResult] = None
@@ -279,6 +291,7 @@ class MLMCDMPipeline:
                         figure_paths=figure_paths,
                         config=self.config,
                         multi_year_results=multi_year_results,
+                        weight_all_years=weight_all_years,
                     )
                 except Exception as e:
                     ph.warning(f'Result saving failed: {e}')
@@ -516,6 +529,105 @@ class MLMCDMPipeline:
             'criteria_groups':          active_groups,
             'details':                  result.details,
         }
+
+    def _calculate_weights_all_years(
+        self, panel_data: PanelData
+    ) -> Dict[int, Dict[str, Any]]:
+        """Compute per-year CRITIC weights from each year's cross-section.
+
+        Each year is treated independently: only the provinces that reported
+        data in that specific year (per ``YearContext``) are included.  The
+        two-level CRITIC computation is identical to ``_calculate_weights``
+        but operates on a single-year slice rather than the full panel.
+
+        Returns
+        -------
+        Dict[int, Dict]
+            Keyed by year.  Each value has the same structure as the dict
+            returned by ``_calculate_weights``:
+            ``global_sc_weights``, ``criterion_weights``,
+            ``critic_criterion_weights``, ``sc_array``,
+            ``subcriteria``, ``criteria_groups``, ``details``.
+            Failed years are omitted and logged as warnings.
+        """
+        from .weighting import CRITICWeightingCalculator
+
+        all_sc       = panel_data.hierarchy.all_subcriteria
+        panel_long   = panel_data.subcriteria_long
+        year_ctxs    = panel_data.year_contexts
+        results: Dict[int, Dict[str, Any]] = {}
+
+        for year in sorted(panel_data.years):
+            try:
+                # ── Slice to this year only ───────────────────────────────
+                yr_df = panel_long[panel_long['Year'] == year].copy()
+                if yr_df.empty:
+                    self.logger.warning(
+                        '  Per-year weights: year %d — no rows, skipped', year)
+                    continue
+
+                # ── Year-active sub-criteria (from YearContext if available) ──
+                ctx = year_ctxs.get(year)
+                if ctx is not None:
+                    active_scs = [sc for sc in ctx.active_subcriteria
+                                  if sc in yr_df.columns and yr_df[sc].notna().any()]
+                else:
+                    active_scs = [sc for sc in all_sc
+                                  if sc in yr_df.columns and yr_df[sc].notna().any()]
+
+                if not active_scs:
+                    self.logger.warning(
+                        '  Per-year weights: year %d — no active SCs, skipped', year)
+                    continue
+
+                # ── Drop rows missing any active SC ───────────────────────
+                yr_df = yr_df[yr_df[active_scs].notna().all(axis=1)].copy()
+                if yr_df.empty:
+                    self.logger.warning(
+                        '  Per-year weights: year %d — all rows dropped, skipped', year)
+                    continue
+
+                # ── Build active criteria groups for this year ─────────────
+                active_groups: Dict[str, Any] = {}
+                for crit_id, sc_list in panel_data.hierarchy.criteria_to_subcriteria.items():
+                    active = [sc for sc in sc_list if sc in active_scs]
+                    if active:
+                        active_groups[crit_id] = active
+
+                # ── Run two-level CRITIC on the year slice ─────────────────
+                calc = CRITICWeightingCalculator(config=self.config.weighting)
+                res  = calc.calculate(
+                    panel_df        = yr_df,
+                    criteria_groups = active_groups,
+                    entity_col      = 'Province',
+                    time_col        = 'Year',
+                )
+
+                global_sc_w  = res.details['global_sc_weights']
+                criterion_w  = res.details['level2']['criterion_weights']
+                critic_crit_w = res.details.get('critic_criterion_weights', {})
+                sc_arr = np.array([global_sc_w.get(sc, 0.0) for sc in active_scs])
+
+                results[year] = {
+                    'global_sc_weights':        global_sc_w,
+                    'critic_sc_weights':        global_sc_w,
+                    'criterion_weights':        criterion_w,
+                    'critic_criterion_weights': critic_crit_w,
+                    'sc_array':                 sc_arr,
+                    'subcriteria':              active_scs,
+                    'criteria_groups':          active_groups,
+                    'details':                  res.details,
+                }
+
+            except Exception as _exc:
+                self.logger.warning(
+                    '  Per-year weights: year %d failed — %s', year, _exc)
+
+        self.logger.info(
+            'Per-year CRITIC weights: %d/%d years computed',
+            len(results), len(panel_data.years),
+        )
+        return results
 
     # -----------------------------------------------------------------
     # Phase 3: Hierarchical Ranking

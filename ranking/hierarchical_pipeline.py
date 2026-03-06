@@ -107,7 +107,11 @@ class HierarchicalRankingResult:
 class HierarchicalRankingPipeline:
     """
     Orchestrates two-stage hierarchical ranking
-    (5 traditional MCDM methods + Evidential Reasoning).
+    (6 traditional MCDM methods + Evidential Reasoning).
+
+    The six methods are TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS, and SAW.
+    SAW is the only unweighted method: it sums the min-max-normalised
+    sub-criteria values directly (no CRITIC weights applied).
 
     Parameters
     ----------
@@ -120,7 +124,7 @@ class HierarchicalRankingPipeline:
         Subcriteria codes where lower values are preferred.
     """
 
-    TRADITIONAL_METHODS = ['TOPSIS', 'VIKOR', 'PROMETHEE', 'COPRAS', 'EDAS']
+    TRADITIONAL_METHODS = ['TOPSIS', 'VIKOR', 'PROMETHEE', 'COPRAS', 'EDAS', 'SAW']
     ALL_METHODS = TRADITIONAL_METHODS
 
     def __init__(
@@ -216,7 +220,7 @@ class HierarchicalRankingPipeline:
         logger.info(
             f"  {len(alternatives)} alternatives, "
             f"{len(hierarchy.all_criteria)} criteria groups (pre-exclusion), "
-            f"5 MCDM methods"
+            f"6 MCDM methods"
         )
 
         # ------------------------------------------------------------------
@@ -462,7 +466,12 @@ class HierarchicalRankingPipeline:
         weights: Dict[str, float],
         cost_criteria: List[str],
     ) -> Dict[str, Dict]:
-        """Run 5 traditional MCDM methods. Returns raw scores + ranks."""
+        """Run 6 traditional MCDM methods. Returns raw scores + ranks.
+
+        SAW is the only method that does **not** use the CRITIC weights;
+        it sums the already-normalised sub-criteria values directly so that
+        every sub-criterion contributes equally (unweighted additive score).
+        """
         results = {}
 
         # TOPSIS
@@ -523,6 +532,19 @@ class HierarchicalRankingPipeline:
             }
         except Exception as e:
             logger.warning(f"    EDAS failed: {e}")
+
+        # SAW — unweighted sum of already-normalised scores.
+        # df is already min-max normalised to [0, 1] by _minmax_normalize();
+        # summing columns gives the raw SAW score without applying CRITIC
+        # weights, so each sub-criterion contributes equally.
+        try:
+            saw_scores = df.sum(axis=1)          # raw sum ∈ [0, n_subcriteria]
+            saw_ranks  = saw_scores.rank(ascending=False, method='min').astype(int)
+            results['SAW'] = {
+                'scores': saw_scores, 'ranks': saw_ranks, 'higher_better': True
+            }
+        except Exception as e:
+            logger.warning(f"    SAW failed: {e}")
 
         return results
 

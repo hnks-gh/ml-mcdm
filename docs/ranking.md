@@ -125,7 +125,7 @@ Score = (u_min + u_max) / 2
 |---|---|
 | `ranking/evidential_reasoning/base.py` | BeliefDistribution, EvidentialReasoningEngine, score_to_belief() |
 | `ranking/evidential_reasoning/hierarchical_er.py` | HierarchicalEvidentialReasoning, Kendall W |
-| `ranking/pipeline.py` | HierarchicalRankingPipeline |
+| `ranking/hierarchical_pipeline.py` | HierarchicalRankingPipeline |
 | `ranking/topsis.py` | TOPSISCalculator |
 | `ranking/vikor.py` | VIKORCalculator |
 | `ranking/promethee.py` | PROMETHEECalculator |

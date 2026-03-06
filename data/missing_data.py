@@ -9,7 +9,7 @@ this module provides a single, tested set of primitives that each phase calls:
     :func:`prepare_decision_matrix` — filter all-NaN rows/columns then impute
     remaining partial cells with the per-column mean.
 
-**Ranking phase** (``ranking/pipeline.py``)
+**Ranking phase** (``ranking/hierarchical_pipeline.py``)
     :func:`impute_neutral_score` — fill NaN in a normalized decision matrix
     with 0.5, resulting in a neutral mid-point score that does not bias ranking.
 

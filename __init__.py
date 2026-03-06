@@ -23,7 +23,7 @@ ml-mcdm/
 │   └── validation.py
 │
 ├── ranking/
-│   ├── pipeline.py     # Unified ranking orchestrator
+│   ├── hierarchical_pipeline.py  # Unified ranking orchestrator
 │   ├── topsis.py       # TOPSIS
 │   ├── vikor.py        # VIKOR
 │   ├── promethee.py    # PROMETHEE II

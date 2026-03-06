@@ -45,6 +45,7 @@ class OutputOrchestrator:
         figure_paths: Optional[List[str]] = None,
         config: Optional[Any] = None,
         multi_year_results: Optional[Dict[int, Any]] = None,
+        weight_all_years: Optional[Dict[int, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Persist every artefact and return a summary dict.
@@ -165,6 +166,24 @@ class OutputOrchestrator:
                     logger.info(f'Saved: {Path(path_pd).name}')
             except Exception as _exc:
                 logger.warning(f'save_perturbation_detail failed: {_exc}')
+
+        # 20. Per-year CRITIC weights (14 individual files + 2 summary matrices)
+        if weight_all_years:
+            try:
+                saved_yw = self.csv.save_weights_all_years(weight_all_years)
+                for key in saved_yw:
+                    logger.info(f'Saved: {Path(saved_yw[key]).name}')
+            except Exception as _exc:
+                logger.warning(f'save_weights_all_years failed: {_exc}')
+
+        # 21. Per-year per-method MCDM scores (14 long-format CSVs)
+        if multi_year_results:
+            try:
+                saved_ms = self.csv.save_method_scores_all_years(multi_year_results)
+                for key in saved_ms:
+                    logger.info(f'Saved: {Path(saved_ms[key]).name}')
+            except Exception as _exc:
+                logger.warning(f'save_method_scores_all_years failed: {_exc}')
 
         # 19. Markdown report
         try:

@@ -7,9 +7,12 @@ All structured numerical output (weights, rankings, scores, forecasts,
 sensitivity analysis) is persisted through this single writer class.
 Files are organised under ``output/result/csv/<phase>/``:
 
-  - weighting/   — weights_analysis.csv, criterion_weights.csv
+  - weighting/   — weights_analysis.csv, criterion_weights.csv,
+                   critic_weights_YYYY.csv, critic_sc_weights_all_years.csv,
+                   critic_criterion_weights_all_years.csv
   - mcdm/        — final_rankings.csv, prediction_uncertainty_er.csv,
                    mcdm_scores_*.csv, mcdm_rank_comparison.csv
+  - ranking/     — mcdm_scores_YYYY.csv (per-year per-method per-criterion)
   - forecasting/ — forecast_*, model_*, feature_importance, cv scores
   - sensitivity/ — sensitivity_*.csv, sensitivity_summary.json
   - summary/     — data_summary_statistics.csv, execution/config JSON
@@ -32,7 +35,7 @@ class CsvWriter:
     """Write CSV / JSON result files into ``<base_dir>/csv/<phase>/``."""
 
     # Canonical phase names
-    PHASES = ('weighting', 'mcdm', 'forecasting', 'sensitivity', 'summary')
+    PHASES = ('weighting', 'mcdm', 'ranking', 'forecasting', 'sensitivity', 'summary')
 
     def __init__(self, base_output_dir: str = 'output/result'):
         from . import _sanitize_output_dir
@@ -1136,6 +1139,245 @@ class CsvWriter:
         except Exception as _exc:
             _logger.debug('perturbation detail skipped: %s', _exc)
             return None
+
+    # ==================================================================
+    # 19. PER-YEAR CRITIC WEIGHTS
+    # ==================================================================
+
+    def save_weights_all_years(
+        self, weight_all_years: Dict[int, Any]
+    ) -> Dict[str, str]:
+        """
+        Persist per-year CRITIC weight tables computed from each year's
+        cross-section independently.
+
+        Files produced
+        --------------
+        weighting/critic_weights_YYYY.csv          — one per year
+        weighting/critic_sc_weights_all_years.csv  — SC × Year matrix (global weights)
+        weighting/critic_criterion_weights_all_years.csv — Criterion × Year matrix
+        """
+        saved: Dict[str, str] = {}
+        if not weight_all_years:
+            return saved
+
+        years = sorted(weight_all_years.keys())
+
+        # ── Per-year individual files ────────────────────────────────────
+        for yr in years:
+            try:
+                yw = weight_all_years[yr]
+                sc_list     = yw.get('subcriteria', [])
+                global_sc   = yw.get('global_sc_weights', {})
+                crit_w      = yw.get('criterion_weights', {})
+                details     = yw.get('details', {})
+                level1      = details.get('level1', {})
+                groups      = yw.get('criteria_groups', {})
+
+                # Build SC → criterion lookup
+                sc_to_crit: Dict[str, str] = {}
+                for cid, sc_cols in groups.items():
+                    for sc in sc_cols:
+                        sc_to_crit[sc] = cid
+
+                rows = []
+                for sc in sc_list:
+                    cid   = sc_to_crit.get(sc, '')
+                    l1c   = level1.get(cid, {}).get('local_sc_weights', {})
+                    rows.append({
+                        'Subcriteria':          sc,
+                        'Criterion':            cid,
+                        'Critic_Local_Weight':  float(l1c.get(sc, 0.0)),
+                        'Critic_Crit_Weight':   float(crit_w.get(cid, 0.0)),
+                        'Critic_Global_Weight': float(global_sc.get(sc, 0.0)),
+                    })
+
+                if not rows:
+                    continue
+
+                df = pd.DataFrame(rows).set_index('Subcriteria')
+                df['Rank'] = df['Critic_Global_Weight'].rank(
+                    ascending=False, method='min').astype(int)
+
+                fname = f'critic_weights_{yr}.csv'
+                saved[f'year_{yr}'] = self._save_csv(
+                    df, fname, directory=self.weighting_dir, float_fmt='%.6f')
+            except Exception as _exc:
+                _logger.debug('per-year weights year %d skipped: %s', yr, _exc)
+
+        # ── SC × Year global-weight matrix ───────────────────────────────
+        try:
+            sc_year_data: Dict[int, Dict[str, float]] = {}
+            all_scs: List[str] = []
+            for yr in years:
+                gw = weight_all_years[yr].get('global_sc_weights', {})
+                sc_year_data[yr] = gw
+                for sc in gw:
+                    if sc not in all_scs:
+                        all_scs.append(sc)
+
+            sc_df = pd.DataFrame(
+                {yr: [sc_year_data[yr].get(sc, float('nan')) for sc in all_scs]
+                 for yr in years},
+                index=all_scs,
+            )
+            sc_df.index.name  = 'Subcriteria'
+            sc_df.columns.name = 'Year'
+            sc_df['Mean_Weight'] = sc_df[years].mean(axis=1)
+            sc_df['StdDev']      = sc_df[years].std(axis=1)
+            saved['sc_matrix'] = self._save_csv(
+                sc_df, 'critic_sc_weights_all_years.csv',
+                directory=self.weighting_dir, float_fmt='%.6f')
+        except Exception as _exc:
+            _logger.debug('SC weight matrix skipped: %s', _exc)
+
+        # ── Criterion × Year weight matrix ───────────────────────────────
+        try:
+            crit_year_data: Dict[int, Dict[str, float]] = {}
+            all_crits: List[str] = []
+            for yr in years:
+                cw = weight_all_years[yr].get('criterion_weights', {})
+                crit_year_data[yr] = cw
+                for c in sorted(cw):
+                    if c not in all_crits:
+                        all_crits.append(c)
+            all_crits.sort()
+
+            crit_df = pd.DataFrame(
+                {yr: [crit_year_data[yr].get(c, float('nan')) for c in all_crits]
+                 for yr in years},
+                index=all_crits,
+            )
+            crit_df.index.name  = 'Criterion'
+            crit_df.columns.name = 'Year'
+            crit_df['Mean_Weight'] = crit_df[years].mean(axis=1)
+            crit_df['StdDev']      = crit_df[years].std(axis=1)
+            saved['crit_matrix'] = self._save_csv(
+                crit_df, 'critic_criterion_weights_all_years.csv',
+                directory=self.weighting_dir, float_fmt='%.6f')
+        except Exception as _exc:
+            _logger.debug('criterion weight matrix skipped: %s', _exc)
+
+        return saved
+
+    # ==================================================================
+    # 20. PER-YEAR PER-METHOD MCDM SCORES (14 CSVs)
+    # ==================================================================
+
+    def save_method_scores_all_years(
+        self, multi_year_results: Dict[int, Any]
+    ) -> Dict[str, str]:
+        """
+        Persist per-year MCDM method scores and final ER rankings for all
+        provinces, one CSV per year.
+
+        Each file is long-format: one row per (Province, Criterion) pair
+        with columns for each of the 6 MCDM method scores plus the
+        Stage-1 ER utility and the final ER score/rank for that province.
+
+        Files produced
+        --------------
+        ranking/mcdm_scores_YYYY.csv   — one file per year (14 total)
+        """
+        saved: Dict[str, str] = {}
+        if not multi_year_results:
+            return saved
+
+        for yr, yr_res in sorted(multi_year_results.items()):
+            try:
+                method_scores = getattr(yr_res, 'criterion_method_scores', {})
+                if not method_scores:
+                    continue
+
+                final_scores  = getattr(yr_res, 'final_scores', None)
+                final_ranking = getattr(yr_res, 'final_ranking', None)
+
+                # Discover all methods present this year
+                methods_seen: List[str] = []
+                for crit_scores in method_scores.values():
+                    for m in crit_scores:
+                        if m not in methods_seen:
+                            methods_seen.append(m)
+
+                # Stage-1 ER utilities (per province per criterion)
+                er_res        = getattr(yr_res, 'er_result', None)
+                crit_beliefs  = getattr(er_res, 'criterion_beliefs', {}) if er_res else {}
+
+                rows = []
+                for crit_id in sorted(method_scores):
+                    crit_data = method_scores[crit_id]
+                    # Identify provinces for this criterion from first method series
+                    first_series = next(iter(crit_data.values()), None)
+                    if first_series is None:
+                        continue
+                    provinces_crit = (
+                        list(first_series.index)
+                        if hasattr(first_series, 'index')
+                        else []
+                    )
+
+                    for prov in provinces_crit:
+                        row: Dict[str, Any] = {
+                            'Year':      yr,
+                            'Province':  prov,
+                            'Criterion': crit_id,
+                        }
+
+                        # Per-method score
+                        for method in methods_seen:
+                            series = crit_data.get(method)
+                            if series is not None:
+                                val = (
+                                    float(series.loc[prov])
+                                    if hasattr(series, 'loc') and prov in series.index
+                                    else float('nan')
+                                )
+                            else:
+                                val = float('nan')
+                            row[f'{method}_Score'] = val
+
+                        # Stage-1 ER utility for this (province, criterion)
+                        bd = crit_beliefs.get(prov, {}).get(crit_id)
+                        row['ER_Stage1_Utility'] = (
+                            float(bd.average_utility()) if bd is not None else float('nan'))
+
+                        # Final ER score and rank (province-level, repeated per crit row)
+                        if final_scores is not None and hasattr(final_scores, 'get'):
+                            row['Final_ER_Score'] = float(
+                                final_scores.get(prov, float('nan')))
+                        elif final_scores is not None and hasattr(final_scores, 'loc'):
+                            row['Final_ER_Score'] = (
+                                float(final_scores.loc[prov])
+                                if prov in final_scores.index
+                                else float('nan'))
+                        else:
+                            row['Final_ER_Score'] = float('nan')
+
+                        if final_ranking is not None and hasattr(final_ranking, 'loc'):
+                            row['ER_Rank'] = (
+                                int(final_ranking.loc[prov])
+                                if prov in final_ranking.index
+                                else -1)
+                        else:
+                            row['ER_Rank'] = -1
+
+                        rows.append(row)
+
+                if not rows:
+                    continue
+
+                df = pd.DataFrame(rows)
+                df = df.sort_values(['ER_Rank', 'Province', 'Criterion']).reset_index(drop=True)
+                df.index.name = 'RowID'
+
+                fname = f'mcdm_scores_{yr}.csv'
+                saved[f'year_{yr}'] = self._save_csv(
+                    df, fname, directory=self.ranking_dir, float_fmt='%.4f')
+
+            except Exception as _exc:
+                _logger.debug('per-year method scores year %d skipped: %s', yr, _exc)
+
+        return saved
 
 
 __all__ = ['CsvWriter']

@@ -8,7 +8,7 @@ with Evidential Reasoning (Yang & Xu, 2002).
 
 Modules
 -------
-pipeline
+hierarchical_pipeline
     HierarchicalRankingPipeline — the main ranking orchestrator.
 topsis, vikor, promethee, copras, edas
     Traditional MCDM method calculators.
@@ -18,7 +18,7 @@ evidential_reasoning
     BeliefDistribution, EvidentialReasoningEngine, HierarchicalEvidentialReasoning.
 """
 
-from .pipeline import HierarchicalRankingPipeline, HierarchicalRankingResult
+from .hierarchical_pipeline import HierarchicalRankingPipeline, HierarchicalRankingResult
 from .topsis import TOPSISCalculator, TOPSISResult
 from .vikor import VIKORCalculator, VIKORResult, MultiPeriodVIKOR
 from .promethee import (
