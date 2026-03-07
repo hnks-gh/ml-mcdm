@@ -72,56 +72,25 @@ class OutputOrchestrator:
         self.csv.save_rank_comparison(ranking_result, panel_data.provinces)
         logger.info('Saved: mcdm_rank_comparison.csv')
 
-        # 5. Criterion weights
-        self.csv.save_criterion_weights(ranking_result.criterion_weights_used)
-        logger.info('Saved: criterion_weights.csv')
-
-        # 6. ER uncertainty
+        # 5. ER uncertainty
         self.csv.save_er_uncertainty(ranking_result, panel_data.provinces)
         logger.info('Saved: prediction_uncertainty_er.csv')
 
-        # 7. Data summary
-        self.csv.save_data_summary(panel_data)
-        logger.info('Saved: data_summary_statistics.csv')
-
-        # 8. Forecasting results
+        # 6. Forecasting results
         if forecast_result is not None:
             saved_fc = self.csv.save_forecast_results(forecast_result)
             for key, path in saved_fc.items():
                 logger.info(f'Saved: {Path(path).name}')
 
-        # 9. Sensitivity analysis
+        # 7. Sensitivity analysis
         if analysis_results.get('sensitivity'):
             saved_an = self.csv.save_analysis_results(analysis_results)
             for key, path in saved_an.items():
                 logger.info(f'Saved: {Path(path).name}')
 
-        # 10. Execution summary (JSON)
-        self.csv.save_execution_summary(
-            panel_data=panel_data,
-            ranking_result=ranking_result,
-            execution_time=execution_time,
-        )
-        logger.info('Saved: execution_summary.json')
+        # ── All-years outputs ─────────────────────────────────────────────
 
-        # 11. Config snapshot
-        if config is not None:
-            self.csv.save_config_snapshot(config)
-            logger.info('Saved: config_snapshot.json')
-
-        # ── New B-series outputs ──────────────────────────────────────────
-
-        # 12. CRITIC weight tables
-        try:
-            saved_mw = self.csv.save_method_weights(weights)
-            for key in saved_mw:
-                logger.info(f'Saved: {Path(saved_mw[key]).name}')
-        except Exception as _exc:
-            logger.warning(f'save_method_weights failed: {_exc}')
-
-        # 13. (MC province stats removed — deterministic pipeline has no MC)
-
-        # 14. All-years score / rank matrices + criterion ER long-format
+        # 8. All-years score / rank matrices + criterion ER long-format
         if multi_year_results:
             try:
                 saved_ay = self.csv.save_rankings_all_years(
@@ -131,7 +100,7 @@ class OutputOrchestrator:
             except Exception as _exc:
                 logger.warning(f'save_rankings_all_years failed: {_exc}')
 
-        # 15. Belief distributions (Stage-1 ER)
+        # 9. Belief distributions (Stage-1 ER)
         try:
             path_bd = self.csv.save_belief_distributions(
                 ranking_result, panel_data.provinces)
@@ -140,7 +109,7 @@ class OutputOrchestrator:
         except Exception as _exc:
             logger.warning(f'save_belief_distributions failed: {_exc}')
 
-        # 16. MCDM composite comparison (all methods + ER)
+        # 10. MCDM composite comparison (all methods + ER)
         try:
             path_mc = self.csv.save_mcdm_composite_comparison(
                 ranking_result, panel_data.provinces)
@@ -149,7 +118,7 @@ class OutputOrchestrator:
         except Exception as _exc:
             logger.warning(f'save_mcdm_composite_comparison failed: {_exc}')
 
-        # 17. Individual base-model predictions
+        # 11. Individual base-model predictions
         if forecast_result is not None:
             try:
                 path_imp = self.csv.save_individual_model_predictions(forecast_result)
@@ -158,7 +127,7 @@ class OutputOrchestrator:
             except Exception as _exc:
                 logger.warning(f'save_individual_model_predictions failed: {_exc}')
 
-        # 18. Perturbation detail matrix
+        # 12. Perturbation detail matrix
         if analysis_results.get('sensitivity'):
             try:
                 path_pd = self.csv.save_perturbation_detail(analysis_results)
@@ -167,7 +136,7 @@ class OutputOrchestrator:
             except Exception as _exc:
                 logger.warning(f'save_perturbation_detail failed: {_exc}')
 
-        # 20. Per-year CRITIC weights (14 individual files + 2 summary matrices)
+        # 13. Per-year CRITIC weights (14 individual files + 3 summary matrices)
         if weight_all_years:
             try:
                 saved_yw = self.csv.save_weights_all_years(weight_all_years)
@@ -176,7 +145,7 @@ class OutputOrchestrator:
             except Exception as _exc:
                 logger.warning(f'save_weights_all_years failed: {_exc}')
 
-        # 21. Per-year per-method MCDM scores (14 long-format CSVs)
+        # 14. Per-year per-method MCDM scores (14 long-format CSVs)
         if multi_year_results:
             try:
                 saved_ms = self.csv.save_method_scores_all_years(multi_year_results)

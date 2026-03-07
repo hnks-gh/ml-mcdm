@@ -201,6 +201,11 @@ class PanelData:
         return self.hierarchy.all_subcriteria
 
     @property
+    def criteria_names(self) -> List[str]:
+        """List of all criteria codes (C01–C08) from the hierarchy."""
+        return self.hierarchy.all_criteria
+
+    @property
     def cross_section(self) -> Dict:
         """Alias for subcriteria_cross_section (used by MCDM/forecasting)."""
         return self.subcriteria_cross_section
@@ -221,6 +226,18 @@ class PanelData:
         prov_data = long[long['Province'] == province].copy()
         prov_data = prov_data.set_index('Year')
         cols = [c for c in prov_data.columns if c != 'Province']
+        return prov_data[cols]
+
+    def get_province_criteria(self, province: str) -> pd.DataFrame:
+        """Get a province's criteria composite scores across all years.
+
+        Returns a DataFrame indexed by year with columns C01–C08.
+        Cells may be NaN for years where the criterion had no active SCs.
+        """
+        long = self.criteria_long
+        prov_data = long[long['Province'] == province].copy()
+        prov_data = prov_data.set_index('Year')
+        cols = [c for c in prov_data.columns if c not in ('Province', 'Year')]
         return prov_data[cols]
 
     def get_valid_temporal_series(self, province: str, sc: str) -> pd.Series:

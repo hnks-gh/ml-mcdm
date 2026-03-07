@@ -301,6 +301,13 @@ class ForecastConfig:
     gb_n_estimators: int = 200
     """Number of boosting stages; aligned with GradientBoostingForecaster default."""
 
+    # ── Forecast target level ─────────────────────────────────────────────
+    forecast_level: str = "criteria"
+    """Forecast target granularity.
+    'criteria'    — predict 8 aggregated criterion composites (C01–C08).
+    'subcriteria' — predict all 29 raw sub-criterion values (SC11–SC83).
+    """
+
     # ── NeuralAdditiveModel hyperparameters ──────────────────────────────
     nam_n_basis: int = 30
     """RFF basis functions per shape function (30→60 effective params in 60-dim PCA space)."""

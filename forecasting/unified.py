@@ -315,12 +315,14 @@ class UnifiedForecaster:
                  cv_folds: int = 3,
                  random_state: int = 42,
                  verbose: bool = True,
-                 config: Optional[ForecastConfig] = None):
+                 config: Optional[ForecastConfig] = None,
+                 target_level: str = "criteria"):
         self.conformal_method = conformal_method
         self.conformal_alpha = conformal_alpha
         self.cv_folds = cv_folds
         self.random_state = random_state
         self.verbose = verbose
+        self.target_level = target_level
         # ForecastConfig instance for model-level hyperparameters (gb_max_depth,
         # gb_n_estimators, nam_n_basis, nam_n_iterations, pvar_lag_selection_method).
         # When None, _create_models() falls back to hardened production defaults.
@@ -328,7 +330,7 @@ class UnifiedForecaster:
 
         self.models_: Dict[str, BaseForecaster] = {}
         self.model_weights_: Dict[str, float] = {}
-        self.feature_engineer_ = TemporalFeatureEngineer()
+        self.feature_engineer_ = TemporalFeatureEngineer(target_level=self.target_level)
         self.feature_reducer_: Optional[PanelFeatureReducer] = None
         self.super_learner_: Optional[SuperLearner] = None
         self.conformal_predictor_: Optional[ConformalPredictor] = None
@@ -680,69 +682,44 @@ class UnifiedForecaster:
                     'std_r2': float(np.nanstd(scores))
                 }
 
-        # ===== Stage 6b: Temporal holdout evaluation =====
+        # ===== Stage 6b: OOF cross-validation performance estimate =====
+        # Uses the Super Learner's cached OOF ensemble predictions (genuinely
+        # out-of-sample) instead of the former temporal holdout block which
+        # inadvertently evaluated the model on its own training data.
         holdout_performance = None
         _holdout_y_test = None
         _holdout_y_pred = None
         _holdout_entities = None
-        _holdout_per_model = {}
         try:
-            holdout_year = target_year - 1
-            available_years = sorted(panel_data.years)
-            if holdout_year in available_years and holdout_year > available_years[2]:
-                if self.verbose:
-                    print(f"  Stage 6b: Holdout evaluation (year {holdout_year})...")
+            _oof_preds = self.super_learner_._oof_ensemble_predictions_
+            _oof_mask  = self.super_learner_._oof_valid_mask_
+            if (_oof_preds is not None
+                    and _oof_mask is not None
+                    and _oof_mask.sum() >= 5):
+                y_oof      = y_arr[_oof_mask]
+                y_oof_pred = _oof_preds[_oof_mask, :y_arr.shape[1]]
 
-                # B-5 fix: use a *fresh* TemporalFeatureEngineer instance so that
-                # calling fit_transform for holdout_year does not overwrite
-                # self.feature_engineer_.feature_names_ (which carries the
-                # target-year column list used in _aggregate_feature_importance
-                # and by callers inspecting get_feature_names() after fit_predict).
-                _ho_eng = TemporalFeatureEngineer()
-                X_ho, y_ho, _, _ = _ho_eng.fit_transform(panel_data, holdout_year)
-
-                X_ho_arr = self.feature_reducer_.transform(X_ho.values)
-                y_ho_arr = y_ho.values
-                y_ho_pred = self.super_learner_.predict(X_ho_arr)
-                if y_ho_pred.ndim == 1:
-                    y_ho_pred = y_ho_pred.reshape(-1, 1)
                 holdout_performance = {
-                    'r2': float(r2_score(
-                        y_ho_arr.ravel(), y_ho_pred[:, :y_ho_arr.shape[1]].ravel()
-                    )),
-                    'rmse': float(np.sqrt(mean_squared_error(
-                        y_ho_arr, y_ho_pred[:, :y_ho_arr.shape[1]]
-                    ))),
-                    'mae': float(mean_absolute_error(
-                        y_ho_arr, y_ho_pred[:, :y_ho_arr.shape[1]]
-                    )),
+                    'r2':    float(r2_score(y_oof.ravel(), y_oof_pred.ravel())),
+                    'rmse':  float(np.sqrt(mean_squared_error(y_oof, y_oof_pred))),
+                    'mae':   float(mean_absolute_error(y_oof, y_oof_pred)),
+                    'n_oof': int(_oof_mask.sum()),
+                    'note':  'OOF cross-validation estimate (genuinely out-of-sample)',
                 }
-
-                # Store holdout arrays for downstream visualisation
-                _holdout_y_test = y_ho_arr[:, :y_ho_arr.shape[1]].ravel()
-                _holdout_y_pred = y_ho_pred[:, :y_ho_arr.shape[1]].ravel()
-                _holdout_entities = list(X_ho.index)
-
-                # Per-model holdout predictions for comparison figure
-                for mname, model in self.super_learner_._fitted_base_models.items():
-                    try:
-                        mp = self.super_learner_._predict_model(
-                            model, X_ho_arr, entity_indices=None)
-                        if mp.ndim == 1:
-                            mp = mp.reshape(-1, 1)
-                        _holdout_per_model[mname] = mp[:, :y_ho_arr.shape[1]].ravel()
-                    except Exception:
-                        pass
+                _holdout_y_test = y_oof.ravel()
+                _holdout_y_pred = y_oof_pred.ravel()
 
                 if self.verbose:
-                    print(f"    Holdout R\u00b2 = {holdout_performance['r2']:.4f}, "
-                          f"RMSE = {holdout_performance['rmse']:.4f}")
-        except (ValueError, RuntimeError, AttributeError) as e:
-            # Catch shape mismatches (feature dim mismatch between holdout and
-            # target year), sklearn state errors, and attribute errors from an
-            # incompatible holdout year — but let unexpected errors propagate.
+                    print(f"  Stage 6b: OOF R² = {holdout_performance['r2']:.4f}, "
+                          f"RMSE = {holdout_performance['rmse']:.4f}  "
+                          f"[n_oof={holdout_performance['n_oof']}]")
+            else:
+                if self.verbose:
+                    print("  Stage 6b: OOF evaluation skipped "
+                          "(insufficient OOF samples)")
+        except Exception as e:
             if self.verbose:
-                print(f"    Holdout evaluation skipped: {type(e).__name__}: {e}")
+                print(f"  Stage 6b: OOF evaluation failed: {type(e).__name__}: {e}")
 
         # Build training info
         training_info = {
@@ -753,11 +730,12 @@ class UnifiedForecaster:
             'mode': 'advanced',
             'ensemble_method': 'super_learner',
             'conformal_calibrated': self.conformal_predictor_ is not None,
-            # Holdout test data for downstream visualisation
+            'target_level': self.target_level,
+            # OOF-based test data for downstream visualisation
             'y_test': _holdout_y_test,
             'y_pred': _holdout_y_pred,
-            'test_entities': _holdout_entities,
-            'per_model_holdout_predictions': _holdout_per_model if _holdout_per_model else None,
+            'test_entities': None,
+            'per_model_holdout_predictions': None,
         }
 
         if self.verbose:

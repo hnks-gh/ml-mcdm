@@ -132,6 +132,7 @@ class TestFeatureEngineer:
         eng = TemporalFeatureEngineer(
             lag_periods=[1], rolling_windows=[2],
             include_momentum=True, include_cross_entity=True,
+            target_level='subcriteria',
         )
         X_train, y_train, X_pred, info = eng.fit_transform(panel, target_year=2017)
 
@@ -144,7 +145,7 @@ class TestFeatureEngineer:
         from forecasting.features import TemporalFeatureEngineer
 
         panel = self._make_mock_panel()
-        eng = TemporalFeatureEngineer(lag_periods=[1], rolling_windows=[2])
+        eng = TemporalFeatureEngineer(lag_periods=[1], rolling_windows=[2], target_level='subcriteria')
         _, _, _, info = eng.fit_transform(panel, target_year=2016)
         assert "entity_index" in info.columns
 
@@ -152,7 +153,7 @@ class TestFeatureEngineer:
         from forecasting.features import TemporalFeatureEngineer
 
         panel = self._make_mock_panel(n_entities=3, n_years=5, n_components=3)
-        eng = TemporalFeatureEngineer(lag_periods=[1, 2], rolling_windows=[2, 3])
+        eng = TemporalFeatureEngineer(lag_periods=[1, 2], rolling_windows=[2, 3], target_level='subcriteria')
         X_train, _, X_pred, _ = eng.fit_transform(panel, target_year=2016)
         assert X_train.shape[1] == X_pred.shape[1]
         assert len(eng.get_feature_names()) == X_train.shape[1]
@@ -161,7 +162,7 @@ class TestFeatureEngineer:
         from forecasting.features import TemporalFeatureEngineer
 
         panel = self._make_mock_panel()
-        eng = TemporalFeatureEngineer(lag_periods=[1], rolling_windows=[2])
+        eng = TemporalFeatureEngineer(lag_periods=[1], rolling_windows=[2], target_level='subcriteria')
         X_train, y_train, X_pred, _ = eng.fit_transform(panel, target_year=2016)
         assert not np.isnan(X_train.values).any()
         assert not np.isnan(y_train.values).any()

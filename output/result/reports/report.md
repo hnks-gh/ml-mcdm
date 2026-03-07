@@ -1,7 +1,7 @@
 ---
 title: "Multi-Criteria Decision Analysis of Vietnamese Provincial Competitiveness"
 subtitle: "A Traditional MCDM + Evidential Reasoning Approach with Machine-Learning Forecasting"
-date: "2026-03-05"
+date: "2026-03-06"
 ---
 
 ## Table of Contents
@@ -18,13 +18,13 @@ date: "2026-03-05"
 - [10. Methodological Notes and References](#methodological-notes-and-references)
 - [A. Output File Inventory](#output-file-inventory)
 
-> **Generated:** 2026-03-05 17:45:15  
-> **Runtime:** 356.82 s  
+> **Generated:** 2026-03-06 17:59:57  
+> **Runtime:** 589.79 s  
 > **Framework:** ML-MCDM v4.0
 
 # 1. Executive Summary
 
-This report documents a comprehensive multi-criteria decision-making (MCDM) evaluation of **61** Vietnamese provinces over the period **2011–2024** (14 years). The analytical framework integrates 29 subcriteria organised into 8 criteria groups, evaluated through 5 classical MCDM methods.
+This report documents a comprehensive multi-criteria decision-making (MCDM) evaluation of **61** Vietnamese provinces over the period **2011–2024** (14 years). The analytical framework integrates 29 subcriteria organised into 8 criteria groups, evaluated through 6 classical MCDM methods.
 
 Final provincial rankings are obtained via a two-stage Evidential Reasoning (ER) aggregation procedure that combines belief structures from all constituent methods while explicitly quantifying residual uncertainty.
 
@@ -34,24 +34,24 @@ Final provincial rankings are obtained via a two-stage Evidential Reasoning (ER)
 
 | Rank | Province | ER Score |
 | ---: | :--- | ---: |
-| 1 | P39 | 0.6553 |
-| 2 | P46 | 0.6287 |
-| 3 | P12 | 0.6198 |
-| 4 | P14 | 0.6110 |
-| 5 | P38 | 0.6099 |
+| 1 | P39 | 0.6584 |
+| 2 | P46 | 0.6358 |
+| 3 | P12 | 0.6242 |
+| 4 | P14 | 0.6205 |
+| 5 | P38 | 0.6129 |
 
 **Table 1(b). Lowest-ranked provinces.**
 
 | Rank | Province | ER Score |
 | ---: | :--- | ---: |
-| 61 | P58 | 0.3476 |
-| 60 | P54 | 0.3503 |
-| 59 | P40 | 0.3525 |
-| 58 | P59 | 0.3673 |
-| 57 | P43 | 0.3725 |
+| 61 | P58 | 0.3455 |
+| 60 | P40 | 0.3530 |
+| 59 | P54 | 0.3551 |
+| 58 | P59 | 0.3670 |
+| 57 | P43 | 0.3761 |
 
-- **Kendall's $W$ (concordance):** 0.4243
-- **Overall Robustness Index:** 0.8608
+- **Kendall's $W$ (concordance):** 0.4321
+- **Overall Robustness Index:** 0.8609
 - **Confidence Level:** 95%
 
 # 2. Data Description and Descriptive Statistics
@@ -172,95 +172,95 @@ $$m_{1 \oplus 2}(H_n) = \frac{m_1(H_n) m_2(\Theta) + m_2(H_n) m_1(\Theta) + m_1(
 where $K = \sum_{H_i \cap H_j = \varnothing} m_1(H_i) m_2(H_j)$ is the conflict factor.
 
 - **Aggregation:** Evidential Reasoning (Yang & Xu, 2002)
-- **MCDM Methods:** 5
-- **Kendall's $W$:** 0.4243
+- **MCDM Methods:** 6
+- **Kendall's $W$:** 0.4321
 - **Target Year:** 2024
 
 **Table 5. Complete provincial ranking by ER composite score.**
 
 | Rank | Province | ER Score | $z$-Score | Quartile |
 | ---: | :--- | ---: | ---: | :---: |
-| 1 | P39 | 0.6553 | +2.164 | Q1 |
-| 2 | P46 | 0.6287 | +1.818 | Q1 |
-| 3 | P12 | 0.6198 | +1.702 | Q1 |
-| 4 | P14 | 0.6110 | +1.588 | Q1 |
-| 5 | P38 | 0.6099 | +1.574 | Q1 |
-| 6 | P49 | 0.6009 | +1.457 | Q1 |
-| 7 | P30 | 0.5835 | +1.231 | Q1 |
-| 8 | P28 | 0.5778 | +1.158 | Q1 |
-| 9 | P18 | 0.5720 | +1.082 | Q1 |
-| 10 | P22 | 0.5683 | +1.034 | Q1 |
-| 11 | P26 | 0.5633 | +0.969 | Q1 |
-| 12 | P63 | 0.5623 | +0.955 | Q1 |
-| 13 | P31 | 0.5584 | +0.906 | Q1 |
-| 14 | P62 | 0.5485 | +0.777 | Q1 |
-| 15 | P60 | 0.5406 | +0.675 | Q1 |
-| 16 | P21 | 0.5404 | +0.672 | Q1 |
-| 17 | P47 | 0.5371 | +0.629 | Q2 |
-| 18 | P24 | 0.5336 | +0.584 | Q2 |
-| 19 | P56 | 0.5322 | +0.565 | Q2 |
-| 20 | P13 | 0.5292 | +0.526 | Q2 |
-| 21 | P04 | 0.5284 | +0.516 | Q2 |
-| 22 | P29 | 0.5245 | +0.466 | Q2 |
-| 23 | P61 | 0.5229 | +0.444 | Q2 |
-| 24 | P15 | 0.5220 | +0.433 | Q2 |
-| 25 | P16 | 0.5131 | +0.317 | Q2 |
-| 26 | P09 | 0.5126 | +0.311 | Q2 |
-| 27 | P25 | 0.5081 | +0.252 | Q2 |
-| 28 | P27 | 0.5073 | +0.242 | Q2 |
-| 29 | P32 | 0.5038 | +0.197 | Q2 |
-| 30 | P02 | 0.5019 | +0.171 | Q2 |
-| 31 | P11 | 0.4999 | +0.146 | Q2 |
-| 32 | P34 | 0.4959 | +0.094 | Q3 |
-| 33 | P35 | 0.4829 | -0.075 | Q3 |
-| 34 | P42 | 0.4809 | -0.101 | Q3 |
-| 35 | P37 | 0.4805 | -0.106 | Q3 |
-| 36 | P01 | 0.4770 | -0.152 | Q3 |
-| 37 | P05 | 0.4754 | -0.172 | Q3 |
-| 38 | P23 | 0.4746 | -0.182 | Q3 |
-| 39 | P08 | 0.4532 | -0.461 | Q3 |
-| 40 | P19 | 0.4474 | -0.536 | Q3 |
-| 41 | P57 | 0.4469 | -0.542 | Q3 |
-| 42 | P55 | 0.4436 | -0.584 | Q3 |
-| 43 | P20 | 0.4371 | -0.669 | Q3 |
-| 44 | P07 | 0.4354 | -0.691 | Q3 |
-| 45 | P50 | 0.4310 | -0.749 | Q3 |
-| 46 | P10 | 0.4273 | -0.796 | Q3 |
-| 47 | P51 | 0.4241 | -0.838 | Q4 |
-| 48 | P06 | 0.4168 | -0.933 | Q4 |
-| 49 | P33 | 0.4107 | -1.013 | Q4 |
-| 50 | P53 | 0.4078 | -1.049 | Q4 |
-| 51 | P36 | 0.4071 | -1.059 | Q4 |
-| 52 | P45 | 0.4038 | -1.101 | Q4 |
-| 53 | P48 | 0.3911 | -1.266 | Q4 |
-| 54 | P41 | 0.3893 | -1.290 | Q4 |
-| 55 | P03 | 0.3880 | -1.307 | Q4 |
-| 56 | P44 | 0.3727 | -1.506 | Q4 |
-| 57 | P43 | 0.3725 | -1.508 | Q4 |
-| 58 | P59 | 0.3673 | -1.575 | Q4 |
-| 59 | P40 | 0.3525 | -1.768 | Q4 |
-| 60 | P54 | 0.3503 | -1.796 | Q4 |
-| 61 | P58 | 0.3476 | -1.831 | Q4 |
+| 1 | P39 | 0.6584 | +2.155 | Q1 |
+| 2 | P46 | 0.6358 | +1.864 | Q1 |
+| 3 | P12 | 0.6242 | +1.713 | Q1 |
+| 4 | P14 | 0.6205 | +1.665 | Q1 |
+| 5 | P38 | 0.6129 | +1.567 | Q1 |
+| 6 | P49 | 0.6045 | +1.459 | Q1 |
+| 7 | P28 | 0.5825 | +1.175 | Q1 |
+| 8 | P30 | 0.5818 | +1.166 | Q1 |
+| 9 | P18 | 0.5751 | +1.080 | Q1 |
+| 10 | P22 | 0.5708 | +1.024 | Q1 |
+| 11 | P26 | 0.5660 | +0.962 | Q1 |
+| 12 | P63 | 0.5655 | +0.956 | Q1 |
+| 13 | P31 | 0.5600 | +0.884 | Q1 |
+| 14 | P62 | 0.5505 | +0.763 | Q1 |
+| 15 | P47 | 0.5425 | +0.659 | Q1 |
+| 16 | P21 | 0.5424 | +0.657 | Q1 |
+| 17 | P60 | 0.5399 | +0.626 | Q2 |
+| 18 | P24 | 0.5355 | +0.569 | Q2 |
+| 19 | P56 | 0.5336 | +0.543 | Q2 |
+| 20 | P13 | 0.5328 | +0.533 | Q2 |
+| 21 | P61 | 0.5285 | +0.477 | Q2 |
+| 22 | P04 | 0.5281 | +0.472 | Q2 |
+| 23 | P29 | 0.5264 | +0.452 | Q2 |
+| 24 | P15 | 0.5239 | +0.419 | Q2 |
+| 25 | P09 | 0.5181 | +0.344 | Q2 |
+| 26 | P16 | 0.5165 | +0.323 | Q2 |
+| 27 | P25 | 0.5123 | +0.269 | Q2 |
+| 28 | P27 | 0.5074 | +0.206 | Q2 |
+| 29 | P32 | 0.5069 | +0.200 | Q2 |
+| 30 | P02 | 0.5045 | +0.169 | Q2 |
+| 31 | P11 | 0.5015 | +0.130 | Q2 |
+| 32 | P34 | 0.4985 | +0.091 | Q3 |
+| 33 | P37 | 0.4867 | -0.061 | Q3 |
+| 34 | P42 | 0.4845 | -0.090 | Q3 |
+| 35 | P35 | 0.4839 | -0.097 | Q3 |
+| 36 | P01 | 0.4812 | -0.132 | Q3 |
+| 37 | P23 | 0.4782 | -0.172 | Q3 |
+| 38 | P05 | 0.4758 | -0.202 | Q3 |
+| 39 | P08 | 0.4584 | -0.427 | Q3 |
+| 40 | P19 | 0.4513 | -0.519 | Q3 |
+| 41 | P57 | 0.4485 | -0.555 | Q3 |
+| 42 | P55 | 0.4449 | -0.601 | Q3 |
+| 43 | P20 | 0.4408 | -0.654 | Q3 |
+| 44 | P07 | 0.4365 | -0.710 | Q3 |
+| 45 | P50 | 0.4342 | -0.739 | Q3 |
+| 46 | P10 | 0.4288 | -0.809 | Q3 |
+| 47 | P51 | 0.4273 | -0.828 | Q4 |
+| 48 | P06 | 0.4178 | -0.950 | Q4 |
+| 49 | P53 | 0.4118 | -1.028 | Q4 |
+| 50 | P45 | 0.4082 | -1.074 | Q4 |
+| 51 | P33 | 0.4078 | -1.080 | Q4 |
+| 52 | P36 | 0.4075 | -1.084 | Q4 |
+| 53 | P48 | 0.3961 | -1.231 | Q4 |
+| 54 | P41 | 0.3929 | -1.272 | Q4 |
+| 55 | P03 | 0.3923 | -1.279 | Q4 |
+| 56 | P44 | 0.3791 | -1.451 | Q4 |
+| 57 | P43 | 0.3761 | -1.489 | Q4 |
+| 58 | P59 | 0.3670 | -1.607 | Q4 |
+| 59 | P54 | 0.3551 | -1.760 | Q4 |
+| 60 | P40 | 0.3530 | -1.788 | Q4 |
+| 61 | P58 | 0.3455 | -1.884 | Q4 |
 
 ### Distributional Properties
 
 | Statistic | Value |
 | :--- | ---: |
-| Mean | 0.4887 |
-| Median | 0.4999 |
-| Std Dev | 0.0770 |
-| Skewness | -0.0026 |
-| Excess Kurtosis | -0.7941 |
-| IQR | 0.1131 |
+| Mean | 0.4915 |
+| Median | 0.5015 |
+| Std Dev | 0.0775 |
+| Skewness | 0.0082 |
+| Excess Kurtosis | -0.7624 |
+| IQR | 0.1136 |
 
 ### Evidential Reasoning Uncertainty
 
-- **Mean Belief Entropy:** 1.3374 (SD = 0.1367)
-- **Mean Utility Interval Width:** 0.4659 (SD = 0.0062)
+- **Mean Belief Entropy:** 1.3323 (SD = 0.1348)
+- **Mean Utility Interval Width:** 0.4675 (SD = 0.0061)
 
 # 5. Criterion-Level MCDM Evaluation
 
-Each of the 8 criteria groups is independently evaluated by 5 MCDM methods.
+Each of the 8 criteria groups is independently evaluated by 6 MCDM methods.
 
 **Table 6. Criterion weights (Stage 2 ER).**
 
@@ -275,37 +275,37 @@ Each of the 8 criteria groups is independently evaluated by 5 MCDM methods.
 | C07 | 0.108331 |
 | C08 | 0.094474 |
 
-**C01** — top 3: P28 (1.0000), P15 (0.9838), P12 (0.9738)
-**C02** — top 3: P39 (1.0000), P12 (0.9339), P46 (0.8605)
-**C03** — top 3: P29 (0.9762), P12 (0.9381), P63 (0.8551)
-**C04** — top 3: P46 (1.0000), P14 (0.9212), P39 (0.7767)
-**C05** — top 3: P49 (0.9971), P18 (0.9738), P46 (0.9724)
-**C06** — top 3: P49 (0.9691), P14 (0.9601), P18 (0.9397)
-**C07** — top 3: P57 (0.9426), P56 (0.9354), P60 (0.9174)
-**C08** — top 3: P47 (1.0000), P49 (0.9216), P01 (0.7899)
+**C01** — top 3: P28 (0.9961), P15 (0.9824), P12 (0.9782)
+**C02** — top 3: P39 (1.0000), P12 (0.9281), P46 (0.8665)
+**C03** — top 3: P29 (0.9746), P12 (0.9484), P63 (0.8724)
+**C04** — top 3: P46 (1.0000), P14 (0.9204), P39 (0.7765)
+**C05** — top 3: P49 (0.9976), P18 (0.9765), P46 (0.9714)
+**C06** — top 3: P14 (0.9668), P49 (0.9619), P18 (0.9363)
+**C07** — top 3: P57 (0.9522), P56 (0.9401), P60 (0.9178)
+**C08** — top 3: P47 (1.0000), P49 (0.9115), P01 (0.7973)
 
 # 6. Inter-Method Agreement and Concordance Analysis
 
-Kendall's coefficient of concordance $W = 0.4243$ indicates **fair** agreement among the 5 methods.
+Kendall's coefficient of concordance $W = 0.4321$ indicates **fair** agreement among the 6 methods.
 
 **Table 7. Provinces most frequently ranked in the top 5.**
 
 | Province | Count | Frequency |
 | :--- | ---: | ---: |
-| P46 | 20 | 50.0% |
-| P49 | 18 | 45.0% |
-| P39 | 16 | 40.0% |
-| P12 | 15 | 37.5% |
-| P14 | 15 | 37.5% |
-| P01 | 10 | 25.0% |
-| P18 | 10 | 25.0% |
-| P47 | 9 | 22.5% |
-| P56 | 8 | 20.0% |
-| P28 | 7 | 17.5% |
+| P46 | 24 | 50.0% |
+| P49 | 22 | 45.8% |
+| P14 | 19 | 39.6% |
+| P39 | 19 | 39.6% |
+| P12 | 18 | 37.5% |
+| P18 | 12 | 25.0% |
+| P01 | 11 | 22.9% |
+| P47 | 11 | 22.9% |
+| P28 | 10 | 20.8% |
+| P56 | 10 | 20.8% |
 
 # 7. Sensitivity and Robustness Analysis
 
-- **Overall Robustness Index:** 0.8608
+- **Overall Robustness Index:** 0.8609
 - **Confidence Level:** 95%
 
 ## 7.1 Criteria Weight Sensitivity
@@ -314,14 +314,14 @@ Kendall's coefficient of concordance $W = 0.4243$ indicates **fair** agreement a
 
 | Criterion | Sensitivity | Classification |
 | :--- | ---: | :---: |
-| C06 | 1.0000 | High |
-| C08 | 0.9963 | High |
-| C03 | 0.9793 | High |
-| C01 | 0.9782 | High |
-| C04 | 0.9746 | High |
-| C02 | 0.9596 | High |
-| C07 | 0.9177 | High |
-| C05 | 0.8845 | High |
+| C03 | 1.0000 | High |
+| C08 | 0.9905 | High |
+| C07 | 0.9844 | High |
+| C02 | 0.9794 | High |
+| C01 | 0.9778 | High |
+| C04 | 0.9719 | High |
+| C06 | 0.9303 | High |
+| C05 | 0.9000 | High |
 
 ## 7.2 Subcriteria Weight Sensitivity (Top 15)
 
@@ -329,21 +329,21 @@ Kendall's coefficient of concordance $W = 0.4243$ indicates **fair** agreement a
 
 | Subcriteria | Sensitivity |
 | :--- | ---: |
-| SC82 | 1.0000 |
-| SC81 | 0.9962 |
-| SC51 | 0.9906 |
-| SC83 | 0.9877 |
-| SC24 | 0.9863 |
-| SC41 | 0.9847 |
-| SC44 | 0.9782 |
-| SC43 | 0.9768 |
-| SC22 | 0.9759 |
-| SC42 | 0.9750 |
-| SC23 | 0.9741 |
-| SC54 | 0.9741 |
-| SC31 | 0.9735 |
-| SC63 | 0.9722 |
-| SC61 | 0.9659 |
+| SC11 | 1.0000 |
+| SC63 | 0.9969 |
+| SC51 | 0.9953 |
+| SC12 | 0.9953 |
+| SC83 | 0.9938 |
+| SC42 | 0.9937 |
+| SC61 | 0.9922 |
+| SC41 | 0.9901 |
+| SC43 | 0.9891 |
+| SC21 | 0.9875 |
+| SC44 | 0.9875 |
+| SC82 | 0.9875 |
+| SC62 | 0.9869 |
+| SC14 | 0.9856 |
+| SC13 | 0.9849 |
 
 ## 7.3 Top-N Ranking Stability
 
@@ -351,9 +351,9 @@ Kendall's coefficient of concordance $W = 0.4243$ indicates **fair** agreement a
 
 | Tier | Index | Percentage |
 | :--- | ---: | ---: |
-| Top-3 | 0.9760 | 97.6% |
+| Top-3 | 0.7790 | 77.9% |
 | Top-5 | 1.0000 | 100.0% |
-| Top-10 | 0.9960 | 99.6% |
+| Top-10 | 0.9910 | 99.1% |
 
 ## 7.4 Temporal Rank Stability
 
@@ -361,10 +361,10 @@ Kendall's coefficient of concordance $W = 0.4243$ indicates **fair** agreement a
 
 | Year Pair | Spearman $\rho$ | Strength |
 | :--- | ---: | :---: |
-| 2020-2021 | 0.3017 | Weak |
-| 2021-2022 | 0.7781 | Moderate |
-| 2022-2023 | 0.6453 | Moderate |
-| 2023-2024 | 0.6656 | Moderate |
+| 2020-2021 | 0.3048 | Weak |
+| 2021-2022 | 0.7756 | Moderate |
+| 2022-2023 | 0.6417 | Moderate |
+| 2023-2024 | 0.6635 | Moderate |
 
 ## 7.5 Provincial Rank Stability
 
@@ -372,31 +372,31 @@ Kendall's coefficient of concordance $W = 0.4243$ indicates **fair** agreement a
 
 | Province | Stability |
 | :--- | ---: |
-| P29 | 0.9561 |
-| P01 | 0.9651 |
-| P61 | 0.9673 |
+| P29 | 0.9570 |
+| P61 | 0.9632 |
 | P56 | 0.9713 |
-| P37 | 0.9719 |
-| P23 | 0.9741 |
-| P47 | 0.9747 |
-| P42 | 0.9749 |
-| P32 | 0.9753 |
-| P05 | 0.9755 |
+| P45 | 0.9715 |
+| P01 | 0.9723 |
+| P33 | 0.9732 |
+| P32 | 0.9734 |
+| P47 | 0.9753 |
+| P42 | 0.9754 |
+| P35 | 0.9754 |
 
 **Table 12(b). Ten most stable provinces.**
 
 | Province | Stability |
 | :--- | ---: |
-| P10 | 0.9951 |
-| P28 | 0.9971 |
-| P51 | 0.9979 |
-| P34 | 0.9979 |
-| P06 | 0.9982 |
-| P46 | 0.9990 |
-| P30 | 1.0000 |
+| P08 | 0.9990 |
+| P38 | 0.9990 |
+| P44 | 0.9990 |
+| P59 | 0.9990 |
+| P62 | 0.9990 |
+| P06 | 1.0000 |
 | P39 | 1.0000 |
+| P46 | 1.0000 |
 | P49 | 1.0000 |
-| P62 | 1.0000 |
+| P58 | 1.0000 |
 
 # 8. Machine-Learning Forecasting
 
@@ -494,6 +494,8 @@ Super Learner (van der Laan, Polley & Hubbard, 2007) constructs an optimal conve
 - `model_contributions.csv`
 - `model_performance.csv`
 - `prediction_intervals.csv`
+- `criterion_er_scores_all_years.csv`
+- `final_rankings.csv`
 - `mcdm_composite_scores.csv`
 - `mcdm_rank_comparison.csv`
 - `mcdm_scores_C01.csv`
@@ -504,11 +506,16 @@ Super Learner (van der Laan, Polley & Hubbard, 2007) constructs an optimal conve
 - `mcdm_scores_C06.csv`
 - `mcdm_scores_C07.csv`
 - `mcdm_scores_C08.csv`
-- `criterion_er_scores_all_years.csv`
-- `final_rankings.csv`
 - `prediction_uncertainty_er.csv`
 - `rankings_all_years.csv`
 - `ranks_all_years.csv`
+- `mcdm_scores_2018.csv`
+- `mcdm_scores_2019.csv`
+- `mcdm_scores_2020.csv`
+- `mcdm_scores_2021.csv`
+- `mcdm_scores_2022.csv`
+- `mcdm_scores_2023.csv`
+- `mcdm_scores_2024.csv`
 - `perturbation_detail.csv`
 - `sensitivity_criteria.csv`
 - `sensitivity_rank_stability.csv`
@@ -517,7 +524,23 @@ Super Learner (van der Laan, Polley & Hubbard, 2007) constructs an optimal conve
 - `sensitivity_top_n_stability.csv`
 - `data_summary_statistics.csv`
 - `criterion_weights.csv`
+- `critic_criterion_weights_all_years.csv`
+- `critic_sc_weights_all_years.csv`
 - `critic_weights.csv`
+- `critic_weights_2011.csv`
+- `critic_weights_2012.csv`
+- `critic_weights_2013.csv`
+- `critic_weights_2014.csv`
+- `critic_weights_2015.csv`
+- `critic_weights_2016.csv`
+- `critic_weights_2017.csv`
+- `critic_weights_2018.csv`
+- `critic_weights_2019.csv`
+- `critic_weights_2020.csv`
+- `critic_weights_2021.csv`
+- `critic_weights_2022.csv`
+- `critic_weights_2023.csv`
+- `critic_weights_2024.csv`
 - `weights_analysis.csv`
 
 ### JSON Metadata Files
@@ -529,6 +552,11 @@ Super Learner (van der Laan, Polley & Hubbard, 2007) constructs an optimal conve
 
 ### Figures (43 files)
 
+- `fig01_final_er_ranking.png`
+- `fig01b_tier_ranking.png`
+- `fig01d_belief_heatmap.png`
+- `fig01e_rank_uncertainty_scatter.png`
+- `fig02_score_distribution.png`
 - `fig06_method_agreement.png`
 - `fig06b_agreement_per_criterion.png`
 - `fig07_criterion_parallel_grid.png`
@@ -542,11 +570,6 @@ Super Learner (van der Laan, Polley & Hubbard, 2007) constructs an optimal conve
 - `fig08_C08_scores.png`
 - `fig08b_mcdm_composite_scatter.png`
 - `fig08c_criterion_er_utility.png`
-- `fig01_final_er_ranking.png`
-- `fig01b_tier_ranking.png`
-- `fig01d_belief_heatmap.png`
-- `fig01e_rank_uncertainty_scatter.png`
-- `fig02_score_distribution.png`
 - `fig09_criteria_sensitivity.png`
 - `fig09b_tornado_butterfly.png`
 - `fig09c_subcriteria_dotstrip.png`

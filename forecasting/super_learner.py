@@ -144,6 +144,7 @@ class _PanelTemporalSplit:
         min_train_T = max(T_median // 2, T_median // (self.n_splits + 1))
         fold_size = max(1, (T_median - min_train_T) // self.n_splits)
 
+        _n_yielded = 0
         for fold in range(self.n_splits):
             cut = min_train_T + fold * fold_size
             val_end = cut + fold_size
@@ -179,6 +180,25 @@ class _PanelTemporalSplit:
                 continue
 
             yield train_idx, val_idx
+            _n_yielded += 1
+
+        # Safety guard: yield at least one fold even in degenerate cases
+        # (e.g. T_median=2 with n_splits=3 in sub-criteria mode).
+        if _n_yielded == 0 and T_median >= 2:
+            split_T = max(1, T_median // 2)
+            train_parts, val_parts = [], []
+            for ent, rows in entity_rows.items():
+                T_ent = len(rows)
+                sp = min(split_T, T_ent - 1)
+                if sp > 0:
+                    train_parts.append(rows[:sp])
+                if sp < T_ent:
+                    val_parts.append(rows[sp:])
+            if train_parts and val_parts:
+                yield (
+                    np.sort(np.concatenate(train_parts)),
+                    np.sort(np.concatenate(val_parts)),
+                )
 
 
 class SuperLearner:

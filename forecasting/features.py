@@ -62,11 +62,13 @@ class TemporalFeatureEngineer:
                  lag_periods: List[int] = [1, 2],
                  rolling_windows: List[int] = [2, 3],
                  include_momentum: bool = True,
-                 include_cross_entity: bool = True):
+                 include_cross_entity: bool = True,
+                 target_level: str = "criteria"):
         self.lag_periods = lag_periods
         self.rolling_windows = rolling_windows
         self.include_momentum = include_momentum
         self.include_cross_entity = include_cross_entity
+        self.target_level = target_level
         self.feature_names_: List[str] = []
     
     def fit_transform(self,
@@ -104,8 +106,17 @@ class TemporalFeatureEngineer:
             X_train, y_train, X_pred, entity_index
         """
         entities   = panel_data.provinces
-        components = panel_data.subcriteria_names
         years      = sorted(panel_data.years)
+
+        # Select components and data accessor based on target_level
+        if self.target_level == "criteria":
+            components = panel_data.criteria_names          # ['C01', ..., 'C08']
+            def _get_entity_data(entity):
+                return panel_data.get_province_criteria(entity)
+        else:
+            components = panel_data.subcriteria_names       # ['SC11', ..., 'SC83']
+            def _get_entity_data(entity):
+                return panel_data.get_province(entity)
 
         if target_year in years:
             last_year = target_year
@@ -115,29 +126,30 @@ class TemporalFeatureEngineer:
         train_feature_years = [y for y in years if y < last_year]
 
         # ------------------------------------------------------------------
-        # Pre-compute per-SC effective training year counts (logging only)
+        # Pre-compute per-component effective training year counts (logging)
         # ------------------------------------------------------------------
-        sc_target_year_valid: Dict[str, int] = {}
-        for sc in components:
-            valid_count = 0
-            for year in train_feature_years:
-                next_yr = years[years.index(year) + 1]
-                ctx_next = getattr(panel_data, 'year_contexts', {}).get(next_yr)
-                if ctx_next is not None:
-                    # Year is "valid" for SC if at least one province has data
-                    if any(ctx_next.is_valid(ent, sc) for ent in entities):
+        if self.target_level != "criteria":
+            # Sub-criteria mode: use year_contexts.is_valid() per SC
+            sc_target_year_valid: Dict[str, int] = {}
+            for sc in components:
+                valid_count = 0
+                for year in train_feature_years:
+                    next_yr = years[years.index(year) + 1]
+                    ctx_next = getattr(panel_data, 'year_contexts', {}).get(next_yr)
+                    if ctx_next is not None:
+                        if any(ctx_next.is_valid(ent, sc) for ent in entities):
+                            valid_count += 1
+                    else:
                         valid_count += 1
-                else:
-                    valid_count += 1  # No context: assume valid
-            sc_target_year_valid[sc] = valid_count
+                sc_target_year_valid[sc] = valid_count
 
-        for sc, count in sorted(sc_target_year_valid.items()):
-            total = len(train_feature_years)
-            if count < total:
-                print(
-                    f"    {sc}: {count}/{total} valid target years "
-                    f"({total - count} missing → excluded from training)"
-                )
+            for sc, count in sorted(sc_target_year_valid.items()):
+                total = len(train_feature_years)
+                if count < total:
+                    print(
+                        f"    {sc}: {count}/{total} valid target years "
+                        f"({total - count} missing → excluded from training)"
+                    )
 
         # ------------------------------------------------------------------
         # Build training and prediction samples
@@ -158,7 +170,7 @@ class TemporalFeatureEngineer:
         n_skipped_pred  = 0
 
         for ent_idx, entity in enumerate(entities):
-            entity_data = panel_data.get_province(entity)
+            entity_data = _get_entity_data(entity)
 
             # ---- Training samples ----
             for year in train_feature_years:
@@ -176,14 +188,19 @@ class TemporalFeatureEngineer:
                     continue
 
                 target = entity_data.loc[next_yr, components].values.astype(float)
-                if not has_complete_target(target):
-                    n_skipped_train += 1
-                    continue  # Incomplete target — exclude rather than impute
+
+                if self.target_level == "criteria":
+                    # Criteria mode: skip only if the entire target vector is NaN
+                    if np.all(np.isnan(target)):
+                        n_skipped_train += 1
+                        continue
+                else:
+                    # Sub-criteria mode: strict — exclude any row with any NaN
+                    if not has_complete_target(target):
+                        n_skipped_train += 1
+                        continue
 
                 # Guard: entity must also be present in the feature year.
-                # If the province was absent from the CSV for `year` (not just
-                # NaN values, but literally missing), entity_data has no row
-                # for that year and _create_features would raise KeyError.
                 if year not in entity_data.index:
                     n_skipped_train += 1
                     continue
@@ -238,6 +255,14 @@ class TemporalFeatureEngineer:
         X_train = np.vstack(X_train_list)
         y_train = np.vstack(y_train_list)
         X_pred  = np.vstack(pred_feature_list)
+
+        # In criteria mode, fill partial NaN targets with per-column median
+        if self.target_level == "criteria":
+            nan_mask = np.isnan(y_train)
+            if nan_mask.any():
+                col_medians = np.nanmedian(y_train, axis=0)
+                inds = np.where(nan_mask)
+                y_train[inds] = np.take(col_medians, inds[1])
 
         X_train_df      = pd.DataFrame(X_train, columns=self.feature_names_)
         y_train_df      = pd.DataFrame(y_train, columns=components)
@@ -388,7 +413,10 @@ class TemporalFeatureEngineer:
         
         # Cross-entity features (relative position)
         if self.include_cross_entity:
-            year_cross_section = panel_data.cross_section[current_year]
+            if self.target_level == "criteria":
+                year_cross_section = panel_data.criteria_cross_section[current_year]
+            else:
+                year_cross_section = panel_data.cross_section[current_year]
             if 'Province' in year_cross_section.columns:
                 year_cross_section = year_cross_section.set_index('Province')
 

@@ -156,7 +156,7 @@ class MLMCDMPipeline:
 
     def _setup_output_directory(self) -> None:
         out = Path(self.config.output_dir)
-        phases = ('weighting', 'ranking', 'mcdm', 'forecasting', 'sensitivity', 'summary')
+        phases = ('weighting', 'ranking', 'mcdm', 'forecasting', 'sensitivity')
         for top in ('figures', 'csv', 'reports', 'logs'):
             (out / top).mkdir(parents=True, exist_ok=True)
         for phase in phases:
@@ -779,6 +779,7 @@ class MLMCDMPipeline:
             cv_folds=self.config.forecast.cv_folds,
             random_state=self.config.forecast.random_state,
             verbose=self.config.forecast.verbose,
+            target_level=self.config.forecast.forecast_level,
         )
         
         result = forecaster.fit_predict(panel_data, target_year=target_year)

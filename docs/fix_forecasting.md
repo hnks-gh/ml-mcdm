@@ -24,12 +24,22 @@ The three contradictory numbers — negative CV scores, zero STD, perfect holdou
 **Location:** `forecasting/features.py` → `TemporalFeatureEngineer.fit_transform()`  
 **Cause:** `has_complete_target(target)` requires **all 29 sub-criteria to be non-NaN** for a training row to be included. Structural data gaps in the raw CSVs eliminate almost every year:
 
-| Sub-criteria | Missing years |
-|---|---|
-| SC71, SC72, SC73 | 2011–2017 (7 years entirely absent from CSVs) |
-| SC81, SC82, SC83 | 2011–2017 (7 years entirely absent) |
-| SC24 | 2011–2017 (7 years absent) |
-| SC52 | 2018 and 2021–2024 |
+| Year | Entirely Missing Sub-Criteria Columns | Count |
+|------|---------------------------------------|-------|
+| 2011 | SC24, SC71, SC72, SC73, SC81, SC82, SC83 | 7 |
+| 2012 | SC24, SC71, SC72, SC73, SC81, SC82, SC83 | 7 |
+| 2013 | SC24, SC71, SC72, SC73, SC81, SC82, SC83 | 7 |
+| 2014 | SC24, SC71, SC72, SC73, SC81, SC82, SC83 | 7 |
+| 2015 | SC24, SC71, SC72, SC73, SC81, SC82, SC83 | 7 |
+| 2016 | SC24, SC71, SC72, SC73, SC81, SC82, SC83 | 7 |
+| 2017 | SC24, SC71, SC72, SC73, SC81, SC82, SC83 | 7 |
+| 2018 | SC83 | 1 |
+| 2019 | *(none)* | 0 |
+| 2020 | *(none)* | 0 |
+| 2021 | SC52 | 1 |
+| 2022 | SC52 | 1 |
+| 2023 | SC52 | 1 |
+| 2024 | SC52 | 1 |
 
 Because `has_complete_target()` demands all 29 non-NaN, only rows from years 2019–2020 (where all 29 SCs happen to be present) survive. That is 2 complete years × 63 provinces = **126 usable training observations** out of a possible 13 × 63 = 819.
 

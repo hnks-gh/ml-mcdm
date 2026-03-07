@@ -81,6 +81,29 @@ class GradientBoostingForecaster(BaseForecaster):
     
     def fit(self, X: np.ndarray, y: np.ndarray) -> 'GradientBoostingForecaster':
         """Fit the gradient boosting model."""
+        # Auto-scale hyperparameters to match training set size.
+        # The class defaults (max_depth=5, n_estimators=200) target n≈756.
+        # With smaller datasets a shallow tree + fewer estimators avoids
+        # complete memorisation (depth-5 on n=60 → ≈2 samples/leaf).
+        n_samples = X.shape[0]
+        if n_samples < 200:
+            _eff_depth, _eff_n_est = 2, 50
+        elif n_samples < 500:
+            _eff_depth, _eff_n_est = 3, 100
+        else:
+            _eff_depth, _eff_n_est = self.max_depth, self.n_estimators
+
+        if (_eff_depth != self._base_model.max_depth
+                or _eff_n_est != self._base_model.n_estimators):
+            self._base_model = GradientBoostingRegressor(
+                n_estimators=_eff_n_est,
+                max_depth=_eff_depth,
+                learning_rate=self.learning_rate,
+                subsample=self.subsample,
+                random_state=self.random_state,
+                loss='huber',
+            )
+
         X_scaled = self.scaler.fit_transform(X)
         
         # Handle multi-output case

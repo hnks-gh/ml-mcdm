@@ -4,7 +4,6 @@ Unit tests for the output package — CsvWriter, ReportWriter, OutputOrchestrato
 
 Covers:
   - CsvWriter directory scaffolding and CSV/JSON round-trips
-  - save_criterion_weights output correctness
   - save_weights output structure
   - ReportWriter initialisation and path
   - OutputOrchestrator wiring (csv + report writers created)
@@ -54,10 +53,15 @@ class TestSanitizeOutputDir:
 
 class TestCsvWriterInit:
     def test_phase_directories_created(self, tmp_path):
-        """All six canonical phase directories should be created on init."""
+        """All five canonical phase directories should be created on init."""
         writer = CsvWriter(base_output_dir=str(tmp_path))
         for phase in CsvWriter.PHASES:
             assert (tmp_path / "csv" / phase).is_dir(), f"Missing dir: {phase}"
+
+    def test_summary_dir_not_created(self, tmp_path):
+        """summary/ phase was removed; its directory must not be created."""
+        writer = CsvWriter(base_output_dir=str(tmp_path))
+        assert not (tmp_path / "csv" / "summary").exists()
 
     def test_csv_dir_attribute(self, tmp_path):
         writer = CsvWriter(base_output_dir=str(tmp_path))
@@ -109,19 +113,6 @@ class TestCsvWriterRoundTrips:
         writer = CsvWriter(base_output_dir=str(tmp_path))
         writer._save_json({"a": 1}, "tracked.json")
         assert len(writer.get_saved_files()) == 1
-
-
-class TestCsvWriterCriterionWeights:
-    def test_criterion_weights_saved_correctly(self, tmp_path):
-        writer = CsvWriter(base_output_dir=str(tmp_path))
-        crit_w = {"C01": 0.3, "C02": 0.5, "C03": 0.2}
-        path_str = writer.save_criterion_weights(crit_w)
-
-        df = pd.read_csv(path_str)
-        assert set(df.columns) == {"C01", "C02", "C03"}
-        assert df["C01"].iloc[0] == pytest.approx(0.3, abs=1e-6)
-        assert df["C02"].iloc[0] == pytest.approx(0.5, abs=1e-6)
-        assert df["C03"].iloc[0] == pytest.approx(0.2, abs=1e-6)
 
 
 class TestCsvWriterWeights:

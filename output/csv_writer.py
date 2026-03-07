@@ -7,21 +7,21 @@ All structured numerical output (weights, rankings, scores, forecasts,
 sensitivity analysis) is persisted through this single writer class.
 Files are organised under ``output/result/csv/<phase>/``:
 
-  - weighting/   — weights_analysis.csv, criterion_weights.csv,
-                   critic_weights_YYYY.csv, critic_sc_weights_all_years.csv,
-                   critic_criterion_weights_all_years.csv
+  - weighting/   — weights_analysis.csv,
+                   critic_weights_YYYY.csv (one per year),
+                   critic_sc_weights_all_years.csv  (SC x Year global weights),
+                   sc_local_weights_all_years.csv   (SC x Year local weights),
+                   critic_criterion_weights_all_years.csv (Criterion x Year)
   - mcdm/        — final_rankings.csv, prediction_uncertainty_er.csv,
                    mcdm_scores_*.csv, mcdm_rank_comparison.csv
   - ranking/     — mcdm_scores_YYYY.csv (per-year per-method per-criterion)
   - forecasting/ — forecast_*, model_*, feature_importance, cv scores
   - sensitivity/ — sensitivity_*.csv, sensitivity_summary.json
-  - summary/     — data_summary_statistics.csv, execution/config JSON
 """
 
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
 import numpy as np
 import pandas as pd
 from pathlib import Path
@@ -35,7 +35,7 @@ class CsvWriter:
     """Write CSV / JSON result files into ``<base_dir>/csv/<phase>/``."""
 
     # Canonical phase names
-    PHASES = ('weighting', 'mcdm', 'ranking', 'forecasting', 'sensitivity', 'summary')
+    PHASES = ('weighting', 'mcdm', 'ranking', 'forecasting', 'sensitivity')
 
     def __init__(self, base_output_dir: str = 'output/result'):
         from . import _sanitize_output_dir
@@ -533,166 +533,24 @@ class CsvWriter:
             return None
 
     # ==================================================================
-    #  8. DATA SUMMARY
+    #  8. CRITERION WEIGHTS  [REMOVED — redundant with per-year all-years
+    #     matrices; panel-level snapshot caused value discrepancy vs the
+    #     correct per-year critic_weights_YYYY.csv files]
     # ==================================================================
 
-    def save_data_summary(self, panel_data: Any) -> str:
-        latest_year = max(panel_data.years)
-        df = panel_data.subcriteria_cross_section[latest_year]
-        summary = df.describe().T
-        summary['Skewness'] = df.skew()
-        summary['Kurtosis'] = df.kurtosis()
-        summary['CV'] = np.where(summary['mean'] != 0,
-                                  summary['std'] / summary['mean'], 0)
-        summary['IQR'] = summary['75%'] - summary['25%']
-        summary.index.name = 'Subcriteria'
-        return self._save_csv(summary, 'data_summary_statistics.csv',
-                                directory=self.summary_dir)
-
     # ==================================================================
-    #  9. CRITERION WEIGHTS (was bypassed in old pipeline.py)
+    #  9. EXECUTION SUMMARY  [REMOVED — summary/ phase removed]
     # ==================================================================
 
-    def save_criterion_weights(self, criterion_weights: Dict[str, float]) -> str:
-        df = pd.DataFrame([criterion_weights])
-        return self._save_csv(df, 'criterion_weights.csv', index=False,
-                               directory=self.weighting_dir)
-
     # ==================================================================
-    # 10. EXECUTION SUMMARY (was bypassed in old pipeline.py)
+    # 10. CONFIG SNAPSHOT  [REMOVED — summary/ phase removed]
     # ==================================================================
 
-    def save_execution_summary(
-        self,
-        panel_data: Any = None,
-        ranking_result: Any = None,
-        execution_time: float = 0.0,
-    ) -> str:
-        """Build and persist an execution summary as JSON.
-
-        Parameters
-        ----------
-        panel_data:
-            PanelData object returned by the data loader.
-        ranking_result:
-            HierarchicalRankingResult from the ranking pipeline.
-        execution_time:
-            Wall-clock seconds for the full pipeline run.
-        """
-        summary: Dict[str, Any] = {
-            'generated_at': datetime.now(timezone.utc).isoformat(),
-            'execution_time_seconds': round(float(execution_time), 3),
-        }
-
-        # --- Panel metadata ---
-        if panel_data is not None:
-            try:
-                summary['panel'] = {
-                    'n_provinces': int(panel_data.n_provinces),
-                    'n_years': int(panel_data.n_years),
-                    'years': list(panel_data.years),
-                    'n_criteria': int(panel_data.n_criteria),
-                    'n_subcriteria': int(panel_data.n_subcriteria),
-                    'provinces': list(panel_data.provinces),
-                }
-            except Exception as _exc:
-                _logger.debug('panel metadata skipped: %s', _exc)
-                summary['panel'] = None
-
-        # --- Final rankings ---
-        if ranking_result is not None:
-            try:
-                final_ranking = ranking_result.final_ranking
-                final_scores = ranking_result.final_scores
-                # Convert Series to {province: rank/score} dicts
-                ranking_dict = {
-                    str(k): int(v) for k, v in final_ranking.items()
-                }
-                scores_dict = {
-                    str(k): round(float(v), 6) for k, v in final_scores.items()
-                }
-                # Top-5 provinces by rank (ascending = best)
-                top_provinces = (
-                    final_ranking.sort_values().head(5).index.tolist()
-                )
-                summary['ranking'] = {
-                    'final_ranking': ranking_dict,
-                    'final_scores': scores_dict,
-                    'top_5_provinces': [str(p) for p in top_provinces],
-                    'n_ranked': len(ranking_dict),
-                }
-            except Exception as _exc:
-                _logger.debug('ranking summary skipped: %s', _exc)
-                summary['ranking'] = None
-
-        return self._save_json(summary, 'execution_summary.json',
-                                directory=self.summary_dir)
-
     # ==================================================================
-    # 11. CONFIG SNAPSHOT (was bypassed in old pipeline.py)
+    # 11. METHOD WEIGHTS (panel-level critic_weights.csv)  [REMOVED —
+    #     panel-level snapshot redundant and inconsistent with per-year
+    #     critic_weights_YYYY.csv files]
     # ==================================================================
-
-    def save_config_snapshot(self, config: Any) -> Optional[str]:
-        try:
-            data = config.to_dict() if hasattr(config, 'to_dict') else {}
-            return self._save_json(data, 'config_snapshot.json',
-                                   directory=self.summary_dir)
-        except Exception as _exc:
-            _logger.debug('config_snapshot skipped: %s', _exc)
-            return None
-
-
-    # ==================================================================
-    # 12. METHOD WEIGHTS — CRITIC weights at SC and criterion level
-    # ==================================================================
-
-    def save_method_weights(self, weights: Dict[str, Any]) -> Dict[str, str]:
-        """
-        Write CRITIC weight tables at both SC and criterion level.
-
-        Files produced
-        --------------
-        weighting/critic_weights.csv
-        """
-        saved: Dict[str, str] = {}
-        subcriteria = weights.get('subcriteria', [])
-        groups      = weights.get('criteria_groups', {})
-        details     = weights.get('details', {})
-        level1      = details.get('level1', {})
-
-        global_sc   = weights.get('global_sc_weights', {})
-        critic_crit = weights.get('critic_criterion_weights', {})
-
-        # Helper — resolve criterion ID for a given SC code
-        sc_to_crit: Dict[str, str] = {}
-        for crit_id, scs in groups.items():
-            for sc in scs:
-                sc_to_crit[sc] = crit_id
-
-        # ── critic_weights.csv ──────────────────────────────────────────
-        try:
-            c_rows = []
-            for sc in subcriteria:
-                crit_id = sc_to_crit.get(sc, '')
-                l1c = level1.get(crit_id, {}).get('local_sc_weights', {})
-                c_rows.append({
-                    'Subcriteria':          sc,
-                    'Criterion':            crit_id,
-                    'Critic_Local_Weight':  float(l1c.get(sc, 0.0)),
-                    'Critic_Crit_Weight':   float(critic_crit.get(crit_id, 0.0)),
-                    'Critic_Global_Weight': float(global_sc.get(sc, 0.0)),
-                    'Critic_Rank':          0,
-                })
-            c_df = pd.DataFrame(c_rows).set_index('Subcriteria')
-            c_df['Critic_Rank'] = c_df['Critic_Global_Weight'].rank(
-                ascending=False, method='min').astype(int)
-            saved['critic'] = self._save_csv(
-                c_df, 'critic_weights.csv',
-                directory=self.weighting_dir, float_fmt='%.6f')
-        except Exception as _exc:
-            _logger.debug('critic weights skipped: %s', _exc)
-
-        return saved
 
     # ==================================================================
     # 13. MC PROVINCE STATS — Monte-Carlo rank uncertainty per province
@@ -1257,6 +1115,44 @@ class CsvWriter:
                 directory=self.weighting_dir, float_fmt='%.6f')
         except Exception as _exc:
             _logger.debug('criterion weight matrix skipped: %s', _exc)
+
+        # ── SC × Year LOCAL-weight matrix ─────────────────────────────────
+        # Complements critic_sc_weights_all_years.csv (global SC weights).
+        # Each cell is the CRITIC within-group local weight for that SC in
+        # that year (sums to 1 within each criterion group, not globally).
+        try:
+            sc_local_year_data: Dict[int, Dict[str, float]] = {}
+            all_scs_local: List[str] = []
+            for yr in years:
+                yw = weight_all_years[yr]
+                details_yr = yw.get('details', {})
+                level1_yr  = details_yr.get('level1', {})
+                groups_yr  = yw.get('criteria_groups', {})
+                sc_local: Dict[str, float] = {}
+                for cid, sc_cols in groups_yr.items():
+                    l1c = level1_yr.get(cid, {}).get('local_sc_weights', {})
+                    for sc in sc_cols:
+                        sc_local[sc] = float(l1c.get(sc, float('nan')))
+                sc_local_year_data[yr] = sc_local
+                for sc in sc_local:
+                    if sc not in all_scs_local:
+                        all_scs_local.append(sc)
+
+            local_df = pd.DataFrame(
+                {yr: [sc_local_year_data[yr].get(sc, float('nan'))
+                      for sc in all_scs_local]
+                 for yr in years},
+                index=all_scs_local,
+            )
+            local_df.index.name  = 'Subcriteria'
+            local_df.columns.name = 'Year'
+            local_df['Mean_Weight'] = local_df[years].mean(axis=1)
+            local_df['StdDev']      = local_df[years].std(axis=1)
+            saved['sc_local_matrix'] = self._save_csv(
+                local_df, 'sc_local_weights_all_years.csv',
+                directory=self.weighting_dir, float_fmt='%.6f')
+        except Exception as _exc:
+            _logger.debug('SC local weight matrix skipped: %s', _exc)
 
         return saved
 
