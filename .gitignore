@@ -77,3 +77,6 @@ venv.bak/
 # OS files
 .DS_Store
 Thumbs.db
+
+# ML-MCDM output
+output/result/

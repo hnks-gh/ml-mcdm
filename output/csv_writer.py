@@ -9,7 +9,7 @@ Files are organised under ``output/result/csv/<phase>/``:
 
   - weighting/   — weights_analysis.csv,
                    critic_weights_YYYY.csv (one per year),
-                   critic_sc_weights_all_years.csv  (SC x Year global weights),
+                   sc_global_weights_all_years.csv  (SC x Year global weights),
                    sc_local_weights_all_years.csv   (SC x Year local weights),
                    critic_criterion_weights_all_years.csv (Criterion x Year)
   - mcdm/        — final_rankings.csv, prediction_uncertainty_er.csv,
@@ -1011,9 +1011,10 @@ class CsvWriter:
 
         Files produced
         --------------
-        weighting/critic_weights_YYYY.csv          — one per year
-        weighting/critic_sc_weights_all_years.csv  — SC × Year matrix (global weights)
-        weighting/critic_criterion_weights_all_years.csv — Criterion × Year matrix
+        weighting/critic_weights_YYYY.csv                   — one per year
+        weighting/sc_global_weights_all_years.csv             — SC × Year global weights
+        weighting/sc_local_weights_all_years.csv              — SC × Year local weights
+        weighting/critic_criterion_weights_all_years.csv      — Criterion × Year
         """
         saved: Dict[str, str] = {}
         if not weight_all_years:
@@ -1046,14 +1047,17 @@ class CsvWriter:
                         'Subcriteria':          sc,
                         'Criterion':            cid,
                         'Critic_Local_Weight':  float(l1c.get(sc, 0.0)),
-                        'Critic_Crit_Weight':   float(crit_w.get(cid, 0.0)),
                         'Critic_Global_Weight': float(global_sc.get(sc, 0.0)),
+                        'Critic_Crit_Weight':   float(crit_w.get(cid, 0.0)),
                     })
 
                 if not rows:
                     continue
 
                 df = pd.DataFrame(rows).set_index('Subcriteria')
+                # Enforce explicit column order
+                df = df[['Criterion', 'Critic_Local_Weight',
+                          'Critic_Global_Weight', 'Critic_Crit_Weight']]
                 df['Rank'] = df['Critic_Global_Weight'].rank(
                     ascending=False, method='min').astype(int)
 
@@ -1084,7 +1088,7 @@ class CsvWriter:
             sc_df['Mean_Weight'] = sc_df[years].mean(axis=1)
             sc_df['StdDev']      = sc_df[years].std(axis=1)
             saved['sc_matrix'] = self._save_csv(
-                sc_df, 'critic_sc_weights_all_years.csv',
+                sc_df, 'sc_global_weights_all_years.csv',
                 directory=self.weighting_dir, float_fmt='%.6f')
         except Exception as _exc:
             _logger.debug('SC weight matrix skipped: %s', _exc)
@@ -1117,7 +1121,7 @@ class CsvWriter:
             _logger.debug('criterion weight matrix skipped: %s', _exc)
 
         # ── SC × Year LOCAL-weight matrix ─────────────────────────────────
-        # Complements critic_sc_weights_all_years.csv (global SC weights).
+        # Complements sc_global_weights_all_years.csv (global SC weights).
         # Each cell is the CRITIC within-group local weight for that SC in
         # that year (sums to 1 within each criterion group, not globally).
         try:
