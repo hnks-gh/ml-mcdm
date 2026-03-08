@@ -144,7 +144,21 @@ class HierarchicalEvidentialReasoning:
         -------
         HierarchicalERResult
         """
-        criteria_ids = sorted(criterion_weights.keys())
+        # Only process criteria that actually have precomputed method scores.
+        # Criteria whose sub-criteria are structurally absent for a given year
+        # (e.g. SC71-SC83 missing 2011-2017) are correctly skipped by the
+        # upstream hierarchical pipeline; restricting here prevents a KeyError
+        # and ensures the criterion weights are renormalised over active criteria.
+        available_criteria = set(method_scores.keys())
+        criteria_ids = sorted(
+            c for c in criterion_weights.keys() if c in available_criteria
+        )
+        # Renormalise weights to sum to 1 over the available criteria only
+        active_crit_weights = {c: criterion_weights[c] for c in criteria_ids}
+        total_w = sum(active_crit_weights.values())
+        if total_w > 0:
+            active_crit_weights = {c: v / total_w for c, v in active_crit_weights.items()}
+        criterion_weights = active_crit_weights
         n_alt = len(alternatives)
 
         # ------------------------------------------------------------------

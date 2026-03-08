@@ -58,9 +58,7 @@ class OutputOrchestrator:
         self.csv.save_weights(weights, subcriteria)
         logger.info('Saved: weights_analysis.csv')
 
-        # 2. Rankings
-        self.csv.save_rankings(ranking_result, panel_data.provinces)
-        logger.info('Saved: final_rankings.csv')
+        # 2. Rankings — skipped (final_rankings.csv removed per spec)
 
         # 3. MCDM scores per criterion (long format, all years)
         if multi_year_results:
@@ -69,13 +67,9 @@ class OutputOrchestrator:
         else:
             logger.info('Skipped: mcdm_scores_*.csv (no multi_year_results)')
 
-        # 4. Rank comparison matrix
-        self.csv.save_rank_comparison(ranking_result, panel_data.provinces)
-        logger.info('Saved: mcdm_rank_comparison.csv')
+        # 4. Rank comparison matrix — skipped (mcdm_rank_comparison.csv removed per spec)
 
-        # 5. ER uncertainty
-        self.csv.save_er_uncertainty(ranking_result, panel_data.provinces)
-        logger.info('Saved: prediction_uncertainty_er.csv')
+        # 5. ER uncertainty — skipped (prediction_uncertainty_er.csv removed per spec)
 
         # 6. Forecasting results
         if forecast_result is not None:
@@ -91,15 +85,8 @@ class OutputOrchestrator:
 
         # ── All-years outputs ─────────────────────────────────────────────
 
-        # 8. All-years score / rank matrices + criterion ER long-format
-        if multi_year_results:
-            try:
-                saved_ay = self.csv.save_rankings_all_years(
-                    multi_year_results, panel_data.provinces)
-                for key in saved_ay:
-                    logger.info(f'Saved: {Path(saved_ay[key]).name}')
-            except Exception as _exc:
-                logger.warning(f'save_rankings_all_years failed: {_exc}')
+        # 8. All-years score / rank matrices — skipped (rankings_all_years.csv,
+        #    ranks_all_years.csv, criterion_er_scores_all_years.csv removed per spec)
 
         # 9. Belief distributions (Stage-1 ER)
         try:
