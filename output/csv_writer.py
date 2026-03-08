@@ -12,9 +12,10 @@ Files are organised under ``output/result/csv/<phase>/``:
                    sc_global_weights_all_years.csv  (SC x Year global weights),
                    sc_local_weights_all_years.csv   (SC x Year local weights),
                    critic_criterion_weights_all_years.csv (Criterion x Year)
-  - mcdm/        — final_rankings.csv, prediction_uncertainty_er.csv,
-                   mcdm_scores_*.csv, mcdm_rank_comparison.csv
-  - ranking/     — mcdm_scores_YYYY.csv (per-year per-method per-criterion)
+  - mcdm/        — mcdm_scores_C01.csv … mcdm_scores_C08.csv (Year × Province × methods),
+                   mcdm_scores_composite.csv
+  - ranking/     — mcdm_criteria_C01_ranking.csv … mcdm_criteria_C08_ranking.csv,
+                   mcdm_scores_composite_ranking.csv
   - forecasting/ — forecast_*, model_*, feature_importance, cv scores
   - sensitivity/ — sensitivity_*.csv, sensitivity_summary.json
 """
@@ -202,49 +203,156 @@ class CsvWriter:
                                 directory=self.mcdm_dir)
 
     # ==================================================================
-    #  3. MCDM SCORES PER CRITERION
+    #  3. MCDM SCORES PER CRITERION  (long format, all years)
     # ==================================================================
 
     def save_mcdm_scores_by_criterion(
-        self, ranking_result: Any, provinces: List[str],
+        self, multi_year_results: Dict[int, Any],
     ) -> Dict[str, str]:
-        saved = {}
-        for crit_id, method_scores in ranking_result.criterion_method_scores.items():
-            # Resolve per-criterion active province list from the first series' index
-            _first = next(iter(method_scores.values()), None)
-            crit_provinces = (
-                list(_first.index)
-                if _first is not None and hasattr(_first, 'index')
-                else provinces
-            )
-            score_df = pd.DataFrame(index=crit_provinces)
-            rank_df = pd.DataFrame(index=crit_provinces)
+        """
+        Write per-criterion MCDM score files spanning all years.
 
-            for method, series in method_scores.items():
-                vals = series.values if hasattr(series, 'values') else np.asarray(series)
-                score_df[f'{method}_Score'] = vals
-                rank_df[f'{method}_Rank'] = pd.Series(vals, index=crit_provinces).rank(
-                    ascending=False, method='min').astype(int)
+        Each file is long-format: one row per (Year, Province) pair with
+        columns for TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS, SAW, and ER
+        (Stage-1 ER average utility for that criterion).
 
-            score_cols = list(score_df.columns)
-            score_df['Mean_Score'] = score_df[score_cols].mean(axis=1)
-            score_df['StdDev_Score'] = score_df[score_cols].std(axis=1)
-            score_df['CV_Score'] = np.where(
-                score_df['Mean_Score'] > 0,
-                score_df['StdDev_Score'] / score_df['Mean_Score'], 0)
+        Files produced (mcdm/ directory)
+        ---------------------------------
+        mcdm_scores_C01.csv  ...  mcdm_scores_C08.csv
+        """
+        saved: Dict[str, str] = {}
+        if not multi_year_results:
+            return saved
 
-            combined = pd.concat([score_df, rank_df], axis=1)
-            combined.index.name = 'Province'
+        _METHODS = ['TOPSIS', 'VIKOR', 'PROMETHEE', 'COPRAS', 'EDAS', 'SAW']
+        years = sorted(multi_year_results.keys())
+        crit_rows: Dict[str, List[Dict]] = {}
 
-            rank_cols = list(rank_df.columns)
-            combined['Mean_Rank'] = rank_df[rank_cols].mean(axis=1).round(2)
-            combined['Consensus_Rank'] = combined['Mean_Rank'].rank(method='min').astype(int)
+        for yr in years:
+            yr_res = multi_year_results[yr]
+            method_scores = getattr(yr_res, 'criterion_method_scores', {})
+            er_res = getattr(yr_res, 'er_result', None)
+            crit_beliefs = getattr(er_res, 'criterion_beliefs', {}) if er_res else {}
 
+            for crit_id, crit_data in sorted(method_scores.items()):
+                if crit_id not in crit_rows:
+                    crit_rows[crit_id] = []
+                first_series = next(iter(crit_data.values()), None)
+                if first_series is None:
+                    continue
+                prov_list = (
+                    list(first_series.index)
+                    if hasattr(first_series, 'index')
+                    else []
+                )
+                for prov in prov_list:
+                    row: Dict[str, Any] = {'Year': yr, 'Province': prov}
+                    for method in _METHODS:
+                        series = crit_data.get(method)
+                        if series is not None and hasattr(series, 'loc') and prov in series.index:
+                            row[method] = float(series.loc[prov])
+                        else:
+                            row[method] = float('nan')
+                    bd = crit_beliefs.get(prov, {}).get(crit_id)
+                    row['ER'] = float(bd.average_utility()) if bd is not None else float('nan')
+                    crit_rows[crit_id].append(row)
+
+        for crit_id, rows in crit_rows.items():
+            if not rows:
+                continue
+            df = pd.DataFrame(rows)
+            df = df.sort_values(['Year', 'Province']).reset_index(drop=True)
+            df.index.name = 'RowID'
             fname = f'mcdm_scores_{crit_id}.csv'
-            path = self._save_csv(combined, fname, float_fmt='%.4f',
-                                   directory=self.mcdm_dir)
-            saved[crit_id] = str(path)
+            saved[crit_id] = self._save_csv(
+                df, fname, directory=self.mcdm_dir, float_fmt='%.4f')
+
         return saved
+
+    # ==================================================================
+    #  3b. MCDM COMPOSITE SCORES  (long format, all years)
+    # ==================================================================
+
+    def save_mcdm_composite_scores_all_years(
+        self, multi_year_results: Dict[int, Any],
+    ) -> Optional[str]:
+        """
+        Write composite (averaged across all criteria) MCDM scores for all
+        years, plus the final ER composite score.
+
+        File produced (mcdm/ directory)
+        --------------------------------
+        mcdm_scores_composite.csv
+        """
+        if not multi_year_results:
+            return None
+
+        _METHODS = ['TOPSIS', 'VIKOR', 'PROMETHEE', 'COPRAS', 'EDAS', 'SAW']
+        years = sorted(multi_year_results.keys())
+        rows: List[Dict] = []
+
+        for yr in years:
+            yr_res = multi_year_results[yr]
+            method_scores = getattr(yr_res, 'criterion_method_scores', {})
+            final_scores  = getattr(yr_res, 'final_scores', None)
+
+            # Determine active province list
+            if final_scores is not None and hasattr(final_scores, 'index'):
+                active_provinces = list(final_scores.index)
+            else:
+                first_crit = next(iter(method_scores.values()), {})
+                first_series = next(iter(first_crit.values()), None)
+                active_provinces = (
+                    list(first_series.index)
+                    if first_series is not None and hasattr(first_series, 'index')
+                    else []
+                )
+
+            if not active_provinces or not method_scores:
+                continue
+
+            # Sum scores across criteria per method per province
+            method_sums: Dict[str, Dict[str, float]] = {m: {} for m in _METHODS}
+            method_counts: Dict[str, Dict[str, int]] = {m: {} for m in _METHODS}
+            for m in _METHODS:
+                for p in active_provinces:
+                    method_sums[m][p] = 0.0
+                    method_counts[m][p] = 0
+
+            for _crit_id, crit_data in method_scores.items():
+                for method in _METHODS:
+                    series = crit_data.get(method)
+                    if series is None:
+                        continue
+                    for prov in active_provinces:
+                        if hasattr(series, 'loc') and prov in series.index:
+                            val = float(series.loc[prov])
+                            if not np.isnan(val):
+                                method_sums[method][prov] += val
+                                method_counts[method][prov] += 1
+
+            for prov in active_provinces:
+                row: Dict[str, Any] = {'Year': yr, 'Province': prov}
+                for method in _METHODS:
+                    cnt = method_counts[method][prov]
+                    row[method] = (
+                        method_sums[method][prov] / cnt if cnt > 0 else float('nan')
+                    )
+                # ER = final composite ER score
+                if final_scores is not None and hasattr(final_scores, 'loc') and prov in final_scores.index:
+                    row['ER'] = float(final_scores.loc[prov])
+                else:
+                    row['ER'] = float('nan')
+                rows.append(row)
+
+        if not rows:
+            return None
+        df = pd.DataFrame(rows)
+        df = df.sort_values(['Year', 'Province']).reset_index(drop=True)
+        df.index.name = 'RowID'
+        return self._save_csv(
+            df, 'mcdm_scores_composite.csv',
+            directory=self.mcdm_dir, float_fmt='%.4f')
 
     # ==================================================================
     #  4. RANK COMPARISON (all methods x all criteria)
@@ -1161,121 +1269,173 @@ class CsvWriter:
         return saved
 
     # ==================================================================
-    # 20. PER-YEAR PER-METHOD MCDM SCORES (14 CSVs)
+    # 20. PER-CRITERION MCDM RANKING FILES  (9 CSVs, all years)
     # ==================================================================
 
     def save_method_scores_all_years(
         self, multi_year_results: Dict[int, Any]
     ) -> Dict[str, str]:
         """
-        Persist per-year MCDM method scores and final ER rankings for all
-        provinces, one CSV per year.
+        Persist per-criterion MCDM ranking files spanning all years, plus a
+        composite ranking file.  Precomputed ``criterion_method_ranks`` are
+        used directly so that each method's rank direction is respected
+        (e.g. VIKOR: lower Q = rank 1).
 
-        Each file is long-format: one row per (Province, Criterion) pair
-        with columns for each of the 6 MCDM method scores plus the
-        Stage-1 ER utility and the final ER score/rank for that province.
+        Files produced (ranking/ directory)
+        ------------------------------------
+        mcdm_criteria_C01_ranking.csv  ...  mcdm_criteria_C08_ranking.csv
+        mcdm_scores_composite_ranking.csv
 
-        Files produced
-        --------------
-        ranking/mcdm_scores_YYYY.csv   — one file per year (14 total)
+        Columns: Year, Province, TOPSIS_Rank, VIKOR_Rank, PROMETHEE_Rank,
+                 COPRAS_Rank, EDAS_Rank, SAW_Rank, ER_Rank
         """
         saved: Dict[str, str] = {}
         if not multi_year_results:
             return saved
 
-        for yr, yr_res in sorted(multi_year_results.items()):
+        _METHODS = ['TOPSIS', 'VIKOR', 'PROMETHEE', 'COPRAS', 'EDAS', 'SAW']
+        _RANK_COLS = [f'{m}_Rank' for m in _METHODS] + ['ER_Rank']
+        years = sorted(multi_year_results.keys())
+
+        # Accumulate rows per criterion and for composite
+        crit_rows: Dict[str, List[Dict]] = {}
+        composite_rows: List[Dict] = []
+
+        for yr in years:
             try:
+                yr_res = multi_year_results[yr]
                 method_scores = getattr(yr_res, 'criterion_method_scores', {})
+                method_ranks  = getattr(yr_res, 'criterion_method_ranks', {})
+                er_res        = getattr(yr_res, 'er_result', None)
+                crit_beliefs  = getattr(er_res, 'criterion_beliefs', {}) if er_res else {}
+                final_ranking = getattr(yr_res, 'final_ranking', None)
+                final_scores  = getattr(yr_res, 'final_scores', None)
+
                 if not method_scores:
                     continue
 
-                final_scores  = getattr(yr_res, 'final_scores', None)
-                final_ranking = getattr(yr_res, 'final_ranking', None)
-
-                # Discover all methods present this year
-                methods_seen: List[str] = []
-                for crit_scores in method_scores.values():
-                    for m in crit_scores:
-                        if m not in methods_seen:
-                            methods_seen.append(m)
-
-                # Stage-1 ER utilities (per province per criterion)
-                er_res        = getattr(yr_res, 'er_result', None)
-                crit_beliefs  = getattr(er_res, 'criterion_beliefs', {}) if er_res else {}
-
-                rows = []
+                # ── Per-criterion ranking rows ────────────────────────────
                 for crit_id in sorted(method_scores):
-                    crit_data = method_scores[crit_id]
-                    # Identify provinces for this criterion from first method series
+                    if crit_id not in crit_rows:
+                        crit_rows[crit_id] = []
+
+                    crit_data       = method_scores[crit_id]
+                    crit_rank_data  = method_ranks.get(crit_id, {})
+
                     first_series = next(iter(crit_data.values()), None)
                     if first_series is None:
                         continue
-                    provinces_crit = (
+                    prov_list = (
                         list(first_series.index)
                         if hasattr(first_series, 'index')
                         else []
                     )
 
-                    for prov in provinces_crit:
-                        row: Dict[str, Any] = {
-                            'Year':      yr,
-                            'Province':  prov,
-                            'Criterion': crit_id,
-                        }
-
-                        # Per-method score
-                        for method in methods_seen:
-                            series = crit_data.get(method)
-                            if series is not None:
-                                val = (
-                                    float(series.loc[prov])
-                                    if hasattr(series, 'loc') and prov in series.index
-                                    else float('nan')
-                                )
-                            else:
-                                val = float('nan')
-                            row[f'{method}_Score'] = val
-
-                        # Stage-1 ER utility for this (province, criterion)
+                    # ER Stage-1 utility → rank (higher utility = rank 1)
+                    er_utils = {}
+                    for prov in prov_list:
                         bd = crit_beliefs.get(prov, {}).get(crit_id)
-                        row['ER_Stage1_Utility'] = (
-                            float(bd.average_utility()) if bd is not None else float('nan'))
+                        er_utils[prov] = (
+                            float(bd.average_utility()) if bd is not None else float('nan')
+                        )
+                    er_util_series = pd.Series(er_utils)
+                    er_rank_series = er_util_series.rank(
+                        ascending=False, method='min', na_option='bottom'
+                    ).astype('Int64')
 
-                        # Final ER score and rank (province-level, repeated per crit row)
-                        if final_scores is not None and hasattr(final_scores, 'get'):
-                            row['Final_ER_Score'] = float(
-                                final_scores.get(prov, float('nan')))
-                        elif final_scores is not None and hasattr(final_scores, 'loc'):
-                            row['Final_ER_Score'] = (
-                                float(final_scores.loc[prov])
-                                if prov in final_scores.index
-                                else float('nan'))
-                        else:
-                            row['Final_ER_Score'] = float('nan')
+                    for prov in prov_list:
+                        row: Dict[str, Any] = {'Year': yr, 'Province': prov}
+                        for method in _METHODS:
+                            rank_series = crit_rank_data.get(method)
+                            if rank_series is not None and hasattr(rank_series, 'loc') and prov in rank_series.index:
+                                v = rank_series.loc[prov]
+                                row[f'{method}_Rank'] = int(v) if not pd.isna(v) else pd.NA
+                            else:
+                                row[f'{method}_Rank'] = pd.NA
+                        er_v = er_rank_series.loc[prov] if prov in er_rank_series.index else pd.NA
+                        row['ER_Rank'] = int(er_v) if not pd.isna(er_v) else pd.NA
+                        crit_rows[crit_id].append(row)
 
-                        if final_ranking is not None and hasattr(final_ranking, 'loc'):
-                            row['ER_Rank'] = (
-                                int(final_ranking.loc[prov])
-                                if prov in final_ranking.index
-                                else -1)
-                        else:
-                            row['ER_Rank'] = -1
+                # ── Composite ranking rows ────────────────────────────────
+                # Active province list
+                if final_ranking is not None and hasattr(final_ranking, 'index'):
+                    active_provinces = list(final_ranking.index)
+                elif final_scores is not None and hasattr(final_scores, 'index'):
+                    active_provinces = list(final_scores.index)
+                else:
+                    first_crit = next(iter(method_scores.values()), {})
+                    first_s = next(iter(first_crit.values()), None)
+                    active_provinces = (
+                        list(first_s.index)
+                        if first_s is not None and hasattr(first_s, 'index')
+                        else []
+                    )
 
-                        rows.append(row)
+                # Sum scores across criteria per method → composite score → rank
+                method_composite_scores: Dict[str, pd.Series] = {}
+                for method in _METHODS:
+                    sums = pd.Series(0.0, index=active_provinces)
+                    cnts = pd.Series(0,   index=active_provinces)
+                    for _crit_id, crit_data in method_scores.items():
+                        series = crit_data.get(method)
+                        if series is None:
+                            continue
+                        for prov in active_provinces:
+                            if hasattr(series, 'loc') and prov in series.index:
+                                val = float(series.loc[prov])
+                                if not np.isnan(val):
+                                    sums[prov]  += val
+                                    cnts[prov]  += 1
+                    composite = sums / cnts.replace(0, float('nan'))
+                    method_composite_scores[method] = composite
 
-                if not rows:
-                    continue
+                for method in _METHODS:
+                    s = method_composite_scores[method]
+                    # Rank composite: higher average score = better rank
+                    method_composite_scores[f'{method}_Rank'] = s.rank(
+                        ascending=False, method='min', na_option='bottom'
+                    ).astype('Int64')
 
-                df = pd.DataFrame(rows)
-                df = df.sort_values(['ER_Rank', 'Province', 'Criterion']).reset_index(drop=True)
-                df.index.name = 'RowID'
+                # Final ER composite rank from final_ranking
+                if final_ranking is not None and hasattr(final_ranking, 'reindex'):
+                    er_comp_rank = final_ranking.reindex(active_provinces)
+                else:
+                    er_comp_rank = pd.Series(pd.NA, index=active_provinces)
 
-                fname = f'mcdm_scores_{yr}.csv'
-                saved[f'year_{yr}'] = self._save_csv(
-                    df, fname, directory=self.ranking_dir, float_fmt='%.4f')
+                for prov in active_provinces:
+                    row = {'Year': yr, 'Province': prov}
+                    for method in _METHODS:
+                        rk = method_composite_scores[f'{method}_Rank']
+                        v = rk.loc[prov] if prov in rk.index else pd.NA
+                        row[f'{method}_Rank'] = int(v) if not pd.isna(v) else pd.NA
+                    er_v = er_comp_rank.loc[prov] if prov in er_comp_rank.index else pd.NA
+                    row['ER_Rank'] = int(er_v) if not pd.isna(er_v) else pd.NA
+                    composite_rows.append(row)
 
             except Exception as _exc:
-                _logger.debug('per-year method scores year %d skipped: %s', yr, _exc)
+                _logger.debug('ranking files for year %d skipped: %s', yr, _exc)
+
+        # ── Write per-criterion ranking files ─────────────────────────────
+        for crit_id, rows in crit_rows.items():
+            if not rows:
+                continue
+            df = pd.DataFrame(rows)
+            df = df[['Year', 'Province'] + _RANK_COLS]
+            df = df.sort_values(['Year', 'Province']).reset_index(drop=True)
+            df.index.name = 'RowID'
+            fname = f'mcdm_criteria_{crit_id}_ranking.csv'
+            saved[crit_id] = self._save_csv(
+                df, fname, directory=self.ranking_dir, float_fmt='%.0f')
+
+        # ── Write composite ranking file ───────────────────────────────────
+        if composite_rows:
+            df = pd.DataFrame(composite_rows)
+            df = df[['Year', 'Province'] + _RANK_COLS]
+            df = df.sort_values(['Year', 'Province']).reset_index(drop=True)
+            df.index.name = 'RowID'
+            saved['composite'] = self._save_csv(
+                df, 'mcdm_scores_composite_ranking.csv',
+                directory=self.ranking_dir, float_fmt='%.0f')
 
         return saved
 

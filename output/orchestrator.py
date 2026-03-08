@@ -62,11 +62,12 @@ class OutputOrchestrator:
         self.csv.save_rankings(ranking_result, panel_data.provinces)
         logger.info('Saved: final_rankings.csv')
 
-        # 3. MCDM scores per criterion
-        saved_scores = self.csv.save_mcdm_scores_by_criterion(
-            ranking_result, panel_data.provinces,
-        )
-        logger.info(f'Saved: mcdm_scores_*.csv ({len(saved_scores)} files)')
+        # 3. MCDM scores per criterion (long format, all years)
+        if multi_year_results:
+            saved_scores = self.csv.save_mcdm_scores_by_criterion(multi_year_results)
+            logger.info(f'Saved: mcdm_scores_*.csv ({len(saved_scores)} files)')
+        else:
+            logger.info('Skipped: mcdm_scores_*.csv (no multi_year_results)')
 
         # 4. Rank comparison matrix
         self.csv.save_rank_comparison(ranking_result, panel_data.provinces)
@@ -109,14 +110,14 @@ class OutputOrchestrator:
         except Exception as _exc:
             logger.warning(f'save_belief_distributions failed: {_exc}')
 
-        # 10. MCDM composite comparison (all methods + ER)
-        try:
-            path_mc = self.csv.save_mcdm_composite_comparison(
-                ranking_result, panel_data.provinces)
-            if path_mc:
-                logger.info(f'Saved: {Path(path_mc).name}')
-        except Exception as _exc:
-            logger.warning(f'save_mcdm_composite_comparison failed: {_exc}')
+        # 10. MCDM composite scores (all methods + ER, all years)
+        if multi_year_results:
+            try:
+                path_mc = self.csv.save_mcdm_composite_scores_all_years(multi_year_results)
+                if path_mc:
+                    logger.info(f'Saved: {Path(path_mc).name}')
+            except Exception as _exc:
+                logger.warning(f'save_mcdm_composite_scores_all_years failed: {_exc}')
 
         # 11. Individual base-model predictions
         if forecast_result is not None:
