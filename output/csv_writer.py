@@ -602,93 +602,104 @@ class CsvWriter:
         if sens is None:
             return saved
 
-        # Criteria sensitivity
+        # ML Sensitivity
         try:
-            if hasattr(sens, 'criteria_sensitivity') and sens.criteria_sensitivity:
+            ml = getattr(sens, 'ml_sensitivity', None)
+            if ml is not None and ml.feature_importance_cv:
                 df = pd.DataFrame([
-                    {'Criterion': k, 'Sensitivity': v}
-                    for k, v in sorted(sens.criteria_sensitivity.items(),
-                                       key=lambda x: x[1], reverse=True)
+                    {
+                        'Feature': k,
+                        'Importance_Mean': ml.feature_importance_mean.get(k, 0),
+                        'Importance_CV': v,
+                        'Rank_Stability': ml.feature_importance_rank_stability.get(k, 0),
+                    }
+                    for k, v in sorted(
+                        ml.feature_importance_cv.items(),
+                        key=lambda x: x[1], reverse=True
+                    )
+                ]).set_index('Feature')
+                saved['ml_feature_importance'] = self._save_csv(
+                    df, 'sensitivity_ml_feature_importance.csv',
+                    directory=_dir, float_fmt='%.6f')
+        except Exception as _exc:
+            _logger.debug('ml feature section skipped: %s', _exc)
+
+        try:
+            ml = getattr(sens, 'ml_sensitivity', None)
+            if ml is not None and ml.loo_model_impact:
+                df = pd.DataFrame([
+                    {'Model': k, 'LOO_Impact': v, 'Contribution_CV': ml.model_contribution_cv.get(k, 0)}
+                    for k, v in sorted(ml.loo_model_impact.items(), key=lambda x: x[1], reverse=True)
+                ]).set_index('Model')
+                saved['ml_model_impact'] = self._save_csv(
+                    df, 'sensitivity_ml_model_impact.csv',
+                    directory=_dir, float_fmt='%.6f')
+        except Exception as _exc:
+            _logger.debug('ml model section skipped: %s', _exc)
+
+        # ER Sensitivity
+        try:
+            er = getattr(sens, 'er_sensitivity', None)
+            if er is not None and er.criterion_belief_sensitivity:
+                df = pd.DataFrame([
+                    {'Criterion': k, 'Belief_Sensitivity': v}
+                    for k, v in sorted(
+                        er.criterion_belief_sensitivity.items(),
+                        key=lambda x: x[1], reverse=True
+                    )
                 ]).set_index('Criterion')
-                df['Rank'] = range(1, len(df) + 1)
-                df['Interpretation'] = df['Sensitivity'].apply(
-                    lambda x: 'High' if x > 0.1 else ('Medium' if x > 0.05 else 'Low'))
-                saved['criteria'] = self._save_csv(
-                    df, 'sensitivity_criteria.csv', directory=_dir, float_fmt='%.6f')
+                df['Level'] = df['Belief_Sensitivity'].apply(
+                    lambda x: 'High' if x > 0.3 else ('Medium' if x > 0.15 else 'Low'))
+                saved['er_criterion_sensitivity'] = self._save_csv(
+                    df, 'sensitivity_er_criterion.csv', directory=_dir, float_fmt='%.6f')
         except Exception as _exc:
-            _logger.debug('section skipped: %s', _exc)
+            _logger.debug('er criterion section skipped: %s', _exc)
 
-        # Subcriteria sensitivity
         try:
-            if hasattr(sens, 'subcriteria_sensitivity') and sens.subcriteria_sensitivity:
+            er = getattr(sens, 'er_sensitivity', None)
+            if er is not None and er.utility_interval_width:
                 df = pd.DataFrame([
-                    {'Subcriteria': k, 'Sensitivity': v}
-                    for k, v in sorted(sens.subcriteria_sensitivity.items(),
-                                       key=lambda x: x[1], reverse=True)
-                ]).set_index('Subcriteria')
-                df['Rank'] = range(1, len(df) + 1)
-                saved['subcriteria'] = self._save_csv(
-                    df, 'sensitivity_subcriteria.csv', directory=_dir, float_fmt='%.6f')
+                    {'Entity': k, 'Utility_Interval_Width': v,
+                     'Utility_Sensitivity': er.utility_sensitivity.get(k, 0)}
+                    for k, v in sorted(
+                        er.utility_interval_width.items(),
+                        key=lambda x: x[1], reverse=True
+                    )
+                ]).set_index('Entity')
+                saved['er_utility_sensitivity'] = self._save_csv(
+                    df, 'sensitivity_er_utility.csv', directory=_dir, float_fmt='%.6f')
         except Exception as _exc:
-            _logger.debug('section skipped: %s', _exc)
+            _logger.debug('er utility section skipped: %s', _exc)
 
-        # Rank stability
         try:
-            if hasattr(sens, 'rank_stability') and sens.rank_stability:
+            er = getattr(sens, 'er_sensitivity', None)
+            if er is not None and er.cross_level_consistency:
                 df = pd.DataFrame([
-                    {'Province': k, 'Stability': v}
-                    for k, v in sorted(sens.rank_stability.items(),
-                                       key=lambda x: x[1], reverse=True)
-                ]).set_index('Province')
-                df['Rank_by_Stability'] = range(1, len(df) + 1)
-                df['Classification'] = df['Stability'].apply(
-                    lambda x: 'Very Stable' if x > 0.9 else (
-                        'Stable' if x > 0.7 else ('Moderate' if x > 0.5 else 'Volatile')))
-                saved['rank_stability'] = self._save_csv(
-                    df, 'sensitivity_rank_stability.csv', directory=_dir, float_fmt='%.4f')
+                    {'Level': k, 'Spearman_Rho': v}
+                    for k, v in sorted(er.cross_level_consistency.items())
+                ]).set_index('Level')
+                saved['er_cross_level'] = self._save_csv(
+                    df, 'sensitivity_er_cross_level.csv', directory=_dir, float_fmt='%.6f')
         except Exception as _exc:
-            _logger.debug('section skipped: %s', _exc)
-
-        # Top-N stability
-        try:
-            if hasattr(sens, 'top_n_stability') and sens.top_n_stability:
-                df = pd.DataFrame([
-                    {'Top_N': f'Top-{n}', 'N': n, 'Stability': v}
-                    for n, v in sorted(sens.top_n_stability.items())
-                ]).set_index('Top_N')
-                saved['top_n'] = self._save_csv(
-                    df, 'sensitivity_top_n_stability.csv', directory=_dir, float_fmt='%.4f')
-        except Exception as _exc:
-            _logger.debug('section skipped: %s', _exc)
-
-        # Temporal stability
-        try:
-            if hasattr(sens, 'temporal_stability') and sens.temporal_stability:
-                df = pd.DataFrame([
-                    {'Year_Pair': k, 'Rank_Correlation': v}
-                    for k, v in sorted(sens.temporal_stability.items())
-                ]).set_index('Year_Pair')
-                df['Interpretation'] = df['Rank_Correlation'].apply(
-                    lambda x: 'Strong' if x > 0.8 else ('Moderate' if x > 0.5 else 'Weak'))
-                saved['temporal'] = self._save_csv(
-                    df, 'sensitivity_temporal.csv', directory=_dir, float_fmt='%.4f')
-        except Exception as _exc:
-            _logger.debug('section skipped: %s', _exc)
+            _logger.debug('er cross-level section skipped: %s', _exc)
 
         # Summary JSON
         try:
-            robustness = {
+            ml = getattr(sens, 'ml_sensitivity', None)
+            er = getattr(sens, 'er_sensitivity', None)
+            summary = {
                 'overall_robustness': getattr(sens, 'overall_robustness', 0),
-                'confidence_level': getattr(sens, 'confidence_level', 0.95),
-                'n_criteria_analyzed': len(getattr(sens, 'criteria_sensitivity', {})),
-                'n_subcriteria_analyzed': len(getattr(sens, 'subcriteria_sensitivity', {})),
-                'n_provinces_stability': len(getattr(sens, 'rank_stability', {})),
-                'top_n_stability': getattr(sens, 'top_n_stability', {}),
+                'ml_robustness': getattr(ml, 'overall_robustness', None),
+                'er_robustness': getattr(er, 'overall_er_robustness', None),
+                'ml_temporal_stability': getattr(ml, 'temporal_prediction_stability', None),
+                'ml_interval_width_cv': getattr(ml, 'interval_width_cv', None),
+                'er_mean_entropy': getattr(er, 'mean_belief_entropy', None),
+                'er_high_uncertainty_entities': getattr(er, 'high_uncertainty_entities', []),
             }
-            saved['summary'] = self._save_json(robustness, 'sensitivity_summary.json',
+            saved['summary'] = self._save_json(summary, 'sensitivity_summary.json',
                                                directory=_dir)
         except Exception as _exc:
-            _logger.debug('section skipped: %s', _exc)
+            _logger.debug('summary section skipped: %s', _exc)
 
         return saved
 

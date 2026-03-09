@@ -32,7 +32,7 @@ try:
     from .data import DataLoader, PanelData
     from .ranking import TOPSISCalculator
     from .ranking import HierarchicalRankingPipeline, HierarchicalRankingResult
-    from .analysis import SensitivityAnalysis
+    from .analysis import MLSensitivityAnalysis, ERSensitivityAnalysis, CombinedSensitivityResult
     from .output.visualization import VisualizationOrchestrator
     from .output import OutputOrchestrator
 except ImportError:
@@ -42,7 +42,7 @@ except ImportError:
     from data import DataLoader, PanelData
     from ranking import TOPSISCalculator
     from ranking import HierarchicalRankingPipeline, HierarchicalRankingResult
-    from analysis import SensitivityAnalysis
+    from analysis import MLSensitivityAnalysis, ERSensitivityAnalysis, CombinedSensitivityResult
     from output.visualization import VisualizationOrchestrator
     from output import OutputOrchestrator
 
@@ -811,57 +811,54 @@ class MLMCDMPipeline:
         forecast_result: Optional[Any] = None,
     ) -> Dict[str, Any]:
         """
-        Run hierarchical sensitivity analysis on the full pipeline.
-        
-        Tests robustness at multiple levels:
-        - Subcriteria weight perturbations
-        - Criteria weight perturbations  
-        - Temporal stability across years
-        - Forecast robustness (if available)
-        """
-        self.logger.info("Running hierarchical sensitivity analysis")
-        
-        # Create ranking pipeline instance for re-running with perturbed weights
-        ranking_pipeline = HierarchicalRankingPipeline(
-            n_grades=self.config.er.n_grades,
-            method_weight_scheme=self.config.er.method_weight_scheme,
-        )
-        
-        # Run sensitivity analysis
-        analyzer = SensitivityAnalysis(
-            n_simulations=self.config.validation.n_simulations,
-            perturbation_range=0.15,  # ±15% weight perturbation
-            seed=self.config.random.seed
-        )
-        
-        sens_result = analyzer.analyze_full_pipeline(
-            panel_data=panel_data,
-            ranking_pipeline=ranking_pipeline,
-            weights=weights,
-            ranking_result=ranking_result,
-            forecast_result=forecast_result
-        )
-        
-        # Validate production-ready hierarchical structure
-        self._validate_sensitivity_result(sens_result)
-        
-        self.logger.info(
-            f"Sensitivity analysis: robustness = {sens_result.overall_robustness:.4f}"
-        )
-        self.logger.info(
-            f"  Criteria sensitivity: {len(sens_result.criteria_sensitivity)} criteria analyzed"
-        )
-        self.logger.info(
-            f"  Subcriteria sensitivity: {len(sens_result.subcriteria_sensitivity)} subcriteria analyzed"
-        )
-        self.logger.info(
-            f"  Temporal stability: {len(sens_result.temporal_stability)} year pairs"
-        )
-        self.logger.info(
-            f"  Top-5 stability: {sens_result.top_n_stability.get(5, 0):.1%}"
-        )
+        Run ML + ER sensitivity analysis.
 
-        
+        ML analysis covers: feature importance stability, LOO model impact,
+        prediction sensitivity, temporal fold stability, interval width CV.
+        ER analysis covers: criterion belief OAT sensitivity, grade threshold
+        sensitivity, aggregation weight sensitivity, utility interval widths,
+        cross-level consistency, belief entropy.
+        """
+        self.logger.info("Running ML + ER sensitivity analysis")
+
+        er_result = getattr(ranking_result, 'er_result', None)
+        n_boot = getattr(getattr(self.config, 'validation', None), 'n_simulations', 200)
+        seed = getattr(getattr(self.config, 'random', None), 'seed', 42)
+
+        ml_sens = None
+        er_sens = None
+
+        if forecast_result is not None:
+            try:
+                ml_sens = MLSensitivityAnalysis(
+                    n_bootstrap=n_boot, seed=seed
+                ).analyze(forecast_result)
+                self.logger.info(
+                    f"  ML robustness: {ml_sens.overall_robustness:.4f} "
+                    f"(temporal_stability={ml_sens.temporal_prediction_stability:.4f})"
+                )
+            except Exception as exc:
+                self.logger.warning(f"ML sensitivity failed (non-fatal): {exc}")
+
+        if er_result is not None:
+            try:
+                er_sens = ERSensitivityAnalysis(
+                    n_simulations=n_boot, seed=seed
+                ).analyze(er_result, ranking_result=ranking_result)
+                self.logger.info(
+                    f"  ER robustness: {er_sens.overall_er_robustness:.4f} "
+                    f"(mean_entropy={er_sens.mean_belief_entropy:.4f})"
+                )
+            except Exception as exc:
+                self.logger.warning(f"ER sensitivity failed (non-fatal): {exc}")
+
+        sens_result = CombinedSensitivityResult(
+            ml_sensitivity=ml_sens, er_sensitivity=er_sens
+        )
+        self.logger.info(
+            f"Combined robustness: {sens_result.overall_robustness:.4f}"
+        )
+        self._validate_sensitivity_result(sens_result)
         return {'sensitivity': sens_result}
     
     def _run_validation(
@@ -871,71 +868,39 @@ class MLMCDMPipeline:
         ranking_result: HierarchicalRankingResult,
         forecast_result: Optional[Any] = None,
     ) -> Any:
-        """Run production validation on the full pipeline."""
+        """Run ML + ER validation on the full pipeline."""
         from .analysis import Validator
-        
+
+        er_result = getattr(ranking_result, 'er_result', None)
         validator = Validator()
         val_result = validator.validate_full_pipeline(
-            panel_data=panel_data,
-            weights=weights,
-            ranking_result=ranking_result,
             forecast_result=forecast_result,
+            er_result=er_result,
+            ranking_result=ranking_result,
         )
-        
+
         self.logger.info(
-            f"Validation: {'PASSED' if val_result.validation_passed else 'FAILED'} "
-            f"(score={val_result.overall_validity:.4f})"
+            f"Validation: {'PASSED' if val_result.validation_passed else 'FAILED'}"
         )
         if val_result.validation_warnings:
             for w in val_result.validation_warnings:
                 self.logger.warning(f"  {w}")
-        
         return val_result
 
     def _validate_sensitivity_result(self, sens_result: Any) -> None:
-        """
-        Validate that sensitivity result has all required hierarchical attributes.
-        Ensures production-ready structure - no legacy fallbacks allowed.
-        """
-        required_attrs = {
-            'subcriteria_sensitivity': 'Subcriteria-level weight sensitivity',
-            'criteria_sensitivity': 'Criteria-level weight sensitivity',
-            'temporal_stability': 'Temporal stability across years',
-            'top_n_stability': 'Top-N ranking stability',
-            'rank_stability': 'Province-level rank stability',
-            'overall_robustness': 'Overall robustness score',
-        }
-        
-        missing = []
-        empty = []
-        
-        for attr, description in required_attrs.items():
-            if not hasattr(sens_result, attr):
-                missing.append(f"{attr} ({description})")
-            else:
-                value = getattr(sens_result, attr)
-                # Check if dict/list attributes are empty
-                if isinstance(value, (dict, list)) and len(value) == 0:
-                    empty.append(f"{attr} ({description})")
-        
-        # PL-3: convert structural errors into logged warnings so they are
-        # not silently swallowed by the outer try/except in _run_analysis.
-        # A missing attribute is a real data-quality problem that deserves
-        # attention, but it should not discard an otherwise valid sensitivity
-        # result that was successfully computed.
-        if missing:
+        """Validate that sensitivity result exposes overall_robustness."""
+        if not hasattr(sens_result, 'overall_robustness'):
             self.logger.error(
-                'Sensitivity result is missing required attributes — results may '
-                'be incomplete.  Ensure SensitivityAnalysis.analyze_full_pipeline() '
-                'returns a complete hierarchical structure:\n  %s',
-                '\n  '.join(missing),
+                'Sensitivity result is missing overall_robustness — '
+                'CombinedSensitivityResult may not have been returned correctly.'
             )
-
-        if empty:
-            self.logger.warning(
-                'Sensitivity result has empty attributes (computed but no data):\n  %s',
-                '\n  '.join(empty),
-            )
+        else:
+            r = sens_result.overall_robustness
+            if r < 0.3:
+                self.logger.warning(
+                    f'Low overall robustness score ({r:.4f}) — results may be '
+                    f'sensitive to perturbations.'
+                )
 
     # -----------------------------------------------------------------
     # Phase 6 & 7 — now handled by VisualizationOrchestrator and

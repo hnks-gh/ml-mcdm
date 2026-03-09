@@ -1,358 +1,306 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """
-Unit tests for analysis/validation.py and weighting/validation.py
-â€” Phase 6 coverage.
+Unit tests for analysis/validation.py and weighting/validation.py.
 
-Covers the Phase 5 bug-fixes:
-  - M9:  Spearman rank correlation used in TemporalStabilityValidator
-  - M11: _validate_weight_temporal_stability returns 0.0 (not 0.90) when
-         no stability evidence (cosine_similarity / mc_diagnostics) is present
-  - M11: _validate_weight_method_agreement returns 1 - mean_cv using
-         Level-2 MC diagnostics; returns 0.0 when no diagnostics available
+Covers:
+  - ERValidator  (belief validity, completeness, cross-level consistency)
+  - ForecastValidator (CV diagnostics, interval coverage, residual tests)
+  - TemporalStabilityValidator (via weighting.validation, Spearman)
 
-Also covers TOPSIS/SAW/VIKOR fixes via edge-case assertions:
-  - M3:  TOPSIS degenerate case (all identical rows) returns 0.5 scores
-  - H2:  SAW zero-cost column does not give worst (0) score
-  - M2:  VIKOR compromise set contains correct members when C2 fails
+Regression tests preserved from earlier phases:
+  - TestTOPSISDegenerate  (M3)
+  - TestSAWZeroCost       (H2)
+  - TestVIKORCompromiseSetC2 (M2)
+  - TestModifiedEDASTrimmeanPath (H3)
+  - TestEvidentialReasoningKConstant (C2)
 """
 
 import numpy as np
 import pandas as pd
 import pytest
 
-from analysis.validation import Validator
-
 
 # ---------------------------------------------------------------------------
-# Helpers / minimal mock objects
+# Helpers
 # ---------------------------------------------------------------------------
 
-class _MinimalPanel:
-    """Minimal mock of PanelData for Validator unit tests."""
-
-    def __init__(self, n_years: int = 3):
-        self.years = list(range(2020, 2020 + n_years))
-
-    # No other attributes needed for the weight-validation methods
-
-
-def _make_weights(n_criteria: int = 4, seed: int = 0) -> dict:
-    """Return a minimal weights dict for validator unit tests."""
+def _make_forecast_result(n_entities=8, n_features=5, n_models=3, seed=0):
     rng = np.random.RandomState(seed)
-    raw = rng.dirichlet(np.ones(n_criteria))
-    subcriteria = [f"S{i}" for i in range(n_criteria)]
-    return {
-        "global_sc_weights": dict(zip(subcriteria, raw)),
-        "sc_array": raw.copy(),
-        "subcriteria": subcriteria,
-        "criterion_weights": {},
-        "details": {},   # no stability info â€” overridden per-test
+    entities = [f"P{i}" for i in range(n_entities)]
+    feats = [f"f{i}" for i in range(n_features)]
+    models = [f"model_{i}" for i in range(n_models)]
+
+    class _FR:
+        pass
+
+    fr = _FR()
+    fr.predictions = pd.DataFrame(
+        rng.rand(n_entities, 1), index=entities, columns=["c0"]
+    )
+    fr.uncertainty = pd.DataFrame(
+        rng.rand(n_entities, 1) * 0.1, index=entities, columns=["c0"]
+    )
+    fr.prediction_intervals = {
+        "main": pd.DataFrame(
+            np.column_stack([
+                fr.predictions.values[:, 0] - 0.1,
+                fr.predictions.values[:, 0] + 0.1,
+            ]),
+            index=entities,
+            columns=["lower", "upper"],
+        )
     }
+    fr.feature_importance = pd.DataFrame(
+        rng.rand(n_features, n_models) / n_features,
+        index=feats, columns=models,
+    )
+    fr.model_contributions = {m: 1.0 / n_models for m in models}
+    fr.model_performance = {m: {"r2": float(rng.uniform(0.5, 0.9))} for m in models}
+    fr.cross_validation_scores = {m: list(rng.uniform(0.4, 0.9, 5)) for m in models}
+    fr.holdout_performance = None
+    fr.training_info = {}
+    return fr
+
+
+def _make_er_result(n_entities=8, n_grades=4, seed=0):
+    rng = np.random.RandomState(seed)
+    from ranking.evidential_reasoning.base import BeliefDistribution
+
+    entities = [f"P{i}" for i in range(n_entities)]
+    grades = [f"G{i}" for i in range(n_grades)]
+    belief_dists = {}
+    for e in entities:
+        raw = rng.dirichlet(np.ones(n_grades))
+        belief_dists[e] = BeliefDistribution(grades=grades, beliefs=raw)
+
+    final_scores = pd.Series({e: belief_dists[e].average_utility() for e in entities})
+    final_ranking = final_scores.rank(ascending=False).astype(int)
+
+    class _ER:
+        pass
+
+    er = _ER()
+    er.belief_distributions = belief_dists
+    er.final_scores = final_scores
+    er.final_ranking = final_ranking
+    er.criterion_method_scores = {}
+    er.aggregation_weights = {f"method_{i}": 1.0 / 3 for i in range(3)}
+    return er
 
 
 # ---------------------------------------------------------------------------
-# M11 â€” _validate_weight_temporal_stability fallback is 0.0, not 0.90
+# ERValidator tests
 # ---------------------------------------------------------------------------
 
-class TestValidatorTemporalStability:
-    """When no bootstrap/stability evidence exists, return 0.0."""
+class TestERValidator:
 
-    def test_no_details_returns_zero(self):
-        """
-        weights['details'] is empty â†’ no bootstrap or stability info
-        â†’ must return 0.0, not 0.90.
-        """
-        validator = Validator()
-        panel = _MinimalPanel(n_years=3)
-        weights = _make_weights()
-        weights["details"] = {}   # explicitly empty
+    def test_returns_er_validation_result(self):
+        from analysis.validation import ERValidator, ERValidationResult
+        er = _make_er_result()
+        result = ERValidator().validate(er)
+        assert isinstance(result, ERValidationResult)
 
-        result = validator._validate_weight_temporal_stability(panel, weights)
+    def test_valid_beliefs_pass_belief_validity(self):
+        from analysis.validation import ERValidator
+        er = _make_er_result()
+        result = ERValidator().validate(er)
+        assert result.belief_validity is True
 
-        assert result == 0.0, (
-            f"Expected 0.0 fallback (not 0.90), got {result}. "
-            "M11 fix may not be applied."
-        )
+    def test_invalid_beliefs_fail_belief_validity(self):
+        from analysis.validation import ERValidator
+        er = _make_er_result()
+        # Inject a mock belief distribution that does NOT normalize (raw object)
+        class _FakeBD:
+            grades = ["G0", "G1"]
+            beliefs = np.array([0.8, 0.8])  # sum = 1.6 > 1
+            def utility_interval(self):
+                return (0.0, 1.0)
+        er.belief_distributions["BAD"] = _FakeBD()
+        result = ERValidator().validate(er)
+        # Should detect the sum > 1 violation
+        assert result.belief_validity is False or len(result.validation_warnings) > 0
 
-    def test_missing_details_key_returns_zero(self):
-        """weights has no 'details' key at all â†’ fallback is 0.0."""
-        validator = Validator()
-        panel = _MinimalPanel(n_years=3)
-        weights = _make_weights()
-        weights.pop("details", None)
+    def test_mean_belief_entropy_nonneg(self):
+        from analysis.validation import ERValidator
+        er = _make_er_result()
+        result = ERValidator().validate(er)
+        assert result.mean_belief_entropy >= 0.0
 
-        result = validator._validate_weight_temporal_stability(panel, weights)
-        assert result == 0.0, f"Expected 0.0, got {result}"
+    def test_er_aggregation_score_in_unit_interval(self):
+        from analysis.validation import ERValidator
+        er = _make_er_result()
+        result = ERValidator().validate(er)
+        assert 0.0 <= result.er_aggregation_score <= 1.0
 
-    def test_empty_bootstrap_returns_zero(self):
-        """details.bootstrap present but empty â†’ no std_weights â†’ returns 0.0."""
-        validator = Validator()
-        panel = _MinimalPanel(n_years=3)
-        weights = _make_weights()
-        weights["details"] = {"bootstrap": {}}
-
-        result = validator._validate_weight_temporal_stability(panel, weights)
-        assert result == 0.0, f"Expected 0.0, got {result}"
-
-    def test_with_cosine_similarity_returns_it(self):
-        """When stability.cosine_similarity is present, it should be returned."""
-        validator = Validator()
-        panel = _MinimalPanel(n_years=3)
-        weights = _make_weights()
-        weights["details"] = {"stability": {"cosine_similarity": 0.87}}
-
-        result = validator._validate_weight_temporal_stability(panel, weights)
-        assert abs(result - 0.87) < 1e-6, (
-            f"Expected cosine_similarity=0.87, got {result}"
-        )
-
-    def test_with_bootstrap_mean_cv_returns_stability(self):
-        """
-        When Level-2 MC cv_weights are provided, stability = 1 - mean_cv.
-        Craft a case with known CV and verify.
-
-        Note: all criteria contribute equally to mean_cv.
-        """
-        validator = Validator()
-        panel = _MinimalPanel(n_years=3)
-        weights = _make_weights()
-        # cv_weights: S0â†’0.10, S1â†’0.20, S2â†’0.00, S3â†’0.00
-        # mean_cv = (0.10 + 0.20 + 0.00 + 0.00) / 4 = 0.075
-        # stability = 1 - 0.075 = 0.925
-        weights["details"] = {
-            "level2": {
-                "mc_diagnostics": {
-                    "cv_weights": {
-                        "S0": 0.10, "S1": 0.20, "S2": 0.00, "S3": 0.00
-                    }
-                }
-            }
+    def test_grade_distribution_has_all_grades(self):
+        from analysis.validation import ERValidator
+        from ranking.evidential_reasoning.base import BeliefDistribution
+        grades = ["Low", "Medium", "High"]
+        entities = [f"E{i}" for i in range(5)]
+        rng = np.random.RandomState(42)
+        belief_dists = {
+            e: BeliefDistribution(grades=grades, beliefs=rng.dirichlet(np.ones(3)))
+            for e in entities
         }
+        scores = pd.Series({e: belief_dists[e].average_utility() for e in entities})
 
-        result = validator._validate_weight_temporal_stability(panel, weights)
-        expected = float(np.clip(1.0 - np.mean([0.10, 0.20, 0.00, 0.00]), 0.0, 1.0))
-        assert abs(result - expected) < 1e-6, (
-            f"Expected stabilityâ‰ˆ{expected:.4f}, got {result:.4f}"
-        )
+        class _ER:
+            pass
+        er = _ER()
+        er.belief_distributions = belief_dists
+        er.final_scores = scores
+        er.final_ranking = scores.rank(ascending=False).astype(int)
+        er.criterion_method_scores = {}
+        er.aggregation_weights = {}
 
-    def test_single_year_returns_one(self):
-        """
-        panel.years has only 1 year â†’ len(years) < 2 guard triggers â†’ returns 1.0.
-        """
-        validator = Validator()
-        panel = _MinimalPanel(n_years=1)
-        weights = _make_weights()
+        result = ERValidator().validate(er)
+        for g in grades:
+            assert g in result.grade_distribution
 
-        result = validator._validate_weight_temporal_stability(panel, weights)
-        assert result == 1.0, (
-            f"Expected 1.0 for single-year panel (trivially stable), got {result}"
-        )
+    def test_empty_belief_distributions_handled(self):
+        from analysis.validation import ERValidator
+        er = _make_er_result()
+        er.belief_distributions = {}
+        result = ERValidator().validate(er)
+        assert result is not None
+
+    def test_er_valid_attribute_is_bool(self):
+        from analysis.validation import ERValidator
+        er = _make_er_result()
+        result = ERValidator().validate(er)
+        assert isinstance(result.er_valid, bool)
 
 
 # ---------------------------------------------------------------------------
-# M11 â€” _validate_weight_method_agreement returns 0.0, not 0.85
+# ForecastValidator tests
 # ---------------------------------------------------------------------------
 
-class TestValidatorMethodAgreement:
-    """_validate_weight_method_agreement uses Level-2 MC CV to measure agreement."""
+class TestForecastValidator:
 
-    def test_single_method_returns_zero(self):
-        """
-        Only one weighting method available â†’ cannot compute pairwise
-        correlation â†’ must return 0.0 (not 0.85).
-        """
-        validator = Validator()
-        weights = {"critic": np.array([0.3, 0.4, 0.3])}
+    def test_returns_forecast_validation_result(self):
+        from analysis.validation import ForecastValidator, ForecastValidationResult
+        fr = _make_forecast_result()
+        result = ForecastValidator().validate(fr)
+        assert isinstance(result, ForecastValidationResult)
 
-        result = validator._validate_weight_method_agreement(weights)
-        assert result == 0.0, (
-            f"Expected 0.0 for single method (not 0.85), got {result}. "
-            "M11 fix may not be applied."
-        )
+    def test_cv_fold_stability_in_unit_interval(self):
+        from analysis.validation import ForecastValidator
+        fr = _make_forecast_result()
+        result = ForecastValidator().validate(fr)
+        assert 0.0 <= result.cv_fold_stability <= 1.0
 
-    def test_no_methods_returns_zero(self):
-        """Empty weights dict â†’ 0 methods â†’ must return 0.0."""
-        validator = Validator()
-        result = validator._validate_weight_method_agreement({})
-        assert result == 0.0, f"Expected 0.0, got {result}"
+    def test_interval_coverage_in_unit_interval(self):
+        from analysis.validation import ForecastValidator
+        fr = _make_forecast_result()
+        result = ForecastValidator().validate(fr)
+        assert 0.0 <= result.interval_coverage <= 1.0
 
-    def test_all_constant_arrays_returns_zero(self):
-        """
-        Constant arrays â†’ Spearman is NaN â†’ all correlations are NaN
-        â†’ must return 0.0 (not 0.85).
-        """
-        validator = Validator()
-        constant = np.array([0.25, 0.25, 0.25, 0.25])
-        weights = {
-            "critic":  constant.copy(),
-            "critic2": constant.copy(),
-        }
+    def test_interval_sharpness_nonneg(self):
+        from analysis.validation import ForecastValidator
+        fr = _make_forecast_result()
+        result = ForecastValidator().validate(fr)
+        assert result.interval_sharpness >= 0.0
 
-        result = validator._validate_weight_method_agreement(weights)
-        assert result == 0.0, (
-            f"Expected 0.0 for all-constant weights (NaN Spearman), got {result}"
-        )
+    def test_model_agreement_in_unit_interval(self):
+        from analysis.validation import ForecastValidator
+        fr = _make_forecast_result()
+        result = ForecastValidator().validate(fr)
+        assert 0.0 <= result.model_agreement <= 1.0
 
-    def test_zero_cv_weights_return_one(self):
-        """
-        When all criterion cv_weights are zero â†’ mean_cv = 0 â†’ 1 - 0 = 1.0.
-        """
-        validator = Validator()
-        weights = {
-            "details": {
-                "level2": {
-                    "mc_diagnostics": {
-                        "cv_weights": {"C01": 0.0, "C02": 0.0, "C03": 0.0, "C04": 0.0}
-                    }
-                }
-            }
-        }
+    def test_overall_score_in_unit_interval(self):
+        from analysis.validation import ForecastValidator
+        fr = _make_forecast_result()
+        result = ForecastValidator().validate(fr)
+        assert 0.0 <= result.overall_score <= 1.0
 
-        result = validator._validate_weight_method_agreement(weights)
-        assert abs(result - 1.0) < 1e-6, (
-            f"Expected 1.0 for zero CV weights, got {result}"
-        )
+    def test_forecast_valid_is_bool(self):
+        from analysis.validation import ForecastValidator
+        fr = _make_forecast_result()
+        result = ForecastValidator().validate(fr)
+        assert isinstance(result.forecast_valid, bool)
 
-    def test_known_cv_weights_return_expected_agreement(self):
-        """
-        Known cv_weights: mean_cv = (0.05 + 0.15) / 2 = 0.10
-        â†’ agreement = 1 - 0.10 = 0.90.
-        """
-        validator = Validator()
-        weights = {
-            "details": {
-                "level2": {
-                    "mc_diagnostics": {
-                        "cv_weights": {"C01": 0.05, "C02": 0.15}
-                    }
-                }
-            }
-        }
-        result = validator._validate_weight_method_agreement(weights)
-        expected = 1.0 - (0.05 + 0.15) / 2  # = 0.90
-        assert abs(result - expected) < 1e-6, (
-            f"Expected {expected:.4f}, got {result:.4f}"
-        )
+    def test_negative_r2_marks_forecast_invalid(self):
+        from analysis.validation import ForecastValidator
+        fr = _make_forecast_result()
+        # Force all models to negative R²
+        for m in fr.model_performance:
+            fr.model_performance[m] = {"r2": -0.5}
+        result = ForecastValidator().validate(fr)
+        # Very poor R² → should flag invalid
+        assert not result.forecast_valid or result.overall_score < 0.5
 
-    def test_low_cv_gives_positive_agreement(self):
-        """Low coefficient of variation in criterion weights â†’ agreement > 0.5."""
-        validator = Validator()
-        weights = {
-            "details": {
-                "level2": {
-                    "mc_diagnostics": {
-                        "cv_weights": {"C01": 0.03, "C02": 0.05, "C03": 0.04, "C04": 0.06}
-                    }
-                }
-            }
-        }
-        result = validator._validate_weight_method_agreement(weights)
-        assert result > 0.5, (
-            f"Expected positive agreement (>0.5) for low-CV weights, got {result}"
-        )
+    def test_empty_cv_scores_handled(self):
+        from analysis.validation import ForecastValidator
+        fr = _make_forecast_result()
+        fr.cross_validation_scores = {}
+        result = ForecastValidator().validate(fr)
+        assert result is not None
 
-    def test_two_methods_with_length_two_returns_zero(self):
-        """
-        Arrays shorter than 3 elements: Spearman not computable (skipped)
-        â†’ no valid correlations â†’ returns 0.0.
-        """
-        validator = Validator()
-        weights = {
-            "method_a": np.array([0.6, 0.4]),
-            "critic":   np.array([0.3, 0.7]),
-        }
-        # The condition `len(weight_arrays[i]) > 2` means len=2 is skipped
-        result = validator._validate_weight_method_agreement(weights)
-        assert result == 0.0, (
-            f"Expected 0.0 for length-2 arrays (too short for Spearman), got {result}"
-        )
+    def test_no_prediction_intervals_handled(self):
+        from analysis.validation import ForecastValidator
+        fr = _make_forecast_result()
+        fr.prediction_intervals = {}
+        result = ForecastValidator().validate(fr)
+        assert result is not None
 
 
 # ---------------------------------------------------------------------------
-# M9 â€” TemporalStabilityValidator uses Spearman (weighting/validation.py)
+# TemporalStabilityValidator (weighting/validation.py) - Spearman
 # ---------------------------------------------------------------------------
 
-class TestTemporalStabilityValidatorSpearman:
-    """TemporalStabilityValidator.validate() must use Spearman correlation."""
+class TestTemporalStabilityValidatorWeighting:
+    """
+    TemporalStabilityValidator from weighting.validation.
+    API: __init__(stability_threshold=) ; validate(weight_history_df)
+    Result fields: spearman_correlation, cosine_similarity, is_stable.
+    """
 
-    def test_identical_vectors_rank_correlation_is_one(self):
-        """
-        If w1 == w2, Spearman rank correlation must be 1.0 (or as close as
-        the nan_to_num guard permits for degenerate identical vectors).
-        """
-        from analysis.stability import TemporalStabilityValidator
+    @staticmethod
+    def _history(w1, w2):
+        """Build a 2-row DataFrame so split-half compares w1 vs w2."""
+        cols = [f"c{i}" for i in range(len(w1))]
+        return pd.DataFrame([w1, w2], columns=cols)
 
+    def test_identical_vectors_correlation_is_one(self):
+        from weighting.validation import TemporalStabilityValidator
         w = np.array([0.1, 0.4, 0.2, 0.3])
-        tsv = TemporalStabilityValidator(threshold=0.9)
-        result = tsv.validate(w.copy(), w.copy())
-
-        # Identical â†’ Spearman = 1.0 (not NaN because numpy would give NaN
-        # for identical vectors via corrcoef too, but spearmanr gives NaN
-        # only when all ranks are tied)
-        # In scipy.stats.spearmanr: identical vectors actually give 1.0
-        assert abs(result.correlation - 1.0) < 1e-6, (
-            f"Expected Spearman correlation = 1.0 for identical vectors, "
-            f"got {result.correlation}"
-        )
+        tsv = TemporalStabilityValidator(stability_threshold=0.9)
+        result = tsv.validate(self._history(w, w.copy()))
+        assert abs(result.spearman_correlation - 1.0) < 1e-6
 
     def test_reversed_vectors_give_minus_one(self):
-        """w2 is w1 reversed â†’ Spearman = -1.0."""
-        from analysis.stability import TemporalStabilityValidator
-
+        from weighting.validation import TemporalStabilityValidator
         w1 = np.array([0.4, 0.3, 0.2, 0.1])
         w2 = w1[::-1].copy()
-        tsv = TemporalStabilityValidator(threshold=0.9)
-        result = tsv.validate(w1, w2)
-
-        assert abs(result.correlation + 1.0) < 1e-6, (
-            f"Expected Spearman = -1.0 for reversed vectors, got {result.correlation}"
-        )
+        tsv = TemporalStabilityValidator(stability_threshold=0.9)
+        result = tsv.validate(self._history(w1, w2))
+        assert abs(result.spearman_correlation + 1.0) < 1e-6
 
     def test_correlation_in_minus_one_plus_one(self):
-        """Spearman correlation must lie in [-1, 1]."""
-        from analysis.stability import TemporalStabilityValidator
-
+        from weighting.validation import TemporalStabilityValidator
         rng = np.random.RandomState(99)
         for _ in range(10):
             w1 = rng.dirichlet(np.ones(5))
             w2 = rng.dirichlet(np.ones(5))
-            tsv = TemporalStabilityValidator(threshold=0.9)
-            result = tsv.validate(w1, w2)
-            assert -1.0 - 1e-9 <= result.correlation <= 1.0 + 1e-9
+            tsv = TemporalStabilityValidator(stability_threshold=0.9)
+            result = tsv.validate(self._history(w1, w2))
+            assert -1.0 - 1e-9 <= result.spearman_correlation <= 1.0 + 1e-9
 
-    def test_single_element_returns_one(self):
-        """Single-element vectors: len(w) == 1 â†’ correlation defaults to 1.0."""
-        from analysis.stability import TemporalStabilityValidator
-
-        tsv = TemporalStabilityValidator(threshold=0.9)
-        result = tsv.validate(np.array([1.0]), np.array([1.0]))
-        assert result.correlation == 1.0
-
-    def test_stability_flag_based_on_cosine_similarity(self):
-        """
-        is_stable is determined by cosine similarity â‰¥ threshold;
-        correlation value does not affect the flag.
-        """
-        from analysis.stability import TemporalStabilityValidator
-
-        # High cosine similarity â†’ stable even if correlation is not 1
-        w1 = np.array([0.3, 0.4, 0.3])
-        w2 = np.array([0.31, 0.39, 0.30])  # very close to w1
-        tsv = TemporalStabilityValidator(threshold=0.99)
-        result_tight = tsv.validate(w1, w2)
-
-        w3 = np.array([0.30, 0.40, 0.30])  # essentially same
-        tsv_loose = TemporalStabilityValidator(threshold=0.5)
-        result_loose = tsv_loose.validate(w1, w3)
-        assert result_loose.is_stable
+    def test_close_vectors_stable(self):
+        from weighting.validation import TemporalStabilityValidator
+        w1 = np.array([0.30, 0.40, 0.30])
+        w2 = np.array([0.31, 0.39, 0.30])
+        tsv = TemporalStabilityValidator(stability_threshold=0.5)
+        result = tsv.validate(self._history(w1, w2))
+        assert result.is_stable
 
 
 # ---------------------------------------------------------------------------
-# Regression tests for earlier fixed bugs
+# Regression tests preserved from earlier phases
 # ---------------------------------------------------------------------------
 
 class TestTOPSISDegenerate:
-    """M3 â€” TOPSIS degenerate case: all identical rows â†’ score = 0.5 (not 0.0)."""
+    """M3 — TOPSIS degenerate case: all identical rows → score = 0.5."""
 
     def test_identical_rows_score_half(self):
         from ranking.topsis import TOPSISCalculator
@@ -365,20 +313,13 @@ class TestTOPSISDegenerate:
         res = calc.calculate(dm, {"C1": 0.5, "C2": 0.5})
 
         for alt in ["X", "Y", "Z"]:
-            assert abs(res.scores[alt] - 0.5) < 1e-9, (
-                f"Degenerate TOPSIS: expected 0.5 for {alt}, got {res.scores[alt]}"
-            )
+            assert abs(res.scores[alt] - 0.5) < 1e-9
 
 
 class TestSAWZeroCost:
-    """H2 â€” SAW: zero-cost value must not get worst (0) score in max/sum modes."""
+    """H2 — SAW: zero-cost value must not get worst (0) score in max/sum modes."""
 
     def test_max_mode_zero_cost_not_worst(self):
-        """
-        With normalization='max' and a cost column whose best alternative
-        has value 0, normalization = (max - x) / max.
-        The alternative with cost=0 should receive score 1 (best), not 0.
-        """
         from ranking.saw import SAWCalculator
 
         dm = pd.DataFrame(
@@ -387,17 +328,9 @@ class TestSAWZeroCost:
         )
         calc = SAWCalculator(normalization="max", cost_criteria=["cost"])
         res = calc.calculate(dm, {"benefit": 0.5, "cost": 0.5})
-
-        # 'Best' has highest benefit and lowest cost â†’ should be ranked 1
-        assert res.ranks["Best"] == 1, (
-            f"Expected 'Best' to be rank 1 (zero cost + high benefit), got rank {res.ranks['Best']}"
-        )
+        assert res.ranks["Best"] == 1
 
     def test_sum_mode_zero_cost_not_crash(self):
-        """
-        With normalization='sum' and a cost column containing zero,
-        replacing zeros with Îµ before inversion prevents divide-by-zero.
-        """
         from ranking.saw import SAWCalculator
 
         dm = pd.DataFrame(
@@ -405,28 +338,24 @@ class TestSAWZeroCost:
             index=["A", "B"],
         )
         calc = SAWCalculator(normalization="sum", cost_criteria=["C_cost"])
-        # Should not raise ZeroDivisionError or produce NaN
         res = calc.calculate(dm, {"C1": 0.5, "C_cost": 0.5})
-        assert not res.scores.isna().any(), "SAW sum-mode zero-cost produced NaN scores"
+        assert not res.scores.isna().any()
 
 
 class TestVIKORCompromiseSetC2:
-    """M2 â€” VIKOR compromise set must include best_by_S and best_by_R when C2 fails."""
+    """M2 — VIKOR compromise set must include best_by_S and best_by_R when C2 fails."""
 
     def test_compromise_set_is_subset_of_alternatives(self):
         from ranking.vikor import VIKORCalculator
 
-        # Use an asymmetric dataset so C1/C2 conditions may not both hold
         dm = pd.DataFrame(
             {"C1": [0.9, 0.8, 0.5, 0.2], "C2": [0.8, 0.6, 0.7, 0.4]},
             index=["A", "B", "C", "D"],
         )
         calc = VIKORCalculator(v=0.5)
         res = calc.calculate(dm, {"C1": 0.5, "C2": 0.5})
-
-        # All members of compromise_set must be actual alternatives
         for alt in res.compromise_set:
-            assert alt in dm.index, f"Compromise set member {alt!r} not in alternatives"
+            assert alt in dm.index
 
     def test_compromise_set_non_empty(self):
         from ranking.vikor import VIKORCalculator
@@ -437,16 +366,13 @@ class TestVIKORCompromiseSetC2:
         )
         calc = VIKORCalculator()
         res = calc.calculate(dm, {"C1": 0.5, "C2": 0.5})
-        assert len(res.compromise_set) >= 1, (
-            "Compromise set must contain at least one alternative"
-        )
+        assert len(res.compromise_set) >= 1
 
 
 class TestModifiedEDASTrimmeanPath:
-    """H3 â€” ModifiedEDAS with trimmed mean must produce a valid result."""
+    """H3 — ModifiedEDAS with trimmed mean must produce a valid result."""
 
     def test_trimmed_mean_differs_from_regular_mean(self):
-        """ModifiedEDAS(use_trimmed_mean=True) must use the trimmed path."""
         from ranking.edas import EDASCalculator, ModifiedEDAS
 
         rng = np.random.RandomState(7)
@@ -458,52 +384,26 @@ class TestModifiedEDASTrimmeanPath:
         res_regular = EDASCalculator().calculate(dm, weights)
         res_trimmed = ModifiedEDAS(use_trimmed_mean=True).calculate(dm, weights)
 
-        # Both must return results with valid shapes
         assert res_regular.AS.shape[0] == 10
         assert res_trimmed.AS.shape[0] == 10
+        assert not np.allclose(res_regular.AS.values, res_trimmed.AS.values)
 
-        # Appraisal scores must differ from the regular path
-        assert not np.allclose(res_regular.AS.values, res_trimmed.AS.values), (
-            "ModifiedEDAS trimmed-mean path returned same scores as regular EDAS "
-            "â€” H3 fix may not be applied"
-        )
-
-
-# ---------------------------------------------------------------------------
-# ER K constant regression (C2)
-# ---------------------------------------------------------------------------
 
 class TestEvidentialReasoningKConstant:
-    """
-    C2 â€” ER combine() must use the correct normalisation constant
-    K = 1 / (âˆ‘âˆA âˆ’ (Nâˆ’1)Â·âˆB), not 1 / (1 âˆ’ âˆB).
-    """
+    """C2 — ER combine() must use correct normalisation constant K."""
 
     def test_k_constant_correct_for_two_independent_sources(self):
-        """
-        For two fully certain sources with disjoint dominant grades,
-        the ER result must still be valid (beliefs sum â‰¤ 1).
-        With the wrong K = 1/(1âˆ’âˆB) several mass configurations produce
-        beliefs > 1.
-        """
         from ranking.evidential_reasoning.base import BeliefDistribution, EvidentialReasoningEngine
 
         engine = EvidentialReasoningEngine(grades=["H1", "H2", "H3"])
-        # Source heavily in H1
         b1 = BeliefDistribution(grades=["H1", "H2", "H3"], beliefs=np.array([0.9, 0.05, 0.05]))
-        # Source heavily in H3
         b2 = BeliefDistribution(grades=["H1", "H2", "H3"], beliefs=np.array([0.05, 0.05, 0.9]))
-
         result = engine.combine([b1, b2], weights=np.array([0.5, 0.5]))
 
-        assert result.beliefs.sum() <= 1.0 + 1e-9, (
-            f"ER K-constant bug: beliefs sum to {result.beliefs.sum():.6f} > 1  "
-            "C2 fix may not be applied"
-        )
+        assert result.beliefs.sum() <= 1.0 + 1e-9
         assert (result.beliefs >= -1e-9).all()
 
     def test_three_sources_valid(self):
-        """Three sources combined with correct K must produce valid beliefs."""
         from ranking.evidential_reasoning.base import BeliefDistribution, EvidentialReasoningEngine
 
         engine = EvidentialReasoningEngine(grades=["A", "B", "C", "D"])
@@ -521,7 +421,6 @@ class TestEvidentialReasoningKConstant:
         assert (result.beliefs >= -1e-9).all()
 
     def test_uniform_sources_stay_uniform(self):
-        """When all sources are uniform, result should remain near-uniform."""
         from ranking.evidential_reasoning.base import BeliefDistribution, EvidentialReasoningEngine
 
         engine = EvidentialReasoningEngine(grades=["A", "B", "C", "D"])
@@ -530,10 +429,5 @@ class TestEvidentialReasoningKConstant:
                                       beliefs=beliefs.copy()) for _ in range(3)]
         result = engine.combine(sources, weights=np.array([1 / 3, 1 / 3, 1 / 3]))
 
-        # All grades should receive equal belief (up to floating-point)
         std_belief = result.beliefs.std()
-        assert std_belief < 0.01, (
-            f"Uniform sources should yield ~uniform combined beliefs, "
-            f"std={std_belief:.4f}"
-        )
-
+        assert std_belief < 0.01

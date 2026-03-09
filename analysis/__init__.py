@@ -3,60 +3,73 @@
 Analysis Module
 ===============
 
-Centralised analysis layer for the ML-MCDM pipeline.
+Focused analysis layer for ML Forecasting and Evidential Reasoning.
 
 Components
 ----------
-Sensitivity Analysis
-    Hierarchical sensitivity for traditional MCDM + ER + Forecasting pipeline.
-    - Multi-level analysis (subcriteria → criteria → final)
-    - Temporal stability across years
-    - Forecast robustness testing
+Sensitivity Analysis (ML + ER)
+    - ML: feature importance stability, LOO model impact, prediction sensitivity,
+      temporal fold stability, conformal interval width sensitivity
+    - ER: criterion belief sensitivity (OAT), grade threshold sensitivity,
+      aggregation weight sensitivity, utility interval analysis, cross-level
+      consistency, belief entropy diagnostics
 
-Validation
-    Comprehensive validation for hierarchical MCDM + ER pipeline.
-    - Cross-level consistency checking
-    - Weight scheme robustness
-    - Forecast quality metrics
-    - End-to-end pipeline validation
+Validation (ML + ER)
+    - ML: CV fold diagnostics, conformal interval calibration, OOS evaluation,
+      ensemble diversity, residual normality / autocorrelation / homoscedasticity
+    - ER: belief admissibility, aggregation quality, utility interval widths,
+      cross-level Spearman consistency, grade distribution diagnostics
 
-Bootstrap
-    Bayesian Bootstrap (Rubin, 1981) for weight uncertainty quantification.
-    - Dirichlet resampling via continuous observation weights
-    - Posterior mean / std / 95 % credible intervals
-    - Early-stopping convergence detection
+Bootstrap (ML + ER)
+    - ML: residual bootstrap for prediction uncertainty + feature importance stability
+    - ER: belief distribution bootstrap via simplex-projected Gaussian perturbations
 
-Stability
-    Split-half temporal stability validation for weight vectors.
-    - Cosine similarity and Spearman rank correlation
-    - Configurable stability threshold
+Stability (ML + ER)
+    - ML: temporal fold-to-fold consistency, entity rank volatility, model agreement
+    - ER: belief cosine similarity, utility rank correlation, grade consistency
 """
 
 # Sensitivity Analysis
 from .sensitivity import (
-    SensitivityAnalysis,
-    SensitivityResult,
+    MLSensitivityResult,
+    ERSensitivityResult,
+    CombinedSensitivityResult,
+    MLSensitivityAnalysis,
+    ERSensitivityAnalysis,
+    run_ml_sensitivity_analysis,
+    run_er_sensitivity_analysis,
     run_sensitivity_analysis,
 )
 
 # Validation
 from .validation import (
-    Validator,
+    ERValidationResult,
+    ForecastValidationResult,
     ValidationResult,
+    ERValidator,
+    ForecastValidator,
+    Validator,
     run_validation,
 )
 
-# Bootstrap — weight uncertainty quantification
+# Bootstrap — ML + ER uncertainty quantification
 from .bootstrap import (
-    bayesian_bootstrap_weights,
-    BayesianBootstrap,
+    ForecastBootstrapResult,
+    ERBootstrapResult,
+    ForecastBootstrap,
+    ERBootstrap,
+    forecast_bootstrap,
+    er_bootstrap,
 )
 
-# Stability — temporal stability testing
+# Stability — ML + ER stability analysis
 from .stability import (
-    StabilityResult,
-    TemporalStabilityValidator,
-    temporal_stability_verification,
+    ForecastStabilityResult,
+    ERStabilityResult,
+    ForecastStabilityAnalyzer,
+    ERStabilityAnalyzer,
+    analyze_forecast_stability,
+    analyze_er_stability,
 )
 
 __all__ = [
