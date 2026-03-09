@@ -134,7 +134,7 @@ class TestFeatureEngineer:
             include_momentum=True, include_cross_entity=True,
             target_level='subcriteria',
         )
-        X_train, y_train, X_pred, info = eng.fit_transform(panel, target_year=2017)
+        X_train, y_train, X_pred, info, _, _ = eng.fit_transform(panel, target_year=2017)
 
         # 4 entities × 5 year-pairs (2011→12, 12→13, 13→14, 14→15, 15→16)
         assert X_train.shape[0] == 4 * 5
@@ -146,7 +146,7 @@ class TestFeatureEngineer:
 
         panel = self._make_mock_panel()
         eng = TemporalFeatureEngineer(lag_periods=[1], rolling_windows=[2], target_level='subcriteria')
-        _, _, _, info = eng.fit_transform(panel, target_year=2016)
+        _, _, _, info, _, _ = eng.fit_transform(panel, target_year=2016)
         assert "entity_index" in info.columns
 
     def test_feature_dimensions_consistent(self):
@@ -154,7 +154,7 @@ class TestFeatureEngineer:
 
         panel = self._make_mock_panel(n_entities=3, n_years=5, n_components=3)
         eng = TemporalFeatureEngineer(lag_periods=[1, 2], rolling_windows=[2, 3], target_level='subcriteria')
-        X_train, _, X_pred, _ = eng.fit_transform(panel, target_year=2016)
+        X_train, _, X_pred, _, _, _ = eng.fit_transform(panel, target_year=2016)
         assert X_train.shape[1] == X_pred.shape[1]
         assert len(eng.get_feature_names()) == X_train.shape[1]
 
@@ -163,7 +163,7 @@ class TestFeatureEngineer:
 
         panel = self._make_mock_panel()
         eng = TemporalFeatureEngineer(lag_periods=[1], rolling_windows=[2], target_level='subcriteria')
-        X_train, y_train, X_pred, _ = eng.fit_transform(panel, target_year=2016)
+        X_train, y_train, X_pred, _, _, _ = eng.fit_transform(panel, target_year=2016)
         assert not np.isnan(X_train.values).any()
         assert not np.isnan(y_train.values).any()
         assert not np.isnan(X_pred.values).any()
@@ -175,25 +175,28 @@ class TestFeatureEngineer:
 
 class TestGradientBoosting:
     def test_fit_predict_multioutput(self, small_dataset):
-        from forecasting.gradient_boosting import GradientBoostingForecaster
+        from forecasting.gradient_boosting import CatBoostForecaster
 
         X, y = small_dataset
-        model = GradientBoostingForecaster(n_estimators=20, random_state=42)
+        model = CatBoostForecaster(iterations=20, random_state=42)
         model.fit(X, y)
         pred = model.predict(X)
         assert pred.shape == y.shape
 
     def test_no_random_early_stopping(self):
-        from forecasting.gradient_boosting import GradientBoostingForecaster
+        """CatBoostForecaster has allow_writing_files=False and verbose=0 by default."""
+        from forecasting.gradient_boosting import CatBoostForecaster
 
-        model = GradientBoostingForecaster()
-        assert model._base_model.n_iter_no_change is None
+        model = CatBoostForecaster()
+        # Verify the compiled model is not yet created (fit() not called)
+        assert model.model is None
+        assert model.iterations == 300  # class default
 
     def test_feature_importance(self, small_dataset):
-        from forecasting.gradient_boosting import GradientBoostingForecaster
+        from forecasting.gradient_boosting import CatBoostForecaster
 
         X, y = small_dataset
-        model = GradientBoostingForecaster(n_estimators=20, random_state=42)
+        model = CatBoostForecaster(iterations=20, random_state=42)
         model.fit(X, y)
         imp = model.get_feature_importance()
         assert len(imp) == X.shape[1]
@@ -462,12 +465,12 @@ class TestNeuralAdditive:
 class TestSuperLearner:
     def test_weights_non_negative_and_sum_one(self, small_dataset):
         from forecasting.super_learner import SuperLearner
-        from forecasting.gradient_boosting import GradientBoostingForecaster
+        from forecasting.gradient_boosting import CatBoostForecaster
         from forecasting.bayesian import BayesianForecaster
 
         X, y = small_dataset
         models = {
-            "gb": GradientBoostingForecaster(n_estimators=20, random_state=42),
+            "gb": CatBoostForecaster(iterations=20, random_state=42),
             "bay": BayesianForecaster(),
         }
         sl = SuperLearner(
@@ -508,12 +511,12 @@ class TestSuperLearner:
 
     def test_predict_shape(self, small_dataset):
         from forecasting.super_learner import SuperLearner
-        from forecasting.gradient_boosting import GradientBoostingForecaster
+        from forecasting.gradient_boosting import CatBoostForecaster
         from forecasting.bayesian import BayesianForecaster
 
         X, y = small_dataset
         models = {
-            "gb": GradientBoostingForecaster(n_estimators=10, random_state=42),
+            "gb": CatBoostForecaster(iterations=10, random_state=42),
             "bay": BayesianForecaster(),
         }
         sl = SuperLearner(
@@ -716,10 +719,11 @@ class TestPhaseRegression:
         assert cp._q_hat > 0
 
     def test_phase2_gb_no_early_stop(self):
-        from forecasting.gradient_boosting import GradientBoostingForecaster
+        from forecasting.gradient_boosting import CatBoostForecaster
 
-        gb = GradientBoostingForecaster()
-        assert gb._base_model.n_iter_no_change is None
+        cb = CatBoostForecaster()
+        # CatBoost writes no files and emits no per-iteration console output
+        assert cb.model is None  # not yet fitted
 
     def test_phase2_lag_matrix(self):
         from forecasting.panel_var import PanelVARForecaster
@@ -752,11 +756,11 @@ class TestKnownAnswerForecasting:
         return X, y
 
     def test_gradient_boosting_recovers_known_slope(self, linear_data):
-        """GradientBoostingForecaster predicts y ≈ 2x on held-out points."""
-        from forecasting.gradient_boosting import GradientBoostingForecaster
+        """CatBoostForecaster predicts y ≈ 2x on held-out points."""
+        from forecasting.gradient_boosting import CatBoostForecaster
 
         X, y = linear_data
-        model = GradientBoostingForecaster(n_estimators=100, random_state=42)
+        model = CatBoostForecaster(iterations=100, random_state=42)
         model.fit(X, y)
 
         x_vals = np.array([[1.0], [-1.0], [2.0], [0.5]])
@@ -962,8 +966,8 @@ class TestAuditRegressions:
         uf = UnifiedForecaster(config=cfg)
         models = uf._create_models()
 
-        assert models["GradientBoosting"].max_depth == 3
-        assert models["GradientBoosting"].n_estimators == 50
+        assert models["GradientBoosting"].depth == 3
+        assert models["GradientBoosting"].iterations == 50
         assert models["NAM"].n_basis_per_feature == 15
         assert models["NAM"].n_iterations == 3
 
@@ -972,12 +976,12 @@ class TestAuditRegressions:
     # -----------------------------------------------------------------------
 
     def test_b10_gb_class_default_max_depth_is_5(self):
-        """Bug B-1 / Phase 10: GradientBoostingForecaster class default max_depth must be 5."""
-        from forecasting.gradient_boosting import GradientBoostingForecaster
+        """CatBoostForecaster class default depth must be 6 (CatBoost standard)."""
+        from forecasting.gradient_boosting import CatBoostForecaster
 
-        gb = GradientBoostingForecaster()
-        assert gb.max_depth == 5, (
-            f"Class default max_depth={gb.max_depth}, expected 5. "
-            "The class default was aligned to n=756 sample-size optimum in Phase 10."
+        cb = CatBoostForecaster()
+        assert cb.depth == 6, (
+            f"Class default depth={cb.depth}, expected 6. "
+            "CatBoost default depth=6 (2^6=64 leaves) replaces sklearn depth=5."
         )
-        assert gb._base_model.max_depth == 5
+        assert cb.iterations == 300  # class default for n >= 500

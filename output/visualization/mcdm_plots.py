@@ -86,7 +86,8 @@ class MCDMPlotter(BasePlotter):
         # Layout: heatmap + dendrogram strip on top
         if HAS_SCIPY and n >= 3:
             fig = plt.figure(figsize=(max(9, n * 0.75 + 2),
-                                      max(8, n * 0.65 + 2)))
+                                      max(8, n * 0.65 + 2)),
+                            layout='constrained')
             gs = fig.add_gridspec(2, 2,
                                   height_ratios=[0.8, n * 0.65 + 1],
                                   width_ratios=[n * 0.75 + 2, 0.6],

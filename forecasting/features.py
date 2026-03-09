@@ -36,6 +36,127 @@ from typing import Dict, List, Optional, Tuple
 from data.missing_data import fill_missing_features, has_complete_target
 
 
+class SAWNormalizer:
+    """
+    Per-year, column-wise minmax normalization of criteria cross-sections.
+
+    Applies the SAW method's minmax normalization (benefit criteria) to each
+    year's decision matrix (entities × criteria), producing bounded [0, 1]
+    values that:
+
+    * Remove cross-year level differences — each year is rescaled
+      independently so predictions from different years are on a common scale.
+    * Preserve within-year ordinal structure — relative rankings of
+      provinces on each criterion are unchanged.
+    * Are free of CRITIC weighting bias — raw criterion composites reflect
+      the year-specific CRITIC weights used during data preparation; SAW
+      normalization removes this confound.
+
+    This replicates ``SAWCalculator._normalize(normalization='minmax')`` for
+    *benefit* criteria only (no cost-criterion inversion for C01–C08).
+
+    Notes
+    -----
+    Degenerate columns (all values identical or all NaN):
+        Mapped to 0.0; no exception is raised.
+
+    NaN preservation:
+        A province whose raw value is NaN receives NaN in the output.
+        Callers decide on exclusion or imputation.  During training, the
+        ``TemporalFeatureEngineer`` applies the same exclusion/imputation
+        rules used in non-SAW mode.
+
+    Numerical stability:
+        ``np.errstate(invalid='ignore', divide='ignore')`` suppresses the
+        0/0 warning for degenerate columns; results are then forced to 0.0.
+        Outputs are clipped to [0, 1] to guard against float precision edge
+        cases (e.g. a value that is marginally outside the observed range due
+        to rounding).
+    """
+
+    def normalize_cross_section(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Normalize a (entities × criteria) cross-section via column-wise minmax.
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            Raw criteria composite values, shape ``(n_entities, n_criteria)``.
+            Index = province/entity names; columns = criterion identifiers.
+
+        Returns
+        -------
+        pd.DataFrame
+            Minmax-normalized values in [0, 1], same index and columns.
+            NaN cells remain NaN.  Degenerate columns (min == max) → 0.0.
+
+        Examples
+        --------
+        >>> import pandas as pd
+        >>> norm = SAWNormalizer()
+        >>> df = pd.DataFrame({'C1': [1.0, 2.0, 3.0], 'C2': [5.0, 5.0, 5.0]})
+        >>> norm.normalize_cross_section(df)
+             C1   C2
+        0  0.0  0.0
+        1  0.5  0.0
+        2  1.0  0.0
+        """
+        X = df.values.astype(float)
+        nan_mask = np.isnan(X)
+
+        min_v = np.nanmin(X, axis=0)   # shape (n_criteria,)
+        max_v = np.nanmax(X, axis=0)
+        rng = max_v - min_v            # 0 for degenerate / all-NaN columns
+
+        # Vectorised minmax; degenerate columns yield 0/0 → set to 0.0
+        with np.errstate(invalid='ignore', divide='ignore'):
+            norm = np.where(rng > 0, (X - min_v) / rng, 0.0)
+
+        # Clip to [0, 1] to guard float precision edge cases
+        norm = np.clip(norm, 0.0, 1.0)
+
+        # Restore NaN cells that were present in the original data
+        norm[nan_mask] = np.nan
+
+        return pd.DataFrame(norm, index=df.index, columns=df.columns)
+
+    def normalize_year(self, panel_data, year: int) -> pd.DataFrame:
+        """
+        Retrieve and normalize the criteria cross-section for a given year.
+
+        Parameters
+        ----------
+        panel_data : PanelData
+            Panel data object with a ``criteria_cross_section`` attribute
+            (dict keyed by year → province-indexed DataFrame with C01..C08).
+        year : int
+            Calendar year to normalize.
+
+        Returns
+        -------
+        pd.DataFrame
+            Normalized decision matrix (entities × criteria) in [0, 1].
+            Index = province names, columns = criteria names (C01..C08).
+
+        Raises
+        ------
+        KeyError
+            If ``year`` is not present in ``panel_data.criteria_cross_section``.
+        """
+        cs = panel_data.criteria_cross_section.get(year)
+        if cs is None:
+            available = sorted(panel_data.criteria_cross_section)
+            raise KeyError(
+                f"SAWNormalizer: no criteria_cross_section for year {year}. "
+                f"Available years: {available}"
+            )
+        # Ensure province names are the index (some callers may leave Province
+        # as a column rather than the index).
+        if 'Province' in cs.columns:
+            cs = cs.set_index('Province')
+        return self.normalize_cross_section(cs)
+
+
 class TemporalFeatureEngineer:
     """
     Advanced feature engineering for time series panel data.
@@ -73,8 +194,11 @@ class TemporalFeatureEngineer:
     
     def fit_transform(self,
                       panel_data,
-                      target_year: int
-                      ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+                      target_year: int,
+                      use_saw_normalization: bool = False,
+                      holdout_year: Optional[int] = None,
+                      ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame,
+                                 pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         """
         Create feature matrix for training and prediction with dynamic exclusion.
 
@@ -97,13 +221,73 @@ class TemporalFeatureEngineer:
         callers can see, e.g., "SC53: 13/14 valid target years (1 year missing,
         excluded from training)".
 
+        **SAW normalization (use_saw_normalization=True, criteria mode only):**
+
+        When ``use_saw_normalization=True``:
+
+        * For each training pair ``(year_t, year_{t+1})``, the target vector
+          is taken from ``SAWNormalizer.normalize_year(panel_data, year_{t+1})``
+          rather than from raw ``entity_data.loc[year_{t+1}]``.  This means the
+          model is trained to predict per-year minmax-normalized criterion scores
+          bounded in [0, 1] rather than raw composite values.
+        * Per-year normalization is pre-computed once over all years for
+          efficiency (O(Y) normalization passes, not O(N × Y)).
+        * Fallback: if ``year_{t+1}`` has no cross-section entry (e.g. a
+          synthetic future year) or the entity has no row in the cross-section,
+          the raw value is used instead.
+        * NaN handling for criteria mode is unchanged: rows where the entire
+          normalized target vector is NaN are excluded; rows with *partial* NaN
+          (some criteria missing) have those cells imputed with the per-column
+          median of the normalized training targets (still in [0, 1]).
+
+        **Holdout split (holdout_year is not None):**
+
+        Training samples whose *target* year equals ``holdout_year`` are
+        separated into ``X_holdout / y_holdout`` instead of
+        ``X_train / y_train``.  The holdout set is never used during fitting;
+        it is returned to the caller for post-training evaluation.
+
+        When ``holdout_year`` falls within the training window (typically
+        ``holdout_year = max(training_years)``), the effective training set
+        shrinks by one year-step.  For example, with data 2011–2024 and
+        ``target_year = 2025``:
+
+        * ``holdout_year = 2024`` → training covers targets 2012–2023 (features
+          2011–2022); holdout = targets 2024 (features 2023); prediction uses
+          features 2024 to forecast 2025.
+
         Args:
             panel_data: Panel data object with provinces, years, subcriteria,
                         and (optionally) ``year_contexts``.
             target_year: Year to predict.
+            use_saw_normalization: When True (and ``target_level == 'criteria'``),
+                replace raw target values with SAW per-year minmax-normalized
+                scores in [0, 1].  Ignored in sub-criteria mode.
+            holdout_year: When not None, training samples whose target year
+                equals this value are withheld and returned as
+                ``(X_holdout, y_holdout)``.  Typically set to
+                ``max(training_years)`` so the most recent complete year
+                serves as a true out-of-sample evaluation set.
 
         Returns:
-            X_train, y_train, X_pred, entity_index
+            Tuple of six DataFrames:
+
+            X_train (n_train × n_features)
+                Feature matrix for model fitting.  Excludes holdout rows.
+            y_train (n_train × n_components)
+                Target matrix.  Values are SAW-normalized [0, 1] when
+                ``use_saw_normalization=True``; raw composites otherwise.
+            X_pred (n_pred × n_features)
+                Feature matrix for the forecast target year, indexed by
+                province name.
+            entity_info (n_train × 1)
+                Training entity integer indices (column ``entity_index``).
+            X_holdout (n_holdout × n_features)
+                Holdout feature matrix.  Empty DataFrame when
+                ``holdout_year`` is None or no samples fall in that year.
+            y_holdout (n_holdout × n_components)
+                Holdout target matrix (same normalization as ``y_train``).
+                Empty DataFrame when ``holdout_year`` is None.
         """
         entities   = panel_data.provinces
         years      = sorted(panel_data.years)
@@ -152,11 +336,26 @@ class TemporalFeatureEngineer:
                     )
 
         # ------------------------------------------------------------------
-        # Build training and prediction samples
+        # Pre-compute SAW-normalized cross-sections (one pass per year, O(Y))
+        # Used only in criteria mode when use_saw_normalization=True.
         # ------------------------------------------------------------------
-        X_train_list:  List[np.ndarray] = []
-        y_train_list:  List[np.ndarray] = []
-        entity_indices: List[int] = []
+        saw_norms: Dict[int, pd.DataFrame] = {}
+        if use_saw_normalization and self.target_level == "criteria":
+            _saw_normalizer = SAWNormalizer()
+            for yr in years:
+                try:
+                    saw_norms[yr] = _saw_normalizer.normalize_year(panel_data, yr)
+                except (KeyError, Exception):
+                    pass  # Graceful skip (year absent from cross-section dict)
+
+        # ------------------------------------------------------------------
+        # Build training, holdout, and prediction samples
+        # ------------------------------------------------------------------
+        X_train_list:    List[np.ndarray] = []
+        y_train_list:    List[np.ndarray] = []
+        entity_indices:  List[int] = []
+        X_holdout_list:  List[np.ndarray] = []
+        y_holdout_list:  List[np.ndarray] = []
         pred_feature_list: List[np.ndarray] = []
         pred_entities: List[str] = []
 
@@ -205,14 +404,51 @@ class TemporalFeatureEngineer:
                     n_skipped_train += 1
                     continue
 
+                # ---- Resolve target vector --------------------------------
+                # When SAW normalization is enabled and a cross-section is
+                # available for next_yr, look up the pre-normalized row.
+                # Fallback to raw entity_data values if the entity is absent
+                # from the cross-section (should be rare given active-province
+                # guard above) or if SAW norms are not pre-computed.
+                if (
+                    use_saw_normalization
+                    and self.target_level == "criteria"
+                    and next_yr in saw_norms
+                ):
+                    saw_cs = saw_norms[next_yr]
+                    if entity in saw_cs.index:
+                        # Align to the component list in case column ordering
+                        # differs between cross-section and entity time series
+                        target = (
+                            saw_cs.loc[entity, [c for c in components
+                                                if c in saw_cs.columns]]
+                            .reindex(components)
+                            .values
+                            .astype(float)
+                        )
+                    else:
+                        # Entity absent from cross-section → raw fallback
+                        target = (
+                            entity_data.loc[next_yr, components]
+                            .values.astype(float)
+                        )
+                else:
+                    target = entity_data.loc[next_yr, components].values.astype(float)
+
                 # Build features; NaN feature cells → 0.0 (no prior info)
                 features = self._create_features_safe(
                     entity_data, entity, years, year, entities, panel_data
                 )
 
-                X_train_list.append(features)
-                y_train_list.append(target)
-                entity_indices.append(ent_idx)
+                # ---- Route to training or holdout -------------------------
+                if holdout_year is not None and next_yr == holdout_year:
+                    X_holdout_list.append(features)
+                    y_holdout_list.append(target)
+                    # Note: entity_indices is training-only (panel-aware CV)
+                else:
+                    X_train_list.append(features)
+                    y_train_list.append(target)
+                    entity_indices.append(ent_idx)
 
             # ---- Prediction sample ----
             if ctx_pred_year is not None and entity not in ctx_pred_year.active_provinces:
@@ -251,18 +487,38 @@ class TemporalFeatureEngineer:
                 "All provinces may be missing data."
             )
 
-        # ---- Assemble arrays ----
+        # ---- Assemble training arrays ----
         X_train = np.vstack(X_train_list)
         y_train = np.vstack(y_train_list)
         X_pred  = np.vstack(pred_feature_list)
 
-        # In criteria mode, fill partial NaN targets with per-column median
+        # In criteria mode, fill partial NaN targets with per-column median.
+        # When use_saw_normalization=True the median is also in [0, 1] since
+        # all non-NaN SAW targets are bounded; imputation preserves the domain.
         if self.target_level == "criteria":
             nan_mask = np.isnan(y_train)
             if nan_mask.any():
                 col_medians = np.nanmedian(y_train, axis=0)
                 inds = np.where(nan_mask)
                 y_train[inds] = np.take(col_medians, inds[1])
+
+        # ---- Assemble holdout arrays ----
+        if X_holdout_list:
+            X_holdout = np.vstack(X_holdout_list)
+            y_holdout = np.vstack(y_holdout_list)
+            # Apply same partial-NaN imputation as training (criteria mode)
+            if self.target_level == "criteria":
+                ho_nan_mask = np.isnan(y_holdout)
+                if ho_nan_mask.any():
+                    # Use training medians — avoids leakage from holdout data
+                    ho_col_medians = np.nanmedian(y_train, axis=0)
+                    ho_inds = np.where(ho_nan_mask)
+                    y_holdout[ho_inds] = np.take(ho_col_medians, ho_inds[1])
+            X_holdout_df = pd.DataFrame(X_holdout, columns=self.feature_names_)
+            y_holdout_df = pd.DataFrame(y_holdout, columns=components)
+        else:
+            X_holdout_df = pd.DataFrame(columns=self.feature_names_)
+            y_holdout_df = pd.DataFrame(columns=components)
 
         X_train_df      = pd.DataFrame(X_train, columns=self.feature_names_)
         y_train_df      = pd.DataFrame(y_train, columns=components)
@@ -273,7 +529,7 @@ class TemporalFeatureEngineer:
             {'entity_index': np.array(entity_indices, dtype=int)}
         )
 
-        return X_train_df, y_train_df, X_pred_df, entity_index_df
+        return X_train_df, y_train_df, X_pred_df, entity_index_df, X_holdout_df, y_holdout_df
     
     def _create_features_safe(
         self,

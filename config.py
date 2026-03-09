@@ -318,6 +318,43 @@ class ForecastConfig:
     pvar_lag_selection_method: str = "cv"
     """Hold-out CV MSE lag selection. Only valid method for Ridge-regularised VAR."""
 
+    # ── SAW target normalization & true holdout ───────────────────────────
+    use_saw_targets: bool = True
+    """Predict per-year SAW-normalized [0,1] criteria scores instead of raw
+    composite means.
+
+    When True:
+    * Targets are per-year column-wise minmax-normalized over the full
+      provincial cross-section (same formula as SAWCalculator._normalize
+      with normalization='minmax', benefit criteria only).
+    * Each year's cross-section is normalized independently, removing
+      cross-year level shifts while preserving within-year ordinal structure.
+    * After prediction, CRITICWeightCalculator is applied to the predicted
+      cross-section to derive a single composite score per province.
+
+    Rationale: raw criteria composites conflate level with temporal trend
+    and are biased by the year-specific CRITIC weighting structure used
+    during data preparation. SAW-normalized targets lie in [0, 1], are
+    scale-invariant, and produce predictions that can be directly compared
+    across forecast years.
+    """
+
+    holdout_year: Optional[int] = None
+    """Year reserved as a true out-of-sample holdout for evaluation.
+
+    When None (default), auto-set at runtime to ``max(training_years)``
+    (i.e. the most recent year of available data before the forecast target
+    year — typically 2024 when predicting 2025).
+
+    Training samples whose *target* year equals ``holdout_year`` are withheld
+    from model fitting and stored as ``UnifiedForecaster.X_holdout_`` and
+    ``.y_holdout_`` for Phase 6 evaluation (true holdout performance vs. all
+    base models + ensemble).
+
+    Set to 0 or a year outside the data range to disable the holdout split
+    (training uses all available consecutive year-pairs).
+    """
+
 
 # =========================================================================
 # Validation & Sensitivity

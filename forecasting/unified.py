@@ -49,7 +49,7 @@ import warnings
 import copy
 
 from .base import BaseForecaster
-from .gradient_boosting import GradientBoostingForecaster
+from .gradient_boosting import CatBoostForecaster
 from .bayesian import BayesianForecaster
 from .features import TemporalFeatureEngineer
 
@@ -107,7 +107,24 @@ class UnifiedForecastResult:
     # Validation
     cross_validation_scores: Dict[str, List[float]]
     holdout_performance: Optional[Dict[str, float]]
-    
+
+    # SAW target outputs (populated when use_saw_targets=True)
+    composite_predictions: Optional[pd.Series]
+    """CRITIC-weighted composite of per-criterion SAW predictions.
+
+    When ``UnifiedForecaster`` is configured with ``use_saw_targets=True``,
+    the ensemble predicts per-criterion SAW-normalized scores in [0, 1].
+    ``composite_predictions`` is the single aggregate score derived by
+    applying ``CRITICWeightCalculator`` to the predicted cross-section and
+    computing the weighted sum:
+
+        composite_i = Σ_j  w_j(predicted) × saw_predicted_ij
+
+    This mirrors the MCDM pipeline's composite step but uses the *forecast*
+    weights rather than any historical year's weights. ``None`` when
+    ``use_saw_targets=False`` or when CRITIC derivation fails.
+    """
+
     # Metadata
     training_info: Dict[str, Any]
     data_summary: Dict[str, Any]
@@ -167,6 +184,19 @@ class UnifiedForecastResult:
             f"- Mean prediction: {self.predictions.values.mean():.4f}",
             f"- Std prediction: {self.predictions.values.std():.4f}",
             f"- Mean uncertainty: {self.uncertainty.values.mean():.4f}",
+        ])
+
+        if self.composite_predictions is not None:
+            lines.extend([
+                "",
+                "## Composite Score (CRITIC-weighted SAW)",
+                f"- Mean composite: {self.composite_predictions.mean():.4f}",
+                f"- Std  composite: {self.composite_predictions.std():.4f}",
+                f"- Min  composite: {self.composite_predictions.min():.4f}",
+                f"- Max  composite: {self.composite_predictions.max():.4f}",
+            ])
+
+        lines.extend([
             "",
             "=" * 80,
         ])
@@ -235,8 +265,8 @@ def _get_per_output_importance(
         return _normalise(imp)
 
     # ------------------------------------------------------------------
-    # 3. MultiOutputRegressor wrapper (GradientBoostingForecaster,
-    #    BayesianForecaster) — model.model.estimators_[col]
+    # 3. MultiOutputRegressor wrapper (BayesianForecaster)
+    #    model.model.estimators_[col]  (CatBoostForecaster uses path 4)
     # ------------------------------------------------------------------
     inner = getattr(model, "model", None)
     if inner is not None and hasattr(inner, "estimators_"):
@@ -328,6 +358,19 @@ class UnifiedForecaster:
         # When None, _create_models() falls back to hardened production defaults.
         self._config: Optional[ForecastConfig] = config
 
+        # ── SAW target normalization & true holdout ───────────────────────
+        # Resolved from ForecastConfig when provided; otherwise production defaults.
+        # use_saw_targets=True: train on per-year minmax-normalised [0,1] scores
+        # and compute a CRITIC-weighted composite after prediction (Phase 1).
+        self.use_saw_targets: bool = (
+            config.use_saw_targets if config is not None else True
+        )
+        # holdout_year=None: auto-set at runtime to max(training years) so the
+        # most recent complete year serves as a true out-of-sample evaluation set.
+        self.holdout_year: Optional[int] = (
+            config.holdout_year if config is not None else None
+        )
+
         self.models_: Dict[str, BaseForecaster] = {}
         self.model_weights_: Dict[str, float] = {}
         self.feature_engineer_ = TemporalFeatureEngineer(target_level=self.target_level)
@@ -335,6 +378,11 @@ class UnifiedForecaster:
         self.super_learner_: Optional[SuperLearner] = None
         self.conformal_predictor_: Optional[ConformalPredictor] = None
         self.evaluator_: Optional[ForecastEvaluator] = None
+
+        # Populated by fit_predict() — available for Phase 6 evaluation
+        self.X_holdout_: pd.DataFrame = pd.DataFrame()
+        self.y_holdout_: pd.DataFrame = pd.DataFrame()
+        self.holdout_year_: Optional[int] = None
     
     def _create_models(self) -> Dict[str, BaseForecaster]:
         """
@@ -364,8 +412,8 @@ class UnifiedForecaster:
         models = {}
 
         # --- Tier 1a: Tree-based -------------------------------------------
-        models['GradientBoosting'] = GradientBoostingForecaster(
-            n_estimators=gb_n_est, max_depth=gb_depth,
+        models['GradientBoosting'] = CatBoostForecaster(
+            iterations=gb_n_est, depth=gb_depth,
             random_state=self.random_state
         )
 
@@ -387,7 +435,122 @@ class UnifiedForecaster:
         )
 
         return models
-    
+
+    def _compute_critic_composite(
+        self,
+        predicted_saw_scores: pd.DataFrame,
+    ) -> pd.Series:
+        """
+        Derive CRITIC-weighted composite scores from predicted per-criterion
+        SAW-normalized values.
+
+        When the model is trained on SAW-normalized targets (bounded [0, 1]),
+        its predictions represent an estimated per-criterion position within
+        the forecast-year decision matrix.  To produce a single composite score
+        per province — mirroring the MCDM pipeline — we apply CRITIC weighting
+        to the *predicted* cross-section, then compute the weighted row sum.
+
+        Using the predicted cross-section (rather than any historical year's
+        weights) ensures the composite reflects the information content of
+        the forecast decision matrix: criteria with higher predicted spread and
+        lower inter-criteria correlation receive larger weights.
+
+        Algorithm
+        ---------
+        1. Clip predictions to [0, 1] (SAW normalization domain).  Model
+           outputs may slightly overshoot due to extrapolation; clamping
+           ensures consistency with the SAW training domain.
+        2. Drop zero-variance predicted criteria (constant column → CRITIC
+           weight = 0 regardless; excluding them avoids numerical instability
+           in the correlation matrix and in the standard deviation term).
+        3. Impute any residual NaN cells in the active columns with the
+           column mean — a rare edge case arising if a province is predicted
+           but its raw criterion level is entirely unobserved.
+        4. Run ``CRITICWeightCalculator.calculate(predicted_matrix)`` to
+           compute information content weights for each criterion.
+        5. Re-normalise weights to sum to 1 over *all* criteria (including
+           any dropped constant columns, which receive weight 0).
+        6. Return ``(clipped_scores × weights).sum(axis=1)``.
+
+        Parameters
+        ----------
+        predicted_saw_scores : pd.DataFrame
+            Per-criterion SAW predictions, shape (n_entities, n_criteria).
+            Index = province names; columns = criterion identifiers (C01..C08).
+
+        Returns
+        -------
+        pd.Series
+            Composite score per entity, bounded approximately in [0, 1].
+            Index = entity names (same as ``predicted_saw_scores.index``).
+            Named ``'composite_score'``.
+
+        Notes
+        -----
+        Fallback to equal-weight mean is used when:
+        * Fewer than 2 entities (CRITIC requires ≥ 2 observations).
+        * All criteria are constant (zero variance → no information content).
+        * ``CRITICWeightCalculator.calculate()`` raises any exception.
+        """
+        from weighting.critic import CRITICWeightCalculator
+
+        # ── Step 1: clip to SAW domain ────────────────────────────────────
+        scores = predicted_saw_scores.clip(lower=0.0, upper=1.0)
+
+        # ── Guard: CRITIC needs ≥ 2 observations ─────────────────────────
+        if len(scores) < 2:
+            if self.verbose:
+                print(
+                    "    _compute_critic_composite: fewer than 2 entities — "
+                    "using equal-weight composite."
+                )
+            return scores.mean(axis=1).rename('composite_score')
+
+        # ── Step 2: drop zero-variance columns ───────────────────────────
+        col_range = scores.max() - scores.min()
+        non_const_cols = col_range[col_range > 1e-8].index
+        scores_active = scores[non_const_cols]
+
+        if scores_active.empty:
+            if self.verbose:
+                print(
+                    "    _compute_critic_composite: all predicted criteria are "
+                    "constant — using equal-weight composite."
+                )
+            return scores.mean(axis=1).rename('composite_score')
+
+        # ── Step 3: impute residual NaN with column mean ──────────────────
+        if scores_active.isnull().any().any():
+            scores_active = scores_active.fillna(scores_active.mean())
+
+        # ── Steps 4–6: CRITIC weights → weighted composite ───────────────
+        try:
+            weight_result = CRITICWeightCalculator().calculate(scores_active)
+
+            # Build weight Series aligned to ALL criteria; dropped constant
+            # columns receive weight 0 (their CRITIC information content is 0)
+            weights = pd.Series(0.0, index=predicted_saw_scores.columns)
+            for c, w in weight_result.weights.items():
+                if c in weights.index:
+                    weights[c] = w
+
+            # Re-normalise so weights sum to 1 over the active criteria
+            w_sum = weights.sum()
+            if w_sum > 0:
+                weights = weights / w_sum
+
+            composite = (scores * weights).sum(axis=1)
+
+        except Exception as exc:
+            if self.verbose:
+                print(
+                    f"    _compute_critic_composite: CRITICWeightCalculator "
+                    f"failed ({exc}) — falling back to equal-weight mean."
+                )
+            composite = scores.mean(axis=1)
+
+        return composite.rename('composite_score')
+
     @_silence_warnings
     def fit_predict(self,
                    panel_data,
@@ -417,11 +580,47 @@ class UnifiedForecaster:
 
         # ===== Stage 1: Feature engineering =====
         if self.verbose:
-            print("  Stage 1: Engineering temporal features...")
+            print(f"  Stage 1: Engineering temporal features...")
 
-        X_train, y_train, X_pred, entity_info = self.feature_engineer_.fit_transform(
-            panel_data, target_year
+        # ── Resolve holdout year ──────────────────────────────────────────
+        # When config.holdout_year is None (default), auto-set to the most
+        # recent training year (max(years) that is < target_year).  This
+        # ensures the latest complete historical year is always reserved for
+        # true out-of-sample evaluation, regardless of the data vintage.
+        _holdout_year = self.holdout_year
+        if _holdout_year is None:
+            _all_years = sorted(panel_data.years)
+            _train_years = [y for y in _all_years if y < target_year]
+            # If all data years are ≥ target_year (unusual) skip holdout
+            _holdout_year = max(_train_years) if _train_years else None
+
+        X_train, y_train, X_pred, entity_info, X_holdout, y_holdout = (
+            self.feature_engineer_.fit_transform(
+                panel_data,
+                target_year,
+                use_saw_normalization=self.use_saw_targets,
+                holdout_year=_holdout_year,
+            )
         )
+
+        # Store true holdout for Phase 6 evaluation (never used in fitting)
+        self.X_holdout_ = X_holdout
+        self.y_holdout_ = y_holdout
+        self.holdout_year_ = _holdout_year
+
+        if self.verbose and _holdout_year is not None:
+            if not X_holdout.empty:
+                print(
+                    f"    Holdout: {len(X_holdout)} samples reserved "
+                    f"(target year = {_holdout_year})"
+                )
+                if self.use_saw_targets:
+                    y_min = y_train.values.min()
+                    y_max = y_train.values.max()
+                    print(
+                        f"    SAW targets: y_train ∈ [{y_min:.4f}, {y_max:.4f}] "
+                        f"(should be ≈ [0, 1])"
+                    )
 
         # Extract entity indices for models that use panel structure
         if 'entity_index' in entity_info.columns:
@@ -741,6 +940,30 @@ class UnifiedForecaster:
         if self.verbose:
             print(f"  Forecasting complete. {len(self.model_weights_)} models combined.")
 
+        # ===== Stage 7: SAW composite score (CRITIC post-processing) =====
+        # When trained on SAW-normalized targets, derive a single composite
+        # score per province by applying CRITIC weighting to the predicted
+        # per-criterion cross-section.  This is the primary MCDM output.
+        composite_predictions: Optional[pd.Series] = None
+        if self.use_saw_targets:
+            try:
+                composite_predictions = self._compute_critic_composite(pred_df)
+                if self.verbose:
+                    print(
+                        f"  Stage 7: CRITIC composite from predicted SAW scores — "
+                        f"mean={composite_predictions.mean():.4f}, "
+                        f"std={composite_predictions.std():.4f}, "
+                        f"range=[{composite_predictions.min():.4f}, "
+                        f"{composite_predictions.max():.4f}]"
+                    )
+            except Exception as exc:
+                if self.verbose:
+                    print(
+                        f"  Stage 7: Composite derivation failed "
+                        f"({type(exc).__name__}: {exc}). "
+                        f"composite_predictions will be None."
+                    )
+
         return UnifiedForecastResult(
             predictions=pred_df,
             uncertainty=unc_df,
@@ -750,6 +973,7 @@ class UnifiedForecaster:
             feature_importance=feature_importance,
             cross_validation_scores=cv_scores,
             holdout_performance=holdout_performance,
+            composite_predictions=composite_predictions,
             training_info=training_info,
             data_summary={
                 'n_entities': len(X_pred),

@@ -44,10 +44,10 @@ Example Usage:
 """
 
 # Feature engineering
-from .features import TemporalFeatureEngineer
+from .features import TemporalFeatureEngineer, SAWNormalizer
 
 # Tree-based ensemble methods
-from .gradient_boosting import GradientBoostingForecaster
+from .gradient_boosting import CatBoostForecaster
 
 # Bayesian linear method
 from .bayesian import BayesianForecaster
@@ -76,8 +76,9 @@ from .base import BaseForecaster
 __all__ = [
     # Feature engineering
     'TemporalFeatureEngineer',
+    'SAWNormalizer',
     # Tree ensemble
-    'GradientBoostingForecaster',
+    'CatBoostForecaster',
     # Bayesian linear
     'BayesianForecaster',
     # Advanced models (SOTA)
