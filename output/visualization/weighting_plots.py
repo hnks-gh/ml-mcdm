@@ -291,22 +291,28 @@ class WeightingPlotter(BasePlotter):
         return None
 
     # ==================================================================
-    #  FIG 04 – Weight Radar Chart (up to 3 methods)
+    #  FIG 04 – Weight Radar Chart
     # ==================================================================
 
     def plot_weight_radar(
         self,
         weights: Dict[str, np.ndarray],
         component_names: List[str],
+        weight_all_years: Optional[Dict[int, Any]] = None,
         save_name: str = 'fig04_weight_radar.png',
     ) -> Optional[str]:
-        """Polygon radar (all sub-criteria, all methods).
+        """Radar chart(s) of CRITIC sub-criterion weights.
 
-        Uses the shared ``_draw_radar`` helper so the polygon grid,
-        north-start, and clockwise spoke order are applied.
+        With *weight_all_years*: produce a 14-panel grid (2 rows × 7 cols),
+        one radar per year, sharing a common radial scale.
+        Fallback (no *weight_all_years*): single radar for the supplied *weights*.
         """
         if not HAS_MATPLOTLIB:
             return None
+
+        if weight_all_years:
+            return self._plot_weight_radar_multiyear(
+                weight_all_years, component_names, save_name)
 
         methods = [m for m in _METHOD_ORDER if m in weights]
         if not methods:
@@ -318,25 +324,125 @@ class WeightingPlotter(BasePlotter):
             save_name=save_name,
         )
 
+    def _draw_radar_to_ax(
+        self,
+        ax,
+        w_vals: np.ndarray,
+        labels: List[str],
+        r_max: float,
+        color: str = '#C73E1D',
+        title: str = '',
+    ) -> None:
+        """Draw a single radar onto an existing polar *ax* (no save)."""
+        n = len(labels)
+        if n < 3:
+            return
+        angles = [(np.pi / 2 - i * 2 * np.pi / n) % (2 * np.pi)
+                  for i in range(n)]
+        angles_closed = angles + [angles[0]]
+
+        ax.set_yticklabels([])
+        ax.yaxis.grid(False)
+        ax.xaxis.grid(False)
+        ax.spines['polar'].set_visible(False)
+
+        # Polygon ring grid
+        n_rings = 4
+        r_ticks = np.linspace(0, r_max, n_rings + 1)[1:]
+        for r in r_ticks:
+            pts = angles + [angles[0]]
+            ax.plot(pts, [r] * (n + 1),
+                    color='#CCCCCC', lw=0.5, linestyle='-', zorder=0)
+        for a in angles:
+            ax.plot([a, a], [0, r_max], color='#CCCCCC', lw=0.4, zorder=0)
+
+        # Data polygon
+        vals = list(w_vals) + [w_vals[0]]
+        ax.plot(angles_closed, vals, 'o-', lw=1.5, color=color,
+                markersize=2.5, alpha=0.9)
+        ax.fill(angles_closed, vals, alpha=0.15, color=color)
+
+        ax.set_xticks(angles)
+        ax.set_xticklabels(
+            [self._truncate(lb, 6) for lb in labels], fontsize=5.0)
+        ax.set_rlim(0, r_max)
+        ax.tick_params(axis='y', labelsize=0)
+        if title:
+            ax.set_title(title, fontsize=9, fontweight='bold', pad=4)
+
+    def _plot_weight_radar_multiyear(
+        self,
+        weight_all_years: Dict[int, Any],
+        component_names: List[str],
+        save_name: str,
+    ) -> Optional[str]:
+        """14-panel radar grid — one panel per year, shared radial scale."""
+        years = sorted(weight_all_years.keys())
+        n_years = len(years)
+        ncols = 7
+        nrows = (n_years + ncols - 1) // ncols
+
+        # Build per-year weight arrays aligned to component_names
+        year_weights: Dict[int, np.ndarray] = {}
+        for yr in years:
+            gw = weight_all_years[yr].get('global_sc_weights', {})
+            year_weights[yr] = np.array([gw.get(sc, 0.0) for sc in component_names])
+
+        # Shared r_max
+        r_max = float(np.max(np.concatenate(list(year_weights.values())))) * 1.12
+        color = _METHOD_COLORS['CRITIC']
+
+        fig, axes = plt.subplots(
+            nrows, ncols,
+            figsize=(ncols * 3.6, nrows * 4.2),
+            subplot_kw={'projection': 'polar'},
+        )
+        axes = np.array(axes).reshape(nrows, ncols)
+
+        for idx, yr in enumerate(years):
+            row, col = divmod(idx, ncols)
+            self._draw_radar_to_ax(
+                axes[row, col], year_weights[yr], component_names,
+                r_max, color=color, title=str(yr),
+            )
+
+        # Hide unused subplots
+        for idx in range(n_years, nrows * ncols):
+            row, col = divmod(idx, ncols)
+            axes[row, col].set_visible(False)
+
+        fig.suptitle(
+            'CRITIC Sub-Criterion Weight Radars — 2011–2024',
+            fontsize=14, fontweight='bold', y=1.01,
+        )
+        fig.tight_layout()
+        return self._save(fig, save_name)
+
     # ==================================================================
-    #  FIG 05 – Annotated Weight Heatmap (sequential SC order, no dendrogram)
+    #  FIG 05 – Annotated Weight Heatmap
     # ==================================================================
 
     def plot_weight_heatmap(
         self,
         weights: Dict[str, np.ndarray],
         component_names: List[str],
+        weight_all_years: Optional[Dict[int, Any]] = None,
         save_name: str = 'fig05_weight_heatmap.png',
     ) -> Optional[str]:
-        """
-        Annotated weight heatmap with sub-criteria sorted sequentially
-        (SC11, SC12, …, SC83).  Criterion-group boundaries are marked with
-        a dashed vertical separator for clean readability.  No clustering
-        or dendrogram is applied.
+        """Annotated weight heatmap.
+
+        With *weight_all_years*: Years × sub-criteria grid covering all 14
+        years (rows = years, columns = sub-criteria sorted sequentially).
+        Fallback: method × sub-criteria grid for the current *weights*.
         """
         if not HAS_MATPLOTLIB:
             return None
 
+        if weight_all_years:
+            return self._plot_weight_heatmap_multiyear(
+                weight_all_years, component_names, save_name)
+
+        # ── Single-year fallback ─────────────────────────────────────────
         methods = [m for m in _METHOD_ORDER if m in weights]
         if not methods:
             methods = list(weights.keys())
@@ -413,6 +519,99 @@ class WeightingPlotter(BasePlotter):
 
         heat_ax.set_title(
             'Weight Heatmap — Method × Sub-Criterion (sequential order)',
+            pad=10, fontsize=13, fontweight='bold',
+        )
+
+        norm = mpl.colors.Normalize(vmin=vmin, vmax=vmax)
+        mpl.colorbar.ColorbarBase(cbar_ax, cmap=cmap, norm=norm,
+                                  orientation='vertical')
+        cbar_ax.set_ylabel('Weight', fontsize=10)
+
+        fig.tight_layout()
+        return self._save(fig, save_name)
+
+    def _plot_weight_heatmap_multiyear(
+        self,
+        weight_all_years: Dict[int, Any],
+        component_names: List[str],
+        save_name: str,
+    ) -> Optional[str]:
+        """Years × sub-criteria annotated heatmap covering all 14 years."""
+        import matplotlib as mpl
+
+        years = sorted(weight_all_years.keys())
+        n_years = len(years)
+        n_c = len(component_names)
+
+        def _sc_sort_key(name: str) -> tuple:
+            try:
+                return (int(name[2]), int(name[3:]))
+            except Exception:
+                return (99, 99)
+
+        col_order = np.array(
+            sorted(range(n_c), key=lambda i: _sc_sort_key(component_names[i])))
+        names_ord = [component_names[i] for i in col_order]
+
+        # Build data matrix: rows = years, cols = sorted SCs
+        data = np.zeros((n_years, n_c))
+        for yr_idx, yr in enumerate(years):
+            gw = weight_all_years[yr].get('global_sc_weights', {})
+            for sc_idx, sc in enumerate(names_ord):
+                data[yr_idx, sc_idx] = gw.get(sc, 0.0)
+
+        fig, (heat_ax, cbar_ax) = plt.subplots(
+            1, 2,
+            figsize=(max(18, n_c * 0.65), max(7, n_years * 0.58)),
+            gridspec_kw={'width_ratios': [n_c, 1]},
+        )
+
+        cmap = plt.get_cmap('YlOrRd')
+        vmin, vmax = data.min(), data.max()
+        heat_ax.imshow(data, aspect='auto', cmap=cmap, vmin=vmin, vmax=vmax)
+
+        heat_ax.set_xticks(range(n_c))
+        heat_ax.set_xticklabels(
+            [self._truncate(s, 10) for s in names_ord],
+            rotation=55, ha='right', fontsize=8,
+        )
+        heat_ax.set_yticks(range(n_years))
+        heat_ax.set_yticklabels([str(yr) for yr in years], fontsize=9)
+
+        # Annotate cells
+        threshold = vmin + 0.65 * (vmax - vmin)
+        for i in range(n_years):
+            for j in range(n_c):
+                val = data[i, j]
+                txt_col = 'white' if val > threshold else 'black'
+                heat_ax.text(j, i, f'{val:.3f}', ha='center', va='center',
+                             fontsize=5.5, color=txt_col, fontweight='bold')
+
+        # Criterion-group dashed separators and labels
+        prev_c: Optional[int] = None
+        first_j_of_group: int = 0
+        for j, sc in enumerate(names_ord):
+            try:
+                c = int(sc[2])
+            except Exception:
+                c = -1
+            if prev_c is not None and c != prev_c:
+                heat_ax.axvline(j - 0.5, color='#555555', lw=1.6,
+                                linestyle='--', alpha=0.75)
+                mid = (first_j_of_group + j - 1) / 2
+                heat_ax.text(mid, -0.70, f'C0{prev_c}',
+                             ha='center', va='top', fontsize=8,
+                             color='#333333', fontstyle='italic')
+                first_j_of_group = j
+            prev_c = c
+        if prev_c is not None:
+            mid = (first_j_of_group + n_c - 1) / 2
+            heat_ax.text(mid, -0.70, f'C0{prev_c}',
+                         ha='center', va='top', fontsize=8,
+                         color='#333333', fontstyle='italic')
+
+        heat_ax.set_title(
+            'CRITIC Sub-Criterion Weights — Year × Sub-Criterion (2011–2024)',
             pad=10, fontsize=13, fontweight='bold',
         )
 
@@ -573,26 +772,28 @@ class WeightingPlotter(BasePlotter):
         return self._save(fig, save_name)
 
     # ==================================================================
-    #  FIG 04c – Hierarchical Weight Rose (Coxcomb) Chart  [creative]
+    #  FIG 04c – Hierarchical Weight Rose (Coxcomb) Chart
     # ==================================================================
 
     def plot_weight_hierarchical_rose(
         self,
         weights: Dict[str, np.ndarray],
         component_names: List[str],
+        weight_all_years: Optional[Dict[int, Any]] = None,
         save_name: str = 'fig04c_weight_hierarchical_rose.png',
     ) -> Optional[str]:
-        """
-        Hierarchical Coxcomb / Rose chart — one panel per weighting method.
+        """Hierarchical Coxcomb / Rose chart.
 
-        Each petal maps to one criterion; its radial length equals the
-        criterion's aggregated global weight.  The petal is angularly
-        subdivided into sub-criterion slices proportional to their *local*
-        (within-criterion) normalised weights.  Slice shading darkens
-        progressively for sub-criterion identity.
+        With *weight_all_years*: 14-panel grid (2 rows × 7 cols), one rose
+        per year, clearly labelled.
+        Fallback: single rose panel for the supplied *weights*.
         """
         if not HAS_MATPLOTLIB:
             return None
+
+        if weight_all_years:
+            return self._plot_weight_hierarchical_rose_multiyear(
+                weight_all_years, component_names, save_name)
 
         import matplotlib as mpl
 
@@ -699,6 +900,121 @@ class WeightingPlotter(BasePlotter):
         fig.suptitle(
             'Hierarchical Weight Rose — Criteria & Sub-Criteria Breakdown',
             y=1.02, fontsize=15, fontweight='bold',
+        )
+        fig.tight_layout()
+        return self._save(fig, save_name)
+
+    def _draw_rose_to_ax(
+        self,
+        ax,
+        w: np.ndarray,
+        component_names: List[str],
+        groups: Dict[int, List[int]],
+        crit_digits: List[int],
+        group_colors: List[str],
+    ) -> None:
+        """Draw a hierarchical Coxcomb rose onto an existing polar *ax* (no save)."""
+        import matplotlib as mpl
+
+        n_crit = len(crit_digits)
+        sector_w = 2 * np.pi / n_crit
+        gap = 0.05
+
+        for ci, d in enumerate(crit_digits):
+            idxs = np.array(groups[d])
+            sc_ws = w[idxs]
+            crit_ht = float(sc_ws.sum())
+            local_sum = crit_ht
+            local_frac = (sc_ws / local_sum if local_sum > 1e-12
+                          else np.ones(len(idxs)) / len(idxs))
+
+            base_col = group_colors[ci % len(group_colors)]
+            rgba_base = mpl.colors.to_rgba(base_col)
+
+            theta_start = ci * sector_w + gap / 2
+            theta_avail = sector_w - gap
+            bar_offset = 0.0
+
+            for si, (frac, _sc_w) in enumerate(zip(local_frac, sc_ws)):
+                t0 = theta_start + bar_offset * theta_avail
+                dt = frac * theta_avail
+                shade = 0.35 + 0.55 * (si / max(len(idxs) - 1, 1))
+                slice_col = tuple(
+                    min(1.0, c * (0.5 + shade)) for c in rgba_base[:3]
+                ) + (0.85,)
+                ax.bar(t0 + dt / 2, crit_ht, width=dt, bottom=0,
+                       color=slice_col, edgecolor='white', linewidth=0.3)
+                bar_offset += frac
+
+            # Criterion label at petal centre
+            theta_mid = theta_start + theta_avail / 2
+            ax.text(theta_mid, crit_ht * 0.50, f'C0{d}',
+                    ha='center', va='center',
+                    fontsize=6.5, fontweight='bold', color='white')
+
+        ax.set_yticklabels([])
+        ax.set_xticks([])
+        ax.spines['polar'].set_visible(False)
+
+    def _plot_weight_hierarchical_rose_multiyear(
+        self,
+        weight_all_years: Dict[int, Any],
+        component_names: List[str],
+        save_name: str,
+    ) -> Optional[str]:
+        """14-panel hierarchical rose grid — one panel per year."""
+        years = sorted(weight_all_years.keys())
+        n_years = len(years)
+        ncols = 7
+        nrows = (n_years + ncols - 1) // ncols
+
+        # Parse SC groups (structure is constant across years)
+        groups: Dict[int, List[int]] = {}
+        for i, sc in enumerate(component_names):
+            try:
+                groups.setdefault(int(sc[2]), []).append(i)
+            except Exception:
+                pass
+        if not groups:
+            return None
+        crit_digits = sorted(groups.keys())
+
+        palette = [
+            '#2E86AB', '#C73E1D', '#17B169', '#F4A261',
+            '#9B5DE5', '#F15BB5', '#00BBF9', '#06D6A0',
+        ]
+        group_colors = palette[:len(crit_digits)]
+
+        # Build per-year weight arrays aligned to component_names
+        year_weights: Dict[int, np.ndarray] = {}
+        for yr in years:
+            gw = weight_all_years[yr].get('global_sc_weights', {})
+            year_weights[yr] = np.array([gw.get(sc, 0.0) for sc in component_names])
+
+        fig, axes = plt.subplots(
+            nrows, ncols,
+            figsize=(ncols * 3.4, nrows * 3.8),
+            subplot_kw={'projection': 'polar'},
+        )
+        axes = np.array(axes).reshape(nrows, ncols)
+
+        for idx, yr in enumerate(years):
+            row, col = divmod(idx, ncols)
+            ax = axes[row, col]
+            self._draw_rose_to_ax(
+                ax, year_weights[yr], component_names,
+                groups, crit_digits, group_colors,
+            )
+            ax.set_title(str(yr), fontsize=9, fontweight='bold', y=1.05)
+
+        # Hide unused subplots
+        for idx in range(n_years, nrows * ncols):
+            row, col = divmod(idx, ncols)
+            axes[row, col].set_visible(False)
+
+        fig.suptitle(
+            'Hierarchical Weight Rose — CRITIC Criteria & Sub-Criteria (2011–2024)',
+            fontsize=13, fontweight='bold', y=1.01,
         )
         fig.tight_layout()
         return self._save(fig, save_name)

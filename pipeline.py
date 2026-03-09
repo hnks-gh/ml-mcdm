@@ -272,6 +272,7 @@ class MLMCDMPipeline:
                         analysis_results=analysis_results,
                         forecast_result=forecast_result,
                         multi_year_results=multi_year_results,
+                        weight_all_years=weight_all_years,
                     )
                     ph.metric('Figures', fig_count)
                 except Exception as e:

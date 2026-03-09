@@ -149,6 +149,9 @@ class CatBoostForecaster(BaseForecaster):
         self._n_outputs: int = 1
         self._backend_: Optional[str] = None   # set during fit()
         self._fitted: bool = False
+        # Constant-output bookkeeping (set during fit)
+        self._const_mask_: Optional[np.ndarray] = None   # True = constant col
+        self._const_vals_: Optional[np.ndarray] = None   # per-col fallback val
 
     # ------------------------------------------------------------------
     # Public API  (BaseForecaster interface)
@@ -176,6 +179,22 @@ class CatBoostForecaster(BaseForecaster):
             y = y.reshape(-1, 1)
         self._n_outputs = y.shape[1]
 
+        # Detect constant output columns (peak-to-peak ≈ 0) before dispatching
+        # to the backend.  CatBoost raises "All train targets are equal" when
+        # any output column has zero variance; other backends silently produce
+        # a single-value leaf anyway, so we short-circuit all of them.
+        self._const_vals_ = y[0].copy()
+        self._const_mask_ = np.ptp(y, axis=0) < 1e-12
+        if self._const_mask_.all():
+            # Every output is constant — constant predictor, no model needed.
+            self.feature_importance_ = np.zeros(X.shape[1])
+            self._backend_ = 'none'
+            self._fitted = True
+            return self
+
+        # Restrict training targets to non-constant columns only.
+        y_fit = y[:, ~self._const_mask_] if self._const_mask_.any() else y
+
         # Sample-adaptive hyperparameter scaling (see class docstring table)
         n_samples = X.shape[0]
         if n_samples < 200:
@@ -188,13 +207,16 @@ class CatBoostForecaster(BaseForecaster):
         # Resolve effective backend and dispatch to backend-specific helper
         backend = self._resolve_backend()
         self._backend_ = backend
+        # _n_outputs must reflect the model's actual output count (may be
+        # smaller than the original if some columns are constant).
+        self._n_outputs = y_fit.shape[1]
 
         if backend == 'catboost':
-            self._fit_catboost(X, y, eff_depth, eff_iter)
+            self._fit_catboost(X, y_fit, eff_depth, eff_iter)
         elif backend == 'lightgbm':
-            self._fit_lightgbm(X, y, eff_depth, eff_iter)
+            self._fit_lightgbm(X, y_fit, eff_depth, eff_iter)
         else:
-            self._fit_sklearn(X, y, eff_depth, eff_iter)
+            self._fit_sklearn(X, y_fit, eff_depth, eff_iter)
 
         self._fitted = True
         return self
@@ -332,14 +354,25 @@ class CatBoostForecaster(BaseForecaster):
         RuntimeError
             If called before :meth:`fit`.
         """
-        if not self._fitted or self.model is None:
+        if not self._fitted:
             raise RuntimeError(
                 "CatBoostForecaster.predict() called before fit(). "
                 "Call fit(X, y) first."
             )
+        n_test = X.shape[0]
+        # All outputs were constant during training — return stored constants.
+        if self.model is None:
+            return np.tile(self._const_vals_, (n_test, 1))
         pred = self.model.predict(X)
         if pred.ndim == 1:
-            return pred.reshape(-1, 1)
+            pred = pred.reshape(-1, 1)
+        # Reconstruct full output array when some columns were held constant.
+        if self._const_mask_ is not None and self._const_mask_.any():
+            n_orig = len(self._const_vals_)
+            full = np.empty((n_test, n_orig), dtype=pred.dtype)
+            full[:, self._const_mask_] = self._const_vals_[self._const_mask_]
+            full[:, ~self._const_mask_] = pred
+            return full
         return pred
 
     def get_feature_importance(self) -> np.ndarray:

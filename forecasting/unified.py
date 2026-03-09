@@ -1645,7 +1645,7 @@ class UnifiedForecaster:
         _mode = self.pipeline_mode
 
         if self.verbose:
-            print(f"Starting state-of-the-art forecasting for {target_year}...")
+            print(f"Starting ML Forecasting for {target_year}...")
 
         # ── evaluate_only: stages 5–7 on an already-fitted forecaster ──────
         if _mode == 'evaluate_only':

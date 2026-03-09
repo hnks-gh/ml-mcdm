@@ -253,6 +253,7 @@ class VisualizationOrchestrator:
         analysis_results: Dict[str, Any],
         forecast_result: Any = None,
         multi_year_results: Optional[Dict[int, Any]] = None,
+        weight_all_years: Optional[Dict[int, Any]] = None,
     ) -> int:
         """Generate every applicable figure. Returns count produced."""
         count = 0
@@ -332,34 +333,21 @@ class VisualizationOrchestrator:
         # Build w_dict with CRITIC weights
         w_dict: Dict[str, np.ndarray] = {'CRITIC': sc_arr}
 
-        # fig03 — CRITIC grouped bar
-        _safe(self.weighting.plot_weights_comparison,
-            w_dict, subcriteria,
-        )
-
         # fig03b — (MC weight uncertainty removed — deterministic pipeline)
-
-        # fig03c — Criterion-level CRITIC bar + donut
-        critic_crit_d = weights.get('critic_criterion_weights', {})
-        if critic_crit_d:
-            _safe(self.weighting.plot_criterion_weights_comparison,
-                critic_crit=critic_crit_d,
-            )
-
         # fig03d — (Diverging deviation removed — no Hybrid baseline)
+        # (fig03, fig03c, fig04a, fig04b removed — redundant per spec)
 
-        # fig04 — Radar (all 3 methods, all 29 sub-criteria)
-        _safe(self.weighting.plot_weight_radar, w_dict, subcriteria)
+        # fig04 — Weight radar: 14-panel all-years grid, or single-year fallback
+        _safe(self.weighting.plot_weight_radar, w_dict, subcriteria,
+              weight_all_years=weight_all_years)
 
-        # fig04a + fig04b — Criteria-level radar + 8 group radars
-        #   (locally-normalised weights per group)
-        _safe(self.weighting.plot_weight_radar_grouped, w_dict, subcriteria)
+        # fig04c — Hierarchical rose: 14-panel all-years grid, or single-year fallback
+        _safe(self.weighting.plot_weight_hierarchical_rose, w_dict, subcriteria,
+              weight_all_years=weight_all_years)
 
-        # fig04c — Hierarchical rose / coxcomb chart  [creative]
-        _safe(self.weighting.plot_weight_hierarchical_rose, w_dict, subcriteria)
-
-        # fig05 — Heatmap (sequential SC order, no dendrogram)
-        _safe(self.weighting.plot_weight_heatmap, w_dict, subcriteria)
+        # fig05 — Weight heatmap: years × sub-criteria (14 years), or single-year fallback
+        _safe(self.weighting.plot_weight_heatmap, w_dict, subcriteria,
+              weight_all_years=weight_all_years)
 
         # ── MCDM agreement ───────────────────────────────────────
         all_method_ranks: Dict[str, np.ndarray] = {}
