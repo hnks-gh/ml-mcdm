@@ -140,6 +140,12 @@ class VisualizationOrchestrator:
     def plot_criterion_er_utility_heatmap(self, *a, **kw):
         return self.mcdm.plot_criterion_er_utility_heatmap(*a, **kw)
 
+    def plot_method_stability_comparison(self, *a, **kw):
+        return self.mcdm.plot_method_stability_comparison(*a, **kw)
+
+    def plot_method_disc_power_comparison(self, *a, **kw):
+        return self.mcdm.plot_method_disc_power_comparison(*a, **kw)
+
     # Sensitivity
     def plot_sensitivity_tornado(self, *a, **kw):
         return self.sensitivity.plot_sensitivity_tornado(*a, **kw)
@@ -382,7 +388,11 @@ class VisualizationOrchestrator:
 
         # fig08c — Province × Criterion ER utility heatmap
         _safe(self.mcdm.plot_criterion_er_utility_heatmap, ranking_result, provinces)
+        # fig08e — Method stability comparison (cross-criteria Spearman ρ)
+        _safe(self.mcdm.plot_method_stability_comparison, ranking_result)
 
+        # fig08f — Method discriminatory power comparison (score IQR)
+        _safe(self.mcdm.plot_method_disc_power_comparison, ranking_result)
 
         # ── Sensitivity ──────────────────────────────────────────
         sens = analysis_results.get('sensitivity')

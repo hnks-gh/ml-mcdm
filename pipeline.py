@@ -778,6 +778,7 @@ class MLMCDMPipeline:
             conformal_method=self.config.forecast.conformal_method,
             conformal_alpha=self.config.forecast.conformal_alpha,
             cv_folds=self.config.forecast.cv_folds,
+            cv_min_train_years=self.config.forecast.cv_min_train_years,
             random_state=self.config.forecast.random_state,
             verbose=self.config.forecast.verbose,
             target_level=self.config.forecast.forecast_level,

@@ -304,7 +304,12 @@ class ForecastConfig:
     """
 
     # ── Cross-validation ─────────────────────────────────────────────────
-    cv_folds: int = 5
+    cv_folds: int = 6
+    cv_min_train_years: int = 7
+    """Minimum number of unique year-label cohorts before the first validation
+    fold.  With year_labels = target years (2012–2024), setting 7 means the
+    first validation year is 2019 (index 7 in [2012…2024]), matching the
+    desired fold design: Fold 1 → train 2011–2018, validate 2019."""
 
     # ── Reproducibility ──────────────────────────────────────────────────
     random_state: int = 42

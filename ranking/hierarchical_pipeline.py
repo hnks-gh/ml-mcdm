@@ -107,11 +107,14 @@ class HierarchicalRankingResult:
 class HierarchicalRankingPipeline:
     """
     Orchestrates two-stage hierarchical ranking
-    (6 traditional MCDM methods + Evidential Reasoning).
+    (5 traditional MCDM methods + Base baseline + Evidential Reasoning).
 
-    The six methods are TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS, and SAW.
-    SAW is the only unweighted method: it sums the min-max-normalised
-    sub-criteria values directly (no CRITIC weights applied).
+    The five MCDM methods are TOPSIS, VIKOR, PROMETHEE, COPRAS, and EDAS.
+    ``Base`` is a standalone naive baseline that sums the original (raw,
+    un-normalised) sub-criteria values directly, with no weighting applied.
+    Base is stored in ``criterion_method_scores`` for comparison purposes
+    but is **not** fed into the ER aggregation — ER uses only the 5 MCDM
+    methods.
 
     Parameters
     ----------
@@ -124,8 +127,11 @@ class HierarchicalRankingPipeline:
         Subcriteria codes where lower values are preferred.
     """
 
-    TRADITIONAL_METHODS = ['TOPSIS', 'VIKOR', 'PROMETHEE', 'COPRAS', 'EDAS', 'SAW']
+    # All methods stored in results (includes standalone Base baseline)
+    TRADITIONAL_METHODS = ['TOPSIS', 'VIKOR', 'PROMETHEE', 'COPRAS', 'EDAS', 'Base']
     ALL_METHODS = TRADITIONAL_METHODS
+    # Only these 5 are fed into ER aggregation
+    ER_METHODS = ['TOPSIS', 'VIKOR', 'PROMETHEE', 'COPRAS', 'EDAS']
 
     def __init__(
         self,
@@ -293,15 +299,23 @@ class HierarchicalRankingPipeline:
             all_method_ranks[crit_id]  = crit_ranks
 
         # ------------------------------------------------------------------
-        # Stage 2: ER aggregation
+        # Stage 2: ER aggregation (5 MCDM methods only — Base excluded)
         # ------------------------------------------------------------------
+        # Build a filtered view of method scores that excludes the Base
+        # baseline so ER aggregation is not influenced by the raw sum.
+        er_method_scores: Dict[str, Dict[str, pd.Series]] = {
+            crit_id: {
+                m: s for m, s in crit_data.items() if m in self.ER_METHODS
+            }
+            for crit_id, crit_data in all_method_scores.items()
+        }
         # The ER engine uses `.get(alt, 0.5)` for alternatives absent from a
         # criterion's score Series — mapping to a uniform (max-uncertainty)
         # belief distribution.  Only `alternatives` (active provinces) are
         # ranked; fully excluded provinces never appear here.
-        logger.info("  Running Evidential Reasoning aggregation...")
+        logger.info("  Running Evidential Reasoning aggregation (5 MCDM methods)...")
         er_result = self.er_aggregator.aggregate(
-            method_scores=all_method_scores,
+            method_scores=er_method_scores,
             criterion_weights=criterion_weights,
             alternatives=alternatives,
         )
@@ -394,7 +408,8 @@ class HierarchicalRankingPipeline:
         alternatives: List[str],
     ) -> Tuple[Dict[str, pd.Series], Dict[str, pd.Series]]:
         """
-        Run 5 traditional MCDM methods on a **clean** criterion-level decision matrix.
+        Run 5 traditional MCDM methods + Base baseline on a **clean**
+        criterion-level decision matrix.
 
         The matrix is guaranteed NaN-free by the caller (``rank()`` uses
         :meth:`PanelData.get_criterion_matrix` which applies dynamic exclusion
@@ -403,7 +418,7 @@ class HierarchicalRankingPipeline:
 
         Returns
         -------
-        scores  : {method_name: pd.Series}  (normalised [0, 1])
+        scores  : {method_name: pd.Series}  (MCDM scores normalised [0, 1]; Base in raw units)
         ranks   : {method_name: pd.Series}
         """
         criteria = df.columns.tolist()
@@ -447,7 +462,9 @@ class HierarchicalRankingPipeline:
         # ===== TRADITIONAL METHODS =====
         # Pass cost_criteria=[] because direction is already encoded
         # in df_norm by _minmax_normalize (audit fix C1).
-        trad_results = self._run_traditional(df_norm, subcrit_weights, cost_criteria=[])
+        # Pass the original df so _run_traditional can compute the Base
+        # raw-sum score from un-normalised values.
+        trad_results = self._run_traditional(df_norm, df, subcrit_weights, cost_criteria=[])
         for name, res in trad_results.items():
             s = self._normalize_scores(
                 res['scores'], higher_is_better=res['higher_better'])
@@ -463,14 +480,16 @@ class HierarchicalRankingPipeline:
     def _run_traditional(
         self,
         df: pd.DataFrame,
+        df_orig: pd.DataFrame,
         weights: Dict[str, float],
         cost_criteria: List[str],
     ) -> Dict[str, Dict]:
-        """Run 6 traditional MCDM methods. Returns raw scores + ranks.
+        """Run 5 traditional MCDM methods + Base baseline. Returns raw scores + ranks.
 
-        SAW is the only method that does **not** use the CRITIC weights;
-        it sums the already-normalised sub-criteria values directly so that
-        every sub-criterion contributes equally (unweighted additive score).
+        ``df`` is the min-max normalised decision matrix used by all MCDM
+        methods.  ``df_orig`` is the original (un-normalised) matrix used
+        exclusively by the Base baseline, which sums raw sub-criteria values
+        without any normalisation or weighting.
         """
         results = {}
 
@@ -533,18 +552,18 @@ class HierarchicalRankingPipeline:
         except Exception as e:
             logger.warning(f"    EDAS failed: {e}")
 
-        # SAW — unweighted sum of already-normalised scores.
-        # df is already min-max normalised to [0, 1] by _minmax_normalize();
-        # summing columns gives the raw SAW score without applying CRITIC
-        # weights, so each sub-criterion contributes equally.
+        # Base — naive baseline: sum of original (un-normalised) sub-criteria
+        # values with no weighting applied.  This serves as a simple additive
+        # composite that requires zero methodological choices beyond the raw
+        # data, making it the most transparent possible baseline.
         try:
-            saw_scores = df.sum(axis=1)          # raw sum ∈ [0, n_subcriteria]
-            saw_ranks  = saw_scores.rank(ascending=False, method='min').astype(int)
-            results['SAW'] = {
-                'scores': saw_scores, 'ranks': saw_ranks, 'higher_better': True
+            base_scores = df_orig.sum(axis=1)    # raw sum in original units
+            base_ranks  = base_scores.rank(ascending=False, method='min').astype(int)
+            results['Base'] = {
+                'scores': base_scores, 'ranks': base_ranks, 'higher_better': True
             }
         except Exception as e:
-            logger.warning(f"    SAW failed: {e}")
+            logger.warning(f"    Base failed: {e}")
 
         return results
 

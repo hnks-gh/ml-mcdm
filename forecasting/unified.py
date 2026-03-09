@@ -133,6 +133,10 @@ class UnifiedForecastResult:
     best_model_name: Optional[str] = None
     best_model_predictions: Optional[pd.DataFrame] = None
     model_comparison: Optional[List] = None
+    forecast_criterion_weights: Optional[Dict[str, float]] = None
+    """CRITIC criterion weights (C01–C08) derived from the ML-predicted
+    forecasted cross-section.  ``None`` when ``use_saw_targets=False`` or
+    when the CRITIC calculation fails.  Populated by Stage 7."""
 
     def get_summary(self) -> str:
         """Generate comprehensive summary report."""
@@ -383,6 +387,7 @@ class UnifiedForecaster:
                  conformal_method: str = 'cv_plus',
                  conformal_alpha: float = 0.05,
                  cv_folds: int = 3,
+                 cv_min_train_years: int = 7,
                  random_state: int = 42,
                  verbose: bool = True,
                  config: Optional[ForecastConfig] = None,
@@ -397,6 +402,7 @@ class UnifiedForecaster:
             config.uncertainty_method if config is not None else uncertainty_method
         )
         self.cv_folds = cv_folds
+        self.cv_min_train_years = cv_min_train_years
         self.random_state = random_state
         self.verbose = verbose
         self.target_level = target_level
@@ -642,6 +648,9 @@ class UnifiedForecaster:
             if w_sum > 0:
                 weights = weights / w_sum
 
+            # Store on self so the result object can expose them
+            self.forecast_criterion_weights_ = weights.to_dict()
+
             composite = (scores * weights).sum(axis=1)
 
         except Exception as exc:
@@ -874,6 +883,7 @@ class UnifiedForecaster:
             base_models=self.models_,
             meta_learner_type='ridge',
             n_cv_folds=self.cv_folds,
+            cv_min_train_years=self.cv_min_train_years,
             positive_weights=True,
             normalize_weights=True,
             random_state=self.random_state,
@@ -1564,6 +1574,7 @@ class UnifiedForecaster:
             cross_validation_scores=self._cv_scores_,
             holdout_performance=self.holdout_performance_,
             composite_predictions=self.composite_predictions_,
+            forecast_criterion_weights=self.forecast_criterion_weights_,
             training_info=self._training_info_,
             data_summary={
                 'n_entities':   len(self.X_pred_),

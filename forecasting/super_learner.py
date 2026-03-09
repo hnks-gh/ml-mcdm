@@ -304,6 +304,9 @@ class SuperLearner:
         meta_learner_type: Type of meta-learner ('elasticnet', 'ridge',
                           'bayesian_stacking')
         n_cv_folds: Number of CV folds for OOF predictions
+        cv_min_train_years: Minimum year-label cohorts before first validation
+            fold when using _WalkForwardYearlySplit.  Default 7 places the
+            first validation at 2019 when year_labels run 2012–2024.
         positive_weights: If True, constrain meta-weights to be non-negative
         normalize_weights: If True, meta-weights sum to 1
         meta_alpha_range: Range of regularization values for meta-learner CV
@@ -335,7 +338,8 @@ class SuperLearner:
         self,
         base_models: Dict[str, BaseForecaster],
         meta_learner_type: str = "ridge",
-        n_cv_folds: int = 5,
+        n_cv_folds: int = 6,
+        cv_min_train_years: int = 7,
         positive_weights: bool = True,
         normalize_weights: bool = True,
         meta_alpha_range: Optional[List[float]] = None,
@@ -346,6 +350,7 @@ class SuperLearner:
         self.base_models = base_models
         self.meta_learner_type = meta_learner_type
         self.n_cv_folds = n_cv_folds
+        self.cv_min_train_years = cv_min_train_years
         self.positive_weights = positive_weights
         self.normalize_weights = normalize_weights
         self.meta_alpha_range = meta_alpha_range or [
@@ -422,7 +427,7 @@ class SuperLearner:
         # year labels are available (e.g., unit tests with synthetic data).
         if year_labels is not None:
             tscv = _WalkForwardYearlySplit(
-                min_train_years=max(2, self.n_cv_folds),
+                min_train_years=self.cv_min_train_years,
                 max_folds=self.n_cv_folds,
             )
             cv_iter = tscv.split(X, year_labels)
@@ -442,8 +447,14 @@ class SuperLearner:
             if self.verbose and year_labels is not None:
                 train_yrs = np.unique(year_labels[train_idx])
                 val_yrs   = np.unique(year_labels[val_idx])
-                yr_range  = (f"{int(train_yrs[0])}–{int(train_yrs[-1])}"
-                             if len(train_yrs) > 1 else str(int(train_yrs[0])))
+                # year_labels are target years (T+1); display training range
+                # as source-data years by shifting the start back by 1 so
+                # the log reads "train 2011–2018, validate 2019" rather than
+                # the raw label range "2012–2018".
+                train_start = int(train_yrs[0]) - 1
+                train_end   = int(train_yrs[-1])
+                yr_range = (f"{train_start}–{train_end}"
+                            if len(train_yrs) > 1 else str(train_start))
                 print(
                     f"    Fold {fold_idx + 1}: train {yr_range}, "
                     f"validate {int(val_yrs[0])} ({len(val_idx)} rows)"

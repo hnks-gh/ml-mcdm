@@ -16,6 +16,10 @@ Files are organised under ``output/result/csv/<phase>/``:
                    mcdm_scores_composite.csv
   - ranking/     — mcdm_criteria_C01_ranking.csv … mcdm_criteria_C08_ranking.csv,
                    mcdm_scores_composite_ranking.csv
+
+Columns for MCDM methods: TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS, Base, ER
+  (Base = raw sum of original sub-criteria values per criterion, naive baseline)
+  (SAW retired; Base replaces it in all exports)
   - forecasting/ — forecast_*, model_*, feature_importance, cv scores
   - sensitivity/ — sensitivity_*.csv, sensitivity_summary.json
 """
@@ -213,8 +217,9 @@ class CsvWriter:
         Write per-criterion MCDM score files spanning all years.
 
         Each file is long-format: one row per (Year, Province) pair with
-        columns for TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS, SAW, and ER
-        (Stage-1 ER average utility for that criterion).
+        columns for TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS, Base, and ER
+        (Stage-1 ER average utility for that criterion).  ``Base`` is the
+        raw-sum naive baseline (un-normalised, un-weighted sub-criteria sum).
 
         Files produced (mcdm/ directory)
         ---------------------------------
@@ -224,7 +229,7 @@ class CsvWriter:
         if not multi_year_results:
             return saved
 
-        _METHODS = ['TOPSIS', 'VIKOR', 'PROMETHEE', 'COPRAS', 'EDAS', 'SAW']
+        _METHODS = ['TOPSIS', 'VIKOR', 'PROMETHEE', 'COPRAS', 'EDAS', 'Base']
         years = sorted(multi_year_results.keys())
         crit_rows: Dict[str, List[Dict]] = {}
 
@@ -287,7 +292,7 @@ class CsvWriter:
         if not multi_year_results:
             return None
 
-        _METHODS = ['TOPSIS', 'VIKOR', 'PROMETHEE', 'COPRAS', 'EDAS', 'SAW']
+        _METHODS = ['TOPSIS', 'VIKOR', 'PROMETHEE', 'COPRAS', 'EDAS', 'Base']
         years = sorted(multi_year_results.keys())
         rows: List[Dict] = []
 
@@ -501,6 +506,41 @@ class CsvWriter:
                 df.index.name = 'Set'
                 saved['holdout'] = self._save_csv(
                     df, 'holdout_performance.csv', directory=_dir, float_fmt='%.4f')
+        except Exception as _exc:
+            _logger.debug('section skipped: %s', _exc)
+
+        # Forecast CRITIC criterion weights (derived from the predicted cross-section)
+        try:
+            fcw = getattr(forecast_result, 'forecast_criterion_weights', None)
+            if fcw:
+                df = pd.DataFrame([
+                    {'Criterion': crit, 'CRITIC_Weight': w,
+                     'CRITIC_Weight_Pct': f'{w * 100:.2f}%'}
+                    for crit, w in sorted(fcw.items())
+                ]).set_index('Criterion')
+                df['Rank'] = df['CRITIC_Weight'].rank(ascending=False, method='min').astype(int)
+                saved['forecast_criterion_weights'] = self._save_csv(
+                    df, 'forecast_criterion_weights.csv',
+                    directory=_dir, float_fmt='%.6f')
+        except Exception as _exc:
+            _logger.debug('section skipped: %s', _exc)
+
+        # Forecast ranking (provinces ranked by CRITIC-weighted composite score)
+        try:
+            composite = getattr(forecast_result, 'composite_predictions', None)
+            if composite is not None and len(composite) > 0:
+                rank_df = composite.rename('Composite_Score').to_frame()
+                rank_df.index.name = 'Province'
+                rank_df['Rank'] = rank_df['Composite_Score'].rank(
+                    ascending=False, method='min').astype(int)
+                rank_df = rank_df.sort_values('Rank').reset_index()
+                rank_df.index = rank_df.index + 1
+                rank_df.index.name = 'Position'
+                n = len(rank_df)
+                rank_df['Percentile'] = ((n - rank_df['Rank'] + 1) / n * 100).round(1)
+                saved['forecast_ranking'] = self._save_csv(
+                    rank_df, 'forecast_ranking.csv',
+                    directory=_dir, float_fmt='%.4f')
         except Exception as _exc:
             _logger.debug('section skipped: %s', _exc)
 
@@ -1365,13 +1405,13 @@ class CsvWriter:
         mcdm_scores_composite_ranking.csv
 
         Columns: Year, Province, TOPSIS_Rank, VIKOR_Rank, PROMETHEE_Rank,
-                 COPRAS_Rank, EDAS_Rank, SAW_Rank, ER_Rank
+                 COPRAS_Rank, EDAS_Rank, Base_Rank, ER_Rank
         """
         saved: Dict[str, str] = {}
         if not multi_year_results:
             return saved
 
-        _METHODS = ['TOPSIS', 'VIKOR', 'PROMETHEE', 'COPRAS', 'EDAS', 'SAW']
+        _METHODS = ['TOPSIS', 'VIKOR', 'PROMETHEE', 'COPRAS', 'EDAS', 'Base']
         _RANK_COLS = [f'{m}_Rank' for m in _METHODS] + ['ER_Rank']
         years = sorted(multi_year_results.keys())
 

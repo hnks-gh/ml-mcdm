@@ -726,5 +726,460 @@ class MCDMPlotter(BasePlotter):
             _logger.warning('plot_criterion_er_utility_heatmap failed: %s', _exc)
             return None
 
+    # ==================================================================
+    #  Helpers — method comparison metrics
+    # ==================================================================
+
+    _TRAD_METHODS = ['TOPSIS', 'VIKOR', 'PROMETHEE', 'COPRAS', 'EDAS', 'Base']
+
+    def _compute_method_stability(
+        self, ranking_result: Any
+    ) -> Dict[str, float]:
+        """
+        Cross-criteria stability for each method.
+
+        For each traditional MCDM method (and Base): compute the average
+        pairwise Spearman ρ between that method's per-criterion rank vectors
+        across all criterion pairs.  Higher = more consistent ordering across
+        criteria groups.
+
+        For ER: use the overall Kendall's W from the ER result (inter-method
+        agreement of the 5 MCDM inputs used by ER).
+
+        Returns
+        -------
+        Dict[str, float]  method → stability score ∈ [−1, 1]
+        """
+        stability: Dict[str, float] = {}
+
+        crit_method_ranks = getattr(ranking_result, 'criterion_method_ranks', {})
+        crit_ids = sorted(crit_method_ranks.keys())
+        n_crit = len(crit_ids)
+
+        if HAS_SCIPY and n_crit >= 2:
+            for method in self._TRAD_METHODS:
+                rank_vecs: List[np.ndarray] = []
+                for crit_id in crit_ids:
+                    series = crit_method_ranks[crit_id].get(method)
+                    if series is not None:
+                        rank_vecs.append(
+                            np.asarray(series.values
+                                       if hasattr(series, 'values') else series,
+                                       dtype=float)
+                        )
+                if len(rank_vecs) < 2:
+                    continue
+                rho_vals: List[float] = []
+                for i in range(len(rank_vecs)):
+                    for j in range(i + 1, len(rank_vecs)):
+                        # Align by minimum shared length (criteria may have
+                        # different province counts due to dynamic exclusion)
+                        a, b = rank_vecs[i], rank_vecs[j]
+                        min_len = min(len(a), len(b))
+                        if min_len < 2:
+                            continue
+                        rho, _ = sp_stats.spearmanr(a[:min_len], b[:min_len])
+                        if not np.isnan(rho):
+                            rho_vals.append(float(rho))
+                if rho_vals:
+                    stability[method] = float(np.mean(rho_vals))
+
+        # ER stability ≡ Kendall's W of the 5 MCDM methods used by ER
+        kw = getattr(ranking_result, 'kendall_w', None)
+        if kw is not None:
+            stability['ER'] = float(kw)
+
+        return stability
+
+    def _compute_method_disc_power(
+        self, ranking_result: Any
+    ) -> Dict[str, float]:
+        """
+        Discriminatory power for each method: IQR (Q75−Q25) of the
+        criterion-weighted composite score across all active provinces.
+
+        For each traditional method, the composite score is the weighted
+        average of normalised per-criterion scores (using
+        ``criterion_weights_used`` from the ranking result).  For ER, the
+        composite score is directly from ``final_scores``.
+
+        Returns
+        -------
+        Dict[str, float]  method → IQR ≥ 0
+        """
+        disc: Dict[str, float] = {}
+
+        crit_method_scores = getattr(ranking_result, 'criterion_method_scores', {})
+        crit_weights = getattr(ranking_result, 'criterion_weights_used', {})
+        crit_ids = sorted(crit_method_scores.keys())
+
+        # Determine active province list from final ranking
+        final_scores = getattr(ranking_result, 'final_scores', None)
+        if final_scores is not None and hasattr(final_scores, 'index'):
+            provinces = list(final_scores.index)
+        else:
+            first_crit = next(iter(crit_method_scores.values()), {})
+            first_s = next(iter(first_crit.values()), None)
+            provinces = (list(first_s.index)
+                         if first_s is not None and hasattr(first_s, 'index')
+                         else [])
+        if not provinces:
+            return disc
+
+        # Normalise criterion weights to sum to 1
+        total_w = sum(crit_weights.get(c, 1.0) for c in crit_ids)
+        if total_w <= 0:
+            total_w = len(crit_ids)
+        norm_w = {c: crit_weights.get(c, 1.0) / total_w for c in crit_ids}
+
+        for method in self._TRAD_METHODS:
+            composite = np.zeros(len(provinces))
+            weight_sum = np.zeros(len(provinces))
+            for crit_id in crit_ids:
+                series = crit_method_scores[crit_id].get(method)
+                if series is None:
+                    continue
+                w = norm_w[crit_id]
+                for pi, prov in enumerate(provinces):
+                    if hasattr(series, 'loc') and prov in series.index:
+                        val = float(series.loc[prov])
+                        if not np.isnan(val):
+                            composite[pi] += w * val
+                            weight_sum[pi] += w
+            # Avoid division by zero for provinces missing all criteria
+            valid = weight_sum > 0
+            if valid.sum() < 2:
+                continue
+            comp_valid = composite[valid] / weight_sum[valid]
+            disc[method] = float(
+                np.percentile(comp_valid, 75) - np.percentile(comp_valid, 25)
+            )
+
+        # ER discriminatory power from final composite scores
+        if final_scores is not None:
+            vals = np.asarray(
+                final_scores.values
+                if hasattr(final_scores, 'values') else final_scores,
+                dtype=float,
+            )
+            vals = vals[~np.isnan(vals)]
+            if len(vals) >= 2:
+                disc['ER'] = float(
+                    np.percentile(vals, 75) - np.percentile(vals, 25)
+                )
+
+        return disc
+
+    # ==================================================================
+    #  FIG 08e – Method Stability Comparison (horizontal bar)
+    # ==================================================================
+
+    def plot_method_stability_comparison(
+        self,
+        ranking_result: Any,
+        save_name: str = 'fig08e_method_stability.png',
+    ) -> Optional[str]:
+        """
+        Horizontal bar chart comparing the cross-criteria ranking stability
+        (average pairwise Spearman ρ) of Base, the 5 MCDM methods, and ER.
+
+        Bars sorted from highest to lowest stability.  Base is shown in a
+        muted gray, MCDM methods in the categorical palette, and ER in a
+        distinct accent colour.  A dashed vertical line marks the median.
+        """
+        if not HAS_MATPLOTLIB or not HAS_SCIPY:
+            return None
+
+        try:
+            stability = self._compute_method_stability(ranking_result)
+            if len(stability) < 2:
+                return None
+
+            # Sort by value descending
+            labels = sorted(stability, key=stability.get, reverse=True)
+            values = [stability[m] for m in labels]
+            n = len(labels)
+
+            # Colour assignment
+            _ER_COLOUR   = '#1A6B3C'   # deep green — ER stands out
+            _BASE_COLOUR = '#9E9E9E'   # neutral gray — naive baseline
+            _PALETTE = [
+                '#2E86AB', '#E84855', '#F4A100',
+                '#6A4C93', '#3BB273', '#FF6B35',
+            ]
+            trad_idx = 0
+            bar_colours = []
+            for m in labels:
+                if m == 'ER':
+                    bar_colours.append(_ER_COLOUR)
+                elif m == 'Base':
+                    bar_colours.append(_BASE_COLOUR)
+                else:
+                    bar_colours.append(_PALETTE[trad_idx % len(_PALETTE)])
+                    trad_idx += 1
+
+            fig, ax = plt.subplots(figsize=(12, max(5, n * 0.70 + 1.5)))
+
+            bars = ax.barh(
+                range(n), values,
+                color=bar_colours, edgecolor='white', linewidth=0.6,
+                height=0.60, zorder=3,
+            )
+            # Grid
+            ax.xaxis.grid(True, linestyle='--', alpha=0.4, zorder=0)
+            ax.set_axisbelow(True)
+
+            # Value labels
+            x_max = max(values) if values else 1.0
+            for i, (bar, val) in enumerate(zip(bars, values)):
+                ax.text(
+                    val + x_max * 0.012, i,
+                    f'{val:.3f}',
+                    va='center', ha='left', fontsize=9.5,
+                    color='#222222', fontweight='bold',
+                )
+
+            # Median reference line
+            med = float(np.median(values))
+            ax.axvline(med, color='#555555', linestyle=':', linewidth=1.4,
+                       label=f'Median = {med:.3f}', zorder=4)
+
+            ax.set_yticks(range(n))
+            ax.set_yticklabels(labels, fontsize=10.5)
+            ax.invert_yaxis()
+            ax.set_xlabel('Cross-Criteria Spearman ρ  (avg pairwise)', fontsize=11)
+
+            # Legend patches
+            from matplotlib.patches import Patch
+            legend_handles = [
+                Patch(facecolor=_BASE_COLOUR, label='Baseline (Base)'),
+                Patch(facecolor=_PALETTE[0],  label='MCDM Methods'),
+                Patch(facecolor=_ER_COLOUR,    label='ER Aggregation'),
+            ]
+            ax.legend(
+                handles=legend_handles, fontsize=9.5,
+                loc='lower right', framealpha=0.85,
+            )
+
+            ax.set_title(
+                'Ranking Stability by Method',
+                fontsize=14, fontweight='bold', pad=14,
+            )
+            ax.text(
+                0.5, 1.01,
+                '↑  Higher = more consistent ranking across criteria groups',
+                transform=ax.transAxes,
+                ha='center', va='bottom', fontsize=9.5, color='#555555',
+                style='italic',
+            )
+
+            # Right-side rank badge
+            for i, m in enumerate(labels):
+                ax.text(
+                    -0.001, i, f'#{i+1}',
+                    va='center', ha='right', fontsize=8,
+                    color='#888888', transform=ax.get_yaxis_transform(),
+                )
+
+            ax.set_xlim(left=min(0, min(values) - 0.05),
+                        right=x_max + x_max * 0.14)
+            fig.tight_layout()
+            return self._save(fig, save_name)
+
+        except Exception as _exc:
+            _logger.warning('plot_method_stability_comparison failed: %s', _exc)
+            return None
+
+    # ==================================================================
+    #  FIG 08f – Method Discriminatory Power Comparison (vertical bar)
+    # ==================================================================
+
+    def plot_method_disc_power_comparison(
+        self,
+        ranking_result: Any,
+        save_name: str = 'fig08f_method_disc_power.png',
+    ) -> Optional[str]:
+        """
+        Vertical bar chart comparing the discriminatory power (score IQR,
+        Q75 − Q25) of Base, the 5 MCDM methods, and ER.
+
+        Methods appear in fixed order: Base → TOPSIS → VIKOR → PROMETHEE
+        → COPRAS → EDAS → ER.  A dashed horizontal line marks the ER IQR
+        as a reference target.  Bar interiors show a translucent Q10–Q90
+        band to communicate the full score spread.
+        """
+        if not HAS_MATPLOTLIB:
+            return None
+
+        try:
+            disc = self._compute_method_disc_power(ranking_result)
+            if len(disc) < 2:
+                return None
+
+            # Fixed display order — only include methods that have a value
+            _ORDER = ['Base', 'TOPSIS', 'VIKOR', 'PROMETHEE', 'COPRAS', 'EDAS', 'ER']
+            labels = [m for m in _ORDER if m in disc]
+            values = [disc[m] for m in labels]
+            n = len(labels)
+
+            _ER_COLOUR   = '#1A6B3C'
+            _BASE_COLOUR = '#9E9E9E'
+            _PALETTE = [
+                '#2E86AB', '#E84855', '#F4A100',
+                '#6A4C93', '#3BB273', '#FF6B35',
+            ]
+            trad_idx = 0
+            bar_colours = []
+            for m in labels:
+                if m == 'ER':
+                    bar_colours.append(_ER_COLOUR)
+                elif m == 'Base':
+                    bar_colours.append(_BASE_COLOUR)
+                else:
+                    bar_colours.append(_PALETTE[trad_idx % len(_PALETTE)])
+                    trad_idx += 1
+
+            x = np.arange(n)
+            bar_width = 0.55
+
+            fig, ax = plt.subplots(figsize=(12, 7))
+
+            bars = ax.bar(
+                x, values,
+                color=bar_colours, edgecolor='white', linewidth=0.7,
+                width=bar_width, zorder=3,
+            )
+            # Subtle inner Q10–Q90 score-range bands
+            crit_method_scores = getattr(ranking_result, 'criterion_method_scores', {})
+            crit_weights = getattr(ranking_result, 'criterion_weights_used', {})
+            crit_ids = sorted(crit_method_scores.keys())
+            final_scores = getattr(ranking_result, 'final_scores', None)
+            if final_scores is not None and hasattr(final_scores, 'index'):
+                provinces = list(final_scores.index)
+            else:
+                first_c = next(iter(crit_method_scores.values()), {})
+                first_s = next(iter(first_c.values()), None)
+                provinces = (list(first_s.index)
+                             if first_s is not None and hasattr(first_s, 'index') else [])
+
+            total_w = sum(crit_weights.get(c, 1.0) for c in crit_ids)
+            if total_w <= 0:
+                total_w = max(len(crit_ids), 1)
+            norm_w = {c: crit_weights.get(c, 1.0) / total_w for c in crit_ids}
+
+            for xi, method in enumerate(labels):
+                if method == 'ER':
+                    if final_scores is not None:
+                        comp = np.asarray(
+                            final_scores.values
+                            if hasattr(final_scores, 'values') else final_scores,
+                            dtype=float,
+                        )
+                    else:
+                        continue
+                else:
+                    comp = np.zeros(len(provinces))
+                    w_acc = np.zeros(len(provinces))
+                    for crit_id in crit_ids:
+                        series = crit_method_scores[crit_id].get(method)
+                        if series is None:
+                            continue
+                        w = norm_w[crit_id]
+                        for pi, prov in enumerate(provinces):
+                            if hasattr(series, 'loc') and prov in series.index:
+                                val = float(series.loc[prov])
+                                if not np.isnan(val):
+                                    comp[pi] += w * val
+                                    w_acc[pi] += w
+                    valid = w_acc > 0
+                    if valid.sum() < 2:
+                        continue
+                    comp = comp[valid] / w_acc[valid]
+
+                comp = comp[~np.isnan(comp)]
+                if len(comp) < 2:
+                    continue
+                q10 = float(np.percentile(comp, 10))
+                q90 = float(np.percentile(comp, 90))
+                # Normalise band to bar height (values are IQR; band shows
+                # Q10-Q90 relative to the data range for visual context)
+                # Draw the band as a translucent rectangle over the bar
+                bar_h = values[xi]
+                # Map q10-q90 proportionally onto bar height
+                data_range = q90 - q10 if q90 > q10 else 1.0
+                band_bottom = bar_h * max(0.0, (q10 - q10) / data_range)
+                band_top    = bar_h  # cap at bar top
+                ax.bar(
+                    xi, band_top - band_bottom,
+                    bottom=band_bottom,
+                    color='white', alpha=0.25,
+                    width=bar_width * 0.88, zorder=4,
+                )
+
+            # Grid
+            ax.yaxis.grid(True, linestyle='--', alpha=0.4, zorder=0)
+            ax.set_axisbelow(True)
+
+            # Value labels on bar tops
+            y_max = max(values) if values else 1.0
+            for xi, val in enumerate(values):
+                ax.text(
+                    xi, val + y_max * 0.015,
+                    f'{val:.4f}',
+                    ha='center', va='bottom', fontsize=9.5,
+                    color='#222222', fontweight='bold',
+                )
+
+            # ER IQR reference line
+            if 'ER' in disc:
+                er_iqr = disc['ER']
+                ax.axhline(er_iqr, color=_ER_COLOUR, linestyle='--',
+                           linewidth=1.5, alpha=0.8,
+                           label=f'ER IQR = {er_iqr:.4f}', zorder=5)
+
+            ax.set_xticks(x)
+            ax.set_xticklabels(labels, fontsize=11)
+            ax.set_ylabel('Score IQR  (Q75 − Q25)', fontsize=11)
+            ax.set_ylim(bottom=0, top=y_max * 1.14)
+
+            # Colour-coded x-tick labels
+            for tick_lbl, m in zip(ax.get_xticklabels(), labels):
+                if m == 'ER':
+                    tick_lbl.set_color(_ER_COLOUR)
+                    tick_lbl.set_fontweight('bold')
+                elif m == 'Base':
+                    tick_lbl.set_color('#666666')
+
+            from matplotlib.patches import Patch
+            legend_handles = [
+                Patch(facecolor=_BASE_COLOUR, label='Baseline (Base)'),
+                Patch(facecolor=_PALETTE[0],  label='MCDM Methods'),
+                Patch(facecolor=_ER_COLOUR,    label='ER Aggregation'),
+            ]
+            ax.legend(
+                handles=legend_handles, fontsize=9.5,
+                loc='upper right', framealpha=0.85,
+            )
+
+            ax.set_title(
+                'Discriminatory Power by Method',
+                fontsize=14, fontweight='bold', pad=14,
+            )
+            ax.text(
+                0.5, 1.01,
+                '↑  Higher = better ability to differentiate provinces'
+                '  |  Score IQR (Q75 − Q25) of criterion-weighted composite',
+                transform=ax.transAxes,
+                ha='center', va='bottom', fontsize=9.5, color='#555555',
+                style='italic',
+            )
+
+            fig.tight_layout()
+            return self._save(fig, save_name)
+
+        except Exception as _exc:
+            _logger.warning('plot_method_disc_power_comparison failed: %s', _exc)
+            return None
+
 
 __all__ = ['MCDMPlotter']
