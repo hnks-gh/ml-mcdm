@@ -101,8 +101,12 @@ forecasting = [
     "optuna>=3.0.0",        # Hyperparameter optimization
     "mapie>=0.6.0",         # Conformal prediction
 ]
+accelerated = [
+    "catboost>=1.2.0",      # Joint multi-output boosting (MultiRMSE, recommended)
+    "lightgbm>=4.0.0",      # LightGBM fallback (faster, independent per output)
+]
 all = [
-    "ml-mcdm[dev,ml,analysis,forecasting]",
+    "ml-mcdm[dev,ml,analysis,forecasting,accelerated]",
 ]
 
 [project.urls]

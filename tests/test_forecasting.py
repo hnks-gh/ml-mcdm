@@ -985,3 +985,381 @@ class TestAuditRegressions:
             "CatBoost default depth=6 (2^6=64 leaves) replaces sklearn depth=5."
         )
         assert cb.iterations == 300  # class default for n >= 500
+
+
+# ---------------------------------------------------------------------------
+# Phase 8 — Pipeline Decoupling: stage-level API
+# ---------------------------------------------------------------------------
+
+class TestPipelineDecoupling:
+    """Tests for Phase 8 — Pipeline Decoupling (stage1…stage7, get_stage_outputs,
+    ForecastConfig.pipeline_mode).
+
+    Design: each test calls exactly the stages under test with no full model
+    fitting (slow), keeping the suite fast.  Stages 3+ integration is already
+    covered by the existing full-pipeline tests above.
+    """
+
+    # ------------------------------------------------------------------
+    # Mock-panel factory (mirrors TestFeatureEngineer._make_mock_panel)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _make_mock_panel(n_entities: int = 5, n_years: int = 7, n_components: int = 3):
+        """Return a lightweight mock PanelData.
+
+        Years: 2011 … 2011+n_years-1.
+        Provinces: P0 … P{n_entities-1}.
+        Components (subcriteria): x0 … x{n_components-1}.
+        """
+        import pandas as pd
+        from types import SimpleNamespace
+
+        years      = list(range(2011, 2011 + n_years))
+        provinces  = [f"P{i}" for i in range(n_entities)]
+        components = [f"x{j}" for j in range(n_components)]
+
+        class MockPanel:
+            pass
+
+        panel                    = MockPanel()
+        panel.provinces          = provinces
+        panel.subcriteria_names  = components
+        panel.years              = years
+
+        rng = np.random.RandomState(7)
+        data_store: dict = {}
+        for p in provinces:
+            data_store[p] = pd.DataFrame(
+                rng.rand(n_years, n_components),
+                index=years,
+                columns=components,
+            )
+
+        panel.get_province = lambda name: data_store[name]
+
+        cs: dict = {}
+        for y in years:
+            rows = []
+            for p in provinces:
+                row = {"Province": p}
+                row.update(data_store[p].loc[y].to_dict())
+                rows.append(row)
+            cs[y] = pd.DataFrame(rows)
+        panel.cross_section = cs
+
+        def _make_ctx(yr):
+            ctx                    = SimpleNamespace()
+            ctx.year               = yr
+            ctx.active_provinces   = list(provinces)
+            ctx.active_subcriteria = list(components)
+            ctx.valid_pairs        = {(p, sc) for p in provinces for sc in components}
+            ctx.is_valid           = lambda prov, sc, _c=ctx: (prov, sc) in _c.valid_pairs
+            return ctx
+
+        panel.year_contexts = {yr: _make_ctx(yr) for yr in years}
+        return panel
+
+    # ------------------------------------------------------------------
+    # Helper
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _make_uf(**kwargs):
+        """Create UnifiedForecaster configured for stage-level unit tests.
+
+        Defaults: subcriteria target level (matches mock panel), SAW targets
+        disabled to avoid normalization overhead, verbose off.
+        """
+        from forecasting.unified import UnifiedForecaster
+        from config import ForecastConfig
+
+        cfg = ForecastConfig(use_saw_targets=False, **kwargs)
+        return UnifiedForecaster(config=cfg, verbose=False, target_level='subcriteria')
+
+    # ------------------------------------------------------------------
+    # P8-1  stage1_engineer_features
+    # ------------------------------------------------------------------
+
+    def test_stage1_populates_training_data(self):
+        """stage1_engineer_features() must populate X_train_, y_train_, X_pred_,
+        and entity_info_ without fitting any model."""
+        panel = self._make_mock_panel()
+        uf    = self._make_uf()
+
+        uf.stage1_engineer_features(panel, target_year=2018)
+
+        assert not uf.X_train_.empty,  "X_train_ must be non-empty after stage1"
+        assert not uf.y_train_.empty,  "y_train_ must be non-empty after stage1"
+        assert not uf.X_pred_.empty,   "X_pred_ must be non-empty after stage1"
+        assert len(uf.X_pred_) == len(panel.provinces), (
+            "X_pred_ must have exactly one row per province"
+        )
+        assert uf.X_train_.shape[0] == uf.y_train_.shape[0], (
+            "X_train_ and y_train_ must share the same row count"
+        )
+        assert uf.X_train_.shape[1] == uf.X_pred_.shape[1], (
+            "Training and prediction sets must share the same feature count"
+        )
+        assert not uf.entity_info_.empty, "entity_info_ must be non-empty after stage1"
+        assert len(uf.entity_info_) == len(uf.X_train_), (
+            "entity_info_ row count must equal X_train_ row count"
+        )
+        assert uf.super_learner_ is None, (
+            "stage1 must not fit any model; super_learner_ must remain None"
+        )
+
+    def test_stage1_holdout_reserved(self):
+        """stage1 must auto-hold out the most-recent training year
+        (max panel year < target_year)."""
+        panel       = self._make_mock_panel()
+        target_year = 2018
+        uf          = self._make_uf()
+
+        uf.stage1_engineer_features(panel, target_year)
+
+        expected_holdout = max(y for y in panel.years if y < target_year)
+        assert uf.holdout_year_ is not None, "holdout_year_ must be set"
+        assert uf.holdout_year_ == expected_holdout, (
+            f"Expected holdout_year_={expected_holdout}, got {uf.holdout_year_}"
+        )
+        assert uf.holdout_year_ < target_year, (
+            "Holdout year must be strictly before the forecast target"
+        )
+
+    def test_stage1_holdout_features_non_empty(self):
+        """X_holdout_ and y_holdout_ must hold the withheld year's data."""
+        panel = self._make_mock_panel()
+        uf    = self._make_uf()
+
+        uf.stage1_engineer_features(panel, target_year=2018)
+
+        assert not uf.X_holdout_.empty, "X_holdout_ must be non-empty"
+        assert not uf.y_holdout_.empty, "y_holdout_ must be non-empty"
+        assert uf.X_holdout_.shape[1] == uf.X_train_.shape[1], (
+            "Holdout and training features must have the same column count"
+        )
+
+    def test_stage1_y_train_columns_match_components(self):
+        """y_train_ column count must equal n_components from the mock panel."""
+        n_comp = 4
+        panel  = self._make_mock_panel(n_components=n_comp)
+        uf     = self._make_uf()
+
+        uf.stage1_engineer_features(panel, target_year=2018)
+
+        assert uf.y_train_.shape[1] == n_comp, (
+            f"y_train_ should have {n_comp} columns, got {uf.y_train_.shape[1]}"
+        )
+
+    # ------------------------------------------------------------------
+    # P8-2  stage2_reduce_features
+    # ------------------------------------------------------------------
+
+    def test_stage2_populates_all_reduced_arrays(self):
+        """After stage2, all four reduced feature arrays must be non-empty
+        ndarrays with consistent row counts."""
+        panel = self._make_mock_panel()
+        uf    = self._make_uf()
+        uf.stage1_engineer_features(panel, 2018)
+        uf.stage2_reduce_features()
+
+        for attr in ('X_train_pca_', 'X_train_tree_', 'X_pred_pca_', 'X_pred_tree_'):
+            arr = getattr(uf, attr)
+            assert arr is not None and len(arr) > 0, (
+                f"{attr} must be a non-empty array after stage2"
+            )
+
+        assert uf.X_train_pca_.shape[0]  == len(uf.X_train_)
+        assert uf.X_pred_pca_.shape[0]   == len(uf.X_pred_)
+        assert uf.X_train_tree_.shape[0] == len(uf.X_train_)
+        assert uf.X_pred_tree_.shape[0]  == len(uf.X_pred_)
+
+    def test_stage2_pca_reduces_or_preserves_features(self):
+        """PCA track must not increase feature count beyond the original."""
+        panel = self._make_mock_panel()
+        uf    = self._make_uf()
+        uf.stage1_engineer_features(panel, 2018)
+        uf.stage2_reduce_features()
+
+        assert uf.X_train_pca_.shape[1] <= uf.X_train_.shape[1], (
+            "PCA-reduced feature count must be ≤ original feature count"
+        )
+
+    def test_stage2_per_model_dicts_populated(self):
+        """_per_model_X_train_ and _per_model_X_pred_ must cover all 5 base models."""
+        panel = self._make_mock_panel()
+        uf    = self._make_uf()
+        uf.stage1_engineer_features(panel, 2018)
+        uf.stage2_reduce_features()
+
+        expected_models = {'BayesianRidge', 'GradientBoosting', 'QuantileRF',
+                           'PanelVAR', 'NAM'}
+        assert expected_models <= set(uf._per_model_X_train_.keys()), (
+            "_per_model_X_train_ must cover all 5 base models"
+        )
+        assert expected_models <= set(uf._per_model_X_pred_.keys()), (
+            "_per_model_X_pred_ must cover all 5 base models"
+        )
+
+    # ------------------------------------------------------------------
+    # P8-3  pipeline_mode='features_only'
+    # ------------------------------------------------------------------
+
+    def test_pipeline_mode_features_only_returns_none(self):
+        """ForecastConfig.pipeline_mode='features_only' → fit_predict returns None."""
+        from forecasting.unified import UnifiedForecaster
+        from config import ForecastConfig
+
+        panel  = self._make_mock_panel()
+        cfg    = ForecastConfig(pipeline_mode='features_only', use_saw_targets=False)
+        uf     = UnifiedForecaster(config=cfg, verbose=False, target_level='subcriteria')
+        result = uf.fit_predict(panel, target_year=2018)
+
+        assert result is None, (
+            "pipeline_mode='features_only' must return None from fit_predict()"
+        )
+
+    def test_pipeline_mode_features_only_no_model_fitted(self):
+        """In 'features_only' mode, no base model or SuperLearner must be fitted."""
+        from forecasting.unified import UnifiedForecaster
+        from config import ForecastConfig
+
+        panel  = self._make_mock_panel()
+        cfg    = ForecastConfig(pipeline_mode='features_only', use_saw_targets=False)
+        uf     = UnifiedForecaster(config=cfg, verbose=False, target_level='subcriteria')
+        uf.fit_predict(panel, target_year=2018)
+
+        assert uf.super_learner_ is None, (
+            "super_learner_ must remain None in 'features_only' mode"
+        )
+
+    def test_pipeline_mode_features_only_stages12_done(self):
+        """'features_only' must have Stages 1 and 2 results populated."""
+        from forecasting.unified import UnifiedForecaster
+        from config import ForecastConfig
+
+        panel  = self._make_mock_panel()
+        cfg    = ForecastConfig(pipeline_mode='features_only', use_saw_targets=False)
+        uf     = UnifiedForecaster(config=cfg, verbose=False, target_level='subcriteria')
+        uf.fit_predict(panel, target_year=2018)
+
+        assert not uf.X_train_.empty,  "X_train_ must be populated in 'features_only'"
+        assert not uf.y_train_.empty,  "y_train_ must be populated in 'features_only'"
+        assert uf.X_train_pca_  is not None, "X_train_pca_ must be set in 'features_only'"
+        assert uf.X_train_tree_ is not None, "X_train_tree_ must be set in 'features_only'"
+
+    # ------------------------------------------------------------------
+    # P8-4  ForecastConfig.pipeline_mode field
+    # ------------------------------------------------------------------
+
+    def test_config_pipeline_mode_default_is_full(self):
+        """ForecastConfig.pipeline_mode must default to 'full'."""
+        from config import ForecastConfig
+
+        cfg = ForecastConfig()
+        assert cfg.pipeline_mode == 'full', (
+            f"ForecastConfig.pipeline_mode default should be 'full', "
+            f"got '{cfg.pipeline_mode}'"
+        )
+
+    def test_config_pipeline_mode_accepts_all_literals(self):
+        """ForecastConfig accepts all four documented pipeline_mode values."""
+        from config import ForecastConfig
+
+        for mode in ('full', 'features_only', 'fit_only', 'evaluate_only'):
+            cfg = ForecastConfig(pipeline_mode=mode)
+            assert cfg.pipeline_mode == mode
+
+    def test_config_pipeline_mode_wires_to_forecaster(self):
+        """UnifiedForecaster.pipeline_mode must reflect ForecastConfig.pipeline_mode."""
+        from forecasting.unified import UnifiedForecaster
+        from config import ForecastConfig
+
+        for mode in ('full', 'features_only', 'fit_only', 'evaluate_only'):
+            cfg = ForecastConfig(pipeline_mode=mode)
+            uf  = UnifiedForecaster(config=cfg, verbose=False)
+            assert uf.pipeline_mode == mode, (
+                f"UnifiedForecaster.pipeline_mode should be '{mode}', "
+                f"got '{uf.pipeline_mode}'"
+            )
+
+    def test_forecaster_default_pipeline_mode_is_full(self):
+        """UnifiedForecaster() without config must default pipeline_mode='full'."""
+        from forecasting.unified import UnifiedForecaster
+
+        uf = UnifiedForecaster(verbose=False)
+        assert uf.pipeline_mode == 'full', (
+            f"Default pipeline_mode should be 'full', got '{uf.pipeline_mode}'"
+        )
+
+    # ------------------------------------------------------------------
+    # P8-5  get_stage_outputs
+    # ------------------------------------------------------------------
+
+    def test_get_stage_outputs_returns_dict_with_required_keys(self):
+        """get_stage_outputs() must return a dict containing all documented keys
+        even before any stage runs (values will be empty/None, but keys present)."""
+        from forecasting.unified import UnifiedForecaster
+
+        uf  = UnifiedForecaster(verbose=False)
+        out = uf.get_stage_outputs()
+
+        assert isinstance(out, dict), "get_stage_outputs() must return a dict"
+
+        required_keys = (
+            # Stage 1
+            'X_train', 'y_train', 'X_pred', 'X_holdout', 'y_holdout', 'entity_info',
+            # Stage 2
+            'X_train_pca', 'X_train_tree', 'X_pred_pca', 'X_pred_tree',
+            'reducer_pca', 'reducer_tree',
+            # Stage 3
+            'models', 'oof_predictions',
+            # Stage 4
+            'super_learner', 'model_weights',
+            # Stage 5
+            'prediction_intervals',
+            # Stage 6
+            'model_comparison', 'holdout_performance',
+            # Stage 7
+            'composite_predictions',
+        )
+        for key in required_keys:
+            assert key in out, f"Key '{key}' missing from get_stage_outputs() result"
+
+    def test_get_stage_outputs_populated_after_stage1(self):
+        """After stage1, Stage 1 output keys must be non-empty DataFrames;
+        Stage 2+ keys must still be None."""
+        panel = self._make_mock_panel()
+        uf    = self._make_uf()
+        uf.stage1_engineer_features(panel, 2018)
+
+        out = uf.get_stage_outputs()
+
+        assert out['X_train'] is not None and not out['X_train'].empty
+        assert out['y_train'] is not None and not out['y_train'].empty
+        assert out['X_pred']  is not None and not out['X_pred'].empty
+        # Stage 2 not yet run
+        assert out['X_train_pca']  is None, "X_train_pca must be None before stage2"
+        assert out['X_train_tree'] is None, "X_train_tree must be None before stage2"
+
+    def test_get_stage_outputs_populated_after_stage2(self):
+        """After stages 1–2, all Stage 2 keys in get_stage_outputs() must be
+        non-None arrays; Stage 3+ keys must still be None."""
+        panel = self._make_mock_panel()
+        uf    = self._make_uf()
+        uf.stage1_engineer_features(panel, 2018)
+        uf.stage2_reduce_features()
+
+        out = uf.get_stage_outputs()
+
+        for key in ('X_train_pca', 'X_train_tree', 'X_pred_pca', 'X_pred_tree'):
+            assert out[key] is not None, (
+                f"'{key}' must be non-None in get_stage_outputs() after stage2"
+            )
+        assert out['reducer_pca']  is not None, "reducer_pca must be set after stage2"
+        assert out['reducer_tree'] is not None, "reducer_tree must be set after stage2"
+        # Stage 3+ still absent
+        assert out['super_learner'] is None, (
+            "super_learner must remain None before stage3"
+        )

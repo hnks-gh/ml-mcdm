@@ -290,22 +290,65 @@ class QuantileRandomForestForecaster(BaseForecaster):
     def predict_intervals(
         self,
         X: np.ndarray,
-        coverage: float = 0.90,
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        lower_q: float = 0.025,
+        upper_q: float = 0.975,
+    ) -> Tuple[np.ndarray, np.ndarray]:
         """
-        Compute prediction intervals at specified coverage level.
+        Compute asymmetric prediction intervals directly from QRF quantiles.
+
+        Produces **heteroscedastic** intervals: entities (provinces) whose
+        feature vector lands in high-variance leaves receive wider bands, while
+        those in stable, low-variance leaves receive narrower ones.  This
+        mirrors the true conditional distribution of the target, unlike
+        homoscedastic methods that add a constant half-width to every entity.
+
+        For Bonferroni-corrected joint coverage across D criteria at overall
+        level 1 − α, pass::
+
+            lower_q = α / (2 * D)
+            upper_q = 1 − α / (2 * D)
+
+        which guarantees joint coverage ≥ 1 − α by the union bound.
 
         Args:
-            X: Feature matrix
-            coverage: Desired coverage probability (default 0.90)
+            X: Feature matrix of shape (n_samples, n_features).
+            lower_q: Lower tail quantile level.  Default 0.025 gives a 95%
+                symmetric single-component interval.  For Bonferroni-adjusted
+                joint coverage use ``conformal_alpha / (2 * n_components)``.
+            upper_q: Upper tail quantile level.  Must satisfy upper_q > lower_q.
 
         Returns:
-            Tuple of (lower_bound, median, upper_bound) arrays
+            Tuple ``(lower_arr, upper_arr)`` each of shape
+            ``(n_samples, n_outputs)``.  Guaranteed ``lower_arr ≤ upper_arr``
+            element-wise (monotonicity is enforced defensively; it may be
+            violated only when the leaf has fewer distinct observed values than
+            needed for reliable extreme-quantile estimation).
+
+        Raises:
+            ValueError: If the model has not been fitted yet.
         """
-        alpha = (1.0 - coverage) / 2.0
-        quantiles_needed = [alpha, 0.50, 1.0 - alpha]
-        qpreds = self.predict_quantiles(X, quantiles=quantiles_needed)
-        return qpreds[alpha], qpreds[0.50], qpreds[1.0 - alpha]
+        if not self._models_per_output_:
+            raise ValueError(
+                "QuantileRandomForestForecaster: call fit() before predict_intervals()."
+            )
+
+        qpreds = self.predict_quantiles(X, quantiles=[lower_q, upper_q])
+        lower = qpreds[lower_q]
+        upper = qpreds[upper_q]
+
+        # Normalise to 2-D (n_samples, n_outputs) for consistent multi-output handling.
+        # predict_quantiles returns (n_samples,) for single-output models.
+        if lower.ndim == 1:
+            lower = lower.reshape(-1, 1)
+        if upper.ndim == 1:
+            upper = upper.reshape(-1, 1)
+
+        # Enforce monotonicity: lower ≤ upper.
+        # With very extreme quantiles and small leaf sets the RFQR estimator may
+        # return identical values or (rarely) swap them at minimal leaf sizes.
+        lower_out = np.minimum(lower, upper)
+        upper_out = np.maximum(lower, upper)
+        return lower_out, upper_out
 
     def predict_uncertainty(self, X: np.ndarray) -> np.ndarray:
         """

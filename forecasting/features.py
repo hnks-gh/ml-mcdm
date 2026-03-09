@@ -7,11 +7,28 @@ Advanced feature engineering for time series panel data, creating
 rich feature sets for ML forecasting models.
 
 Features include:
-- Lag features (historical values at t-1, t-2)
+- Lag features (historical values at t-1, t-2, t-3)
 - Rolling statistics (mean, std, min, max over 2–3 year windows)
 - Momentum and acceleration (first/second differences)
 - Trend features (linear slope via polyfit)
 - Cross-entity features (percentile rank, z-score relative to panel)
+
+Stationarity features (Phase 2)
+---------------------------------
+Most criteria panel series exhibit unit-root / trending behaviour.
+Three blocks of stationary transformations remove this non-stationarity:
+
+* **First-differences** ``_delta1, _delta2`` — current and lagged annual
+  changes.  Together they allow ML models to learn AR dynamics in
+  difference space (analogous to ARIMA differencing).
+
+* **Entity-demeaned levels** ``_demeaned`` — subtract each entity's
+  historical mean (the "within" / fixed-effect transformation), making
+  feature values comparable across provinces with different baselines.
+
+* **Entity-demeaned momentum** ``_demeaned_momentum`` — subtract each
+  entity's long-run average first-difference, isolating whether a
+  province is currently changing faster or slower than its own trend.
 
 Dynamic exclusion via ``year_contexts``
 ---------------------------------------
@@ -162,25 +179,29 @@ class TemporalFeatureEngineer:
     Advanced feature engineering for time series panel data.
     
     Creates rich feature set including:
-    - Lag features (t-1, t-2, ...)
+    - Lag features (t-1, t-2, t-3, ...)
     - Rolling statistics (mean, std, min, max, trend)
     - Seasonal features
     - Cross-entity features (relative position)
     - Momentum and acceleration features
+    - Stationarity features: first-differences, entity-demeaned level,
+      entity-demeaned momentum (Phase 2)
     
     Parameters:
-        lag_periods: List of lag periods to include [1, 2]
+        lag_periods: List of lag periods to include [1, 2, 3].  Extending to
+            lag-3 adds one more year of direct autoregressive history, which
+            is especially important for criteria with strong 3-year cycles.
         rolling_windows: Window sizes for rolling statistics [2, 3]
         include_momentum: Whether to include rate of change features
         include_cross_entity: Whether to include relative position features
     
     Example:
-        >>> engineer = TemporalFeatureEngineer(lag_periods=[1, 2])
-        >>> X_train, y_train, X_pred, _ = engineer.fit_transform(panel_data, 2025)
+        >>> engineer = TemporalFeatureEngineer(lag_periods=[1, 2, 3])
+        >>> X_train, y_train, X_pred, _, _, _ = engineer.fit_transform(panel_data, 2025)
     """
     
     def __init__(self,
-                 lag_periods: List[int] = [1, 2],
+                 lag_periods: List[int] = [1, 2, 3],
                  rolling_windows: List[int] = [2, 3],
                  include_momentum: bool = True,
                  include_cross_entity: bool = True,
@@ -191,6 +212,22 @@ class TemporalFeatureEngineer:
         self.include_cross_entity = include_cross_entity
         self.target_level = target_level
         self.feature_names_: List[str] = []
+
+        # Populated by fit_transform() — entity-level historical statistics
+        # used to remove entity fixed effects from features (Phase 2).
+        #
+        # _entity_means_[(entity, component)] = mean of entity's raw values
+        #     over all training feature years (Panel "within" mean).
+        # _entity_mean_deltas_[(entity, component)] = mean of consecutive
+        #     first-differences (Δ) over training feature years.  Represents
+        #     the entity's typical annual rate of change; subtracting it from
+        #     the current first-difference isolates the entity-specific
+        #     velocity deviation from its long-run trend.
+        #
+        # Both default to 0.0 for unseen entities (safe fallback: demeaning by
+        # zero is a no-op, which is preferable to raising KeyError at runtime).
+        self._entity_means_: Dict = {}
+        self._entity_mean_deltas_: Dict = {}
     
     def fit_transform(self,
                       panel_data,
@@ -336,6 +373,50 @@ class TemporalFeatureEngineer:
                     )
 
         # ------------------------------------------------------------------
+        # Pre-compute entity-level means for stationarity demeaning (Phase 2)
+        #
+        # For each (entity, component) pair, compute:
+        #   entity_mean   = mean of entity's raw values over training feature years
+        #   entity_mean_delta = mean first-difference of entity over consecutive
+        #                       training feature year pairs
+        #
+        # Computed here (O(E × C × Y)) rather than per-sample inside
+        # _create_features() (which would be O(E × C × Y²)), and stored as
+        # instance attributes so they are available during prediction.
+        #
+        # Leakage-free design:
+        #   - Means are taken over `train_feature_years` (raw feature data),
+        #     NOT over target years.  Target values (y) are never accessed
+        #     here.  This is standard panel econometrics ("within estimator").
+        #   - Year pairs where at least one endpoint is NaN in the entity's
+        #     time series are skipped in the mean-delta computation (NaN-safe).
+        # ------------------------------------------------------------------
+        self._entity_means_ = {}
+        self._entity_mean_deltas_ = {}
+
+        for _entity in entities:
+            _edata = _get_entity_data(_entity).reindex(years)
+            for _c in components:
+                # ── Entity mean ────────────────────────────────────────────
+                _vals = _edata.loc[train_feature_years, _c].values.astype(float)
+                _mean = float(np.nanmean(_vals)) if not np.all(np.isnan(_vals)) else 0.0
+                self._entity_means_[(_entity, _c)] = _mean
+
+                # ── Entity mean delta ──────────────────────────────────────
+                # Δ_t = val[years[i]] - val[years[i-1]] for every consecutive
+                # pair within train_feature_years.  NaN on either endpoint
+                # skips that pair so one missing year does not void the mean.
+                _deltas = []
+                for _i in range(1, len(train_feature_years)):
+                    _v_curr = float(_edata.loc[train_feature_years[_i], _c])
+                    _v_prev = float(_edata.loc[train_feature_years[_i - 1], _c])
+                    if not (np.isnan(_v_curr) or np.isnan(_v_prev)):
+                        _deltas.append(_v_curr - _v_prev)
+                self._entity_mean_deltas_[(_entity, _c)] = (
+                    float(np.mean(_deltas)) if _deltas else 0.0
+                )
+
+        # ------------------------------------------------------------------
         # Pre-compute SAW-normalized cross-sections (one pass per year, O(Y))
         # Used only in criteria mode when use_saw_normalization=True.
         # ------------------------------------------------------------------
@@ -354,6 +435,7 @@ class TemporalFeatureEngineer:
         X_train_list:    List[np.ndarray] = []
         y_train_list:    List[np.ndarray] = []
         entity_indices:  List[int] = []
+        year_labels_train: List[int] = []
         X_holdout_list:  List[np.ndarray] = []
         y_holdout_list:  List[np.ndarray] = []
         pred_feature_list: List[np.ndarray] = []
@@ -449,6 +531,7 @@ class TemporalFeatureEngineer:
                     X_train_list.append(features)
                     y_train_list.append(target)
                     entity_indices.append(ent_idx)
+                    year_labels_train.append(next_yr)
 
             # ---- Prediction sample ----
             if ctx_pred_year is not None and entity not in ctx_pred_year.active_provinces:
@@ -526,7 +609,10 @@ class TemporalFeatureEngineer:
             X_pred, columns=self.feature_names_, index=pred_entities
         )
         entity_index_df = pd.DataFrame(
-            {'entity_index': np.array(entity_indices, dtype=int)}
+            {
+                'entity_index': np.array(entity_indices, dtype=int),
+                'year_label':   np.array(year_labels_train, dtype=int),
+            }
         )
 
         return X_train_df, y_train_df, X_pred_df, entity_index_df, X_holdout_df, y_holdout_df
@@ -647,7 +733,103 @@ class TemporalFeatureEngineer:
             feature_names.extend([f"{c}_momentum" for c in components])
             features.extend(np.zeros(len(components)))
             feature_names.extend([f"{c}_acceleration" for c in components])
-        
+
+        # ==================================================================
+        # Stationarity features (Phase 2)
+        # ==================================================================
+        #
+        # Raw criteria levels are non-stationary (unit-root / trending
+        # panel series).  The three blocks below transform the signal into
+        # stationary space:
+        #
+        #   Block A — Lagged first-differences
+        #       delta1  = y_t - y_{t-1}  (current  first-difference)
+        #       delta2  = y_{t-1} - y_{t-2}  (lagged first-difference)
+        #
+        #   NOTE: delta1 == _momentum (already in the feature vector above).
+        #   It is included here under an explicit stationarity-oriented name
+        #   so that feature-importance reports clearly attribute predictive
+        #   power to the differenced representation, and so that both
+        #   differenced features appear together in the same named block.
+        #   Tree-based models (CatBoost) handle this gracefully; the linear
+        #   model (BayesianRidge) receives PCA-reduced inputs in Phase 3,
+        #   where the redundant direction is absorbed into an existing
+        #   principal component without creating an ill-conditioned system.
+        #
+        #   Block B — Entity-demeaned current level
+        #       demeaned = y_t - ȳ_entity
+        #
+        #   Subtracting each entity's historical mean (the "within" or fixed-
+        #   effect transformation) removes persistent cross-sectional
+        #   heterogeneity: a province that chronically scores high on C01
+        #   for structural reasons contributes zero demeaned signal, whereas
+        #   one that recently improved does.  This makes the feature
+        #   comparable across provinces with different baseline levels.
+        #
+        #   Block C — Entity-demeaned momentum (velocity deviation)
+        #       demeaned_momentum = delta1 - mean_Δ_entity
+        #
+        #   Subtracts the entity's typical annual first-difference (long-run
+        #   drift) from the current first-difference, isolating whether the
+        #   province is changing FASTER or SLOWER than its own typical rate.
+        #   A province that always grows at 0.05/year but this year grew
+        #   0.12/year registers +0.07 — a genuine acceleration signal.
+        #
+        # NaN handling:
+        #   All NaN values (insufficient lag history) propagate through
+        #   these blocks as NaN and are filled with 0.0 ("no prior
+        #   information") in _create_features_safe().
+        # ==================================================================
+
+        # Retrieve lag-1 and lag-2 values for the stationarity blocks.
+        # Re-looked-up from the already-reindexed entity_data (O(1) per call).
+        _st_lag1 = (
+            entity_data.loc[years[year_idx - 1], components].values.astype(float)
+            if year_idx >= 1
+            else np.full(len(components), np.nan)
+        )
+        _st_lag2 = (
+            entity_data.loc[years[year_idx - 2], components].values.astype(float)
+            if year_idx >= 2
+            else np.full(len(components), np.nan)
+        )
+
+        # ── Block A: First-difference features ────────────────────────────
+        # delta1 = y_t - y_{t-1}  (= _momentum; kept for explicit naming)
+        _delta1 = current_values - _st_lag1    # may contain NaN
+        features.extend(_delta1)
+        feature_names.extend([f"{c}_delta1" for c in components])
+
+        # delta2 = y_{t-1} - y_{t-2}  (lagged first-difference; genuinely new)
+        _delta2 = _st_lag1 - _st_lag2         # may contain NaN
+        features.extend(_delta2)
+        feature_names.extend([f"{c}_delta2" for c in components])
+
+        # ── Block B: Entity-demeaned current level ─────────────────────────
+        # demeaned_j = y_{t,j} - ȳ_{entity,j}
+        # Look up pre-computed entity means from self._entity_means_.
+        # Default to 0.0 for any (entity, component) pair not pre-computed
+        # (safe fallback: demeaning by 0 is equivalent to using raw levels).
+        _entity_mean_vec = np.array(
+            [self._entity_means_.get((entity, c), 0.0) for c in components],
+            dtype=float,
+        )
+        _demeaned = current_values - _entity_mean_vec  # may contain NaN if current is NaN
+        features.extend(_demeaned)
+        feature_names.extend([f"{c}_demeaned" for c in components])
+
+        # ── Block C: Entity-demeaned momentum (velocity deviation) ─────────
+        # demeaned_momentum_j = (y_t - y_{t-1}) - mean(Δ)_{entity,j}
+        # Captures whether the entity is changing FASTER than its
+        # long-run average rate of change, independent of current level.
+        _entity_mean_delta_vec = np.array(
+            [self._entity_mean_deltas_.get((entity, c), 0.0) for c in components],
+            dtype=float,
+        )
+        _demeaned_momentum = _delta1 - _entity_mean_delta_vec  # NaN if lag1 missing
+        features.extend(_demeaned_momentum)
+        feature_names.extend([f"{c}_demeaned_momentum" for c in components])
+
         # Trend feature (slope of linear fit over **valid** (non-NaN) years)
         if len(available_years) >= 2:
             for c in components:

@@ -201,6 +201,94 @@ class _PanelTemporalSplit:
                 )
 
 
+class _WalkForwardYearlySplit:
+    """
+    Walk-forward yearly cross-validation with 1-year validation steps.
+
+    Unlike _PanelTemporalSplit (which uses median entity-length-based fold
+    windows), this splitter uses explicit calendar year labels to define
+    folds.  Each validation fold covers exactly one calendar year × all
+    active entities — directly mirroring the production forecasting task
+    (predict year T+1 using data through year T).
+
+    Fold k (0-indexed):
+      train : rows where year_label < val_year  (i.e. all prior years)
+      val   : rows where year_label == val_year
+
+    where val_year = unique_years[min(min_train_years, len-1) + k].
+
+    Example with 12 target years (2012–2023), min_train_years=7, max_folds=5:
+      Fold 0: train 2012–2018, validate 2019
+      Fold 1: train 2012–2019, validate 2020
+      Fold 2: train 2012–2020, validate 2021
+      Fold 3: train 2012–2021, validate 2022
+      Fold 4: train 2012–2022, validate 2023
+
+    Parameters
+    ----------
+    min_train_years : int
+        Minimum number of target-year cohorts in the first training fold.
+        Default 7 ensures at least 7 years of history before the first
+        validation year.
+    max_folds : int
+        Maximum number of folds to yield.  Prevents excessive folds for
+        very long panels.
+    """
+
+    def __init__(self, min_train_years: int = 7, max_folds: int = 5):
+        self.min_train_years = min_train_years
+        self.max_folds = max_folds
+
+    def split(self, X: np.ndarray, year_labels: np.ndarray):
+        """
+        Yield ``(train_idx, val_idx)`` pairs using calendar year labels.
+
+        Parameters
+        ----------
+        X : ndarray, shape (n_samples, n_features)
+            Used for shape only; not inspected.
+        year_labels : ndarray, shape (n_samples,)
+            Integer calendar year for each training row (the *target* year,
+            i.e. ``next_yr`` from :meth:`TemporalFeatureEngineer.fit_transform`).
+        """
+        unique_years = np.sort(np.unique(year_labels))
+        n_years = len(unique_years)
+
+        if n_years < 2:
+            # Degenerate panel: single split at midpoint
+            mid = len(X) // 2
+            if mid > 0:
+                yield np.arange(mid), np.arange(mid, len(X))
+            return
+
+        # Index of the first validation year inside unique_years
+        first_val_pos = min(self.min_train_years, n_years - 1)
+
+        n_yielded = 0
+        for k in range(self.max_folds):
+            val_pos = first_val_pos + k
+            if val_pos >= n_years:
+                break
+
+            val_year = int(unique_years[val_pos])
+            train_idx = np.where(year_labels < val_year)[0]
+            val_idx   = np.where(year_labels == val_year)[0]
+
+            if len(train_idx) == 0 or len(val_idx) == 0:
+                continue
+
+            yield np.sort(train_idx), np.sort(val_idx)
+            n_yielded += 1
+
+        if n_yielded == 0:
+            # Safety fallback: validate on the last available year
+            val_year = int(unique_years[-1])
+            train_idx = np.where(year_labels < val_year)[0]
+            val_idx   = np.where(year_labels == val_year)[0]
+            if len(train_idx) > 0 and len(val_idx) > 0:
+                yield np.sort(train_idx), np.sort(val_idx)
+
+
 class SuperLearner:
     """
     Super Learner meta-ensemble combining multiple base forecasters.
@@ -283,7 +371,14 @@ class SuperLearner:
         self._oof_valid_mask_: Optional[np.ndarray] = None            # (n_samples,) bool
 
     @_silence_warnings
-    def fit(self, X: np.ndarray, y: np.ndarray, entity_indices: Optional[np.ndarray] = None) -> "SuperLearner":
+    def fit(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        entity_indices: Optional[np.ndarray] = None,
+        per_model_X: Optional[Dict[str, np.ndarray]] = None,
+        year_labels: Optional[np.ndarray] = None,
+    ) -> "SuperLearner":
         """
         Fit the Super Learner ensemble.
 
@@ -292,9 +387,18 @@ class SuperLearner:
         Stage 3: Re-train base models on full training data
 
         Args:
-            X: Feature matrix of shape (n_samples, n_features)
+            X: Feature matrix of shape (n_samples, n_features). Used as the
+                default for all models unless overridden by ``per_model_X``.
             y: Target values of shape (n_samples,) or (n_samples, n_outputs)
             entity_indices: Optional entity group IDs for panel-aware models
+            per_model_X: Optional dict mapping model name → feature matrix.
+                When provided, each model uses its own feature matrix instead
+                of the shared ``X`` (enables two-track preprocessing where
+                linear models see PCA features and trees see raw features).
+            year_labels: Optional integer array of shape (n_samples,) giving
+                the calendar target year for each training row.  When provided,
+                uses :class:`_WalkForwardYearlySplit` (1-year validation steps)
+                instead of :class:`_PanelTemporalSplit`.
 
         Returns:
             Self for method chaining
@@ -311,9 +415,20 @@ class SuperLearner:
         # ============================================================
         # Stage 1: Generate out-of-fold predictions
         # ============================================================
-        # Panel-aware temporal split: each fold's validation rows are
-        # temporally later than training rows *for every entity*.
-        tscv = _PanelTemporalSplit(n_splits=self.n_cv_folds)
+        # Choose splitter based on whether calendar year labels are provided.
+        # _WalkForwardYearlySplit validates on exactly one calendar year per
+        # fold — matching the production task of predicting year T+1 from
+        # data through year T.  Falls back to _PanelTemporalSplit when no
+        # year labels are available (e.g., unit tests with synthetic data).
+        if year_labels is not None:
+            tscv = _WalkForwardYearlySplit(
+                min_train_years=max(2, self.n_cv_folds),
+                max_folds=self.n_cv_folds,
+            )
+            cv_iter = tscv.split(X, year_labels)
+        else:
+            tscv = _PanelTemporalSplit(n_splits=self.n_cv_folds)
+            cv_iter = tscv.split(X, entity_indices=entity_indices)
 
         # OOF prediction storage: (n_samples, n_models * n_outputs)
         oof_predictions = np.full(
@@ -321,13 +436,24 @@ class SuperLearner:
         )
         self._cv_scores = {name: [] for name in self.base_models}
 
-        for fold_idx, (train_idx, val_idx) in enumerate(
-            tscv.split(X, entity_indices=entity_indices)
-        ):
-            X_train_cv, X_val_cv = X[train_idx], X[val_idx]
+        for fold_idx, (train_idx, val_idx) in enumerate(cv_iter):
             y_train_cv, y_val_cv = y[train_idx], y[val_idx]
 
+            if self.verbose and year_labels is not None:
+                train_yrs = np.unique(year_labels[train_idx])
+                val_yrs   = np.unique(year_labels[val_idx])
+                yr_range  = (f"{int(train_yrs[0])}–{int(train_yrs[-1])}"
+                             if len(train_yrs) > 1 else str(int(train_yrs[0])))
+                print(
+                    f"    Fold {fold_idx + 1}: train {yr_range}, "
+                    f"validate {int(val_yrs[0])} ({len(val_idx)} rows)"
+                )
+
             for m_idx, (name, model) in enumerate(self.base_models.items()):
+                # Select per-model feature matrix (two-track preprocessing)
+                X_m = per_model_X[name] if (per_model_X and name in per_model_X) else X
+                X_train_cv = X_m[train_idx]
+                X_val_cv = X_m[val_idx]
                 try:
                     model_copy = copy.deepcopy(model)
                     # Forward entity_indices to models that accept them
@@ -429,8 +555,9 @@ class SuperLearner:
         # ============================================================
         for name, model in self.base_models.items():
             try:
+                X_m = per_model_X[name] if (per_model_X and name in per_model_X) else X
                 fitted_model = copy.deepcopy(model)
-                self._fit_model(fitted_model, X, y, entity_indices)
+                self._fit_model(fitted_model, X_m, y, entity_indices)
                 self._fitted_base_models[name] = fitted_model
             except Exception as e:
                 if self.verbose:
@@ -611,15 +738,23 @@ class SuperLearner:
             return {name: v / total for name, v in scores.items()}
         return {name: 1.0 / len(scores) for name in scores}
 
-    def predict(self, X: np.ndarray, entity_indices: Optional[np.ndarray] = None) -> np.ndarray:
+    def predict(
+        self,
+        X: np.ndarray,
+        entity_indices: Optional[np.ndarray] = None,
+        per_model_X_pred: Optional[Dict[str, np.ndarray]] = None,
+    ) -> np.ndarray:
         """
         Make predictions using the Super Learner ensemble.
 
         Combines base model predictions using learned meta-weights.
 
         Args:
-            X: Feature matrix of shape (n_samples, n_features)
+            X: Feature matrix of shape (n_samples, n_features). Default for
+                all models unless overridden by ``per_model_X_pred``.
             entity_indices: Optional entity group IDs for panel-aware models
+            per_model_X_pred: Optional dict mapping model name → prediction
+                feature matrix (mirrors the ``per_model_X`` used in ``fit``).
 
         Returns:
             Predictions of shape (n_samples,) or (n_samples, n_outputs)
@@ -631,8 +766,9 @@ class SuperLearner:
         model_names = []
 
         for name, model in self._fitted_base_models.items():
+            X_m = per_model_X_pred[name] if (per_model_X_pred and name in per_model_X_pred) else X
             try:
-                pred = self._predict_model(model, X, entity_indices)
+                pred = self._predict_model(model, X_m, entity_indices)
                 if pred.ndim == 1:
                     pred = pred.reshape(-1, 1)
                 all_predictions.append(pred)
@@ -663,7 +799,10 @@ class SuperLearner:
         return result
 
     def predict_with_uncertainty(
-        self, X: np.ndarray, entity_indices: Optional[np.ndarray] = None
+        self,
+        X: np.ndarray,
+        entity_indices: Optional[np.ndarray] = None,
+        per_model_X_pred: Optional[Dict[str, np.ndarray]] = None,
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Predict with uncertainty from model disagreement.
@@ -671,12 +810,15 @@ class SuperLearner:
         Uncertainty = weighted standard deviation of base model predictions.
 
         Args:
-            X: Feature matrix
+            X: Feature matrix. Default for all models unless overridden by
+                ``per_model_X_pred``.
             entity_indices: Optional entity group IDs, forwarded to panel-aware
                 base models (``PanelVARForecaster``).
                 When *None*, panel models fall back to population-level (zero-dummy)
                 predictions, making the uncertainty estimate entity-wrong.
                 Always pass the same ``entity_indices`` used during ``predict()``.
+            per_model_X_pred: Optional dict mapping model name → prediction
+                feature matrix (mirrors the ``per_model_X`` used in ``fit``).
 
         Returns:
             Tuple of (mean prediction, standard deviation)
@@ -685,13 +827,14 @@ class SuperLearner:
         all_weights = []
 
         for name, model in self._fitted_base_models.items():
+            X_m = per_model_X_pred[name] if (per_model_X_pred and name in per_model_X_pred) else X
             try:
                 # Use _predict_model so that panel-aware models receive
                 # entity_indices (fixing audit issue S-1: the previous
                 # model.predict(X) call omitted entity_indices, causing
                 # PanelVAR to predict at the reference
                 # entity level for ALL entities, producing wrong uncertainty).
-                pred = self._predict_model(model, X, entity_indices)
+                pred = self._predict_model(model, X_m, entity_indices)
                 if pred.ndim == 1:
                     pred = pred.reshape(-1, 1)
                 all_predictions.append(pred)

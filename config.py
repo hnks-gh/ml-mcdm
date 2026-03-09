@@ -287,9 +287,24 @@ class ForecastConfig:
     # ── Conformal prediction ─────────────────────────────────────────────
     conformal_method: str = 'cv_plus'  # 'split', 'cv_plus', 'adaptive'
     conformal_alpha: float = 0.05      # 95% joint coverage (Bonferroni across components)
+    uncertainty_method: str = 'qrf_quantile'
+    """Prediction interval method.
+
+    ``'qrf_quantile'`` — Heteroscedastic intervals from the fitted Quantile
+        Random Forest.  Each entity (province) receives interval widths that
+        reflect the empirical spread of training labels in the same leaf nodes
+        as that entity's feature vector.  Volatile entities get wider, stable
+        ones narrower bands.  Bonferroni-corrected per-component quantiles
+        (``lower_q = α / (2D)``) guarantee joint coverage ≥ 1 − α across all
+        D criteria simultaneously.
+
+    ``'conformal'`` — Distribution-free conformal prediction intervals
+        calibrated from out-of-fold residuals.  Provides marginal coverage
+        guarantee and homoscedastic widths (constant across entities).
+    """
 
     # ── Cross-validation ─────────────────────────────────────────────────
-    cv_folds: int = 3
+    cv_folds: int = 5
 
     # ── Reproducibility ──────────────────────────────────────────────────
     random_state: int = 42
@@ -299,7 +314,21 @@ class ForecastConfig:
     gb_max_depth: int = 5
     """Tree depth. 5 ≈ 32 leaves → ~24 samples/leaf at n=756."""
     gb_n_estimators: int = 200
-    """Number of boosting stages; aligned with GradientBoostingForecaster default."""
+    """Number of boosting stages; aligned with CatBoostForecaster default."""
+    gb_backend: str = 'catboost'
+    """Gradient-boosting backend for ``CatBoostForecaster``.
+
+    'catboost'  (recommended) — Uses ``CatBoostRegressor`` with ``MultiRMSE``
+                  loss for joint multi-output training.  Shared tree structure
+                  exploits cross-criterion correlations automatically.
+    'lightgbm'  — ``MultiOutputRegressor(LGBMRegressor)``; faster but trains
+                  each criterion independently (no cross-output coupling).
+    'sklearn'   — ``MultiOutputRegressor(GradientBoostingRegressor)``; no
+                  extra dependency, slowest, independent per output.
+
+    Falls back gracefully to the next tier when the preferred library is not
+    installed (catboost → lightgbm → sklearn).
+    """
 
     # ── Forecast target level ─────────────────────────────────────────────
     forecast_level: str = "criteria"
@@ -310,9 +339,18 @@ class ForecastConfig:
 
     # ── NeuralAdditiveModel hyperparameters ──────────────────────────────
     nam_n_basis: int = 30
-    """RFF basis functions per shape function (30→60 effective params in 60-dim PCA space)."""
+    """RFF basis functions per shape function (30 → 60 effective params)."""
     nam_n_iterations: int = 10
-    """Backfitting passes; 5 is insufficient for 60 PCA dimensions."""
+    """Backfitting passes; 5 is insufficient for 60 threshold-only features."""
+    nam_skip_pca: bool = True
+    """Documentation flag: NAM operates on threshold-only features (no PCA).
+
+    This is enforced structurally in ``UnifiedForecaster`` Stage 2b where
+    NAM is assigned to the ``reducer_tree_`` (threshold-only) track.
+    Setting ``True`` here records that decision explicitly so configuration
+    reviews are auditable.  There is no runtime enforcement in NAM itself;
+    the routing is handled in ``unified.py``.
+    """
 
     # ── PanelVAR lag selection ────────────────────────────────────────────
     pvar_lag_selection_method: str = "cv"
@@ -353,6 +391,35 @@ class ForecastConfig:
 
     Set to 0 or a year outside the data range to disable the holdout split
     (training uses all available consecutive year-pairs).
+    """
+
+    # ── Pipeline mode (Phase 8 — Pipeline Decoupling) ─────────────────────
+    pipeline_mode: Literal['full', 'features_only', 'fit_only', 'evaluate_only'] = 'full'
+    """Controls how many stages ``fit_predict()`` executes before returning.
+
+    ``'full'`` (default)
+        All 7 stages.  Returns a complete ``UnifiedForecastResult``.
+
+    ``'features_only'``
+        Stages 1–2 only (feature engineering + dimensionality reduction),
+        then returns ``None``.  Enables rapid feature inspection without any
+        model fitting; use ``forecaster.X_train_``, ``forecaster.y_train_``,
+        ``forecaster.X_pred_`` and ``forecaster.get_stage_outputs()`` to
+        audit the engineered feature matrix before committing to training.
+
+    ``'fit_only'``
+        Stages 1–4 (feature engineering → dimensionality reduction →
+        base-model training → ensemble predictions), then returns ``None``.
+        Omits interval estimation (Stage 5) and evaluation (Stage 6–7).
+        Combine with a subsequent ``'evaluate_only'`` call to decouple
+        training from evaluation.
+
+    ``'evaluate_only'``
+        Stages 5–7 only.  Requires that Stages 1–4 are already complete
+        (i.e. a previous ``fit_predict()`` with mode ``'full'`` or
+        ``'fit_only'`` has been run on this forecaster).  Useful for
+        re-running interval estimation or evaluation with different
+        configuration settings without re-fitting the ensemble.
     """
 
 
@@ -503,7 +570,6 @@ class Config:
             f"    VIKOR v         : {self.vikor.v}\n\n"
             f"  WEIGHTING\n"
             f"    Strategy        : Deterministic CRITIC\n"
-            f"    MC simulations  : {self.weighting.mc_n_simulations}\n"
             f"    Stability thr   : {self.weighting.stability_threshold}\n\n"
             f"  RANKING\n"
             f"    Run all years   : {self.ranking.run_all_years}\n"

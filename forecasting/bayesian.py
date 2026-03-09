@@ -1,21 +1,48 @@
 # -*- coding: utf-8 -*-
 """
-Bayesian Ridge Regression Forecaster
-====================================
+Multi-Task Elastic Net Forecaster
+==================================
 
-Bayesian Ridge regression for forecasting with uncertainty quantification.
+Joint linear forecaster via ``MultiTaskElasticNetCV`` with automatic
+regularisation selection and ``BayesianRidge + MultiOutputRegressor`` fallback.
 
-This method is useful for:
-- Interpretable linear models
-- Natural uncertainty quantification via posterior distribution
-- Automatic regularization (no manual hyperparameter tuning)
-- Fast training and prediction
+Design rationale vs. BayesianRidge + MultiOutputRegressor
+---------------------------------------------------------
+*  **Joint sparsity (Group Lasso)** — ``MultiTaskElasticNet`` enforces a
+   shared sparsity pattern across all criterion composites (C01–C08) via
+   Group Lasso penalty.  If a feature is predictive for *any* criterion,
+   it is retained for *all*, explicitly exploiting cross-criteria correlation.
+   ``MultiOutputRegressor`` trains N independent models: no feature sharing.
+
+*  **Automatic regularisation** — ``MultiTaskElasticNetCV`` selects ``alpha``
+   (regularisation strength) and ``l1_ratio`` (Elastic Net mixing) via
+   cross-validation, removing two previously hand-tuned hyperparameters.
+
+*  **Uncertainty** — ``MultiTaskElasticNet`` is a point estimator.  Per-output
+   aleatoric uncertainty is calibrated as the root-mean-squared training
+   residual per criterion (``sigma_j``), clipped at 1e-6 for strict
+   positivity.  The conformal stage in ``UnifiedForecaster`` replaces this
+   with distribution-free coverage-guaranteed intervals downstream.
+
+*  **Fallback** — when ``MultiTaskElasticNetCV`` fails (e.g. numeric issues
+   on very small folds), the model falls back to
+   ``BayesianRidge + MultiOutputRegressor``, which provides exact Bayesian
+   posterior standard deviations via ``return_std=True``.
+
+References
+----------
+Obozinski et al. (2010). "Joint covariate selection and joint subspace
+selection for multiple classification problems." *Statistics and Computing* 20.
 """
 
 import numpy as np
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 from sklearn.base import clone
-from sklearn.linear_model import BayesianRidge
+from sklearn.linear_model import (
+    BayesianRidge,
+    ElasticNetCV,
+    MultiTaskElasticNetCV,
+)
 from sklearn.multioutput import MultiOutputRegressor
 from sklearn.preprocessing import StandardScaler
 
@@ -24,128 +51,290 @@ from .base import BaseForecaster
 
 class BayesianForecaster(BaseForecaster):
     """
-    Bayesian Ridge Regression forecaster with uncertainty.
-    
-    Provides natural uncertainty quantification through the
-    posterior distribution over weights.
-    
-    Parameters:
-        alpha_1: Shape parameter for Gamma prior over alpha
-        alpha_2: Inverse scale for Gamma prior over alpha
-        lambda_1: Shape parameter for Gamma prior over lambda
-        lambda_2: Inverse scale for Gamma prior over lambda
-        max_iter: Maximum iterations
-    
-    Example:
-        >>> forecaster = BayesianForecaster()
-        >>> forecaster.fit(X_train, y_train)
-        >>> mean, std = forecaster.predict_with_uncertainty(X_test)
+    Joint linear forecaster using MultiTaskElasticNetCV with BayesianRidge fallback.
+
+    Primary model: ``MultiTaskElasticNetCV``
+        Enforces joint sparsity across all criterion composites via a Group
+        Lasso penalty.  ``alpha`` and ``l1_ratio`` are chosen automatically
+        by cross-validation, removing hand-tuned hyperparameters.
+
+    Uncertainty estimation:
+        ``MultiTaskElasticNet`` is a point estimator.  Per-output aleatoric
+        uncertainty is estimated as ``sigma_j = RMS(y_j − yhat_j_train)``,
+        clipped at 1e-6 to guarantee strict positivity.  Downstream conformal
+        calibration in ``UnifiedForecaster`` produces coverage-guaranteed
+        intervals from these residuals.
+
+    Fallback: ``BayesianRidge + MultiOutputRegressor``
+        Triggered automatically when ``MultiTaskElasticNetCV`` raises an
+        exception.  Provides exact Bayesian posterior std via ``return_std``.
+
+    Parameters
+    ----------
+    alpha_1, alpha_2, lambda_1, lambda_2 : float
+        BayesianRidge hyperpriors — used **only** in fallback mode.
+    max_iter : int
+        Maximum coordinate-descent iterations for ElasticNet solvers.
+    cv_folds : int
+        Cross-validation folds for ``MultiTaskElasticNetCV``.
+    l1_ratios : list of float
+        L1/L2 mixing grid searched by CV.  0 = Ridge, 1 = Lasso.
+        Default covers the full spectrum from near-Ridge to pure Lasso.
     """
-    
-    def __init__(self,
-                 alpha_1: float = 1e-6,
-                 alpha_2: float = 1e-6,
-                 lambda_1: float = 1e-6,
-                 lambda_2: float = 1e-6,
-                 max_iter: int = 300):
+
+    def __init__(
+        self,
+        alpha_1: float = 1e-6,
+        alpha_2: float = 1e-6,
+        lambda_1: float = 1e-6,
+        lambda_2: float = 1e-6,
+        max_iter: int = 300,
+        cv_folds: int = 5,
+        l1_ratios: Optional[List[float]] = None,
+    ):
         self.alpha_1 = alpha_1
         self.alpha_2 = alpha_2
         self.lambda_1 = lambda_1
         self.lambda_2 = lambda_2
         self.max_iter = max_iter
-        
-        self._base_model = BayesianRidge(
-            alpha_1=alpha_1,
-            alpha_2=alpha_2,
-            lambda_1=lambda_1,
-            lambda_2=lambda_2,
-            max_iter=max_iter,
-            compute_score=True
+        self.cv_folds = cv_folds
+        self.l1_ratios: List[float] = (
+            l1_ratios
+            if l1_ratios is not None
+            else [0.1, 0.5, 0.7, 0.9, 0.95, 0.99, 1.0]
         )
-        self.model = None  # Will be set during fit
+
+        self.model = None          # MultiTaskElasticNetCV | ElasticNetCV | MultiOutputRegressor(BayesianRidge)
         self.scaler = StandardScaler()
         self.feature_importance_: Optional[np.ndarray] = None
-        self._is_multi_output = False
-    
+        self._is_multi_output: bool = False
+        self._using_elasticnet: bool = True
+        # Per-output training-residual RMSE used for uncertainty broadcast
+        self._sigma_: Optional[np.ndarray] = None   # shape (n_outputs,)
+
+    # ------------------------------------------------------------------
+    # BayesianRidge helper (fallback / backward-compat)
+    # ------------------------------------------------------------------
+
+    def _make_bayesian_ridge(self) -> BayesianRidge:
+        return BayesianRidge(
+            alpha_1=self.alpha_1, alpha_2=self.alpha_2,
+            lambda_1=self.lambda_1, lambda_2=self.lambda_2,
+            max_iter=self.max_iter, compute_score=True,
+        )
+
+    @property
+    def _base_model(self) -> BayesianRidge:
+        """Backward-compatible accessor returning a fresh BayesianRidge instance."""
+        return self._make_bayesian_ridge()
+
+    # ------------------------------------------------------------------
+    # Public API  (BaseForecaster interface)
+    # ------------------------------------------------------------------
+
     def fit(self, X: np.ndarray, y: np.ndarray) -> 'BayesianForecaster':
-        """Fit the Bayesian Ridge model."""
+        """
+        Fit MultiTaskElasticNetCV (primary) or BayesianRidge (fallback).
+
+        Parameters
+        ----------
+        X : ndarray, shape (n_samples, n_features)
+        y : ndarray, shape (n_samples,) or (n_samples, n_outputs)
+
+        Returns
+        -------
+        self
+        """
         X_scaled = self.scaler.fit_transform(X)
-        
-        # Handle multi-output case
+
         if y.ndim > 1 and y.shape[1] > 1:
             self._is_multi_output = True
-            self.model = MultiOutputRegressor(clone(self._base_model))
-            self.model.fit(X_scaled, y)
-            # Average importance across outputs
-            self.feature_importance_ = np.mean(
-                [np.abs(est.coef_) for est in self.model.estimators_], axis=0
-            )
+            self._fit_multitask(X_scaled, y)
         else:
             self._is_multi_output = False
-            self.model = clone(self._base_model)
-            self.model.fit(X_scaled, y.ravel() if y.ndim > 1 else y)
-            self.feature_importance_ = np.abs(self.model.coef_)
+            self._fit_single(X_scaled, y.ravel() if y.ndim > 1 else y)
+
         return self
-    
+
+    def _fit_multitask(self, X_scaled: np.ndarray, y: np.ndarray) -> None:
+        """
+        Primary: MultiTaskElasticNetCV (joint sparsity across all outputs).
+        Fallback: BayesianRidge + MultiOutputRegressor.
+        """
+        # Safe CV folds: at least 2, at most min(cv_folds, n//2, 5)
+        n_cv = max(min(self.cv_folds, X_scaled.shape[0] // 2, 5), 2)
+
+        try:
+            mtnet = MultiTaskElasticNetCV(
+                l1_ratio=self.l1_ratios,
+                eps=1e-3,          # alpha_min / alpha_max ratio along path
+                alphas=20,         # regularisation grid resolution
+                cv=n_cv,
+                max_iter=self.max_iter * 10,  # coordinate descent > gradient steps
+                random_state=42,
+                n_jobs=1,          # deterministic; avoids joblib deadlocks
+            )
+            mtnet.fit(X_scaled, y)
+            self.model = mtnet
+            self._using_elasticnet = True
+            # coef_ shape: (n_outputs, n_features); average |coef| across outputs
+            self.feature_importance_ = np.mean(np.abs(mtnet.coef_), axis=0)
+            # Per-output training RMSE: aleatoric noise estimate per criterion
+            residuals = y - mtnet.predict(X_scaled)
+            self._sigma_ = np.clip(
+                np.sqrt(np.mean(residuals ** 2, axis=0)), 1e-6, None
+            )
+
+        except Exception:
+            # Fallback: BayesianRidge + MultiOutputRegressor (one model per output)
+            self._using_elasticnet = False
+            fallback = MultiOutputRegressor(
+                clone(self._make_bayesian_ridge()), n_jobs=1
+            )
+            fallback.fit(X_scaled, y)
+            self.model = fallback
+            # Average absolute coefficients across per-output BayesianRidge models
+            self.feature_importance_ = np.mean(
+                [np.abs(est.coef_) for est in fallback.estimators_], axis=0
+            )
+            # Noise std from BayesianRidge posterior: sigma = 1 / sqrt(alpha_)
+            self._sigma_ = np.clip(
+                np.array([
+                    np.sqrt(1.0 / max(float(est.alpha_), 1e-12))
+                    for est in fallback.estimators_
+                ]),
+                1e-6, None,
+            )
+
+    def _fit_single(self, X_scaled: np.ndarray, y_1d: np.ndarray) -> None:
+        """
+        Single-output case: ElasticNetCV (primary), BayesianRidge (fallback).
+        """
+        n_cv = max(min(self.cv_folds, X_scaled.shape[0] // 2, 5), 2)
+
+        try:
+            enet = ElasticNetCV(
+                l1_ratio=self.l1_ratios,
+                eps=1e-3,
+                alphas=20,
+                cv=n_cv,
+                max_iter=self.max_iter * 10,
+                random_state=42,
+            )
+            enet.fit(X_scaled, y_1d)
+            self.model = enet
+            self._using_elasticnet = True
+            self.feature_importance_ = np.abs(enet.coef_)
+            residuals = y_1d - enet.predict(X_scaled)
+            self._sigma_ = np.array(
+                [max(float(np.sqrt(np.mean(residuals ** 2))), 1e-6)]
+            )
+
+        except Exception:
+            self._using_elasticnet = False
+            br = clone(self._make_bayesian_ridge())
+            br.fit(X_scaled, y_1d)
+            self.model = br
+            self.feature_importance_ = np.abs(br.coef_)
+            self._sigma_ = np.array(
+                [max(float(np.sqrt(1.0 / max(float(br.alpha_), 1e-12))), 1e-6)]
+            )
+
     def predict(self, X: np.ndarray) -> np.ndarray:
         """Make point predictions."""
         X_scaled = self.scaler.transform(X)
         return self.model.predict(X_scaled)
-    
-    def predict_with_uncertainty(self, X: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+
+    def predict_with_uncertainty(
+        self, X: np.ndarray
+    ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Predict with uncertainty quantification.
-        
-        Returns:
-            Tuple of (mean prediction, standard deviation)
+
+        For the primary ElasticNet model, returns the per-output training-
+        residual RMSE (``sigma_j``) broadcast uniformly across all samples.
+        This estimates the irreducible aleatoric noise per criterion and is
+        NOT a per-sample epistemic uncertainty.  Downstream conformal
+        calibration in ``UnifiedForecaster`` provides proper coverage-
+        guaranteed intervals.
+
+        For the BayesianRidge fallback, returns the exact posterior predictive
+        std (aleatoric + epistemic) via ``return_std=True``.
+
+        All returned ``std`` values are strictly positive (≥ 1e-6).
+
+        Returns
+        -------
+        mean : ndarray, shape (n_samples, n_outputs) or (n_samples,)
+        std  : ndarray, same shape as mean; all elements > 0
         """
         X_scaled = self.scaler.transform(X)
-        
-        if self._is_multi_output:
-            # MultiOutputRegressor doesn't support return_std,
-            # so iterate over individual estimators
-            means = []
-            stds = []
-            for estimator in self.model.estimators_:
-                m, s = estimator.predict(X_scaled, return_std=True)
-                means.append(m)
-                stds.append(s)
-            mean = np.column_stack(means)
-            std = np.column_stack(stds)
+
+        if self._using_elasticnet:
+            mean = self.model.predict(X_scaled)
+            if mean.ndim == 1:
+                # Single-output: broadcast scalar sigma across all samples
+                std = np.full(mean.shape, self._sigma_[0])
+            else:
+                # Multi-output: broadcast per-output sigma along sample axis.
+                # _sigma_ shape: (n_outputs,) → broadcast to (n_samples, n_outputs)
+                std = np.broadcast_to(
+                    self._sigma_[np.newaxis, :], mean.shape
+                ).copy()  # copy() makes the array writeable
         else:
-            mean, std = self.model.predict(X_scaled, return_std=True)
-        
+            # BayesianRidge fallback provides exact posterior std
+            if self._is_multi_output:
+                means_list, stds_list = [], []
+                for est in self.model.estimators_:
+                    m, s = est.predict(X_scaled, return_std=True)
+                    means_list.append(m)
+                    stds_list.append(s)
+                mean = np.column_stack(means_list)
+                std = np.clip(np.column_stack(stds_list), 1e-6, None)
+            else:
+                mean, std = self.model.predict(X_scaled, return_std=True)
+                std = np.clip(std, 1e-6, None)
+
         return mean, std
-    
+
     def get_feature_importance(self) -> np.ndarray:
         """Get feature importance from absolute coefficients."""
         if self.feature_importance_ is None:
             raise ValueError("Model not fitted yet")
         return self.feature_importance_
-    
+
+    # ------------------------------------------------------------------
+    # Backward-compatible properties
+    # ------------------------------------------------------------------
+
     @property
     def alpha(self) -> float:
-        """Get estimated alpha (precision of noise) from the fitted BayesianRidge.
+        """Effective noise precision.
 
-        For multi-output models, returns the mean alpha_ across all per-output
-        estimators, since ``MultiOutputRegressor`` trains one ``BayesianRidge``
-        per output and exposes the attribute only on each sub-estimator.
+        ElasticNet primary: ``1 / mean(sigma_j^2)`` across outputs.
+        BayesianRidge fallback: mean of per-output ``alpha_`` values.
         """
+        if self._sigma_ is None:
+            raise AttributeError("Model not fitted yet.")
+        if self._using_elasticnet:
+            return float(np.mean(1.0 / (self._sigma_ ** 2 + 1e-12)))
         if self._is_multi_output:
-            if not hasattr(self, 'model') or self.model is None:
-                raise AttributeError("Model not fitted yet.")
             return float(np.mean([est.alpha_ for est in self.model.estimators_]))
-        return self.model.alpha_
+        return float(self.model.alpha_)
 
     @property
     def lambda_(self) -> float:
-        """Get estimated lambda (precision of weights) from the fitted BayesianRidge.
+        """Effective regularisation precision.
 
-        For multi-output models, returns the mean lambda_ across all per-output
-        estimators for the same reason as :attr:`alpha`.
+        ElasticNet primary: the CV-selected ``alpha_`` regularisation parameter
+        (sklearn naming convention; analogous to lambda in the primal objective).
+        BayesianRidge fallback: mean of per-output ``lambda_`` values.
         """
+        if self._sigma_ is None:
+            raise AttributeError("Model not fitted yet.")
+        if self._using_elasticnet:
+            return float(self.model.alpha_)
         if self._is_multi_output:
-            if not hasattr(self, 'model') or self.model is None:
-                raise AttributeError("Model not fitted yet.")
             return float(np.mean([est.lambda_ for est in self.model.estimators_]))
-        return self.model.lambda_
+        return float(self.model.lambda_)
+

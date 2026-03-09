@@ -33,6 +33,7 @@ References:
 
 import numpy as np
 import pandas as pd
+from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple, Any, Callable
 from sklearn.metrics import (
     r2_score,
@@ -55,6 +56,264 @@ def _silence_warnings(func):
             warnings.simplefilter('ignore')
             return func(*args, **kwargs)
     return wrapper
+
+
+@dataclass
+class ModelComparisonResult:
+    """
+    Per-model evaluation result on the genuine holdout set.
+
+    Parameters
+    ----------
+    model_name : str
+        Human-readable model identifier: 'BayesianRidge', 'GradientBoosting',
+        'QuantileRF', 'PanelVAR', 'NAM', or 'Ensemble'.
+    holdout_r2 : float
+        Global R² computed across all output dimensions on the withheld year.
+        Positive values indicate the model outperforms the naive mean predictor.
+        Negative values are possible for poorly-calibrated base models.
+        Uses the flattened (ravel) view so every (sample × criterion) residual
+        is treated equally — consistent with ``holdout_performance`` in
+        ``UnifiedForecastResult``.
+    holdout_rmse : float
+        Root-mean-square error on the holdout set (same units as targets).
+    holdout_mae : float
+        Mean absolute error on the holdout set.
+    is_best : bool
+        ``True`` for the single model with the highest ``holdout_r2``.
+        Ties are broken by RMSE (lower is better); in practice ties are rare.
+    predictions : pd.DataFrame
+        Target-year (forecast year) predictions, shape (n_entities, n_outputs).
+        Index = province/entity names; columns = component/criterion names.
+        These are the genuine out-of-sample predictions each model makes for
+        the actual forecast year — NOT the holdout-year values (which are only
+        used to compute the metrics above).
+    """
+    model_name: str
+    holdout_r2: float
+    holdout_rmse: float
+    holdout_mae: float
+    is_best: bool
+    predictions: pd.DataFrame
+
+
+def compare_all_models(
+    fitted_base_models: Dict[str, Any],
+    super_learner: Any,
+    X_holdout_per_model: Dict[str, np.ndarray],
+    y_holdout: np.ndarray,
+    ensemble_preds_holdout: np.ndarray,
+    X_target_per_model: Optional[Dict[str, np.ndarray]] = None,
+    ensemble_preds_target: Optional[np.ndarray] = None,
+    component_names: Optional[List[str]] = None,
+    target_entities: Optional[List[str]] = None,
+) -> List[ModelComparisonResult]:
+    """
+    Evaluate every base model and the ensemble on the genuine holdout set.
+
+    Models are evaluated using pre-fitted instances from
+    ``super_learner._fitted_base_models`` (Stage 3 of SuperLearner retrains
+    on the full training set).  No refitting occurs here — evaluation is
+    purely inference on a withheld calendar year, guaranteeing zero leakage.
+
+    Parameters
+    ----------
+    fitted_base_models : dict
+        Mapping ``{model_name: fitted_model}`` from
+        ``SuperLearner._fitted_base_models``.  Keys must correspond to entries
+        in ``X_holdout_per_model``.
+    super_learner : SuperLearner
+        Fitted SuperLearner instance.  Included for API completeness and
+        potential future use; the function iterates over ``fitted_base_models``
+        directly to avoid holding an extra reference.
+    X_holdout_per_model : dict
+        Per-model feature matrices for the **holdout** set (n_holdout × p_k).
+        Keys must cover every key in ``fitted_base_models``.
+    y_holdout : ndarray, shape (n_holdout, n_outputs)
+        Ground-truth targets for the holdout year.  Must NOT overlap with
+        training data (guaranteed by
+        ``TemporalFeatureEngineer.fit_transform`` holdout routing).
+    ensemble_preds_holdout : ndarray, shape (n_holdout, n_outputs)
+        Pre-computed SuperLearner point predictions for the holdout set.
+        Must be generated externally via ``super_learner.predict_with_uncertainty``
+        **after** fitting — never by re-fitting inside this function.
+    X_target_per_model : dict, optional
+        Per-model feature matrices for the **target (forecast) year**.
+        When provided, target-year predictions are stored in
+        ``ModelComparisonResult.predictions``.  If None, holdout predictions
+        are stored instead.
+    ensemble_preds_target : ndarray, optional
+        Ensemble point predictions for the target year
+        (shape = n_entities × n_outputs).  Required when
+        ``X_target_per_model`` is provided.
+    component_names : list of str, optional
+        Column labels for prediction DataFrames.  Defaults to ['C0', 'C1', ...].
+    target_entities : list of str, optional
+        Index labels (province/entity names) for the target-year
+        predictions DataFrame.
+
+    Returns
+    -------
+    list of ModelComparisonResult
+        One entry per base model plus one for the ensemble.  Sorted descending
+        by ``holdout_r2`` (NaN entries last).  ``is_best=True`` on the entry
+        with the highest finite ``holdout_r2``; ties broken by RMSE.
+    """
+    # ── Shape normalisation ───────────────────────────────────────────────
+    if y_holdout.ndim == 1:
+        y_holdout = y_holdout.reshape(-1, 1)
+    n_outputs = y_holdout.shape[1]
+
+    if ensemble_preds_holdout.ndim == 1:
+        ensemble_preds_holdout = ensemble_preds_holdout.reshape(-1, 1)
+
+    have_target = (
+        X_target_per_model is not None
+        and ensemble_preds_target is not None
+    )
+    if have_target and ensemble_preds_target.ndim == 1:  # type: ignore[union-attr]
+        ensemble_preds_target = ensemble_preds_target.reshape(-1, 1)  # type: ignore[union-attr]
+
+    n_ho = len(y_holdout)
+    n_tgt = len(ensemble_preds_target) if have_target else n_ho  # type: ignore[arg-type]
+    cols = component_names if component_names else [f'C{i}' for i in range(n_outputs)]
+    tgt_idx = target_entities if target_entities else list(range(n_tgt))
+
+    # ── Internal helpers ─────────────────────────────────────────────────
+    def _align_preds(preds: np.ndarray) -> np.ndarray:
+        """Align prediction array to n_outputs columns."""
+        if preds.shape[1] > n_outputs:
+            return preds[:, :n_outputs]
+        if preds.shape[1] < n_outputs:
+            pad = np.tile(preds[:, -1:], (1, n_outputs - preds.shape[1]))
+            return np.concatenate([preds, pad], axis=1)
+        return preds
+
+    def _compute_metrics(y_true: np.ndarray, y_pred: np.ndarray
+                         ) -> Tuple[float, float, float]:
+        """Return (global_r2, global_rmse, global_mae) over all outputs."""
+        y_pred = _align_preds(y_pred)
+        yt = y_true.ravel()
+        yp = y_pred.ravel()
+        return (
+            float(r2_score(yt, yp)),
+            float(np.sqrt(mean_squared_error(yt, yp))),
+            float(mean_absolute_error(yt, yp)),
+        )
+
+    def _nan_df(n_rows: int) -> pd.DataFrame:
+        """Return a NaN-filled placeholder predictions DataFrame."""
+        return pd.DataFrame(
+            np.full((n_rows, n_outputs), np.nan),
+            index=tgt_idx[:n_rows],
+            columns=cols,
+        )
+
+    def _target_preds(name: str, model: Any) -> pd.DataFrame:
+        """Compute target-year predictions for a base model."""
+        if not have_target:
+            return _nan_df(n_tgt)
+        X_tgt = X_target_per_model.get(name)  # type: ignore[union-attr]
+        if X_tgt is None or len(X_tgt) == 0:
+            return _nan_df(n_tgt)
+        try:
+            p = model.predict(X_tgt)
+            if p.ndim == 1:
+                p = p.reshape(-1, 1)
+            p = _align_preds(p)
+            return pd.DataFrame(p, index=tgt_idx, columns=cols)
+        except Exception:
+            return _nan_df(n_tgt)
+
+    # ── Evaluate base models ─────────────────────────────────────────────
+    results: List[ModelComparisonResult] = []
+
+    for name, model in fitted_base_models.items():
+        X_ho = X_holdout_per_model.get(name)
+        if X_ho is None or len(X_ho) == 0:
+            results.append(ModelComparisonResult(
+                model_name=name,
+                holdout_r2=float('nan'),
+                holdout_rmse=float('nan'),
+                holdout_mae=float('nan'),
+                is_best=False,
+                predictions=_nan_df(n_tgt),
+            ))
+            continue
+        try:
+            ho_preds = model.predict(X_ho)
+            if ho_preds.ndim == 1:
+                ho_preds = ho_preds.reshape(-1, 1)
+            r2, rmse, mae = _compute_metrics(y_holdout, ho_preds)
+            results.append(ModelComparisonResult(
+                model_name=name,
+                holdout_r2=r2,
+                holdout_rmse=rmse,
+                holdout_mae=mae,
+                is_best=False,
+                predictions=_target_preds(name, model),
+            ))
+        except Exception as exc:
+            warnings.warn(
+                f"compare_all_models: base model '{name}' failed on holdout "
+                f"({type(exc).__name__}: {exc}). Metrics will be NaN.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            results.append(ModelComparisonResult(
+                model_name=name,
+                holdout_r2=float('nan'),
+                holdout_rmse=float('nan'),
+                holdout_mae=float('nan'),
+                is_best=False,
+                predictions=_nan_df(n_tgt),
+            ))
+
+    # ── Evaluate ensemble ────────────────────────────────────────────────
+    try:
+        ho = _align_preds(ensemble_preds_holdout)
+        ens_r2, ens_rmse, ens_mae = _compute_metrics(y_holdout, ho)
+        if have_target:
+            ens_tgt = _align_preds(ensemble_preds_target)  # type: ignore[arg-type]
+            ens_pred_df = pd.DataFrame(ens_tgt, index=tgt_idx, columns=cols)
+        else:
+            ens_pred_df = _nan_df(n_tgt)
+        results.append(ModelComparisonResult(
+            model_name='Ensemble',
+            holdout_r2=ens_r2,
+            holdout_rmse=ens_rmse,
+            holdout_mae=ens_mae,
+            is_best=False,
+            predictions=ens_pred_df,
+        ))
+    except Exception as exc:
+        warnings.warn(
+            f"compare_all_models: ensemble evaluation failed "
+            f"({type(exc).__name__}: {exc}). Metrics will be NaN.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        results.append(ModelComparisonResult(
+            model_name='Ensemble',
+            holdout_r2=float('nan'),
+            holdout_rmse=float('nan'),
+            holdout_mae=float('nan'),
+            is_best=False,
+            predictions=_nan_df(n_tgt),
+        ))
+
+    # ── Mark the single best model (NaN R² cannot win) ───────────────────
+    valid = [r for r in results if not np.isnan(r.holdout_r2)]
+    if valid:
+        best = max(valid, key=lambda r: (r.holdout_r2, -r.holdout_rmse))
+        best.is_best = True
+
+    # ── Sort descending by R² (NaN last) ─────────────────────────────────
+    results.sort(
+        key=lambda r: (not np.isnan(r.holdout_r2), r.holdout_r2),
+        reverse=True,
+    )
+    return results
 
 
 class ForecastEvaluator:

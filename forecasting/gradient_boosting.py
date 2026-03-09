@@ -34,9 +34,41 @@ Prokhorenkova et al. (2018). "CatBoost: unbiased boosting with categorical
 features." *Advances in Neural Information Processing Systems* 31.
 """
 
+import warnings
 import numpy as np
 from typing import Optional
-from catboost import CatBoostRegressor
+
+# ── Backend import cascade ──────────────────────────────────────────────────
+# Preference order: CatBoost → LightGBM → sklearn GradientBoostingRegressor.
+# The first successfully imported library becomes the module default.
+# Callers can override per-instance via ``preferred_backend``.
+_CATBOOST_AVAILABLE: bool = False
+_LIGHTGBM_AVAILABLE: bool = False
+
+try:
+    from catboost import CatBoostRegressor as _CatBoostRegressor  # type: ignore[import]
+    _CATBOOST_AVAILABLE = True
+except ImportError:
+    _CatBoostRegressor = None  # type: ignore[assignment,misc]
+    warnings.warn(
+        "CatBoost not found. CatBoostForecaster will fall back to LightGBM or "
+        "sklearn GradientBoostingRegressor.\n"
+        "Install CatBoost for joint multi-output (MultiRMSE) support:\n"
+        "    pip install catboost>=1.2.0\n"
+        "Without CatBoost, per-output models are fitted independently "
+        "(cross-criterion correlation not exploited).",
+        ImportWarning,
+        stacklevel=2,
+    )
+
+try:
+    from lightgbm import LGBMRegressor as _LGBMRegressor  # type: ignore[import]
+    _LIGHTGBM_AVAILABLE = True
+except ImportError:
+    _LGBMRegressor = None  # type: ignore[assignment,misc]
+
+from sklearn.ensemble import GradientBoostingRegressor as _SklearnGBR
+from sklearn.multioutput import MultiOutputRegressor as _MultiOutputRegressor
 
 from .base import BaseForecaster
 
@@ -101,6 +133,7 @@ class CatBoostForecaster(BaseForecaster):
         l2_leaf_reg: float = 3.0,
         subsample: float = 0.8,
         random_state: int = 42,
+        preferred_backend: str = 'catboost',
     ):
         self.iterations = iterations
         self.depth = depth
@@ -108,10 +141,13 @@ class CatBoostForecaster(BaseForecaster):
         self.l2_leaf_reg = l2_leaf_reg
         self.subsample = subsample
         self.random_state = random_state
+        self.preferred_backend = preferred_backend
 
-        self.model: Optional[CatBoostRegressor] = None
+        # CatBoostRegressor | MultiOutputRegressor | None (before fit)
+        self.model = None
         self.feature_importance_: Optional[np.ndarray] = None
         self._n_outputs: int = 1
+        self._backend_: Optional[str] = None   # set during fit()
         self._fitted: bool = False
 
     # ------------------------------------------------------------------
@@ -140,10 +176,7 @@ class CatBoostForecaster(BaseForecaster):
             y = y.reshape(-1, 1)
         self._n_outputs = y.shape[1]
 
-        # MultiRMSE for joint multi-output; RMSE for single-output
-        loss_function = "MultiRMSE" if self._n_outputs > 1 else "RMSE"
-
-        # Sample-adaptive hyperparameter scaling (see class docstring)
+        # Sample-adaptive hyperparameter scaling (see class docstring table)
         n_samples = X.shape[0]
         if n_samples < 200:
             eff_depth, eff_iter = 4, 100
@@ -152,7 +185,65 @@ class CatBoostForecaster(BaseForecaster):
         else:
             eff_depth, eff_iter = self.depth, self.iterations
 
-        self.model = CatBoostRegressor(
+        # Resolve effective backend and dispatch to backend-specific helper
+        backend = self._resolve_backend()
+        self._backend_ = backend
+
+        if backend == 'catboost':
+            self._fit_catboost(X, y, eff_depth, eff_iter)
+        elif backend == 'lightgbm':
+            self._fit_lightgbm(X, y, eff_depth, eff_iter)
+        else:
+            self._fit_sklearn(X, y, eff_depth, eff_iter)
+
+        self._fitted = True
+        return self
+
+    # ------------------------------------------------------------------
+    # Backend resolution and backend-specific fit helpers
+    # ------------------------------------------------------------------
+
+    def _resolve_backend(self) -> str:
+        """Return the effective backend string based on preference and availability."""
+        pb = self.preferred_backend.lower()
+        if pb == 'catboost':
+            if _CATBOOST_AVAILABLE:
+                return 'catboost'
+            if _LIGHTGBM_AVAILABLE:
+                warnings.warn(
+                    "CatBoost not available; CatBoostForecaster using LightGBM. "
+                    "Joint MultiRMSE training is disabled.",
+                    RuntimeWarning, stacklevel=3,
+                )
+                return 'lightgbm'
+            warnings.warn(
+                "CatBoost and LightGBM not available; "
+                "CatBoostForecaster using sklearn GBR.",
+                RuntimeWarning, stacklevel=3,
+            )
+            return 'sklearn'
+        if pb == 'lightgbm':
+            if _LIGHTGBM_AVAILABLE:
+                return 'lightgbm'
+            warnings.warn(
+                "LightGBM not available; CatBoostForecaster using sklearn GBR.",
+                RuntimeWarning, stacklevel=3,
+            )
+            return 'sklearn'
+        return 'sklearn'
+
+    def _fit_catboost(
+        self, X: np.ndarray, y: np.ndarray, eff_depth: int, eff_iter: int
+    ) -> None:
+        """
+        Fit ``CatBoostRegressor`` with joint MultiRMSE (multi-output) or RMSE.
+
+        MultiRMSE fits all outputs simultaneously through a single shared
+        oblivious-tree structure, exploiting cross-criterion correlation.
+        RMSE is used for single-output targets.
+        """
+        loss_function = "MultiRMSE" if self._n_outputs > 1 else "RMSE"
+        self.model = _CatBoostRegressor(
             iterations=eff_iter,
             depth=eff_depth,
             learning_rate=self.learning_rate,
@@ -161,19 +252,63 @@ class CatBoostForecaster(BaseForecaster):
             bootstrap_type="Bernoulli",    # required when subsample < 1.0
             subsample=self.subsample,
             boosting_type="Plain",         # standard gradient boosting;
-                                           # temporal order enforced externally
-                                           # by _PanelTemporalSplit
+                                           # temporal ordering enforced
+                                           # externally by _PanelTemporalSplit
             random_seed=self.random_state,
-            verbose=0,                     # suppress per-iteration console logs
+            verbose=0,                     # suppress per-iteration logs
             allow_writing_files=False,     # no catboost_info/ directory
         )
         self.model.fit(X, y)
-
-        # PredictionValuesChange (CatBoost default): pooled across all
-        # outputs for MultiRMSE → shape (n_features,).
+        # PredictionValuesChange pooled across all outputs for MultiRMSE
+        # → shape (n_features,) as required by inverse_importance().
         self.feature_importance_ = self.model.get_feature_importance()
-        self._fitted = True
-        return self
+
+    def _fit_lightgbm(
+        self, X: np.ndarray, y: np.ndarray, eff_depth: int, eff_iter: int
+    ) -> None:
+        """
+        Fit ``MultiOutputRegressor(LGBMRegressor)`` — independent per output.
+
+        LightGBM uses leaf-wise tree growth; ``num_leaves`` corresponds to
+        the depth-equivalent complexity cap ``2^depth``.
+        """
+        lgbm = _LGBMRegressor(
+            n_estimators=eff_iter,
+            max_depth=eff_depth,
+            # Primary complexity control for LightGBM leaf-wise growth
+            num_leaves=min(2 ** eff_depth, 64),
+            learning_rate=self.learning_rate,
+            reg_lambda=self.l2_leaf_reg,
+            subsample=self.subsample,
+            subsample_freq=1,          # required to activate row subsampling
+            random_state=self.random_state,
+            verbose=-1,
+            n_jobs=1,                  # deterministic; avoids joblib deadlocks
+        )
+        self.model = _MultiOutputRegressor(lgbm, n_jobs=1)
+        self.model.fit(X, y)
+        # Average gain-based importance across per-output LightGBM models
+        self.feature_importance_ = np.mean(
+            [est.feature_importances_ for est in self.model.estimators_], axis=0
+        )
+
+    def _fit_sklearn(
+        self, X: np.ndarray, y: np.ndarray, eff_depth: int, eff_iter: int
+    ) -> None:
+        """Fit ``MultiOutputRegressor(GradientBoostingRegressor)`` — sklearn fallback."""
+        gbr = _SklearnGBR(
+            n_estimators=eff_iter,
+            max_depth=eff_depth,
+            learning_rate=self.learning_rate,
+            subsample=self.subsample,
+            random_state=self.random_state,
+        )
+        self.model = _MultiOutputRegressor(gbr, n_jobs=1)
+        self.model.fit(X, y)
+        # Average impurity-based importance across per-output GBR models
+        self.feature_importance_ = np.mean(
+            [est.feature_importances_ for est in self.model.estimators_], axis=0
+        )
 
     def predict(self, X: np.ndarray) -> np.ndarray:
         """

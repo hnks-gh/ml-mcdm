@@ -524,6 +524,73 @@ class CsvWriter:
 
         return saved
 
+    def save_model_comparison(self, model_comparison: List[Any]) -> str:
+        """
+        Write per-model holdout evaluation metrics to
+        ``forecasting/model_comparison_performance.csv``.
+
+        Columns
+        -------
+        Model          : model identifier ('BayesianRidge', ..., 'Ensemble')
+        Holdout_R2     : global R² across all criteria on the withheld year
+        Holdout_RMSE   : RMSE on the withheld year
+        Holdout_MAE    : MAE on the withheld year
+        Is_Best        : True for the single model with the highest R²
+        Note           : human-readable comparison narrative for the best model
+
+        Returns
+        -------
+        str
+            Absolute path of the written file, or '' when model_comparison
+            is empty.
+        """
+        if not model_comparison:
+            return ''
+
+        # Identify key models for the narrative Note column
+        best     = next((r for r in model_comparison if r.is_best), None)
+        ens_r    = next((r for r in model_comparison if r.model_name == 'Ensemble'), None)
+        base_r   = next(
+            (r for r in model_comparison
+             if r.model_name != 'Ensemble' and not np.isnan(r.holdout_r2)),
+            None,
+        )
+
+        def _note(r: Any) -> str:
+            if not r.is_best:
+                return ''
+            if best and ens_r and base_r:
+                if r.model_name == 'Ensemble':
+                    return (
+                        f"Best model: Ensemble (R²={r.holdout_r2:.4f}) "
+                        f"outperforms best base model "
+                        f"{base_r.model_name} (R²={base_r.holdout_r2:.4f})"
+                    )
+                else:
+                    ens_r2 = ens_r.holdout_r2 if ens_r else float('nan')
+                    return (
+                        f"Best model: {r.model_name} (R²={r.holdout_r2:.4f}) "
+                        f"outperforms Ensemble (R²={ens_r2:.4f})"
+                    )
+            return 'Best model on holdout set'
+
+        rows = []
+        for r in model_comparison:
+            rows.append({
+                'Model':        r.model_name,
+                'Holdout_R2':   r.holdout_r2,
+                'Holdout_RMSE': r.holdout_rmse,
+                'Holdout_MAE':  r.holdout_mae,
+                'Is_Best':      r.is_best,
+                'Note':         _note(r),
+            })
+
+        df = pd.DataFrame(rows).set_index('Model')
+        return self._save_csv(
+            df, 'model_comparison_performance.csv',
+            directory=self.forecasting_dir, float_fmt='%.6f',
+        )
+
     # ==================================================================
     #  6. SENSITIVITY / ANALYSIS
     # ==================================================================
