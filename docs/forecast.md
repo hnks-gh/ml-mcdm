@@ -6,13 +6,13 @@ This framework implements a **statistically-principled 3-tier ensemble learning 
 
 **Key Design Principles:**
 - **Model diversity over quantity**: 5 diverse models outperform 11+ correlated models
-- **Statistical appropriateness**: Optimized for N < 1000 (your dataset: N=756)
+- **Statistical appropriateness**: Optimized for N < 1000 (your dataset: N=819)
 - **Automatic optimal weighting**: Super Learner learns best combination
 - **Guaranteed coverage**: Conformal prediction provides 95% valid intervals
 - **No redundancy**: Each model captures different patterns (tree, linear, panel, Bayesian)
 
 **Key Features:**
-- **5 Model Types**: Gradient Boosting, linear, and advanced panel models
+- **5 Model Types**: CatBoost Gradient Boosting, Bayesian linear, and advanced panel models
 - **Super Learner**: Automatic optimal weighting via meta-learning
 - **Conformal Prediction**: Distribution-free 95% prediction intervals
 - **Distributional Forecasting**: Full predictive distributions via quantile forests
@@ -44,7 +44,7 @@ Temporal Feature Engineering
 Base Model Training (DIVERSE MODEL TYPES)
   │
   ├── Tree-Based (1 model)
-  │   └── Gradient Boosting (Huber loss, 200 trees)
+  │   └── CatBoost Gradient Boosting (MultiRMSE joint multi-output loss)
   │
   ├── Bayesian Linear (1 model)
   │   └── Bayesian Ridge (posterior uncertainty)
@@ -73,7 +73,7 @@ Conformal Prediction (distribution-free intervals)
   ├── Guaranteed coverage: P(y ∈ [L, U]) ≥ 95%
   └── Adaptive to heteroscedasticity
   ↓
-Ca librated Prediction Intervals
+Calibrated Prediction Intervals
   ├── Guaranteed coverage: P(y ∈ [L, U]) ≥ 1-α
   └── Adaptive to heteroscedasticity
   ↓
@@ -88,37 +88,13 @@ Output: Predictions + Calibrated Intervals + Diagnostics
   ├── CV performance metrics
   └── Residual diagnostics
 ```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-TIER 3: UNCERTAINTY CALIBRATION
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  ↓
-Conformal Prediction (distribution-free intervals)
-  ├── Split Conformal (holdout calibration)
-  ├── CV+ Conformal (cross-validation calibration)
-  └── Adaptive Conformal (ACI, online tracking)
-  ↓
-Calibrated Prediction Intervals
-  ├── Guaranteed coverage: P(y ∈ [L, U]) ≥ 1-α
-  └── Adaptive to heteroscedasticity
-  ↓
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Output: Predictions + Calibrated Intervals + Diagnostics
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  ├── Point predictions (ensemble-weighted)
-  ├── Calibrated prediction intervals (conformal)
-  ├── Distributional forecasts (quantiles from QRF)
-  ├── Feature importance (aggregated across models)
-  ├── Model contributions (meta-weights)
-  ├── CV performance metrics
-  └── Residual diagnostics
-```
 
 ### Configuration
 
 The system uses a **single optimized configuration** designed for small-to-medium panel data (N < 1000):
 
 **Base Models (5):**
-- Gradient Boosting (tree-based)
+- CatBoost Gradient Boosting (tree-based, joint multi-output)
 - Bayesian Ridge (linear with uncertainty)
 - Quantile RF + Panel VAR + NAM (panel-specific)
 
@@ -126,7 +102,7 @@ The system uses a **single optimized configuration** designed for small-to-mediu
 
 **Calibration:** Conformal Prediction (95% coverage guarantee)
 
-**Rationale:** For N=756 (your dataset), 5 diverse models with Super Learner meta-learning provides optimal bias-variance tradeoff and model diversity.
+**Rationale:** For N=819 (63 provinces × 13 year pairs, 2011–2024), 5 diverse models with Super Learner meta-learning provides optimal bias-variance tradeoff and model diversity.
 
 ---
 
@@ -134,48 +110,33 @@ The system uses a **single optimized configuration** designed for small-to-mediu
 
 ### 1.1 Tree-Based Ensemble
 
-#### Gradient Boosting Forecaster
+#### CatBoost Gradient Boosting Forecaster
 
-**Algorithm:** Gradient Boosting Trees with Huber loss  
-**Library:** `sklearn.ensemble.GradientBoostingRegressor`
+**Algorithm:** Joint multi-output gradient boosting via CatBoost's `MultiRMSE` loss  
+**Library:** `catboost.CatBoostRegressor` (falls back to LightGBM or sklearn GradientBoostingRegressor if not installed)
 
 **Key Parameters:**
 ```python
-n_estimators = 200        # Number of boosting iterations
-max_depth = 5             # Tree depth: 32 leaves ≈ 24 samples/leaf at n=756
+n_estimators = 200        # Number of boosting stages
+max_depth = 5             # Tree depth: 32 leaves ≈ 24 samples/leaf at n=819
                           # (principled mid-point; tunable via ForecastConfig.gb_max_depth)
-learning_rate = 0.1       # Shrinkage parameter
-subsample = 0.8           # Stochastic gradient boosting
-loss = 'huber'            # Robust to outliers
-alpha = 0.9               # Huber loss parameter
+loss = 'MultiRMSE'        # Joint multi-output loss exploiting cross-criterion correlations
+allow_writing_files = False  # No on-disk catboost_info/ directories
 ```
 
 **Advantages:**
-- High predictive accuracy
-- Robust to outliers via Huber loss
-- Feature importance from tree splits
-- Early stopping prevents overfitting
+- Joint multi-output training: a single tree structure minimizes total RMSE across all 8 criterion outputs simultaneously, exploiting cross-criterion correlations
+- No feature scaling required: CatBoost oblivious trees are invariant to monotone feature transforms
+- Feature importance from oblivious-tree splits
+- Graceful backend fallback: CatBoost → LightGBM → sklearn
 
-**Huber Loss Function:**
-$$
-L_\delta(y, f) = \begin{cases}
-\frac{1}{2}(y - f)^2 & \text{if } |y - f| \leq \delta \\
-\delta(|y - f| - \frac{1}{2}\delta) & \text{otherwise}
-\end{cases}
-$$
+**Why joint multi-output?**
 
-Where $\delta = 0.9$ (threshold for outlier detection).
+For small-to-medium panel data (N < 1000), training one shared tree model outperforms `MultiOutputRegressor` wrappers:
 
-**Why Gradient Boosting Only?**
-
-For small-to-medium panel data (N < 1000), a single Gradient Boosting model outperforms Random Forest + Extra Trees ensembles:
-
-- **Sample efficiency**: Sequential learning uses all data to correct errors (vs. random bootstrapping)
-- **Regularization**: Learning rate, early stopping, subsampling prevent overfitting
-- **Low correlation**: GB + Panel models + Bayes provides better diversity than GB + RF + ET
-- **Empirical evidence**: GB wins 89% of competitions on N < 1000 datasets (Chen & Guestrin, 2016)
-
-Removing RF/ET reduces redundancy and improves meta-learner stability on small validation sets.
+- **Cross-criterion coupling**: provinces that rank high on one criterion tend to rank high on related criteria; shared split points exploit this automatically
+- **Sample efficiency**: joint training uses all 8 output signals to guide each split, rather than fitting each criterion in isolation
+- **Low correlation with other ensemble members**: CatBoost + Panel models + Bayes covers tree, linear, and panel modelling families without redundancy
 
 ---
 
@@ -221,7 +182,7 @@ $$
 
 ### 1.3 Advanced Panel Models
 
-These state-of-the-art models are specifically designed for panel data and are included in **ADVANCED** mode (as well as BALANCED, ACCURATE, and ENSEMBLE modes).
+These state-of-the-art models are specifically designed for panel data.
 
 **Why Advanced Panel Models?**
 
@@ -316,25 +277,26 @@ $$
 $$
 
 **Lag Selection:**  
-Automatically selects optimal lag order (1-3) using BIC or AIC:
+Optimal lag order (1–3) is selected using hold-out CV MSE (`pvar_lag_selection_method = "cv"`). Classic penalised-likelihood information criteria (BIC, AIC) are not valid under Ridge regularisation because the effective degrees-of-freedom `tr(X(X'X+λI)⁻¹X') ≪ raw parameter count`.
+
 $$
-\text{BIC}(p) = \log(\text{RSS}(p)/n) + p \cdot \log(n) / n
+\text{CV-MSE}(p) = \frac{1}{|\text{val}|} \sum_{(i,t) \in \text{val}} ||y_{it} - \hat{y}_{it}^{(p)}||^2
 $$
 
 **Advantages:**
 - Captures entity heterogeneity (fixed effects)
 - Models cross-component dynamics (VAR)
-- Automatic lag selection
+- Data-driven lag selection via CV
 - Regularization handles high dimensionality
 - Interpretable coefficients
 
 **Key Parameters:**
 ```python
-n_lags = 2                # Lag order (or 'auto' for BIC/AIC)
+n_lags = 2                # Lag order (or 'auto' for CV selection)
 alpha = 1.0               # Regularization strength
 l1_ratio = 0.0            # ElasticNet mixing (0=Ridge, 1=Lasso)
 use_fixed_effects = True  # Include entity dummies
-criterion = 'bic'         # Lag selection criterion
+lag_selection_method = 'cv'  # Hold-out CV MSE (only valid method under Ridge)
 ```
 
 ---
@@ -805,7 +767,7 @@ pip install -e .[forecasting]
    - Super Learner needs ≥3 base models for meaningful weights
    - Model diversity more important than quantity (5-6 diverse > 11+ correlated)
    - Very high correlation between base models reduces ensemble gains
-   - For N=756: Removed RF/ET to reduce redundancy with GB
+   - For N=819: Removed RF/ET to reduce redundancy with CatBoost GB
 
 ### 6.3 Current Capabilities vs. Future Enhancements
 

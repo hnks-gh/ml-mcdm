@@ -51,7 +51,7 @@ The ML-MCDM pipeline analyzes panel data (entities × time periods × criteria) 
 │                           │                                              │
 │  Phase 2: Weight Calculation                                            │
 │  ┌──────────────────────────────────────────────────────────┐           │
-│  │ CRITIC Two-Level: Deterministic deterministic pipeline  │           │
+│  │ CRITIC Two-Level: Deterministic two-level CRITIC pipeline  │           │
 │  └────────────────────────┬─────────────────────────────────┘           │
 │                           │                                              │
 │  Phase 3: Hierarchical Ranking (ER)                                     │
@@ -68,7 +68,7 @@ The ML-MCDM pipeline analyzes panel data (entities × time periods × criteria) 
 │                           │                                              │
 │  Phase 4: ML Forecasting (State-of-the-Art Ensemble)                   │
 │  ┌──────────────────────────────────────────────────────────┐           │
-│  │ 6 Models: GB + Bayesian + QuantileRF + PanelVAR + NAM  │           │
+│  │ 5 Models: CatBoost + Bayesian + QuantileRF + PanelVAR + NAM  │           │
 │  │ → Super Learner meta-ensemble + Conformal Prediction    │           │
 │  │ → Aggregated feature importance across all models       │           │
 │  └────────────────────────┬─────────────────────────────────┘           │
@@ -228,7 +228,7 @@ For **each of 8 criteria** (C01 through C08):
 
 **Ensemble Architecture:**
 - **5 Base Models:**
-  1. **Gradient Boosting** — Tree-based with Huber loss
+  1. **CatBoost Gradient Boosting** — Joint multi-output tree-based model (MultiRMSE loss)
   2. **Bayesian Ridge** — Probabilistic linear model
   3. **Quantile Random Forest** — Distributional forecasting
   4. **Panel VAR** — Panel-specific dynamics
@@ -249,7 +249,7 @@ For **each of 8 criteria** (C01 through C08):
   - Bayesian: Absolute coefficients
   - Panel VAR: Coefficient magnitudes
   - NAM: Shape function variances
-- **Aggregated** across all 6 models (averaged)
+- **Aggregated** across all 5 models (averaged)
 - Saved for exploratory analysis
 
 **Output Files:**
@@ -415,7 +415,7 @@ print(f"Robustness: {result.analysis['sensitivity'].overall_robustness:.4f}")
 |-----------|------|-------|
 | Weighting | ~2s | Deterministic CRITIC (two levels) |
 | Ranking | ~10s | 6 MCDM + 2-stage ER |
-| ML Forecasting | ~15s | 6 models + Super Learner |
+| ML Forecasting | ~15s | 5 models + Super Learner |
 | Sensitivity Analysis | ~20s | Monte Carlo (1000 sims) |
 | Visualization + Export | ~5s | 5 figures + results |
 
@@ -456,7 +456,7 @@ print(f"Robustness: {result.analysis['sensitivity'].overall_robustness:.4f}")
   ✓ Completed in 0.91s
 
 ▶ Phase 2/7: Weight Calculation
-  CRITIC Two-Level: Deterministic deterministic pipeline
+  CRITIC Two-Level: Deterministic two-level CRITIC pipeline
   Weights: [0.142, 0.118, 0.095, 0.158, 0.127, 0.109, 0.132, 0.119]
   Cosine similarity: 0.9915 (stable)
   ✓ Completed in 19.51s
@@ -469,7 +469,7 @@ print(f"Robustness: {result.analysis['sensitivity'].overall_robustness:.4f}")
   ✓ Completed in 7.02s
 
 ▶ Phase 4/7: ML Forecasting
-  Ensemble: 6 models (GB, Bayesian, QRF, PanelVAR, HierBayes, NAM)
+  Ensemble: 5 models (CatBoost, Bayesian, QRF, PanelVAR, NAM)
   Super Learner CV R²: 0.7355 ± 0.084
   Top feature: SC01 (importance = 0.082)
   ✓ Completed in 14.50s

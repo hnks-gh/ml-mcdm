@@ -4,10 +4,10 @@
 
 This framework implements a **two-stage hierarchical ranking system** that combines:
 
-1. **Five Traditional MCDM Methods** - TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS - applied
+1. **Six Traditional MCDM Methods** - TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS, SAW - applied
    independently within each criterion group to generate per-method scores.
 2. **Evidential Reasoning (ER)** - Yang & Xu (2002) analytical algorithm for rigorous
-   belief-based aggregation of the five method scores into a single ranking per criterion,
+   belief-based aggregation of the six method scores into a single ranking per criterion,
    and then across all eight criteria into a final global ranking.
 
 **Application:** Vietnam PAPI - 63 provinces, 8 criteria (C01-C08), 29 sub-criteria
@@ -17,7 +17,7 @@ This framework implements a **two-stage hierarchical ranking system** that combi
 
 ## Part I: MCDM Methods
 
-All five methods operate on the min-max normalized sub-criteria matrix in [0,1].
+All six methods operate on the min-max normalized sub-criteria matrix in [0,1].
 
 ### 1.1 TOPSIS (Hwang & Yoon, 1981)
 
@@ -46,15 +46,21 @@ Q_i = S+_i + (sum_k S-_k) / (S-_i * sum_k 1/S-_k) -- utility degree U_i = Q_i/Q_
 AV_j = mean(x_ij); PDA_ij = max(0, x_ij-AV_j)/AV_j; NDA_ij = max(0, AV_j-x_ij)/AV_j
 AS_i = 0.5*(SP_i/max(SP) + 1 - SN_i/max(SN)) -- higher is better
 
+### 1.6 SAW — Simple Additive Weighting (Fishburn, 1967)
+
+Score_i = sum_j w_j * r_ij -- weighted sum of min-max normalized values
+Serves as a transparent linear baseline; fully compensatory.
+Higher score is better.
+
 ---
 
 ## Part II: Method Weighting (Rank Agreement)
 
 `HierarchicalEvidentialReasoning._compute_method_weights()` uses inverse-CV weighting:
-- Compute rank vectors for all 5 methods
+- Compute rank vectors for all 6 methods
 - w_m proportional to 1/(CV_m + epsilon), then normalize
 
-Kendall's W = 12*sum_i(R_i-R_bar)^2 / [k^2*(m^3-m)], k=5, m=63 -- stored in kendall_w
+Kendall's W = 12*sum_i(R_i-R_bar)^2 / [k^2*(m^3-m)], k=6, m=63 -- stored in kendall_w
 
 ---
 
@@ -99,13 +105,13 @@ Score = (u_min + u_max) / 2
 
 **Stage 1 (x8 criterion groups):**
 1. Min-max normalize SC matrix; apply YearContext SC exclusions.
-2. Run 5 MCDM methods with Level-1 SC weights from HybridWeightingCalculator.
+2. Run 6 MCDM methods with Level-1 SC weights from CRITICWeightCalculator.
 3. Derive method weights via inverse-CV.
 4. Convert each method score to belief; ER-combine -> one belief per (province, criterion).
 5. Average utility -> criterion-level score in [0,1].
 
 **Stage 2 (global):**
-1. Criterion weights from HybridWeightingCalculator Level 2.
+1. Criterion weights from CRITICWeightCalculator Level 2.
 2. ER-combine 8 criterion beliefs -> global belief per province.
 3. Average utility -> global score -> final ranking.
 
@@ -131,6 +137,7 @@ Score = (u_min + u_max) / 2
 | `ranking/promethee.py` | PROMETHEECalculator |
 | `ranking/copras.py` | COPRASCalculator |
 | `ranking/edas.py` | EDASCalculator |
+| `ranking/saw.py` | SAWCalculator |
 
 ---
 
@@ -156,6 +163,8 @@ Score = (u_min + u_max) / 2
 5. Zavadskas, E.K. et al. (1994). Tech. & Econ. Dev. of Economy, 1(3), 131-139.
 6. Keshavarz Ghorabaee, M. et al. (2015). Informatica, 26(3), 435-451.
 7. Kendall, M.G., & Babington Smith, B. (1939). Ann. Math. Stat., 10(3), 275-287.
+8. Fishburn, P.C. (1967). Operations Research, 15(3), 537–542. (SAW)
+9. MacCrimmon, K.R. (1968). RAND Corporation, RM-4823-ARPA. (SAW)
 
 ---
 
