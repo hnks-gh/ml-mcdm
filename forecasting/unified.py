@@ -879,6 +879,54 @@ class UnifiedForecaster:
                 print(f"    - {name}")
 
         y_arr = self.y_train_.values
+        _n_train = len(self.X_train_tree_)
+
+        # ── Build CV dataset: append holdout year so the last fold can
+        # validate it (Fold 5: train 2011–2023, validate 2024).
+        # Base models are still retrained on training-only data (refit_X)
+        # so Stage 6a holdout evaluation remains leakage-free.
+        if (
+            not self.X_holdout_.empty
+            and self.holdout_year_ is not None
+            and self._year_labels_arr_ is not None
+        ):
+            _X_ho_arr  = self.X_holdout_.values
+            _X_ho_tree = self.reducer_tree_.transform(_X_ho_arr)
+            _X_ho_pca  = self.reducer_pca_.transform(_X_ho_arr)
+            _ho_year_labels = np.full(
+                len(_X_ho_arr), self.holdout_year_, dtype=int
+            )
+            _ent_to_idx = {
+                e: i for i, e in enumerate(self._panel_data_.provinces)
+            }
+            _ho_entity_idx = np.array(
+                [_ent_to_idx.get(e, 0) for e in self.X_holdout_.index],
+                dtype=int,
+            )
+            _X_cv_tree  = np.vstack([self.X_train_tree_, _X_ho_tree])
+            _X_cv_pca   = np.vstack([self.X_train_pca_,  _X_ho_pca])
+            _y_cv       = np.vstack([y_arr, self.y_holdout_.values])
+            _year_cv    = np.concatenate(
+                [self._year_labels_arr_, _ho_year_labels]
+            )
+            _ent_cv     = (
+                np.concatenate([self._entity_indices_, _ho_entity_idx])
+                if self._entity_indices_ is not None else None
+            )
+            _per_model_cv = {
+                'BayesianRidge':    _X_cv_pca,
+                'GradientBoosting': _X_cv_tree,
+                'QuantileRF':       _X_cv_tree,
+                'PanelVAR':         _X_cv_tree,
+                'NAM':              _X_cv_tree,
+            }
+        else:
+            _X_cv_tree    = self.X_train_tree_
+            _y_cv         = y_arr
+            _year_cv      = self._year_labels_arr_
+            _ent_cv       = self._entity_indices_
+            _per_model_cv = self._per_model_X_train_
+
         self.super_learner_ = SuperLearner(
             base_models=self.models_,
             meta_learner_type='ridge',
@@ -890,12 +938,26 @@ class UnifiedForecaster:
             verbose=self.verbose,
         )
         self.super_learner_.fit(
-            self.X_train_tree_,
-            y_arr,
-            entity_indices=self._entity_indices_,
-            per_model_X=self._per_model_X_train_,
-            year_labels=self._year_labels_arr_,
+            _X_cv_tree,
+            _y_cv,
+            entity_indices=_ent_cv,
+            per_model_X=_per_model_cv,
+            year_labels=_year_cv,
+            refit_X=self.X_train_tree_,
+            refit_y=y_arr,
+            refit_per_model_X=self._per_model_X_train_,
+            refit_entity_indices=self._entity_indices_,
         )
+
+        # Trim OOF arrays to n_train rows so Stage 5 (conformal calibration)
+        # and Stage 6b (OOF R²) index correctly against y_train_.
+        _oof_full  = self.super_learner_._oof_ensemble_predictions_
+        _mask_full = self.super_learner_._oof_valid_mask_
+        if _oof_full is not None and len(_oof_full) > _n_train:
+            self.super_learner_._oof_ensemble_predictions_ = _oof_full[:_n_train]
+            self.super_learner_._oof_valid_mask_ = (
+                _mask_full[:_n_train] if _mask_full is not None else None
+            )
 
         # Cache OOF predictions (Stage 5 conformal uses them for residuals)
         self.oof_predictions_ = self.super_learner_._oof_ensemble_predictions_

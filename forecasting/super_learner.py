@@ -383,27 +383,34 @@ class SuperLearner:
         entity_indices: Optional[np.ndarray] = None,
         per_model_X: Optional[Dict[str, np.ndarray]] = None,
         year_labels: Optional[np.ndarray] = None,
+        refit_X: Optional[np.ndarray] = None,
+        refit_y: Optional[np.ndarray] = None,
+        refit_per_model_X: Optional[Dict[str, np.ndarray]] = None,
+        refit_entity_indices: Optional[np.ndarray] = None,
     ) -> "SuperLearner":
         """
         Fit the Super Learner ensemble.
 
         Stage 1: Generate out-of-fold predictions via temporal CV
         Stage 2: Train meta-learner on OOF predictions
-        Stage 3: Re-train base models on full training data
+        Stage 3: Re-train base models on refit data (or full data)
 
         Args:
-            X: Feature matrix of shape (n_samples, n_features). Used as the
-                default for all models unless overridden by ``per_model_X``.
-            y: Target values of shape (n_samples,) or (n_samples, n_outputs)
-            entity_indices: Optional entity group IDs for panel-aware models
-            per_model_X: Optional dict mapping model name → feature matrix.
-                When provided, each model uses its own feature matrix instead
-                of the shared ``X`` (enables two-track preprocessing where
-                linear models see PCA features and trees see raw features).
+            X: Feature matrix used for the CV/OOF phase (n_samples, n_features).
+            y: Target values for the CV/OOF phase.
+            entity_indices: Optional entity group IDs for panel-aware models.
+            per_model_X: Optional per-model feature matrices for the CV/OOF phase.
             year_labels: Optional integer array of shape (n_samples,) giving
                 the calendar target year for each training row.  When provided,
                 uses :class:`_WalkForwardYearlySplit` (1-year validation steps)
                 instead of :class:`_PanelTemporalSplit`.
+            refit_X: When not None, base models are re-trained on this matrix
+                instead of ``X`` after the CV phase.  Use this to restrict
+                retraining to the original training set (excluding a holdout
+                year that was appended to ``X`` solely for the last CV fold).
+            refit_y: Targets paired with ``refit_X``.
+            refit_per_model_X: Per-model matrices paired with ``refit_X``.
+            refit_entity_indices: Entity indices paired with ``refit_X``.
 
         Returns:
             Self for method chaining
@@ -562,13 +569,21 @@ class SuperLearner:
         self._oof_valid_mask_ = ~np.isnan(oof_ensemble).any(axis=1)
 
         # ============================================================
-        # Stage 3: Re-train all base models on full data
+        # Stage 3: Re-train all base models on refit data
         # ============================================================
+        # When refit_X / refit_y are provided (e.g. training-only data without
+        # the holdout year that was appended to X for the CV phase), base models
+        # are retrained on that subset so Stage 6 holdout evaluation remains
+        # leakage-free.  Falls back to the CV data when not provided.
+        _rx   = refit_X            if refit_X            is not None else X
+        _ry   = refit_y            if refit_y            is not None else y
+        _rpmX = refit_per_model_X  if refit_per_model_X  is not None else per_model_X
+        _rei  = refit_entity_indices if refit_entity_indices is not None else entity_indices
         for name, model in self.base_models.items():
             try:
-                X_m = per_model_X[name] if (per_model_X and name in per_model_X) else X
+                X_m = _rpmX[name] if (_rpmX and name in _rpmX) else _rx
                 fitted_model = copy.deepcopy(model)
-                self._fit_model(fitted_model, X_m, y, entity_indices)
+                self._fit_model(fitted_model, X_m, _ry, _rei)
                 self._fitted_base_models[name] = fitted_model
             except Exception as e:
                 if self.verbose:
