@@ -14,10 +14,8 @@ Evaluation Dimensions:
        reflect generalisation error, not in-sample fit.
     4. Ablation Studies: LOO and pairwise component-contribution analysis
 
-Validation Strategies:
-    - Expanding window: Train on t₁...tₖ, predict tₖ₊₁
-    - Rolling window: Train on tₖ₋w...tₖ, predict tₖ₊₁
-    - Leave-one-year-out (LOY): Train on all but tₖ, predict tₖ
+Validation Strategy:
+    - Expanding window (walk-forward): Train on t₁...tₖ, predict tₖ₊₁
 
 Ablation Studies (``AblationStudy`` class):
     - Leave-one-out (LOO): remove each feature in turn, measure R² drop
@@ -42,7 +40,7 @@ from sklearn.metrics import (
     median_absolute_error,
 )
 from sklearn.model_selection import TimeSeriesSplit
-from .super_learner import _PanelTemporalSplit
+from .super_learner import _WalkForwardYearlySplit
 import copy
 import warnings
 import functools
@@ -322,9 +320,7 @@ class ForecastEvaluator:
 
     Parameters:
         metrics: List of metric names to compute
-        cv_strategy: Cross-validation strategy ('expanding', 'rolling', 'loyo')
-        n_folds: Number of CV folds
-        window_size: Window size for rolling CV
+        n_folds: Number of CV folds (walk-forward expanding window)
         verbose: Print progress
 
     Example:
@@ -349,15 +345,11 @@ class ForecastEvaluator:
     def __init__(
         self,
         metrics: Optional[List[str]] = None,
-        cv_strategy: str = "expanding",
         n_folds: int = 5,
-        window_size: Optional[int] = None,
         verbose: bool = True,
     ):
         self.metrics = metrics or ["r2", "rmse", "mae", "mape"]
-        self.cv_strategy = cv_strategy
         self.n_folds = n_folds
-        self.window_size = window_size
         self.verbose = verbose
 
     @_silence_warnings
@@ -369,6 +361,7 @@ class ForecastEvaluator:
         X_test: Optional[np.ndarray] = None,
         y_test: Optional[np.ndarray] = None,
         entity_indices: Optional[np.ndarray] = None,
+        year_labels: Optional[np.ndarray] = None,
     ) -> Dict[str, Any]:
         """
         Run comprehensive evaluation.
@@ -379,7 +372,9 @@ class ForecastEvaluator:
             y: Training targets
             X_test: Optional test features for holdout evaluation
             y_test: Optional test targets
-            entity_indices: Optional entity group IDs for panel-aware CV
+            entity_indices: Optional entity group IDs (unused; kept for API compat)
+            year_labels: Integer calendar year for each training row (target year).
+                When provided, uses walk-forward yearly CV aligned to calendar years.
 
         Returns:
             Dictionary with evaluation results
@@ -390,7 +385,7 @@ class ForecastEvaluator:
         if self.verbose:
             print("  Evaluating: Cross-validation...")
         results["cv"] = self._cross_validate(model, X, y,
-                                              entity_indices=entity_indices)
+                                              year_labels=year_labels)
 
         # Holdout evaluation
         if X_test is not None and y_test is not None:
@@ -408,20 +403,23 @@ class ForecastEvaluator:
 
     def _cross_validate(
         self, model, X: np.ndarray, y: np.ndarray,
-        entity_indices: Optional[np.ndarray] = None,
+        year_labels: Optional[np.ndarray] = None,
     ) -> Dict[str, Any]:
-        """Run time-series cross-validation.
+        """Run walk-forward yearly cross-validation.
 
-        When *entity_indices* is provided, uses ``_PanelTemporalSplit``
-        to avoid cross-entity temporal leakage.  Otherwise falls back
-        to ``TimeSeriesSplit``.
+        When *year_labels* is provided, uses ``_WalkForwardYearlySplit``
+        aligned to calendar years — identical splitter used by SuperLearner.
+        Falls back to ``TimeSeriesSplit`` when year_labels is None (e.g. when
+        called on non-panel data outside the main pipeline).
         """
         if y.ndim == 1:
             y = y.reshape(-1, 1)
 
-        if entity_indices is not None:
-            splitter = _PanelTemporalSplit(n_splits=self.n_folds)
-            splits = list(splitter.split(X, entity_indices=entity_indices))
+        if year_labels is not None:
+            splitter = _WalkForwardYearlySplit(
+                min_train_years=8, max_folds=self.n_folds
+            )
+            splits = list(splitter.split(X, year_labels=year_labels))
         else:
             tscv = TimeSeriesSplit(n_splits=self.n_folds)
             splits = list(tscv.split(X))

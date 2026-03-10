@@ -217,25 +217,25 @@ class _WalkForwardYearlySplit:
 
     where val_year = unique_years[min(min_train_years, len-1) + k].
 
-    Example with 12 target years (2012–2023), min_train_years=7, max_folds=5:
-      Fold 0: train 2012–2018, validate 2019
-      Fold 1: train 2012–2019, validate 2020
-      Fold 2: train 2012–2020, validate 2021
-      Fold 3: train 2012–2021, validate 2022
-      Fold 4: train 2012–2022, validate 2023
+    Example with 13 target years (2012–2024), min_train_years=8, max_folds=5:
+      Fold 0: train 2012–2019, validate 2020
+      Fold 1: train 2012–2020, validate 2021
+      Fold 2: train 2012–2021, validate 2022
+      Fold 3: train 2012–2022, validate 2023
+      Fold 4: train 2012–2023, validate 2024
 
     Parameters
     ----------
     min_train_years : int
         Minimum number of target-year cohorts in the first training fold.
-        Default 7 ensures at least 7 years of history before the first
-        validation year.
+        Default 8 ensures at least 8 years of history before the first
+        validation year (first val year = 2020 for labels 2012–2024).
     max_folds : int
         Maximum number of folds to yield.  Prevents excessive folds for
         very long panels.
     """
 
-    def __init__(self, min_train_years: int = 7, max_folds: int = 5):
+    def __init__(self, min_train_years: int = 8, max_folds: int = 5):
         self.min_train_years = min_train_years
         self.max_folds = max_folds
 
@@ -338,8 +338,8 @@ class SuperLearner:
         self,
         base_models: Dict[str, BaseForecaster],
         meta_learner_type: str = "ridge",
-        n_cv_folds: int = 6,
-        cv_min_train_years: int = 7,
+        n_cv_folds: int = 5,
+        cv_min_train_years: int = 8,
         positive_weights: bool = True,
         normalize_weights: bool = True,
         meta_alpha_range: Optional[List[float]] = None,
