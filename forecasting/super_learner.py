@@ -483,11 +483,25 @@ class SuperLearner:
                 X_m = per_model_X[name] if (per_model_X and name in per_model_X) else X
                 X_train_cv = X_m[train_idx]
                 X_val_cv = X_m[val_idx]
+                # Drop rows where any y target is NaN — partial-NaN rows are
+                # preserved upstream for imputation reporting but base models
+                # require complete target vectors.
+                _y_nan = (np.isnan(y_train_cv).any(axis=1)
+                          if y_train_cv.ndim > 1 else np.isnan(y_train_cv))
+                if _y_nan.any():
+                    _valid = ~_y_nan
+                    _X_fit = X_train_cv[_valid]
+                    _y_fit = y_train_cv[_valid]
+                    _ent_fit = (entity_indices[train_idx][_valid]
+                                if entity_indices is not None else None)
+                else:
+                    _X_fit, _y_fit = X_train_cv, y_train_cv
+                    _ent_fit = (entity_indices[train_idx]
+                                if entity_indices is not None else None)
                 try:
                     model_copy = copy.deepcopy(model)
                     # Forward entity_indices to models that accept them
-                    self._fit_model(model_copy, X_train_cv, y_train_cv,
-                                    entity_indices[train_idx] if entity_indices is not None else None)
+                    self._fit_model(model_copy, _X_fit, _y_fit, _ent_fit)
 
                     pred = model_copy.predict(X_val_cv)
                     if pred.ndim == 1:
@@ -600,11 +614,24 @@ class SuperLearner:
         _ry   = refit_y            if refit_y            is not None else y
         _rpmX = refit_per_model_X  if refit_per_model_X  is not None else per_model_X
         _rei  = refit_entity_indices if refit_entity_indices is not None else entity_indices
+        # Drop NaN-target rows once for the full refit data
+        _ry_nan = (np.isnan(_ry).any(axis=1)
+                   if _ry.ndim > 1 else np.isnan(_ry))
+        if _ry_nan.any():
+            _rv = ~_ry_nan
+            _rx_clean   = _rx[_rv]
+            _ry_clean   = _ry[_rv]
+            _rpmX_clean = ({k: v[_rv] for k, v in _rpmX.items()}
+                           if _rpmX else None)
+            _rei_clean  = _rei[_rv] if _rei is not None else None
+        else:
+            _rx_clean, _ry_clean = _rx, _ry
+            _rpmX_clean, _rei_clean = _rpmX, _rei
         for name, model in self.base_models.items():
             try:
-                X_m = _rpmX[name] if (_rpmX and name in _rpmX) else _rx
+                X_m = _rpmX_clean[name] if (_rpmX_clean and name in _rpmX_clean) else _rx_clean
                 fitted_model = copy.deepcopy(model)
-                self._fit_model(fitted_model, X_m, _ry, _rei)
+                self._fit_model(fitted_model, X_m, _ry_clean, _rei_clean)
                 self._fitted_base_models[name] = fitted_model
             except Exception as e:
                 if self.verbose:
