@@ -7,12 +7,13 @@ State-of-the-art ensemble forecasting system optimised for small-to-medium
 panel data (N < 1000).  Orchestrates all forecasting sub-components through
 a clean single-entry-point API.
 
-Model ensemble (5 diverse types)
+Model ensemble (6 diverse types)
 ---------------------------------
-- Gradient Boosting     — Huber-loss sequential trees
-- Bayesian Ridge        — linear model with posterior uncertainty
-- Quantile RF           — full predictive distributions via leaf quantiles
-- Panel VAR             — LSDV fixed effects + autoregressive dynamics
+- Gradient Boosting (CatBoost)  — joint multi-output oblivious trees (MultiRMSE)
+- LightGBM                      — leaf-wise per-output trees (MultiOutputRegressor)
+- Bayesian Ridge                — linear model with posterior uncertainty
+- Quantile RF                   — full predictive distributions via leaf quantiles
+- Panel VAR                     — LSDV fixed effects + autoregressive dynamics
 - Neural Additive Model — interpretable shape functions (optional NAM²)
 
 Meta-ensemble
@@ -49,7 +50,7 @@ import warnings
 import copy
 
 from .base import BaseForecaster
-from .gradient_boosting import CatBoostForecaster
+from .gradient_boosting import CatBoostForecaster, LightGBMForecaster
 from .bayesian import BayesianForecaster
 from .features import TemporalFeatureEngineer
 
@@ -57,7 +58,7 @@ from .features import TemporalFeatureEngineer
 from .panel_var import PanelVARForecaster
 from .quantile_forest import QuantileRandomForestForecaster
 from .neural_additive import NeuralAdditiveForecaster
-from .super_learner import SuperLearner
+from .super_learner import SuperLearner, _WalkForwardYearlySplit as PanelWalkForwardCV
 from .conformal import ConformalPredictor
 from .preprocessing import PanelFeatureReducer
 from .evaluation import ForecastEvaluator, AblationStudy, ModelComparisonResult, compare_all_models
@@ -74,6 +75,77 @@ def _silence_warnings(func):
             warnings.simplefilter('ignore')
             return func(*args, **kwargs)
     return wrapper
+
+
+@dataclass
+class _TargetTransformer:
+    """
+    Reversible per-column target transformation for the forecasting pipeline.
+
+    Modes
+    -----
+    'logit'
+        ``f(y) = log(y / (1-y))``  (SAW-normalized [0,1] targets).
+        Clips ``y`` to ``(clip_eps, 1-clip_eps)`` before applying logit.
+        Inverse: sigmoid ``f⁻¹(z) = 1 / (1 + exp(-z))``.
+    'yeo_johnson'
+        Fits ``sklearn.preprocessing.PowerTransformer(method='yeo-johnson',
+        standardize=True)`` per column on the training set.  Maps raw
+        criterion composites toward N(0,1), improving Gaussian-assumption
+        estimators (BayesianRidge, RidgeCV meta-learner).
+    'identity'
+        Pass-through; no transformation applied.
+
+    Key guarantee: both ``logit`` and ``yeo_johnson`` are **strictly monotone**
+    transformations → applying ``f⁻¹`` to conformal bounds ``[lower, upper]``
+    (computed in transformed space) yields valid conformal bounds in original
+    space (distribution-free coverage is preserved by reparameterisation).
+    """
+    mode: str = 'yeo_johnson'
+    clip_eps: float = 1e-6
+    _pt: Any = field(default=None, repr=False)  # PowerTransformer (yeo_johnson only)
+
+    def fit_transform(self, y: np.ndarray) -> np.ndarray:
+        """Fit on ``y_train`` and return transformed array."""
+        if self.mode == 'yeo_johnson':
+            from sklearn.preprocessing import PowerTransformer
+            self._pt = PowerTransformer(method='yeo-johnson', standardize=True)
+            return self._pt.fit_transform(y)
+        if self.mode == 'logit':
+            y_c = np.clip(y, self.clip_eps, 1.0 - self.clip_eps)
+            return np.log(y_c / (1.0 - y_c))
+        return y.copy()  # identity
+
+    def transform(self, y: np.ndarray) -> np.ndarray:
+        """Transform ``y`` using the already-fitted transformer."""
+        if self.mode == 'yeo_johnson':
+            if self._pt is None:
+                raise RuntimeError(
+                    "_TargetTransformer not fitted; call fit_transform first."
+                )
+            return self._pt.transform(y)
+        if self.mode == 'logit':
+            y_c = np.clip(y, self.clip_eps, 1.0 - self.clip_eps)
+            return np.log(y_c / (1.0 - y_c))
+        return y.copy()  # identity
+
+    def inverse_transform(self, y: np.ndarray) -> np.ndarray:
+        """Invert the transformation (back to original target space)."""
+        if self.mode == 'yeo_johnson':
+            if self._pt is None:
+                raise RuntimeError(
+                    "_TargetTransformer not fitted; call fit_transform first."
+                )
+            return self._pt.inverse_transform(y)
+        if self.mode == 'logit':
+            # sigmoid: maps transformed ℝ back to (0, 1)
+            return 1.0 / (1.0 + np.exp(-np.clip(y, -500, 500)))
+        return y.copy()  # identity
+
+    @property
+    def is_identity(self) -> bool:
+        """True when the transformer is a no-op (mode='identity')."""
+        return self.mode == 'identity'
 
 
 @dataclass
@@ -345,12 +417,13 @@ class UnifiedForecaster:
     Optimized for small-to-medium panel data (N < 1000) with statistically-principled
     ensemble design emphasizing model diversity over quantity.
 
-    Tier 1 - Base Models (5 diverse models):
-        1. Gradient Boosting (robust tree ensemble)
-        2. Bayesian Ridge (linear with uncertainty quantification)
-        3. Quantile Random Forest (distributional forecasting)
-        4. Panel VAR (panel fixed effects + autoregressive)
-        5. Neural Additive Models (interpretable non-linearity)
+    Tier 1 - Base Models (6 diverse models):
+        1. Gradient Boosting / CatBoost (joint multi-output oblivious trees)
+        2. LightGBM (leaf-wise per-output trees, complementary inductive bias)
+        3. Bayesian Ridge (linear with uncertainty quantification)
+        4. Quantile Random Forest (distributional forecasting)
+        5. Panel VAR (panel fixed effects + autoregressive)
+        6. Neural Additive Models (interpretable non-linearity)
 
     Tier 2 - Meta-Ensemble:
         - Super Learner: Trains meta-learner on out-of-fold predictions
@@ -424,6 +497,16 @@ class UnifiedForecaster:
             config.holdout_year if config is not None else None
         )
 
+        # Phase 5: target transformation (logit for SAW, yeo-johnson otherwise)
+        self.use_target_transform: bool = (
+            config.use_target_transform if config is not None else True
+        )
+        self.target_transformer_: Optional[_TargetTransformer] = None
+        self.y_train_raw_: Optional[pd.DataFrame] = None
+        self.y_holdout_raw_: Optional[pd.DataFrame] = None
+        # Phase 4: tuned GB hyperparameters (populated by _tune_gb_hyperparameters)
+        self._tuned_gb_params_: Dict[str, Dict] = {}
+
         self.models_: Dict[str, BaseForecaster] = {}
         self.model_weights_: Dict[str, float] = {}
         self.feature_engineer_ = TemporalFeatureEngineer(target_level=self.target_level)
@@ -491,9 +574,93 @@ class UnifiedForecaster:
         # ── Stage 7 public outputs ────────────────────────────────────────────
         self.composite_predictions_: Optional[pd.Series] = None
 
+    def _tune_gb_hyperparameters(self) -> None:
+        """Phase 4: One-time Optuna HP search for CatBoost and LightGBM.
+
+        Runs a single TPE study per GB model over the full training set using
+        ``PanelWalkForwardCV(min_train_years=7, max_folds=4)``.  Skipped
+        silently when optuna is not installed.  Results stored in
+        ``self._tuned_gb_params_`` and consumed by ``_create_models()``.
+        Only called when ``config.auto_tune_gb=True`` at the start of
+        :meth:`stage3_fit_base_models`.
+        """
+        try:
+            import optuna
+            optuna.logging.set_verbosity(optuna.logging.WARNING)
+        except ImportError:
+            if self.verbose:
+                print("  HP tuning skipped (optuna not installed).")
+            return
+
+        n_trials = (
+            getattr(self._config, 'gb_tune_n_trials', 20)
+            if self._config is not None else 20
+        )
+        X_tree      = self.X_train_tree_
+        y           = self.y_train_.values
+        year_labels = self._year_labels_arr_
+        if self.verbose:
+            print(
+                f"  Phase 4: Optuna HP search "
+                f"({n_trials} trials × 2 models)..."
+            )
+
+        def _cv_objective(trial, forecaster_class, param_names):
+            params: Dict[str, Any] = {}
+            for p in param_names:
+                if p == 'learning_rate':
+                    params[p] = trial.suggest_float(p, 1e-3, 0.2, log=True)
+                elif p in ('depth', 'max_depth'):
+                    params[p] = trial.suggest_int(p, 3, 7)
+                elif p in ('l2_leaf_reg', 'l2_reg'):
+                    params[p] = trial.suggest_float(p, 0.1, 10.0, log=True)
+                elif p in ('iterations', 'n_estimators'):
+                    params[p] = trial.suggest_int(p, 50, 300, step=50)
+            inner_cv = PanelWalkForwardCV(min_train_years=7, max_folds=4)
+            rmse_list: List[float] = []
+            try:
+                model = forecaster_class(
+                    **params, random_state=self.random_state
+                )
+                for tr, va in inner_cv.split(X_tree, year_labels):
+                    m = copy.deepcopy(model)
+                    m.fit(X_tree[tr], y[tr])
+                    pred = m.predict(X_tree[va])
+                    if pred.ndim == 1:
+                        pred = pred.reshape(-1, 1)
+                    rmse_list.append(
+                        float(np.sqrt(mean_squared_error(y[va], pred)))
+                    )
+            except Exception:
+                return float('inf')
+            return float(np.mean(rmse_list)) if rmse_list else float('inf')
+
+        for name, cls, param_names in [
+            (
+                'GradientBoosting', CatBoostForecaster,
+                ['iterations', 'depth', 'learning_rate', 'l2_leaf_reg'],
+            ),
+            (
+                'LightGBM', LightGBMForecaster,
+                ['n_estimators', 'max_depth', 'learning_rate', 'l2_reg'],
+            ),
+        ]:
+            study = optuna.create_study(
+                direction='minimize',
+                sampler=optuna.samplers.TPESampler(seed=self.random_state),
+            )
+            study.optimize(
+                lambda t, c=cls, p=param_names: _cv_objective(t, c, p),
+                n_trials=n_trials,
+                show_progress_bar=False,
+            )
+            self._tuned_gb_params_[name] = study.best_params
+            if self.verbose:
+                print(f"    {name} best HPs: {study.best_params}")
+
     def _create_models(self) -> Dict[str, BaseForecaster]:
         """
-        Create all base model instances (5 diverse models).
+        Create all base model instances (6 diverse models).
 
         Hyperparameters are resolved from the ForecastConfig passed to
         ``__init__`` (if provided), otherwise production defaults are used.
@@ -503,7 +670,10 @@ class UnifiedForecaster:
         Default decisions:
             GradientBoosting : max_depth=5 (32 leaves ≈ 24 samples/leaf at
                                n=756), n_estimators=200 (class default)
-            NAM              : n_basis=30 (60 effective params ≈ PCA dims),
+            LightGBM         : max_depth=5, n_estimators=200 — same scale as
+                               CatBoost; leaf-wise growth provides complementary
+                               inductive bias as independent ensemble member
+            NAM              : n_basis=30 (60 effective params ≈ PLS dims),
                                n_iterations=10 (sufficient backfitting)
             PanelVAR         : lag_selection_method='cv' (hold-out MSE;
                                only correct method for Ridge-regularised VAR)
@@ -512,18 +682,30 @@ class UnifiedForecaster:
         cfg = self._config
         gb_n_est    = cfg.gb_n_estimators           if cfg is not None else 200
         gb_depth    = cfg.gb_max_depth              if cfg is not None else 5
-        gb_backend  = cfg.gb_backend                if cfg is not None else 'catboost'
         nam_n_basis = cfg.nam_n_basis               if cfg is not None else 30
         nam_n_iter  = cfg.nam_n_iterations          if cfg is not None else 10
         pvar_method = cfg.pvar_lag_selection_method if cfg is not None else "cv"
 
         models = {}
 
-        # --- Tier 1a: Tree-based -------------------------------------------
+        # ── Phase 4: merge tuned HPs with config defaults (tuned take priority)
+        _gb_params   = self._tuned_gb_params_.get('GradientBoosting', {})
+        _lgbm_params = self._tuned_gb_params_.get('LightGBM', {})
+
+        # --- Tier 1a: Tree-based (two independent GB members) --------------
         models['GradientBoosting'] = CatBoostForecaster(
-            iterations=gb_n_est, depth=gb_depth,
-            preferred_backend=gb_backend,
-            random_state=self.random_state
+            iterations=_gb_params.get('iterations', gb_n_est),
+            depth=_gb_params.get('depth', gb_depth),
+            learning_rate=_gb_params.get('learning_rate', 0.05),
+            l2_leaf_reg=_gb_params.get('l2_leaf_reg', 3.0),
+            random_state=self.random_state,
+        )
+        models['LightGBM'] = LightGBMForecaster(
+            n_estimators=_lgbm_params.get('n_estimators', gb_n_est),
+            max_depth=_lgbm_params.get('max_depth', gb_depth),
+            learning_rate=_lgbm_params.get('learning_rate', 0.05),
+            l2_reg=_lgbm_params.get('l2_reg', 3.0),
+            random_state=self.random_state,
         )
 
         # --- Tier 1b: Bayesian linear -------------------------------------
@@ -727,6 +909,47 @@ class UnifiedForecaster:
         self.X_holdout_ = X_holdout
         self.y_holdout_ = y_holdout
 
+        # ── Phase 5: Optional target transformation ──────────────────────
+        # Logit for bounded SAW [0,1] targets; Yeo-Johnson for raw values.
+        # Transform is applied BEFORE stage2 so the PLS track compresses
+        # features against the transformed target (correct covariance).
+        # `y_train_raw_` / `y_holdout_raw_` preserve original-space values
+        # for later inverse-transformation of pipeline outputs.
+        if self.use_target_transform:
+            _tt_mode = (
+                'logit' if self.use_saw_targets else 'yeo_johnson'
+            )
+        else:
+            _tt_mode = 'identity'
+        self.target_transformer_ = _TargetTransformer(mode=_tt_mode)
+        if not self.target_transformer_.is_identity:
+            self.y_train_raw_   = y_train.copy()
+            self.y_holdout_raw_ = (
+                y_holdout.copy() if not y_holdout.empty else pd.DataFrame()
+            )
+            _y_train_t = self.target_transformer_.fit_transform(
+                y_train.values
+            )
+            self.y_train_ = pd.DataFrame(
+                _y_train_t, index=y_train.index, columns=y_train.columns
+            )
+            if not y_holdout.empty:
+                _y_ho_t = self.target_transformer_.transform(y_holdout.values)
+                self.y_holdout_ = pd.DataFrame(
+                    _y_ho_t, index=y_holdout.index, columns=y_holdout.columns
+                )
+            if self.verbose:
+                _t_min = float(self.y_train_.values.min())
+                _t_max = float(self.y_train_.values.max())
+                print(
+                    f"    Target transform '{_tt_mode}': "
+                    f"y_train ∈ [{_t_min:.4f}, {_t_max:.4f}] "
+                    f"(transformed space)"
+                )
+        else:
+            # identity: still call fit_transform for consistent state
+            self.target_transformer_.fit_transform(y_train.values)
+
         if self.verbose and _holdout_year is not None:
             if not X_holdout.empty:
                 print(
@@ -777,40 +1000,47 @@ class UnifiedForecaster:
         Fits two :class:`PanelFeatureReducer` objects on the training matrix
         and applies both to the training and prediction sets:
 
-        * **PCA track** (``reducer_pca_``) — retains ≥ 99 % explained
-          variance, capped at 30 components.  Used exclusively by
-          ``BayesianRidge``; PCA linearity matches the Bayesian linear model
-          and provides implicit L2 regularisation via truncation.
+        * **PLS track** (``reducer_pca_``) — supervised dimensionality
+          reduction via ``PLSRegression`` with MI pre-filter.  Finds the 20
+          linear combinations of X with maximum covariance with all 8 criterion
+          targets simultaneously.  Used exclusively by ``BayesianRidge`` /
+          ``MultiTaskElasticNetCV``; target-aware compression is strictly
+          superior to PCA for forecasting accuracy.
+          ``n_components = min(n // 10, 20)`` → p/n ≤ 0.024.
 
         * **Threshold-only track** (``reducer_tree_``) — removes near-zero-
-          variance features only.  Used by all non-linear models (CatBoost,
-          QRF, PanelVAR, NAM); preserves the original feature structure so
-          tree splits and NAM shape functions capture the real interactions.
+          variance features only, no scaling, no compression.  Used by all
+          non-linear models (CatBoost, QRF, PanelVAR, NAM); preserves the
+          original feature structure so tree splits and NAM shape functions
+          capture the real interactions.  StandardScaler removed to prevent
+          double-scaling with QRF's internal RobustScaler and CatBoost's
+          scale-invariant trees.
 
         Pre-requisite: :meth:`stage1_engineer_features` must have been called.
 
         Outputs stored on ``self``
         -------------------------
-        X_train_pca_     PCA-reduced training features.
+        X_train_pca_     PLS-compressed training features.
         X_train_tree_    Threshold-only training features.
-        X_pred_pca_      PCA-reduced prediction features.
+        X_pred_pca_      PLS-compressed prediction features.
         X_pred_tree_     Threshold-only prediction features.
-        reducer_pca_     Fitted PCA reducer.
+        reducer_pca_     Fitted PLS reducer (attribute name kept for compat).
         reducer_tree_    Fitted threshold-only reducer.
         """
         if self.verbose:
             print("  Stage 2: Two-track dimensionality reduction...")
 
         X_arr = self.X_train_.values
+        y_arr = self.y_train_.values
         feature_names = self.feature_engineer_.get_feature_names()
 
-        self.reducer_pca_ = PanelFeatureReducer(
-            mode='pca', pca_variance_ratio=0.99, max_components=30
-        )
+        # PLS track for linear models: supervised compression with MI pre-filter
+        self.reducer_pca_ = PanelFeatureReducer(mode='pls', mi_prefilter=True)
+        # Threshold-only track for tree models: variance filter, no scaling
         self.reducer_tree_ = PanelFeatureReducer(mode='threshold_only')
 
         self.X_train_pca_ = self.reducer_pca_.fit_transform(
-            X_arr, feature_names=feature_names
+            X_arr, y=y_arr, feature_names=feature_names
         )
         self.X_pred_pca_ = self.reducer_pca_.transform(self.X_pred_.values)
 
@@ -819,10 +1049,11 @@ class UnifiedForecaster:
         )
         self.X_pred_tree_ = self.reducer_tree_.transform(self.X_pred_.values)
 
-        # Per-model routing: BayesianRidge → PCA track; trees/NAM → threshold.
+        # Per-model routing: BayesianRidge → PLS track; trees/NAM → threshold.
         self._per_model_X_train_ = {
             'BayesianRidge':    self.X_train_pca_,
             'GradientBoosting': self.X_train_tree_,
+            'LightGBM':         self.X_train_tree_,
             'QuantileRF':       self.X_train_tree_,
             'PanelVAR':         self.X_train_tree_,
             'NAM':              self.X_train_tree_,
@@ -830,20 +1061,22 @@ class UnifiedForecaster:
         self._per_model_X_pred_ = {
             'BayesianRidge':    self.X_pred_pca_,
             'GradientBoosting': self.X_pred_tree_,
+            'LightGBM':         self.X_pred_tree_,
             'QuantileRF':       self.X_pred_tree_,
             'PanelVAR':         self.X_pred_tree_,
             'NAM':              self.X_pred_tree_,
         }
 
         if self.verbose:
-            print(f"    PCA track:      {self.reducer_pca_.get_summary()}")
+            print(f"    PLS track:      {self.reducer_pca_.get_summary()}")
             print(f"    Threshold-only: {self.reducer_tree_.get_summary()}")
 
     def stage3_fit_base_models(self) -> None:
         """Stage 3: Create base models and train the Super Learner ensemble.
 
-        Creates the five base forecasters (CatBoost, BayesianRidge, QuantileRF,
-        PanelVAR, NAM) and delegates training to ``SuperLearner.fit()``, which
+        Creates the six base forecasters (CatBoost, LightGBM, BayesianRidge,
+        QuantileRF, PanelVAR, NAM) and delegates training to
+        ``SuperLearner.fit()``, which
         executes three sub-steps atomically:
 
         1. Panel-aware walk-forward CV → per-fold out-of-fold (OOF) ensemble
@@ -871,6 +1104,10 @@ class UnifiedForecaster:
         """
         if self.verbose:
             print("  Stage 3: Training Super Learner meta-ensemble...")
+
+        # Phase 4: conditionally run one-time Optuna HP search for GB models
+        if self._config is not None and getattr(self._config, 'auto_tune_gb', False):
+            self._tune_gb_hyperparameters()
 
         self.models_ = self._create_models()
         if self.verbose:
@@ -916,6 +1153,7 @@ class UnifiedForecaster:
             _per_model_cv = {
                 'BayesianRidge':    _X_cv_pca,
                 'GradientBoosting': _X_cv_tree,
+                'LightGBM':         _X_cv_tree,
                 'QuantileRF':       _X_cv_tree,
                 'PanelVAR':         _X_cv_tree,
                 'NAM':              _X_cv_tree,
@@ -1054,6 +1292,49 @@ class UnifiedForecaster:
             'lower': self._pred_df_ - _fallback_hw,
             'upper': self._pred_df_ + _fallback_hw,
         }
+
+    def _inverse_transform_pipeline_outputs(self) -> None:
+        """Phase 5: Inverse-transform all pipeline outputs to original space.
+
+        Called at the end of :meth:`stage5_compute_intervals` once conformal
+        intervals are finalised (all quantities are in transformed space at
+        that point).  Applies ``target_transformer_.inverse_transform`` to:
+
+        * ``_predictions_arr_`` — raw prediction array (used by stage6a)
+        * ``_pred_df_``         — prediction DataFrame (labels, reports)
+        * ``prediction_intervals_['lower'/'upper']``  — conformal bounds
+        * ``_intervals_['lower'/'upper']``            — fallback Gaussian bounds
+
+        ``_unc_df_`` (epistemic uncertainty) is intentionally left in
+        transformed space — it is a relative, comparative quantity and its
+        absolute magnitude has no natural interpretation in original space.
+        """
+        if (
+            self.target_transformer_ is None
+            or self.target_transformer_.is_identity
+        ):
+            return
+
+        tt = self.target_transformer_
+
+        def _inv_df(df: pd.DataFrame) -> pd.DataFrame:
+            if df.empty:
+                return df
+            return pd.DataFrame(
+                tt.inverse_transform(df.values),
+                index=df.index,
+                columns=df.columns,
+            )
+
+        if self._predictions_arr_ is not None:
+            self._predictions_arr_ = tt.inverse_transform(
+                self._predictions_arr_
+            )
+        self._pred_df_ = _inv_df(self._pred_df_)
+        for _store in (self.prediction_intervals_, self._intervals_):
+            for k in ('lower', 'upper'):
+                if k in _store:
+                    _store[k] = _inv_df(_store[k])
 
     def stage5_compute_intervals(self) -> None:
         """Stage 5: Compute prediction intervals.
@@ -1268,6 +1549,8 @@ class UnifiedForecaster:
                 self.conformal_predictor_ = None
 
         self.prediction_intervals_ = intervals
+        # Phase 5: inverse-transform all outputs from transformed → original space
+        self._inverse_transform_pipeline_outputs()
 
     def stage6_evaluate_all(self) -> None:
         """Stage 6: Holdout model comparison and cross-validation evaluation.
@@ -1318,6 +1601,7 @@ class UnifiedForecaster:
                 _per_model_X_holdout = {
                     'BayesianRidge':    _X_ho_pca,
                     'GradientBoosting': _X_ho_tree,
+                    'LightGBM':         _X_ho_tree,
                     'QuantileRF':       _X_ho_tree,
                     'PanelVAR':         _X_ho_tree,
                     'NAM':              _X_ho_tree,
@@ -1416,6 +1700,25 @@ class UnifiedForecaster:
                 }
                 self._holdout_y_test_ = y_oof.ravel()
                 self._holdout_y_pred_ = y_oof_pred.ravel()
+                # Phase 5: inverse-transform OOF estimates to original space
+                # for meaningful external reporting (R²/RMSE in target units)
+                if (
+                    self.target_transformer_ is not None
+                    and not self.target_transformer_.is_identity
+                ):
+                    try:
+                        self._holdout_y_test_ = (
+                            self.target_transformer_
+                            .inverse_transform(y_oof)
+                            .ravel()
+                        )
+                        self._holdout_y_pred_ = (
+                            self.target_transformer_
+                            .inverse_transform(y_oof_pred)
+                            .ravel()
+                        )
+                    except Exception:
+                        pass  # keep transformed-space fallback
                 if self.verbose:
                     print(
                         f"    Stage 6b: OOF R² = "
@@ -1444,12 +1747,25 @@ class UnifiedForecaster:
 
         # ── Per-model CV performance summary ─────────────────────────────
         self._model_performance_ = {}
+        _crit_scores = getattr(
+            self.super_learner_, '_cv_scores_per_criterion_', {}
+        ) or {}
         for name, scores in self._cv_scores_.items():
             if scores:
                 self._model_performance_[name] = {
                     'mean_r2': float(np.nanmean(scores)),
                     'std_r2':  float(np.nanstd(scores)),
                 }
+                # Phase 4: per-criterion RMSE breakdown from SuperLearner CV
+                if name in _crit_scores and _crit_scores[name]:
+                    _crit_arr = np.array(_crit_scores[name])
+                    if _crit_arr.size > 0:
+                        self._model_performance_[name][
+                            'per_criterion_rmse_mean'
+                        ] = _crit_arr.mean(axis=0).tolist()
+                        self._model_performance_[name][
+                            'per_criterion_rmse_std'
+                        ] = _crit_arr.std(axis=0).tolist()
 
         # ── Training-info dict (consumed by _assemble_result) ─────────────
         self._training_info_ = {
@@ -1471,6 +1787,11 @@ class UnifiedForecaster:
             'ensemble_method': 'super_learner',
             'conformal_calibrated': self.conformal_predictor_ is not None,
             'target_level': self.target_level,
+            # Phase 5: flag for downstream reporting
+            'target_transformed': (
+                self.target_transformer_ is not None
+                and not self.target_transformer_.is_identity
+            ),
             # OOF residuals for downstream visualisation
             'y_test':    self._holdout_y_test_,
             'y_pred':    self._holdout_y_pred_,
@@ -1665,7 +1986,7 @@ class UnifiedForecaster:
                    target_year: int,
                    weights: Optional[Dict[str, float]] = None
                    ) -> Optional[UnifiedForecastResult]:
-        """Fit the 5-model ensemble and forecast ``target_year``.
+        """Fit the 6-model ensemble and forecast ``target_year``.
 
         Orchestrates the 7 stage methods in sequence.  ``pipeline_mode``
         controls early exit:

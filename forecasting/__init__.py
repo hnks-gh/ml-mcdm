@@ -7,8 +7,8 @@ State-of-the-art ensemble forecasting system optimized for small-to-medium
 panel data (N < 1000), emphasizing model diversity over quantity.
 
 Architecture:
-    Tier 1 - Base Models (5 diverse models):
-        - gradient_boosting: Gradient Boosting (robust, sample-efficient)
+    Tier 1 - Base Models (6 diverse models):
+        - gradient_boosting: CatBoost (oblivious trees) + LightGBM (leaf-wise)
         - bayesian: Bayesian Ridge regression (uncertainty quantification)
         - panel_var: Panel Vector Autoregression with fixed effects
         - quantile_forest: Distributional forecasting via quantile RF
@@ -16,6 +16,7 @@ Architecture:
 
     Tier 2 - Meta-Ensemble:
         - super_learner: Stacked generalization with automatic weighting
+          (PanelWalkForwardCV; per-criterion RMSE tracking)
 
     Tier 3 - Calibration:
         - conformal: Distribution-free prediction intervals (95% coverage)
@@ -23,10 +24,11 @@ Architecture:
 
     Orchestration:
         - features: Temporal feature engineering
-        - unified: Full pipeline orchestration
+        - unified: Full pipeline orchestration (Phase 4: Optuna HP search,
+                   Phase 5: reversible target transformation)
 
 Design Philosophy:
-    - Model diversity over quantity (5 diverse > 11 correlated)
+    - Model diversity over quantity (6 diverse > 11 correlated)
     - Statistical appropriateness for N < 1000
     - Automatic optimal weighting (Super Learner)
     - Guaranteed uncertainty coverage (Conformal Prediction)

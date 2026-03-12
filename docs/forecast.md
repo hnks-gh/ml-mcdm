@@ -2,7 +2,7 @@
 
 ## Overview
 
-This framework implements a **statistically-principled 3-tier ensemble learning system** optimized for small-to-medium panel data (N < 1000). It combines 5 diverse machine learning models with Super Learner meta-learning and distribution-free conformal prediction to forecast future criterion values.
+This framework implements a **statistically-principled 3-tier ensemble learning system** optimized for small-to-medium panel data (N < 1000). It combines 6 diverse machine learning models with Super Learner meta-learning and distribution-free conformal prediction to forecast future criterion values.
 
 **Key Design Principles:**
 - **Model diversity over quantity**: 5 diverse models outperform 11+ correlated models
@@ -12,14 +12,15 @@ This framework implements a **statistically-principled 3-tier ensemble learning 
 - **No redundancy**: Each model captures different patterns (tree, linear, panel, Bayesian)
 
 **Key Features:**
-- **5 Model Types**: CatBoost Gradient Boosting, Bayesian linear, and advanced panel models
-- **Super Learner**: Automatic optimal weighting via meta-learning
+- **6 Model Types**: CatBoost (joint multi-output) + LightGBM (leaf-wise), Bayesian linear, and advanced panel models
+- **Super Learner**: Automatic optimal weighting via meta-learning (`PanelWalkForwardCV`)
 - **Conformal Prediction**: Distribution-free 95% prediction intervals
 - **Distributional Forecasting**: Full predictive distributions via quantile forests
 - **Panel Data Methods**: VAR with fixed effects
 - **Interpretable Non-Linearity**: Neural Additive Models with shape functions
-- **Temporal Feature Engineering**: Rich lag/rolling/momentum/trend features
-- **Time-Series Cross-Validation**: Proper temporal validation
+- **Enhanced Feature Engineering**: 12 feature blocks — lag, rolling, stationarity, EWMA, diversity, region dummies (Phase 1)
+- **Target Transformation**: Logit/Yeo-Johnson reversible transform for improved Gaussianity (Phase 5)
+- **HP Optimisation**: Optional Optuna one-time search for both GB models (Phase 4)
 
 ---
 
@@ -31,23 +32,33 @@ This framework implements a **statistically-principled 3-tier ensemble learning 
 Input: Panel Data (N entities × p components × T years)
   ↓
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-TIER 1: BASE MODELS (5 diverse models)
+TIER 1: BASE MODELS (6 diverse models)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   ↓
-Temporal Feature Engineering
-  ├── Lag features (t-1, t-2)
-  ├── Rolling statistics (mean, std, min, max)
-  ├── Momentum & acceleration
-  ├── Trend indicators (polyfit slopes)
-  └── Cross-entity features (percentiles, z-scores)
+Temporal Feature Engineering (12 feature blocks — Phase 1)
+  ├── Block 1:  Current component values at t
+  ├── Block 2:  Lag features (t-1, t-2, t-3) + _was_missing indicators
+  ├── Block 3:  Rolling statistics (mean, std, min, max) — windows {2, 3, 5}
+  ├── Block 4:  Momentum (Δt) and acceleration (Δ²t)
+  ├── Block 5:  Stationarity — entity-demeaned level, demeaned momentum, Δ₂
+  ├── Block 6:  Polyfit trend slopes (≥ 3 valid points)
+  ├── Block 7:  EWMA levels (spans 2, 3, 5)
+  ├── Block 8:  Expanding window mean (long-run baseline)
+  ├── Block 9:  Inter-criterion diversity (std and range across components)
+  ├── Block 10: Rolling skewness (5-year window)
+  ├── Block 11: Panel-relative — percentile, z-score, rank-change Δpercentile
+  └── Block 12: Geographic cluster dummies (5 Vietnam regions)
+  ↓
+Target Transformation (Phase 5) — logit [SAW] or Yeo-Johnson [raw] → ℝ
   ↓
 Base Model Training (DIVERSE MODEL TYPES)
   │
-  ├── Tree-Based (1 model)
-  │   └── CatBoost Gradient Boosting (MultiRMSE joint multi-output loss)
+  ├── Tree-Based (2 models)
+  │   ├── CatBoost Gradient Boosting (MultiRMSE joint multi-output loss)
+  │   └── LightGBM (leaf-wise per-output via MultiOutputRegressor)
   │
   ├── Bayesian Linear (1 model)
-  │   └── Bayesian Ridge (posterior uncertainty)
+  │   └── Bayesian Ridge (posterior uncertainty, PLS-compressed features)
   │
   └── Advanced Panel Models (3 models)
       ├── Quantile Random Forest (distributional forecasts)
@@ -93,16 +104,23 @@ Output: Predictions + Calibrated Intervals + Diagnostics
 
 The system uses a **single optimized configuration** designed for small-to-medium panel data (N < 1000):
 
-**Base Models (5):**
-- CatBoost Gradient Boosting (tree-based, joint multi-output)
-- Bayesian Ridge (linear with uncertainty)
+**Base Models (6):**
+- CatBoost Gradient Boosting (oblivious trees, joint multi-output `MultiRMSE`)
+- LightGBM (leaf-wise growth, `MultiOutputRegressor`, complementary inductive bias)
+- Bayesian Ridge (linear with posterior uncertainty, PLS-compressed features)
 - Quantile RF + Panel VAR + NAM (panel-specific)
 
-**Meta-Ensemble:** Super Learner (automatic optimal weighting)
+**Meta-Ensemble:** Super Learner (`PanelWalkForwardCV` panel-aware CV, NNLS meta-weights)
 
-**Calibration:** Conformal Prediction (95% coverage guarantee)
+**Calibration:** Conformal Prediction (95% coverage guarantee, OOF residuals)
 
-**Rationale:** For N=819 (63 provinces × 13 year pairs, 2011–2024), 5 diverse models with Super Learner meta-learning provides optimal bias-variance tradeoff and model diversity.
+**Feature Engineering:** 12 feature blocks — lag, rolling {2,3,5}, stationarity, EWMA, diversity, skewness, region dummies (Phase 1, ≈279 features)
+
+**Target Transformation:** Logit (SAW) / Yeo-Johnson (raw) reversible transform applied before Stage 2 so PLS compression uses the transformed covariance (Phase 5)
+
+**HP Optimisation:** One-time Optuna TPE search for both GB models when `auto_tune_gb=True` (Phase 4)
+
+**Rationale:** For N=882 (63 provinces × 14 year pairs, 2011–2024), 6 diverse models with Super Learner meta-learning provides optimal bias-variance tradeoff and model diversity.
 
 ---
 
@@ -128,7 +146,7 @@ allow_writing_files = False  # No on-disk catboost_info/ directories
 - Joint multi-output training: a single tree structure minimizes total RMSE across all 8 criterion outputs simultaneously, exploiting cross-criterion correlations
 - No feature scaling required: CatBoost oblivious trees are invariant to monotone feature transforms
 - Feature importance from oblivious-tree splits
-- Graceful backend fallback: CatBoost → LightGBM → sklearn
+- Complementary to LightGBM: oblivious-tree splits (single split per depth level) provide different inductive bias to LightGBM's leaf-wise splits
 
 **Why joint multi-output?**
 
@@ -137,6 +155,41 @@ For small-to-medium panel data (N < 1000), training one shared tree model outper
 - **Cross-criterion coupling**: provinces that rank high on one criterion tend to rank high on related criteria; shared split points exploit this automatically
 - **Sample efficiency**: joint training uses all 8 output signals to guide each split, rather than fitting each criterion in isolation
 - **Low correlation with other ensemble members**: CatBoost + Panel models + Bayes covers tree, linear, and panel modelling families without redundancy
+
+---
+
+#### LightGBM Forecaster (Phase 3 addition)
+
+**Algorithm:** Per-output leaf-wise gradient boosting via `MultiOutputRegressor(LGBMRegressor)`  
+**Library:** `lightgbm.LGBMRegressor` wrapped in `sklearn.multioutput.MultiOutputRegressor`
+
+**Key Parameters:**
+```python
+n_estimators   = 200        # Boosting rounds per output
+max_depth      = 5          # Tree depth (same scale as CatBoost)
+learning_rate  = 0.05       # Step size (identical default)
+l2_reg         = 3.0        # L2 leaf regularisation (analogous to CatBoost l2_leaf_reg)
+subsample      = 0.8        # Row-sampling fraction for variance reduction
+```
+
+**Why LightGBM as an independent member?**
+
+CatBoost and LightGBM share the gradient-boosting family but differ in key inductive biases:
+
+| Property | CatBoost | LightGBM |
+| :--- | :--- | :--- |
+| Tree growth | Symmetric (oblivious) — same split per depth | Leaf-wise (best-first) — asymmetric |
+| Multi-output | Native `MultiRMSE` joint loss | `MultiOutputRegressor` per-criterion |
+| Feature routing | Threshold-only track | Threshold-only track |
+| Typical strength | Correlated outputs, regularised depth | High-gain leaves, single-output precision |
+
+For N < 1000, these complementary biases produce meaningfully different predictions; Super Learner NNLS weights empirically allocate non-zero weight to both, reducing ensemble variance without adding correlated redundancy.
+
+**Phase 4 HP tuning (when `auto_tune_gb=True`):**  
+Optuna TPE study (`gb_tune_n_trials=20`) searches over `{n_estimators, max_depth, learning_rate, l2_reg}` using `PanelWalkForwardCV(min_train_years=7, max_folds=4)`. Tuned parameters override config defaults in `_create_models()`.
+
+**Methods:** Same `BaseForecaster` interface as all other ensemble members:  
+`fit(X, y)`, `predict(X)`, `predict_with_uncertainty(X)`, `get_feature_importance()`
 
 ---
 
@@ -434,17 +487,24 @@ Final prediction: ŷ = Σ α_i × ŷ_i
 - Theoretically principled
 
 **Cross-Validation Strategy:**
-Uses a **panel-aware temporal splitter** (`_PanelTemporalSplit`) that respects entity
-boundaries. Fold cut-points are derived from the **median entity length** (not the
-minimum), preventing short-history entities from capping the usable window of
-longer-history entities and wasting historical panel data. Each entity contributes
-its own rows up to its actual length; entities shorter than a fold's validation
-window simply contribute zero validation rows for that fold.
-Falls back to `TimeSeriesSplit` when entity indices are not provided.
+Uses `PanelWalkForwardCV` (public alias of `_WalkForwardYearlySplit`) — a panel-aware
+walk-forward splitter that creates annual validation folds in sorted year order.
+`min_train_years` (default 7) ensures every fold has a minimum number of training
+years before validation; `max_folds` (default 5) caps the total number of folds to
+prevent excessive runtime on long panels.  Each entity contributes its rows for each
+year-fold independently; entities absent from a fold's validation year simply
+contribute zero validation rows for that fold.  Falls back to `TimeSeriesSplit` when
+year labels are not provided.
+
+**Phase 4: Per-criterion RMSE tracking:**  
+In addition to the fold-level mean R² stored in `_cv_scores_`, the SuperLearner
+now records per-criterion RMSE per fold in `_cv_scores_per_criterion_` (`Dict[model_name,
+List[List[float]]]`).  Stage 6 exposes these as `per_criterion_rmse_mean` and
+`per_criterion_rmse_std` arrays in each model's `model_performance` entry.
 
 > **Note (Bug S-2 fix):** The previous implementation used `T = min(entity lengths)`,
 > which discarded up to 9 years of data for longer-history provinces when any province
-> had a short history. The median-based splitter recovers that data.
+> had a short history. The walk-forward splitter recovers that data.
 
 **Key Parameters:**
 ```python
@@ -615,28 +675,120 @@ Rank models by Δ (contribution)
 
 ## Part V: Feature Engineering & Usage
 
-### 5.1 Temporal Feature Engineering
+### 5.1 Temporal & Panel Feature Engineering (Phase 1)
 
-The feature engineering is handled by the `TemporalFeatureEngineer` class (`forecasting/features.py`), which creates rich temporal features from panel data.
+The feature engineering is handled by the `TemporalFeatureEngineer` class (`forecasting/features.py`), which builds a rich feature set spanning **12 structural blocks**.  Phase 1 added 8 new feature types (G-01–G-08) and corrected 3 bugs (D-01–D-03) relative to the pre-Phase 1 baseline.
 
-**Feature Types:**
-- **Lag Features**: Historical values (t-1, t-2, ...) for autoregressive patterns
-- **Rolling Statistics**: Mean, std, min, max over windows [2, 3] for trend smoothing
-- **Momentum**: Year-over-year change (first derivative)
-- **Acceleration**: Change in momentum (second derivative)
-- **Trend**: Linear slope via polyfit over recent window
-- **Cross-Entity Features**: Percentile rank and z-score across all entities for competitive positioning
+#### 12 Feature Blocks
 
-**Example Generated Features:**
+| Block | Name | Features generated | Phase 1 change |
+| :---: | :--- | :--- | :--- |
+| 1 | Current values | `C01 … C08` (raw levels at $t$) | — |
+| 2 | Lag + missingness | `C01_lag1/2/3`, `C01_lag1_was_missing/2/3` | D-01: NaN → cross-sectional median + `_was_missing` flag |
+| 3 | Rolling statistics | `C01_roll2/3/5_mean/std/min/max` | G-02: window=5 added to existing {2,3} |
+| 4 | Momentum / acceleration | `C01_momentum`, `C01_acceleration` | D-02: `_delta1` removed (duplicated `_momentum`) |
+| 5 | Stationarity | `C01_demeaned`, `C01_demeaned_momentum`, `C01_delta2` | — |
+| 6 | Polyfit trend | `C01_trend` slope (≥ 3 valid points) | G-08: min-points raised from 2 → 3 |
+| 7 | EWMA levels | `C01_ewma2/3/5` | **G-01** (new) |
+| 8 | Expanding mean | `C01_expanding_mean` | **G-03** (new) |
+| 9 | Inter-criterion diversity | `diversity_std`, `diversity_range` | **G-04** (new) |
+| 10 | Rolling skewness | `C01_roll5_skew` | **G-07** (new) |
+| 11 | Panel-relative | `C01_percentile`, `C01_zscore`, `C01_pct_change` | D-03: filtered to `active_provinces`; **G-05** rank-change |
+| 12 | Regional dummies | `region_0 … region_4` | **G-06** (new, 5 Vietnam geographic regions) |
+
+**Approximate total features (8 criteria):**  
+Block 1 (8) + Block 2 (48+24) + Block 3 (96) + Block 4 (16) + Block 5 (24) + Block 6 (8) + Block 7 (24) + Block 8 (8) + Block 9 (2) + Block 10 (8) + Block 11 (24) + Block 12 (5) ≈ **295 features**
+
+After threshold-only variance filtering (Block 2 `reducer_tree_`) the effective count is typically 240–270 for standard runs.
+
+#### Phase 1 Bug Fixes
+
+| ID | Description |
+| :--- | :--- |
+| **D-01** | Lag NaN values filled with the cross-sectional median for that (year, component) pair rather than 0.0; binary `_was_missing` indicators appended so models can discount imputed inputs |
+| **D-02** | `_delta1` ("first difference") removed — it is an exact duplicate of `_momentum`; `_delta2` (lagged first difference) kept as the stationarity signal |
+| **D-03** | Cross-entity percentile and z-score features now filtered to `active_provinces` from `panel_data.year_contexts` rather than all provinces; prevents stale provinces from distorting the reference distribution |
+
+#### Phase 1 New Features (G-01–G-08)
+
+| ID | Feature | Rationale |
+| :--- | :--- | :--- |
+| G-01 | EWMA levels (spans 2, 3, 5) | Exponentially down-weight distant observations; better recency signal than rolling mean for trending criteria |
+| G-02 | Rolling window=5 | Captures medium-term 5-year trends missed by windows {2, 3} |
+| G-03 | Expanding mean | Long-run unconditional baseline per entity × criterion; useful for mean-reversion detection |
+| G-04 | Inter-criterion diversity (std, range) | Province-level diversity across all 8 simultaneous criterion values; signals governance concentration risk |
+| G-05 | Rank-change ($\Delta$percentile) | $\text{pct}_t - \text{pct}_{t-1}$: isolates mobility / convergence dynamics |
+| G-06 | Regional cluster dummies | 5 Vietnam geographic regions (Northern Mountains, Red River Delta, Central, Central Highlands, Southern); captures systematic regional policy differences |
+| G-07 | Rolling skewness (window=5) | Distinguishes breakout provinces (positive skew) from regression-to-mean (negative); asymmetric distribution signal |
+| G-08 | Polyfit min-points fix | `≥ 3` valid points required for trend fit; was `≥ 2` which produced unreliable 2-point slopes |
+
+#### Two-Track Preprocessing (Phase 2)
+
+After feature engineering, two separate tracks feed model classes differently:
+
+| Track | Reducer | Models | Notes |
+| :--- | :--- | :--- | :--- |
+| **PLS** (`reducer_pca_`) | `PLSRegression(n_components=20)` with MI pre-filter | BayesianRidge | Supervised compression maximises covariance with all 8 criterion targets simultaneously; `n_components = min(n//10, 20)` |
+| **Threshold-only** (`reducer_tree_`) | Variance threshold filter (no scaling) | CatBoost, LightGBM, QuantileRF, PanelVAR, NAM | Preserves original feature structure; StandardScaler removed — CatBoost is scale-invariant and QRF applies its own RobustScaler |
+
+#### Example Generated Features (8-criterion dataset)
+
 ```
-C01_lag1, C01_lag2
+# Block 1: current values
+C01, C02, …, C08
+
+# Block 2: lags + missingness
+C01_lag1, C01_lag2, C01_lag3
+C01_lag1_was_missing, C01_lag2_was_missing, C01_lag3_was_missing
+
+# Block 3: rolling statistics (windows 2, 3, 5)
 C01_roll2_mean, C01_roll2_std, C01_roll2_min, C01_roll2_max
 C01_roll3_mean, C01_roll3_std, C01_roll3_min, C01_roll3_max
+C01_roll5_mean, C01_roll5_std, C01_roll5_min, C01_roll5_max
+
+# Block 4: momentum / acceleration
 C01_momentum, C01_acceleration
-C01_trend2, C01_trend3
-C01_percentile, C01_zscore
-... (repeated for all components)
+
+# Block 5: stationarity
+C01_demeaned, C01_demeaned_momentum, C01_delta2
+
+# Block 6: trend
+C01_trend
+
+# Block 7: EWMA
+C01_ewma2, C01_ewma3, C01_ewma5
+
+# Block 8: expanding mean
+C01_expanding_mean
+
+# Block 9: inter-criterion diversity (2 features, not per-criterion)
+diversity_std, diversity_range
+
+# Block 10: rolling skewness
+C01_roll5_skew
+
+# Block 11: panel-relative
+C01_percentile, C01_zscore, C01_pct_change
+
+# Block 12: regional dummies (5, not per-criterion)
+region_0, region_1, region_2, region_3, region_4
+
+… (Blocks 2–11 repeated for C02–C08)
 ```
+
+#### SAW Normalisation
+
+When `use_saw_targets=True` (production default), year-level targets are per-year
+column-wise minmax-normalised to `[0, 1]` before training.  This:
+
+1. Removes cross-year level differences (each year rescaled independently)
+2. Preserves within-year ordinal structure
+3. Avoids CRITIC-weighting bias in raw composites
+
+The Phase 5 **target transformer** further maps these `[0, 1]` values through the
+logit function (`log(y/(1-y)) → ℝ`) before Super Learner training, improving the
+Gaussianity assumption of BayesianRidge and the Ridge meta-learner.  Conformal bound
+validity is preserved because logit is strictly monotone.
 
 ### 5.2 Quick Start Guide
 
@@ -696,7 +848,7 @@ pip install -e .[forecasting]
 ### 6.1 State-of-the-Art Advantages
 
 1. **Multi-Tier Architecture**
-   - 5 diverse base models capturing different patterns (tree, linear, panel)
+   - 6 diverse base models capturing different patterns (tree ×2, linear, panel ×3)
    - Super Learner meta-learning with automatic optimal weighting
    - Distribution-free calibrated uncertainty (conformal prediction)
    - Full 3-tier pipeline optimized for small-to-medium panel data (N < 1000)
@@ -707,7 +859,7 @@ pip install -e .[forecasting]
    - **Neural Additive Models**: Interpretable non-linearity with shape functions
 
 3. **Optimal Ensemble Learning**
-   - **Super Learner**: Cross-validated meta-learning (automatic optimal weighting)
+   - **Super Learner**: Walk-forward meta-learning (`PanelWalkForwardCV`, panel-aware)
    - **Positive Constraints**: Ensures monotonic relationships and stability
    - **Out-of-Fold Training**: Prevents overfitting in meta-learner
    - **Diversity-First**: 6 diverse models outperform 11+ correlated models
@@ -725,10 +877,10 @@ pip install -e .[forecasting]
    - **Ablation Studies**: Isolate individual model contributions
 
 6. **Robustness & Flexibility**
-   - Outlier-robust gradient boosting (Huber loss)
+   - Outlier-robust gradient boosting (CatBoost `MultiRMSE`, LightGBM `regression`)
    - Statistically-principled design for small-to-medium data (N < 1000)
    - Extensible architecture (easy to add new models)
-   - Time-series CV prevents data leakage
+   - Panel-aware walk-forward CV (`PanelWalkForwardCV`) prevents temporal leakage
    - Handles panel structure (entity heterogeneity)
 
 7. **Interpretability**
@@ -739,8 +891,9 @@ pip install -e .[forecasting]
 ### 6.2 Limitations
 
 1. **Computational Cost**
-   - Trains 5 models + Super Learner + Conformal (moderate speed, ~2-5 min)
-   - Feature engineering increases dimensionality
+   - Trains 6 models + Super Learner + Conformal (moderate speed, ~2–5 min)
+   - Optional Phase 4 HP tuning adds ~1–3 min for 20 Optuna trials × 2 models
+   - Feature engineering (295 features) increases dimensionality
    - For large-scale production (N > 10,000), consider simplified configurations
 
 2. **Data Requirements**
@@ -776,21 +929,16 @@ pip install -e .[forecasting]
 - ✅ Panel VAR with fixed effects and lag selection
 - ✅ Quantile Random Forest (distributional forecasts)
 - ✅ Neural Additive Models (interpretable non-linearity)
-- ✅ Super Learner (stacked generalization)
-- ✅ Conformal Prediction (split, CV+, adaptive)
-- ✅ Comprehensive evaluation suite
-- ✅ Temporal feature engineering (lag, rolling, momentum, trend, cross-entity)
-- ✅ Time-series cross-validation
-- ✅ Optimized ensemble size for small data (5 diverse models)
+- ✅ Super Learner (stacked generalization, `PanelWalkForwardCV`)
+- ✅ Conformal Prediction (split, CV+, adaptive; OOF residuals, no model re-fit)
+- ✅ Comprehensive evaluation suite (7 metrics, per-criterion RMSE tracking)
+- ✅ **Phase 1**: 12-block temporal & panel feature engineering (D-01/02/03 fixes, G-01–G-08 new features)
+- ✅ **Phase 2**: PLS-supervised compression for linear models, threshold-only track for trees
+- ✅ **Phase 3**: LightGBM as independent ensemble member alongside CatBoost
+- ✅ **Phase 4**: Per-criterion RMSE CV tracking; optional Optuna one-time HP search for both GB models
+- ✅ **Phase 5**: Reversible target transformation (logit/Yeo-Johnson); inverse-transform of all pipeline outputs
 
 #### 🔄 Planned Future Enhancements
-
-1. **Automated Hyperparameter Optimization**
-   - Nested CV for base model hyperparameters
-   - Joint optimization over features + models + hyperparameters
-   - SMAC or BOHB for efficient search
-
-2. **Advanced Deep Learning** (for larger panels)
    - Temporal Convolutional Networks (TCN)
    - Transformers for time series (Informer, Autoformer)
    - Temporal Fusion Transformers (TFT)

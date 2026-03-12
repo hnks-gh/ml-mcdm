@@ -319,20 +319,40 @@ class ForecastConfig:
     gb_max_depth: int = 5
     """Tree depth. 5 ≈ 32 leaves → ~24 samples/leaf at n=756."""
     gb_n_estimators: int = 200
-    """Number of boosting stages; aligned with CatBoostForecaster default."""
-    gb_backend: str = 'catboost'
-    """Gradient-boosting backend for ``CatBoostForecaster``.
+    """Number of boosting stages; aligned with CatBoostForecaster/LightGBMForecaster defaults."""
 
-    'catboost'  (recommended) — Uses ``CatBoostRegressor`` with ``MultiRMSE``
-                  loss for joint multi-output training.  Shared tree structure
-                  exploits cross-criterion correlations automatically.
-    'lightgbm'  — ``MultiOutputRegressor(LGBMRegressor)``; faster but trains
-                  each criterion independently (no cross-output coupling).
-    'sklearn'   — ``MultiOutputRegressor(GradientBoostingRegressor)``; no
-                  extra dependency, slowest, independent per output.
+    # ── Hyperparameter auto-tuning (Phase 4) ─────────────────────────────
+    auto_tune_gb: bool = False
+    """When True, ``stage3_fit_base_models()`` runs a one-time optuna TPE search
+    to find optimal hyperparameters for CatBoostForecaster and LightGBMForecaster
+    before ensemble training.  Requires ``optuna`` to be installed; falls back
+    gracefully to configured HPs if optuna is unavailable.
 
-    Falls back gracefully to the next tier when the preferred library is not
-    installed (catboost → lightgbm → sklearn).
+    Default False: production default uses configured HPs (faster, reproducible).
+    Set True for exploratory runs where raw accuracy matters more than speed.
+    """
+    gb_tune_n_trials: int = 20
+    """Number of optuna TPE trials per model during hyperparameter search.
+    20 trials ≈ 5–10 min per model on CPU.  Reduce for faster runs.
+    Only used when ``auto_tune_gb=True``.
+    """
+
+    # ── Target transformation (Phase 5) ──────────────────────────────────
+    use_target_transform: bool = True
+    """Apply reversible target transformation before model training.
+
+    When True (default):
+    * ``use_saw_targets=True``  → logit transform: f(y) = log(y/(1-y)), maps
+      SAW-normalized [0,1] scores to ℝ, stabilising variance near 0/1 boundaries
+      critical for border-province scores.  Inverse: sigmoid (recovers [0,1]).
+    * ``use_saw_targets=False`` → Yeo-Johnson transform (standardize=True) per
+      column; normalises raw criterion composites toward N(0,1), improving
+      Gaussian-assumption estimators (BayesianRidge, RidgeCV meta-learner).
+
+    Predictions and prediction intervals are inverse-transformed back to
+    original space at the end of Stage 5 before any evaluation or reporting.
+
+    Set False to disable transformation entirely (debugging / ablation studies).
     """
 
     # ── Forecast target level ─────────────────────────────────────────────

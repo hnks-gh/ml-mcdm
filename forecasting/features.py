@@ -42,15 +42,73 @@ When ``panel_data.year_contexts`` is present, ``fit_transform`` removes:
   ``active_provinces`` set; excluded entities are simply absent from output.
 
 NaN values in *feature* (input) vectors — e.g. missing lag values for
-entities with short histories — are filled with 0.0 ("no prior information")
-after all filters are applied.
+entities with short histories — are filled with the cross-sectional median
+for the missing year, with a binary ``_was_missing`` indicator appended so
+the model can learn to discount imputed inputs (Fix D-01).  Any remaining
+NaN values (non-lag features with insufficient history) are filled with
+``0.0`` ("no prior information") by the safety wrapper.
+
+Phase 1 Enhancement Summary
+----------------------------
+* **D-01 Fix** — Lag NaN → cross-sectional median + ``_was_missing`` flags
+* **D-02 Fix** — ``_delta1`` removed (duplicated ``_momentum``); ``_delta2`` retained
+* **D-03 Fix** — Cross-entity cross-sections filtered to ``active_provinces``
+* **G-01** — EWMA levels (spans 2, 3, 5) as recency-weighted baselines
+* **G-02** — Rolling window=5 added to existing windows {2, 3}
+* **G-03** — Expanding window mean (unconditional historical baseline)
+* **G-04** — Inter-criterion diversity (std and range across components)
+* **G-05** — Rank-change: Δpercentile = pct_t − pct_{t−1}
+* **G-06** — Regional cluster dummies (5 Vietnam geographic regions)
+* **G-07** — Rolling skewness (5-year window, min 3 valid points)
+* **G-08** — Polyfit trend requires ≥ 3 valid points (was ≥ 2)
 """
 
 import numpy as np
 import pandas as pd
+from scipy import stats as _scipy_stats
 from typing import Dict, List, Optional, Tuple
 
 from data.missing_data import fill_missing_features, has_complete_target
+
+# ---------------------------------------------------------------------------
+# Vietnam province → geographic region mapping (5 regions, 0-indexed)
+#
+# Region IDs:
+#   0 — Northern Mountains & Midlands (Ha Giang, Cao Bang, … Phu Tho)
+#   1 — Red River Delta (Hanoi, Vinh Phuc, … Ninh Binh)
+#   2 — Central (Thanh Hoa … Binh Thuan — North-Central + South-Central)
+#   3 — Central Highlands (Kon Tum, Gia Lai, Dak Lak, Dak Nong, Lam Dong)
+#   4 — Southern (Binh Phuoc … Ca Mau — South-East + Mekong Delta)
+#
+# Source: Vietnam administrative geography; matches province ordering in
+# ``data/codebook/codebook_provinces.csv`` (P01–P63).
+# ---------------------------------------------------------------------------
+_VIETNAM_PROVINCE_REGIONS: Dict[str, int] = {
+    # Red River Delta (1)
+    "Hanoi": 1,
+    # Northern Mountains & Midlands (0)
+    "Ha Giang": 0, "Cao Bang": 0, "Bac Kan": 0, "Tuyen Quang": 0,
+    "Lao Cai": 0, "Dien Bien": 0, "Lai Chau": 0, "Son La": 0,
+    "Yen Bai": 0, "Hoa Binh": 0, "Thai Nguyen": 0, "Lang Son": 0,
+    "Quang Ninh": 0, "Bac Giang": 0, "Phu Tho": 0,
+    # Red River Delta (1)
+    "Vinh Phuc": 1, "Bac Ninh": 1, "Hai Duong": 1, "Hai Phong": 1,
+    "Hung Yen": 1, "Thai Binh": 1, "Ha Nam": 1, "Nam Dinh": 1, "Ninh Binh": 1,
+    # Central (2)
+    "Thanh Hoa": 2, "Nghe An": 2, "Ha Tinh": 2, "Quang Binh": 2,
+    "Quang Tri": 2, "Thua Thien Hue": 2, "Da Nang": 2, "Quang Nam": 2,
+    "Quang Ngai": 2, "Binh Dinh": 2, "Phu Yen": 2, "Khanh Hoa": 2,
+    "Ninh Thuan": 2, "Binh Thuan": 2,
+    # Central Highlands (3)
+    "Kon Tum": 3, "Gia Lai": 3, "Dak Lak": 3, "Dak Nong": 3, "Lam Dong": 3,
+    # Southern (4)
+    "Binh Phuoc": 4, "Tay Ninh": 4, "Binh Duong": 4, "Dong Nai": 4,
+    "Ba Ria - Vung Tau": 4, "Ho Chi Minh City": 4, "Long An": 4,
+    "Tien Giang": 4, "Ben Tre": 4, "Tra Vinh": 4, "Vinh Long": 4,
+    "Dong Thap": 4, "An Giang": 4, "Kien Giang": 4, "Can Tho": 4,
+    "Hau Giang": 4, "Soc Trang": 4, "Bac Lieu": 4, "Ca Mau": 4,
+}
+_N_REGIONS: int = 5
 
 
 class SAWNormalizer:
@@ -177,39 +235,76 @@ class SAWNormalizer:
 class TemporalFeatureEngineer:
     """
     Advanced feature engineering for time series panel data.
-    
-    Creates rich feature set including:
-    - Lag features (t-1, t-2, t-3, ...)
-    - Rolling statistics (mean, std, min, max, trend)
-    - Seasonal features
-    - Cross-entity features (relative position)
-    - Momentum and acceleration features
-    - Stationarity features: first-differences, entity-demeaned level,
-      entity-demeaned momentum (Phase 2)
-    
-    Parameters:
-        lag_periods: List of lag periods to include [1, 2, 3].  Extending to
-            lag-3 adds one more year of direct autoregressive history, which
-            is especially important for criteria with strong 3-year cycles.
-        rolling_windows: Window sizes for rolling statistics [2, 3]
-        include_momentum: Whether to include rate of change features
-        include_cross_entity: Whether to include relative position features
-    
-    Example:
-        >>> engineer = TemporalFeatureEngineer(lag_periods=[1, 2, 3])
-        >>> X_train, y_train, X_pred, _, _, _ = engineer.fit_transform(panel_data, 2025)
+
+    Creates a rich feature set spanning 12 structural blocks:
+
+    Block 1  — Current values (raw component levels at t)
+    Block 2  — Lag features (t-1, t-2, t-3) + binary missingness indicators
+    Block 3  — Rolling statistics (mean, std, min, max) for windows {2, 3, 5}
+    Block 4  — Momentum and acceleration (first/second-order changes)
+    Block 5  — Stationarity: entity-demeaned level, entity-demeaned momentum,
+                lagged first-difference delta2 (delta1 removed — Fix D-02)
+    Block 6  — Trend (polyfit slope, min 3 valid points — Fix G-08)
+    Block 7  — EWMA levels (spans 2, 3, 5) — recency-weighted baselines
+    Block 8  — Expanding window mean — unconditional long-run baseline
+    Block 9  — Inter-component diversity (std and range across components)
+    Block 10 — Rolling skewness (5-year window) — breakout vs. regression
+    Block 11 — Panel-relative: percentile, z-score (Fix D-03), rank-change
+    Block 12 — Regional cluster dummies (5 geographic regions of Vietnam)
+
+    Parameters
+    ----------
+    lag_periods : list of int
+        Lag periods to include (default: [1, 2, 3]).
+    rolling_windows : list of int
+        Window sizes for rolling statistics (default: [2, 3, 5]).
+    include_momentum : bool
+        Include rate-of-change (momentum + acceleration) features.
+    include_cross_entity : bool
+        Include percentile rank and z-score relative to the panel.
+    include_ewma : bool
+        Include EWMA level features (spans 2, 3, 5).  Default True.
+    include_expanding : bool
+        Include expanding-window (full historical) mean.  Default True.
+    include_diversity : bool
+        Include inter-component diversity features (std, range).  Default True.
+    include_rank_change : bool
+        Include Δpercentile rank-change feature.  Default True.
+    include_region_dummies : bool
+        Include 5 one-hot regional dummies for Vietnam's geographic regions.
+    include_rolling_skewness : bool
+        Include 5-year rolling skewness per component.  Default True.
+    target_level : str
+        ``'criteria'`` (default) or ``'subcriteria'``.
+
+    Example
+    -------
+    >>> engineer = TemporalFeatureEngineer(lag_periods=[1, 2, 3])
+    >>> X_train, y_train, X_pred, _, _, _ = engineer.fit_transform(panel_data, 2025)
     """
-    
+
     def __init__(self,
                  lag_periods: List[int] = [1, 2, 3],
-                 rolling_windows: List[int] = [2, 3],
+                 rolling_windows: List[int] = [2, 3, 5],
                  include_momentum: bool = True,
                  include_cross_entity: bool = True,
+                 include_ewma: bool = True,
+                 include_expanding: bool = True,
+                 include_diversity: bool = True,
+                 include_rank_change: bool = True,
+                 include_region_dummies: bool = True,
+                 include_rolling_skewness: bool = True,
                  target_level: str = "criteria"):
         self.lag_periods = lag_periods
         self.rolling_windows = rolling_windows
         self.include_momentum = include_momentum
         self.include_cross_entity = include_cross_entity
+        self.include_ewma = include_ewma
+        self.include_expanding = include_expanding
+        self.include_diversity = include_diversity
+        self.include_rank_change = include_rank_change
+        self.include_region_dummies = include_region_dummies
+        self.include_rolling_skewness = include_rolling_skewness
         self.target_level = target_level
         self.feature_names_: List[str] = []
 
@@ -228,6 +323,11 @@ class TemporalFeatureEngineer:
         # zero is a no-op, which is preferable to raising KeyError at runtime).
         self._entity_means_: Dict = {}
         self._entity_mean_deltas_: Dict = {}
+
+        # Per-(year, component) cross-sectional median over active provinces.
+        # Populated by fit_transform(); used to fill missing lag slots with a
+        # meaningful centre-of-distribution value rather than 0.0 (Fix D-01).
+        self._component_year_medians_: Dict = {}
     
     def fit_transform(self,
                       panel_data,
@@ -414,6 +514,37 @@ class TemporalFeatureEngineer:
                         _deltas.append(_v_curr - _v_prev)
                 self._entity_mean_deltas_[(_entity, _c)] = (
                     float(np.mean(_deltas)) if _deltas else 0.0
+                )
+
+        # ------------------------------------------------------------------
+        # Pre-compute cross-sectional medians per (year, component) for
+        # lag-feature NaN imputation (Fix D-01).
+        #
+        # For each year and component, the median is taken over active
+        # provinces only (from year_contexts).  Lag slots that are NaN are
+        # filled with this median in _create_features(), replacing the
+        # previous 0.0 sentinel which conflated "missing data" with a
+        # legitimate zero governance score.
+        #
+        # Leakage-safe: medians are derived from observed feature-year data
+        # only; target-year values are never accessed here.
+        # ------------------------------------------------------------------
+        self._component_year_medians_ = {}
+        for _yr in years:
+            _ctx_yr = getattr(panel_data, 'year_contexts', {}).get(_yr)
+            _active_yr = (
+                _ctx_yr.active_provinces if _ctx_yr is not None else entities
+            )
+            for _c in components:
+                _mvals: List[float] = []
+                for _ent in _active_yr:
+                    _edata_m = _get_entity_data(_ent)
+                    if _yr in _edata_m.index:
+                        _v = float(_edata_m.loc[_yr, _c])
+                        if not np.isnan(_v):
+                            _mvals.append(_v)
+                self._component_year_medians_[(_yr, _c)] = (
+                    float(np.median(_mvals)) if _mvals else 0.0
                 )
 
         # ------------------------------------------------------------------
@@ -628,10 +759,12 @@ class TemporalFeatureEngineer:
     ) -> np.ndarray:
         """NaN-safe wrapper around :meth:`_create_features`.
 
-        Calls ``_create_features`` and replaces any remaining NaN values
-        (arising from missing lag years or absent cross-entity data) with
-        ``0.0`` via :func:`data.missing_data.fill_missing_features`, encoding
-        "no prior information" for the ML model without fabricating data.
+        :meth:`_create_features` handles lag-feature NaN internally by filling
+        with the cross-sectional median and appending ``_was_missing`` indicator
+        flags.  Any residual NaN values in non-lag blocks (e.g. ``_delta2`` or
+        ``_demeaned_momentum`` when lag history is absent) are replaced with
+        ``0.0`` here via :func:`data.missing_data.fill_missing_features`,
+        encoding "no prior information" without fabricating scores.
         """
         features = self._create_features(
             entity_data, entity, years, current_year, all_entities, panel_data
@@ -645,61 +778,85 @@ class TemporalFeatureEngineer:
                          current_year: int,
                          all_entities: List[str],
                          panel_data) -> np.ndarray:
-        """Create feature vector for a single entity-year combination."""
+        """Create feature vector for a single entity-year combination.
+
+        Returns a 1-D float array whose length equals ``len(self.feature_names_)``
+        after the first call establishes the canonical feature list.  NaN values
+        that cannot be resolved inside this method (e.g. ``_delta2`` when lag-2
+        is unavailable) are left as NaN and replaced with ``0.0`` by
+        :meth:`_create_features_safe`.
+        """
         components = list(entity_data.columns)
-        # Reindex to the full year sequence so that years when this entity was
-        # absent from the source CSV produce NaN rows instead of KeyError in
-        # subsequent .loc lookups.  NaN values in the resulting feature vector
-        # are replaced with 0.0 by the caller (_create_features_safe).
+        # Reindex to the full year sequence so absent years produce NaN rows.
         entity_data = entity_data.reindex(years)
         features = []
-        feature_names = []
-        
-        # Current values
-        current_values = entity_data.loc[current_year, components].values
+        feature_names: List[str] = []
+
+        year_idx = years.index(current_year)
+        available_years = [y for y in years if y <= current_year]
+        current_values = entity_data.loc[current_year, components].values.astype(float)
+
+        # ==================================================================
+        # Block 1: Current values
+        # ==================================================================
         features.extend(current_values)
         feature_names.extend([f"{c}_current" for c in components])
-        
-        # Lag features
-        # When there is insufficient history (year_idx < lag), use NaN rather
-        # than current_values.  The previous fallback ``lag_values = current_values``
-        # created a false "no-change" signal (lag feature == current feature) that
-        # biased all models toward predicting zero change for early-history entities.
-        # NaN is replaced with 0.0 by the _create_features_safe wrapper, encoding
-        # "no prior information" without fabricating a spurious signal.
-        year_idx = years.index(current_year)
+
+        # ==================================================================
+        # Block 2: Lag features with missingness indicators (Fix D-01)
+        #
+        # NaN lag slots are filled with the training cross-sectional median
+        # (not 0.0) to avoid conflating "no history available" with a
+        # legitimate zero governance score.  A binary ``_was_missing`` flag
+        # (1.0 = imputed, 0.0 = observed) is appended for every lag×component
+        # pair so models can learn to discount or adjust for imputed inputs.
+        # ==================================================================
         for lag in self.lag_periods:
             if year_idx - lag >= 0:
                 lag_year = years[year_idx - lag]
-                lag_values = entity_data.loc[lag_year, components].values
+                lag_values = entity_data.loc[lag_year, components].values.astype(float)
             else:
-                lag_values = np.full(len(components), np.nan)  # no history → missing
+                lag_year = None
+                lag_values = np.full(len(components), np.nan)
+
+            was_missing = np.isnan(lag_values)  # record BEFORE imputation
+            if was_missing.any():
+                fill_yr = lag_year if lag_year is not None else current_year
+                for ci, c in enumerate(components):
+                    if was_missing[ci]:
+                        lag_values[ci] = self._component_year_medians_.get(
+                            (fill_yr, c), 0.0
+                        )
+
             features.extend(lag_values)
             feature_names.extend([f"{c}_lag{lag}" for c in components])
-        
-        # Rolling statistics
-        available_years = [y for y in years if y <= current_year]
+            # Missingness indicator flags
+            features.extend(was_missing.astype(float))
+            feature_names.extend([f"{c}_lag{lag}_was_missing" for c in components])
+
+        # ==================================================================
+        # Block 3: Rolling statistics (mean, std, min, max)
+        # Windows from self.rolling_windows (default: [2, 3, 5]).
+        # ==================================================================
         for window in self.rolling_windows:
             if len(available_years) >= window:
                 window_years = available_years[-window:]
                 window_data = entity_data.loc[window_years, components]
-                
-                # Mean
+
                 features.extend(window_data.mean().values)
                 feature_names.extend([f"{c}_roll{window}_mean" for c in components])
-                
-                # Std
+
                 std_vals = window_data.std().fillna(0).values
                 features.extend(std_vals)
                 feature_names.extend([f"{c}_roll{window}_std" for c in components])
-                
-                # Min/Max
+
                 features.extend(window_data.min().values)
                 feature_names.extend([f"{c}_roll{window}_min" for c in components])
+
                 features.extend(window_data.max().values)
                 feature_names.extend([f"{c}_roll{window}_max" for c in components])
             else:
-                # Pad with current values
+                # Insufficient history: pad with current-value placeholders.
                 features.extend(current_values)
                 feature_names.extend([f"{c}_roll{window}_mean" for c in components])
                 features.extend(np.zeros(len(components)))
@@ -708,19 +865,20 @@ class TemporalFeatureEngineer:
                 feature_names.extend([f"{c}_roll{window}_min" for c in components])
                 features.extend(current_values)
                 feature_names.extend([f"{c}_roll{window}_max" for c in components])
-        
-        # Momentum features (rate of change)
+
+        # ==================================================================
+        # Block 4: Momentum and acceleration (first and second-order changes)
+        # ==================================================================
         if self.include_momentum and year_idx > 0:
             prev_year = years[year_idx - 1]
-            prev_values = entity_data.loc[prev_year, components].values
+            prev_values = entity_data.loc[prev_year, components].values.astype(float)
             momentum = current_values - prev_values
             features.extend(momentum)
             feature_names.extend([f"{c}_momentum" for c in components])
-            
-            # Acceleration (change in momentum)
+
             if year_idx > 1:
                 prev_prev_year = years[year_idx - 2]
-                prev_prev_values = entity_data.loc[prev_prev_year, components].values
+                prev_prev_values = entity_data.loc[prev_prev_year, components].values.astype(float)
                 prev_momentum = prev_values - prev_prev_values
                 acceleration = momentum - prev_momentum
                 features.extend(acceleration)
@@ -735,109 +893,65 @@ class TemporalFeatureEngineer:
             feature_names.extend([f"{c}_acceleration" for c in components])
 
         # ==================================================================
-        # Stationarity features (Phase 2)
+        # Block 5: Stationarity features
+        #
+        # Block 5-B — Entity-demeaned level:   y_t − ȳ_entity
+        # Block 5-C — Entity-demeaned momentum: (y_t − y_{t-1}) − mean_Δ_entity
+        # Block 5-D — Lagged first-difference:  delta2 = y_{t-1} − y_{t-2}
+        #
+        # NOTE: delta1 = y_t − y_{t-1} is identical to _momentum (Block 4)
+        # and is intentionally omitted here (Fix D-02) to eliminate the
+        # redundant feature dimension that wasted PCA variance budget and
+        # inflated momentum feature-importance scores in threshold_only mode.
         # ==================================================================
-        #
-        # Raw criteria levels are non-stationary (unit-root / trending
-        # panel series).  The three blocks below transform the signal into
-        # stationary space:
-        #
-        #   Block A — Lagged first-differences
-        #       delta1  = y_t - y_{t-1}  (current  first-difference)
-        #       delta2  = y_{t-1} - y_{t-2}  (lagged first-difference)
-        #
-        #   NOTE: delta1 == _momentum (already in the feature vector above).
-        #   It is included here under an explicit stationarity-oriented name
-        #   so that feature-importance reports clearly attribute predictive
-        #   power to the differenced representation, and so that both
-        #   differenced features appear together in the same named block.
-        #   Tree-based models (CatBoost) handle this gracefully; the linear
-        #   model (BayesianRidge) receives PCA-reduced inputs in Phase 3,
-        #   where the redundant direction is absorbed into an existing
-        #   principal component without creating an ill-conditioned system.
-        #
-        #   Block B — Entity-demeaned current level
-        #       demeaned = y_t - ȳ_entity
-        #
-        #   Subtracting each entity's historical mean (the "within" or fixed-
-        #   effect transformation) removes persistent cross-sectional
-        #   heterogeneity: a province that chronically scores high on C01
-        #   for structural reasons contributes zero demeaned signal, whereas
-        #   one that recently improved does.  This makes the feature
-        #   comparable across provinces with different baseline levels.
-        #
-        #   Block C — Entity-demeaned momentum (velocity deviation)
-        #       demeaned_momentum = delta1 - mean_Δ_entity
-        #
-        #   Subtracts the entity's typical annual first-difference (long-run
-        #   drift) from the current first-difference, isolating whether the
-        #   province is changing FASTER or SLOWER than its own typical rate.
-        #   A province that always grows at 0.05/year but this year grew
-        #   0.12/year registers +0.07 — a genuine acceleration signal.
-        #
-        # NaN handling:
-        #   All NaN values (insufficient lag history) propagate through
-        #   these blocks as NaN and are filled with 0.0 ("no prior
-        #   information") in _create_features_safe().
-        # ==================================================================
-
-        # Retrieve lag-1 and lag-2 values for the stationarity blocks.
-        # Re-looked-up from the already-reindexed entity_data (O(1) per call).
         _st_lag1 = (
             entity_data.loc[years[year_idx - 1], components].values.astype(float)
-            if year_idx >= 1
-            else np.full(len(components), np.nan)
+            if year_idx >= 1 else np.full(len(components), np.nan)
         )
         _st_lag2 = (
             entity_data.loc[years[year_idx - 2], components].values.astype(float)
-            if year_idx >= 2
-            else np.full(len(components), np.nan)
+            if year_idx >= 2 else np.full(len(components), np.nan)
         )
+        # delta1 as local variable only — feeds demeaned_momentum; not a feature.
+        _delta1 = current_values - _st_lag1  # may contain NaN
 
-        # ── Block A: First-difference features ────────────────────────────
-        # delta1 = y_t - y_{t-1}  (= _momentum; kept for explicit naming)
-        _delta1 = current_values - _st_lag1    # may contain NaN
-        features.extend(_delta1)
-        feature_names.extend([f"{c}_delta1" for c in components])
-
-        # delta2 = y_{t-1} - y_{t-2}  (lagged first-difference; genuinely new)
-        _delta2 = _st_lag1 - _st_lag2         # may contain NaN
-        features.extend(_delta2)
-        feature_names.extend([f"{c}_delta2" for c in components])
-
-        # ── Block B: Entity-demeaned current level ─────────────────────────
-        # demeaned_j = y_{t,j} - ȳ_{entity,j}
-        # Look up pre-computed entity means from self._entity_means_.
-        # Default to 0.0 for any (entity, component) pair not pre-computed
-        # (safe fallback: demeaning by 0 is equivalent to using raw levels).
+        # ── Block 5-B: Entity-demeaned level ───────────────────────────────
         _entity_mean_vec = np.array(
             [self._entity_means_.get((entity, c), 0.0) for c in components],
             dtype=float,
         )
-        _demeaned = current_values - _entity_mean_vec  # may contain NaN if current is NaN
+        _demeaned = current_values - _entity_mean_vec
         features.extend(_demeaned)
         feature_names.extend([f"{c}_demeaned" for c in components])
 
-        # ── Block C: Entity-demeaned momentum (velocity deviation) ─────────
-        # demeaned_momentum_j = (y_t - y_{t-1}) - mean(Δ)_{entity,j}
-        # Captures whether the entity is changing FASTER than its
-        # long-run average rate of change, independent of current level.
+        # ── Block 5-C: Entity-demeaned momentum ────────────────────────────
         _entity_mean_delta_vec = np.array(
             [self._entity_mean_deltas_.get((entity, c), 0.0) for c in components],
             dtype=float,
         )
-        _demeaned_momentum = _delta1 - _entity_mean_delta_vec  # NaN if lag1 missing
+        _demeaned_momentum = _delta1 - _entity_mean_delta_vec
         features.extend(_demeaned_momentum)
         feature_names.extend([f"{c}_demeaned_momentum" for c in components])
 
-        # Trend feature (slope of linear fit over **valid** (non-NaN) years)
+        # ── Block 5-D: Lagged first-difference (delta2) ────────────────────
+        _delta2 = _st_lag1 - _st_lag2  # may contain NaN
+        features.extend(_delta2)
+        feature_names.extend([f"{c}_delta2" for c in components])
+
+        # ==================================================================
+        # Block 6: Trend (linear slope via polyfit)
+        #
+        # Requires ≥ 3 valid (non-NaN) data points for a meaningful slope
+        # estimate (Fix G-08: previously ≥ 2 allowed two-point fits that
+        # amplify noise on short histories; 3-point minimum is the smallest
+        # sample with one degree of freedom after including the intercept).
+        # ==================================================================
         if len(available_years) >= 2:
             for c in components:
                 y_vals_raw = entity_data.loc[available_years, c].values.astype(float)
                 x_vals_raw = np.arange(len(y_vals_raw), dtype=float)
-                # Remove NaN years so polyfit receives a clean array
                 valid_mask = ~np.isnan(y_vals_raw)
-                if valid_mask.sum() >= 2:
+                if valid_mask.sum() >= 3:
                     slope = np.polyfit(
                         x_vals_raw[valid_mask], y_vals_raw[valid_mask], 1
                     )[0]
@@ -848,38 +962,194 @@ class TemporalFeatureEngineer:
         else:
             features.extend(np.zeros(len(components)))
             feature_names.extend([f"{c}_trend" for c in components])
-        
-        # Cross-entity features (relative position)
-        if self.include_cross_entity:
-            if self.target_level == "criteria":
-                year_cross_section = panel_data.criteria_cross_section[current_year]
-            else:
-                year_cross_section = panel_data.cross_section[current_year]
-            if 'Province' in year_cross_section.columns:
-                year_cross_section = year_cross_section.set_index('Province')
+
+        # ==================================================================
+        # Block 7: EWMA features — exponentially weighted moving averages
+        # (Enhancement G-01)
+        #
+        # Spans {2, 3, 5} give effective decay half-lives of ≈1.4, 2.1, and
+        # 3.6 years, providing recency-sensitive level signals at short,
+        # medium, and longer horizons.  ``ewm(min_periods=1)`` ensures a
+        # value is always returned even on the first year of history; NaN
+        # entries in ``available_years`` are skipped automatically by pandas.
+        # ==================================================================
+        if self.include_ewma:
+            for c in components:
+                c_series = pd.Series(
+                    entity_data.loc[available_years, c].values.astype(float)
+                )
+                for span in [2, 3, 5]:
+                    ewma_val = float(
+                        c_series.ewm(span=span, min_periods=1).mean().iloc[-1]
+                    )
+                    features.append(ewma_val)
+                    feature_names.append(f"{c}_ewma{span}")
+
+        # ==================================================================
+        # Block 8: Expanding window mean — unconditional historical baseline
+        # (Enhancement G-03)
+        #
+        # Cumulative mean over all available years captures the province's
+        # unconditional long-run baseline.  Orthogonal to _demeaned (which
+        # subtracts this mean) and to rolling means (which are window-limited).
+        # Particularly informative for slow-moving criteria such as C04
+        # (anti-corruption) and C07 (environmental governance).
+        # ==================================================================
+        if self.include_expanding:
+            for c in components:
+                exp_vals = entity_data.loc[available_years, c].values.astype(float)
+                exp_mean = (
+                    float(np.nanmean(exp_vals))
+                    if not np.all(np.isnan(exp_vals))
+                    else np.nan
+                )
+                features.append(exp_mean)
+                feature_names.append(f"{c}_expanding_mean")
+
+        # ==================================================================
+        # Block 9: Inter-component diversity (Enhancement G-04)
+        #
+        # std and range of current_values across components capture governance
+        # imbalance: a province racing ahead on e-governance while lagging on
+        # participation exhibits high diversity; a uniform improver exhibits
+        # near-zero diversity.  Both are scale-free relative to SAW targets.
+        # ==================================================================
+        if self.include_diversity:
+            valid_curr = current_values[~np.isnan(current_values)]
+            diversity_std = float(np.std(valid_curr)) if len(valid_curr) >= 2 else 0.0
+            diversity_rng = float(np.ptp(valid_curr)) if len(valid_curr) >= 2 else 0.0
+            features.extend([diversity_std, diversity_rng])
+            feature_names.extend(["component_diversity_std", "component_diversity_range"])
+
+        # ==================================================================
+        # Block 10: Rolling skewness (Enhancement G-07, window=5)
+        #
+        # Skewness of each component's 5-year distribution detects whether
+        # the province is breaking out (positive skew: recent acceleration
+        # above history) or regressing to mean (negative skew: post-peak).
+        # min_periods=3 is the minimum sample for meaningful skew estimation.
+        # ==================================================================
+        if self.include_rolling_skewness:
+            for c in components:
+                if len(available_years) >= 5:
+                    window_years_sk = available_years[-5:]
+                    sk_vals = entity_data.loc[window_years_sk, c].values.astype(float)
+                    valid_sk = sk_vals[~np.isnan(sk_vals)]
+                    sk = float(_scipy_stats.skew(valid_sk)) if len(valid_sk) >= 3 else 0.0
+                else:
+                    sk = 0.0
+                features.append(sk)
+                feature_names.append(f"{c}_roll5_skewness")
+
+        # ==================================================================
+        # Block 11: Panel-relative features
+        #   11-A  Cross-entity percentile rank and z-score (Fix D-03 applied)
+        #   11-B  Rank-change: Δpercentile = pct_t − pct_{t-1} (G-05)
+        #
+        # Cross-sections are filtered to active provinces only (Fix D-03):
+        # provinces absent from year_contexts[year].active_provinces are
+        # excluded from the reference distribution, preventing measurement
+        # bias from excluded entities inflating or deflating relative ranks.
+        # ==================================================================
+        if self.include_cross_entity or self.include_rank_change:
+            year_cross_section = self._get_active_cross_section(
+                panel_data, current_year
+            )
+            prev_year_rk = years[year_idx - 1] if year_idx > 0 else None
+            prev_cross_section = (
+                self._get_active_cross_section(panel_data, prev_year_rk)
+                if prev_year_rk is not None
+                else pd.DataFrame()
+            )
 
             for c in components:
-                if c in year_cross_section.columns:
-                    entity_value = current_values[components.index(c)]
-                    # Drop NaN from cross-section and guard against NaN entity value
-                    col_values_clean = year_cross_section[c].dropna()
-                    if len(col_values_clean) == 0 or np.isnan(entity_value):
-                        # No cross-section data or entity value missing → neutral
-                        features.extend([0.5, 0.0])
+                entity_value = float(current_values[components.index(c)])
+
+                # ── 11-A: Percentile and z-score ───────────────────────────
+                if self.include_cross_entity:
+                    if (
+                        not year_cross_section.empty
+                        and c in year_cross_section.columns
+                    ):
+                        col_clean = year_cross_section[c].dropna()
+                        if len(col_clean) > 0 and not np.isnan(entity_value):
+                            percentile = float((col_clean < entity_value).mean())
+                            mean_val   = float(col_clean.mean())
+                            std_val    = float(col_clean.std())
+                            z_score    = (entity_value - mean_val) / (std_val + 1e-10)
+                        else:
+                            percentile, z_score = 0.5, 0.0
                     else:
-                        percentile = float((col_values_clean < entity_value).mean())
-                        mean_val   = float(col_values_clean.mean())
-                        std_val    = float(col_values_clean.std())
-                        z_score    = (entity_value - mean_val) / (std_val + 1e-10)
-                        features.append(percentile)
-                        features.append(z_score)
-                    feature_names.append(f"{c}_percentile")
-                    feature_names.append(f"{c}_zscore")
-                else:
-                    features.extend([0.5, 0.0])
+                        percentile, z_score = 0.5, 0.0
+                    features.extend([percentile, z_score])
                     feature_names.extend([f"{c}_percentile", f"{c}_zscore"])
-        
-        # Validate that every entity-year produces the same feature vector
+                else:
+                    percentile = 0.5  # neutral fallback for rank-change when off
+
+                # ── 11-B: Rank-change (Δpercentile) ────────────────────────
+                if self.include_rank_change:
+                    if (
+                        prev_year_rk is not None
+                        and not prev_cross_section.empty
+                        and c in prev_cross_section.columns
+                    ):
+                        prev_entity_val = float(
+                            entity_data.loc[prev_year_rk, c]
+                            if prev_year_rk in entity_data.index
+                            else np.nan
+                        )
+                        prev_col_clean = prev_cross_section[c].dropna()
+                        if len(prev_col_clean) > 0 and not np.isnan(prev_entity_val):
+                            # Recompute current percentile if cross_entity off
+                            if not self.include_cross_entity:
+                                if (
+                                    not year_cross_section.empty
+                                    and c in year_cross_section.columns
+                                ):
+                                    _curr_col = year_cross_section[c].dropna()
+                                    percentile = (
+                                        float((_curr_col < entity_value).mean())
+                                        if len(_curr_col) > 0
+                                        and not np.isnan(entity_value)
+                                        else 0.5
+                                    )
+                            pct_prev = float(
+                                (prev_col_clean < prev_entity_val).mean()
+                            )
+                            rank_change = percentile - pct_prev
+                        else:
+                            rank_change = 0.0
+                    else:
+                        rank_change = 0.0
+                    features.append(rank_change)
+                    feature_names.append(f"{c}_rank_change")
+
+        # ==================================================================
+        # Block 12: Regional cluster one-hot dummies (Enhancement G-06)
+        #
+        # Five geographic regions of Vietnam:
+        #   0 = Northern Mountains & Midlands
+        #   1 = Red River Delta
+        #   2 = Central (North-Central + South-Central coastal)
+        #   3 = Central Highlands
+        #   4 = Southern (South-East + Mekong Delta)
+        #
+        # All 5 dummies are retained (no drop-one convention): tree-based
+        # models handle collinearity natively, and the PCA track for linear
+        # models absorbs any redundancy.
+        # Unknown province names → all-zero vector (no information injected).
+        # ==================================================================
+        if self.include_region_dummies:
+            region_idx = _VIETNAM_PROVINCE_REGIONS.get(entity, -1)
+            region_vec = np.zeros(_N_REGIONS, dtype=float)
+            if 0 <= region_idx < _N_REGIONS:
+                region_vec[region_idx] = 1.0
+            features.extend(region_vec)
+            feature_names.extend([f"region_{i}" for i in range(_N_REGIONS)])
+
+        # ==================================================================
+        # Dimension validation
+        # ==================================================================
         if self.feature_names_ and len(self.feature_names_) != len(feature_names):
             raise ValueError(
                 f"Feature dimension mismatch: previous call produced "
@@ -888,8 +1158,62 @@ class TemporalFeatureEngineer:
                 f"entity={entity}, year={current_year}."
             )
         self.feature_names_ = feature_names
-        return np.array(features)
-    
+        return np.array(features, dtype=float)
+
+    def _get_active_cross_section(
+        self,
+        panel_data,
+        year: Optional[int],
+    ) -> pd.DataFrame:
+        """Return the cross-section for *year* filtered to active provinces.
+
+        Implements Fix D-03: provinces absent from
+        ``year_contexts[year].active_provinces`` are excluded from the
+        reference distribution before computing percentile ranks and z-scores,
+        preventing excluded entities from biasing relative-position statistics.
+
+        Parameters
+        ----------
+        panel_data :
+            Panel data object with ``criteria_cross_section`` /
+            ``cross_section`` and optionally ``year_contexts``.
+        year : int or None
+            Calendar year.  Returns an empty DataFrame when ``year`` is None
+            or the year is not present in the cross-section dict.
+
+        Returns
+        -------
+        pd.DataFrame
+            Province-indexed cross-section filtered to active entities.
+            Empty DataFrame when data is unavailable.
+        """
+        if year is None:
+            return pd.DataFrame()
+
+        if self.target_level == "criteria":
+            cs = panel_data.criteria_cross_section.get(year)
+        else:
+            # Sub-criteria mode: try legacy 'cross_section' first, then the
+            # canonical 'subcriteria_cross_section'.
+            cs = getattr(panel_data, "cross_section", {}).get(year)
+            if cs is None:
+                cs = panel_data.subcriteria_cross_section.get(year)
+
+        if cs is None:
+            return pd.DataFrame()
+
+        if "Province" in cs.columns:
+            cs = cs.set_index("Province")
+
+        # Filter to active provinces only (Fix D-03)
+        ctx = getattr(panel_data, "year_contexts", {}).get(year)
+        if ctx is not None:
+            active = [p for p in ctx.active_provinces if p in cs.index]
+            if active:
+                cs = cs.loc[active]
+
+        return cs
+
     def get_feature_names(self) -> List[str]:
         """Get list of generated feature names."""
         return self.feature_names_

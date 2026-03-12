@@ -458,10 +458,31 @@ class CsvWriter:
         try:
             perf = forecast_result.model_performance
             if perf:
-                rows = [{'Model': m, **metrics} for m, metrics in perf.items()]
-                df = pd.DataFrame(rows).set_index('Model')
+                # Separate scalar metrics from list-valued per-criterion RMSE fields
+                _scalar_rows: list = []
+                _crit_rmse_rows: list = []
+                for m, metrics in perf.items():
+                    scalar = {
+                        k: v for k, v in metrics.items()
+                        if not isinstance(v, (list, np.ndarray))
+                    }
+                    _scalar_rows.append({'Model': m, **scalar})
+                    means = metrics.get('per_criterion_rmse_mean', [])
+                    stds  = metrics.get('per_criterion_rmse_std', [])
+                    if means:
+                        row: dict = {'Model': m}
+                        for i, (mu, sd) in enumerate(zip(means, stds)):
+                            row[f'C{i + 1:02d}_rmse_mean'] = float(mu)
+                            row[f'C{i + 1:02d}_rmse_std']  = float(sd)
+                        _crit_rmse_rows.append(row)
+                df = pd.DataFrame(_scalar_rows).set_index('Model')
                 saved['model_performance'] = self._save_csv(
                     df, 'model_performance.csv', directory=_dir, float_fmt='%.4f')
+                if _crit_rmse_rows:
+                    df_crit = pd.DataFrame(_crit_rmse_rows).set_index('Model')
+                    saved['per_criterion_cv_rmse'] = self._save_csv(
+                        df_crit, 'per_criterion_cv_rmse.csv',
+                        directory=_dir, float_fmt='%.6f')
         except Exception as _exc:
             _logger.debug('section skipped: %s', _exc)
 

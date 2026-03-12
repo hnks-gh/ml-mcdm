@@ -289,6 +289,12 @@ class _WalkForwardYearlySplit:
                 yield np.sort(train_idx), np.sort(val_idx)
 
 
+# Public alias — exposed as `PanelWalkForwardCV` in the module API so downstream
+# code (unified.py, tests) can reference it by a descriptive name without having
+# to import the private `_WalkForwardYearlySplit` directly.
+PanelWalkForwardCV = _WalkForwardYearlySplit
+
+
 class SuperLearner:
     """
     Super Learner meta-ensemble combining multiple base forecasters.
@@ -375,6 +381,10 @@ class SuperLearner:
         self._oof_ensemble_predictions_: Optional[np.ndarray] = None  # (n_samples, n_outputs)
         self._oof_valid_mask_: Optional[np.ndarray] = None            # (n_samples,) bool
 
+        # Per-criterion RMSE across CV folds (Phase 4).
+        # Shape: {model_name: [ [rmse_c1, ..., rmse_cK]_fold1, ... ]}
+        self._cv_scores_per_criterion_: Dict[str, List[List[float]]] = {}
+
     @_silence_warnings
     def fit(
         self,
@@ -447,6 +457,7 @@ class SuperLearner:
             (n_samples, n_models * self._n_outputs), np.nan
         )
         self._cv_scores = {name: [] for name in self.base_models}
+        self._cv_scores_per_criterion_ = {name: [] for name in self.base_models}
 
         for fold_idx, (train_idx, val_idx) in enumerate(cv_iter):
             y_train_cv, y_val_cv = y[train_idx], y[val_idx]
@@ -491,12 +502,19 @@ class SuperLearner:
                     # Compute CV score: mean R² across all output columns
                     # for this fold (one value per fold, not per output).
                     fold_r2s = []
+                    fold_rmse_per_criterion = []
                     for out_col in range(y_val_cv.shape[1]):
                         pred_col = min(out_col, pred.shape[1] - 1)
                         fold_r2s.append(
                             r2_score(y_val_cv[:, out_col], pred[:, pred_col])
                         )
+                        fold_rmse_per_criterion.append(
+                            float(np.sqrt(mean_squared_error(
+                                y_val_cv[:, out_col], pred[:, pred_col]
+                            )))
+                        )
                     self._cv_scores[name].append(float(np.mean(fold_r2s)))
+                    self._cv_scores_per_criterion_[name].append(fold_rmse_per_criterion)
 
                 except Exception as e:
                     if self.verbose:

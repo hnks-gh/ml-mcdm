@@ -3,82 +3,125 @@
 Feature Preprocessing for Panel Forecasting
 ============================================
 
-Provides dimensionality reduction to address the p >> n problem that
-arises when ~400 temporal features are generated for panels with only
-~100–700 training rows.
+Provides two complementary dimensionality-reduction tracks for the
+dual-model architecture in UnifiedForecaster.
 
-Pipeline:
-    1. VarianceThreshold — removes near-constant columns (provinces
-       with short histories produce many near-zero lag/rolling features).
-    2. StandardScaler — centres and scales before PCA so that features
-       with larger raw scales do not dominate the principal components.
-    3. PCA — collapses highly correlated lag/rolling/cross-entity feature
-       groups into a compact set of orthogonal components.
+LINEAR TRACK — mode='pls'
+    VarianceThreshold(0.005) → StandardScaler → [MI pre-filter] → PLSRegression
+    Supervised compression: PLSRegression (PLS2) finds the linear combinations
+    of X with maximum covariance with all 8 criterion targets simultaneously.
+    Target-aware compression is strictly superior to PCA for forecasting tasks
+    where the objective is prediction accuracy, not explained feature variance.
+    n_components = min(n_samples // 10, 20) → p/n ≤ 0.024.
 
-The component cap ``min(n_samples // 5, max_components)`` ensures that
-every CV fold has at least 5 rows per principal component, keeping the
-effective p/n ratio safely below 0.2.
+TREE TRACK — mode='threshold_only'
+    VarianceThreshold(0.005) → raw features (no scaling, no compression).
+    Tree-based models (CatBoost, QRF, NAM) are scale-invariant.  StandardScaler
+    has been removed to prevent double-scaling with models that apply their own
+    internal scaling (QRF: RobustScaler; PanelVAR: per-column StandardScaler;
+    CatBoost: scale-invariant by design).
 
-Interpretability:
-    ``inverse_importance()`` maps per-PC importance vectors back to the
-    original feature space via the PCA loading matrix ``|components_|``,
-    so downstream CSV reports retain original feature names.
+LEGACY — mode='pca'
+    VarianceThreshold → StandardScaler → PCA.
+    Retained for backward compatibility.  Prefer mode='pls' for new usage.
 
-References:
-    - Bai & Ng (2002). "Determining the Number of Factors in Approximate
-      Factor Models" Econometrica
+IMPUTATION — use_mice_imputation=True
+    Prepends IterativeImputer(RandomForestRegressor) before VarianceThreshold
+    in any mode.  Activated only when residual NaN values are detected after
+    Phase-1 median-imputation (edge case; not active in normal operation).
+
+MI Pre-filter (P-03) — mi_prefilter=True (default, active in 'pls' mode only)
+    SelectKBest(mutual_info_regression) applied per output column; union of
+    top-k features kept.  Removes ~50 % of low-signal features before PLS,
+    improving component alignment with the prediction objective.
+
+References
+----------
+- Mevik & Wehrens (2007). "The pls Package." JSS 18(2).
+- Bair et al. (2006). "Prediction by Supervised Principal Components." JASA.
+- Groen & Kapetanios (2016). "Revisiting Useful Approaches to Data-Rich
+  Macroeconomic Forecasting." Computational Statistics & Data Analysis.
 """
 
 import numpy as np
-from typing import Literal, Optional, List
+from typing import List, Literal, Optional, Union
+
+from sklearn.cross_decomposition import PLSRegression
 from sklearn.decomposition import PCA
-from sklearn.feature_selection import VarianceThreshold
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.experimental import enable_iterative_imputer  # noqa: F401 — required before IterativeImputer
+from sklearn.feature_selection import SelectKBest, VarianceThreshold, mutual_info_regression
+from sklearn.impute import IterativeImputer
 from sklearn.preprocessing import StandardScaler
 
 
 class PanelFeatureReducer:
     """
-    Two-stage dimensionality reduction for panel forecasting features.
-
-    Stage A: VarianceThreshold removes near-constant columns.
-    Stage B: PCA retains 95 % of variance, capped at
-             ``min(n_samples // 5, max_components)`` components.
+    Multi-mode dimensionality reduction for panel forecasting features.
 
     Parameters
     ----------
     variance_threshold : float
-        Minimum variance to keep a feature (default 0.01).
+        Minimum variance to keep a feature (default 0.005).
+        Lowered from the previous 0.01 to avoid discarding stable but
+        predictive governance criteria with legitimately low variance.
     pca_variance_ratio : float
-        Cumulative variance ratio for PCA (default 0.95).
+        Cumulative variance ratio for PCA in ``'pca'`` legacy mode (default 0.95).
     max_components : int
-        Hard cap on the number of PCA components (default 60).
+        Hard cap on PCA components in ``'pca'`` legacy mode (default 60).
+    n_pls_components : int or None
+        Number of PLS components in ``'pls'`` mode.
+        ``None`` (default): auto = ``min(n_samples // 10, 20)``.
+    mi_prefilter : bool
+        If ``True`` (default), apply a per-output mutual-information pre-filter
+        before PLS.  The union of the top-``mi_k`` features across all outputs
+        is kept, removing low-signal features before PLS fitting.
+        Only active when ``mode='pls'`` and ``y`` is provided to ``fit()``.
+    mi_k : int or 'half'
+        Number of features to retain per MI selection.
+        ``'half'`` (default): keep ``n_features // 2`` features.
+    use_mice_imputation : bool
+        If ``True``, apply ``IterativeImputer`` (RandomForestRegressor) before
+        ``VarianceThreshold`` to handle residual NaN values.
     random_state : int
-        Random seed for PCA solver.
-    mode : {'pca', 'threshold_only'}
+        Random seed for PCA, PLS, and imputation solvers.
+    mode : {'pls', 'threshold_only', 'pca'}
         Reduction mode.
-        ``'pca'`` (default): VarianceThreshold → StandardScaler → PCA.
-        ``'threshold_only'``: VarianceThreshold → StandardScaler, no PCA.
-        Tree-based models work best with the original feature structure, so
-        use ``'threshold_only'`` for them and ``'pca'`` for linear models.
+        ``'pls'``: Supervised PLS compression — use for linear models.
+        ``'threshold_only'``: Variance filter only, no scaling/compression —
+            use for tree-based models (CatBoost, QRF, NAM, PanelVAR).
+        ``'pca'``: Legacy PCA compression — retained for backward compatibility.
     """
 
     def __init__(
         self,
-        variance_threshold: float = 0.01,
+        variance_threshold: float = 0.005,
         pca_variance_ratio: float = 0.95,
         max_components: int = 60,
+        n_pls_components: Optional[int] = None,
+        mi_prefilter: bool = True,
+        mi_k: Union[int, str] = 'half',
+        use_mice_imputation: bool = False,
         random_state: int = 42,
-        mode: Literal['pca', 'threshold_only'] = 'pca',
+        mode: Literal['pls', 'threshold_only', 'pca'] = 'pca',
     ):
         self.variance_threshold = variance_threshold
         self.pca_variance_ratio = pca_variance_ratio
         self.max_components = max_components
+        self.n_pls_components = n_pls_components
+        self.mi_prefilter = mi_prefilter
+        self.mi_k = mi_k
+        self.use_mice_imputation = use_mice_imputation
         self.random_state = random_state
         self.mode = mode
 
         self._var_selector: Optional[VarianceThreshold] = None
         self._scaler: Optional[StandardScaler] = None
+        self._pls: Optional[PLSRegression] = None
         self._pca: Optional[PCA] = None
+        self._imputer: Optional[IterativeImputer] = None
+        self._mi_mask: Optional[np.ndarray] = None   # bool (n_kept_after_var,)
+        self._pls_evr_: float = 0.0                  # estimated X-variance ratio for PLS
         self._original_feature_names: Optional[List[str]] = None
         self._kept_feature_mask: Optional[np.ndarray] = None
         self._n_components_fitted: int = 0
@@ -88,15 +131,24 @@ class PanelFeatureReducer:
     # Public API
     # ------------------------------------------------------------------
 
-    def fit(self, X: np.ndarray, feature_names: Optional[List[str]] = None) -> "PanelFeatureReducer":
+    def fit(
+        self,
+        X: np.ndarray,
+        y: Optional[np.ndarray] = None,
+        feature_names: Optional[List[str]] = None,
+    ) -> "PanelFeatureReducer":
         """
         Fit the reduction pipeline on training features.
 
         Parameters
         ----------
         X : ndarray of shape (n_samples, n_features)
+        y : ndarray of shape (n_samples,) or (n_samples, n_outputs), optional
+            Training targets.  Required for ``mode='pls'`` to fit the
+            supervised compression.  Ignored in ``'threshold_only'`` and
+            ``'pca'`` modes.
         feature_names : list of str, optional
-            Original feature names for inverse importance mapping.
+            Original feature names for ``inverse_importance()`` mapping.
 
         Returns
         -------
@@ -108,54 +160,140 @@ class PanelFeatureReducer:
             else [f"f{i}" for i in range(n_features)]
         )
 
-        # Stage A: remove near-constant features
+        # Optional MICE imputation (P-04) — only if NaN present
+        if self.use_mice_imputation and np.isnan(X).any():
+            self._imputer = IterativeImputer(
+                estimator=RandomForestRegressor(
+                    n_estimators=50, random_state=self.random_state
+                ),
+                max_iter=5,
+                random_state=self.random_state,
+            )
+            X = self._imputer.fit_transform(X)
+        else:
+            self._imputer = None
+
+        # Stage A: remove near-constant features (P-01: threshold=0.005)
         self._var_selector = VarianceThreshold(threshold=self.variance_threshold)
         X_var = self._var_selector.fit_transform(X)
         self._kept_feature_mask = self._var_selector.get_support()
 
-        # Stage B: standardise before PCA
+        # ── TREE TRACK ────────────────────────────────────────────────────
+        if self.mode == 'threshold_only':
+            # No scaling, no compression.  Trees are scale-invariant; adding
+            # StandardScaler here caused double-scaling with QRF's RobustScaler
+            # (destroying its robust statistics) and was pure overhead for
+            # scale-invariant CatBoost and PanelVAR (which scales per-column).
+            self._scaler = None
+            self._pls = None
+            self._pca = None
+            self._mi_mask = None
+            self._n_components_fitted = X_var.shape[1]
+            self._fitted = True
+            return self
+
+        # ── LINEAR TRACKS (PLS and legacy PCA) ───────────────────────────
+        # Stage B: standardise before PLS/PCA
         self._scaler = StandardScaler()
         X_scaled = self._scaler.fit_transform(X_var)
 
-        if self.mode == 'threshold_only':
-            # Skip PCA: keep all variance-filtered, standardised features.
-            # n_components equals the count of features that survived Stage A.
-            self._pca = None
-            self._n_components_fitted = X_var.shape[1]
-        else:
-            # Stage C: PCA with adaptive component cap.
-            #
-            # The cap n_cap = min(n_samples // 5, max_components) enforces p/n <= 0.2
-            # in every CV fold, preventing over-fitting in the PCA-compressed space.
-            #
-            # Two-step logic:
-            #   Step 1 — fit using the variance-ratio criterion so sklearn
-            #            automatically selects the minimal set of PCs that together
-            #            explain >= pca_variance_ratio of variance.
-            #   Step 2 — if the variance criterion selected more components than the
-            #            p/n cap allows, refit with the integer cap.
-            n_cap = min(n_samples // 5, self.max_components, X_var.shape[1])
-            n_cap = max(n_cap, 2)  # always keep at least 2 components
+        # ── PLS TRACK (primary, supervised) ──────────────────────────────
+        if self.mode == 'pls':
+            X_mi = X_scaled
+            self._mi_mask = None
 
-            # Step 1: variance-ratio criterion
+            # MI pre-filter (P-03): union of top-k features per output column
+            if self.mi_prefilter and y is not None:
+                y_2d = y if y.ndim == 2 else y[:, np.newaxis]
+                n_keep = (
+                    max(1, X_scaled.shape[1] // 2)
+                    if self.mi_k == 'half'
+                    else int(self.mi_k)
+                )
+                n_keep = min(n_keep, X_scaled.shape[1])
+                union_mask = np.zeros(X_scaled.shape[1], dtype=bool)
+                for col_idx in range(y_2d.shape[1]):
+                    y_col = y_2d[:, col_idx]
+                    valid = ~np.isnan(y_col)
+                    if valid.sum() < 10:
+                        continue
+                    sel = SelectKBest(mutual_info_regression, k=n_keep)
+                    sel.fit(X_scaled[valid], y_col[valid])
+                    union_mask |= sel.get_support()
+                if union_mask.sum() >= 2:
+                    self._mi_mask = union_mask
+                    X_mi = X_scaled[:, union_mask]
+                # If union_mask has < 2 True entries keep all (fallback)
+
+            # PLS: n_components = min(n_samples // 10, 20) enforces p/n ≤ 0.024
+            n_pls = self.n_pls_components
+            if n_pls is None:
+                n_pls = min(n_samples // 10, 20, X_mi.shape[1])
+            n_pls = max(n_pls, 2)
+
+            if y is not None:
+                y_fit = (y if y.ndim == 2 else y[:, np.newaxis]).copy().astype(float)
+                # Replace NaN in targets with column median for PLS fitting
+                for col in range(y_fit.shape[1]):
+                    nan_mask = np.isnan(y_fit[:, col])
+                    if nan_mask.any():
+                        y_fit[nan_mask, col] = float(np.nanmedian(y_fit[:, col]))
+                self._pls = PLSRegression(n_components=n_pls, scale=False)
+                self._pls.fit(X_mi, y_fit)
+                # Estimate proportion of X variance captured by PLS x-scores
+                x_score_var = float(np.var(self._pls.x_scores_, axis=0).sum())
+                x_total_var = float(np.var(X_mi, axis=0).sum()) + 1e-12
+                self._pls_evr_ = min(x_score_var / x_total_var, 1.0)
+            else:
+                # y absent — supervised PLS not possible; fall back to PCA
+                self._pls = None
+                n_cap = min(n_samples // 5, self.max_components, X_mi.shape[1])
+                n_cap = max(n_cap, 2)
+                self._pca = PCA(
+                    n_components=self.pca_variance_ratio,
+                    svd_solver='full',
+                    random_state=self.random_state,
+                )
+                self._pca.fit(X_mi)
+                if self._pca.n_components_ > n_cap:
+                    self._pca = PCA(
+                        n_components=n_cap,
+                        svd_solver='full',
+                        random_state=self.random_state,
+                    )
+                    self._pca.fit(X_mi)
+                self._n_components_fitted = self._pca.n_components_
+                self._fitted = True
+                return self
+
+            self._n_components_fitted = n_pls
+            self._pca = None
+            self._fitted = True
+            return self
+
+        # ── LEGACY PCA TRACK ──────────────────────────────────────────────
+        # mode == 'pca': retained for backward compatibility.
+        self._mi_mask = None
+        # The cap n_cap = min(n_samples // 5, max_components) enforces p/n ≤ 0.2
+        n_cap = min(n_samples // 5, self.max_components, X_scaled.shape[1])
+        n_cap = max(n_cap, 2)
+
+        self._pca = PCA(
+            n_components=self.pca_variance_ratio,
+            svd_solver='full',
+            random_state=self.random_state,
+        )
+        self._pca.fit(X_scaled)
+        if self._pca.n_components_ > n_cap:
             self._pca = PCA(
-                n_components=self.pca_variance_ratio,
-                svd_solver="full",
+                n_components=n_cap,
+                svd_solver='full',
                 random_state=self.random_state,
             )
             self._pca.fit(X_scaled)
 
-            # Step 2: enforce the p/n <= 0.2 hard cap
-            if self._pca.n_components_ > n_cap:
-                self._pca = PCA(
-                    n_components=n_cap,
-                    svd_solver="full",
-                    random_state=self.random_state,
-                )
-                self._pca.fit(X_scaled)
-
-            self._n_components_fitted = self._pca.n_components_
-
+        self._n_components_fitted = self._pca.n_components_
+        self._pls = None
         self._fitted = True
         return self
 
@@ -173,38 +311,59 @@ class PanelFeatureReducer:
         """
         if not self._fitted:
             raise ValueError("PanelFeatureReducer not fitted. Call fit() first.")
+
+        if self._imputer is not None and np.isnan(X).any():
+            X = self._imputer.transform(X)
+
         X_var = self._var_selector.transform(X)
-        X_scaled = self._scaler.transform(X_var)
+
         if self.mode == 'threshold_only':
-            return X_scaled
+            # Raw variance-filtered features — no scaling for tree models
+            return X_var
+
+        X_scaled = self._scaler.transform(X_var)
+
+        if self.mode == 'pls':
+            X_mi = X_scaled if self._mi_mask is None else X_scaled[:, self._mi_mask]
+            if self._pls is not None:
+                return self._pls.transform(X_mi)
+            # PLS fallback to PCA when y was absent during fit
+            return self._pca.transform(X_mi)
+
+        # legacy pca mode
         return self._pca.transform(X_scaled)
 
-    def fit_transform(self, X: np.ndarray, feature_names: Optional[List[str]] = None) -> np.ndarray:
+    def fit_transform(
+        self,
+        X: np.ndarray,
+        y: Optional[np.ndarray] = None,
+        feature_names: Optional[List[str]] = None,
+    ) -> np.ndarray:
         """Fit and transform in one call."""
-        self.fit(X, feature_names=feature_names)
+        self.fit(X, y=y, feature_names=feature_names)
         return self.transform(X)
 
-    def inverse_importance(
-        self, pc_importance: np.ndarray
-    ) -> np.ndarray:
+    def inverse_importance(self, pc_importance: np.ndarray) -> np.ndarray:
         """
-        Map per-PC importance back to the original feature space.
+        Map per-component importance back to the original feature space.
 
-        For a vector ``w`` of shape ``(n_components,)`` or a matrix
-        ``(n_components, n_outputs)``, returns a vector/matrix of shape
-        ``(n_original_features,)`` / ``(n_original_features, n_outputs)``
-        by distributing each PC's importance across original features
-        proportionally to ``|PCA.components_|``.
+        For a vector of shape ``(n_components,)`` or a matrix of shape
+        ``(n_components, n_outputs)``, returns the importance distributed
+        back to original features proportionally to the loading magnitudes.
+
+        For ``'pls'`` mode the PLS x-loadings matrix ``|x_loadings_|``
+        (shape ``(n_features, n_components)``) is used; for ``'pca'`` mode
+        ``|components_|`` is used.
 
         Parameters
         ----------
         pc_importance : ndarray
-            Importance weights in PCA-space.
+            Importance weights in compressed space.
 
         Returns
         -------
         original_importance : ndarray
-            Importance weights in original-feature-space.
+            Importance weights mapped back to original-feature space.
         """
         if not self._fitted:
             raise ValueError("PanelFeatureReducer not fitted.")
@@ -217,26 +376,40 @@ class PanelFeatureReducer:
         n_original = len(self._original_feature_names)
 
         if self.mode == 'threshold_only':
-            # Identity pass-through: importance is already in the kept-feature
-            # space (no PCA backprojection needed); just expand to n_original.
+            # Direct expansion: importance is already in kept-feature space.
             full_importance = np.zeros((n_original, pc_importance.shape[1]))
             full_importance[self._kept_feature_mask] = pc_importance
             if squeeze:
                 return full_importance.ravel()
             return full_importance
 
-        loadings = np.abs(self._pca.components_)  # (n_pc, n_kept_features)
+        if self.mode == 'pls' and self._pls is not None:
+            # x_loadings_ shape: (n_mi_features, n_components)
+            # Backproject: importance in mi-space = abs(P) @ component_importance
+            loadings = np.abs(self._pls.x_loadings_)  # (n_mi_feat, n_comp)
+            row_sums = loadings.sum(axis=1, keepdims=True)
+            row_sums[row_sums == 0] = 1.0
+            loadings_normed = loadings / row_sums
+            # (n_mi_features, n_outputs)
+            mi_importance = loadings_normed @ pc_importance
 
-        # Normalise each PC's loadings to sum to 1 so that larger-loading
-        # features receive proportionally more of that PC's importance.
-        row_sums = loadings.sum(axis=1, keepdims=True)
-        row_sums[row_sums == 0] = 1.0
-        loadings_normed = loadings / row_sums
+            # Expand from MI-filtered space → kept-features space
+            n_kept = int(self._kept_feature_mask.sum())
+            kept_importance = np.zeros((n_kept, pc_importance.shape[1]))
+            if self._mi_mask is not None:
+                kept_importance[self._mi_mask] = mi_importance
+            else:
+                kept_importance = mi_importance
+        else:
+            # PCA mode (legacy or PLS fallback when y was absent)
+            _pca = self._pca
+            loadings = np.abs(_pca.components_)  # (n_pc, n_kept_features)
+            row_sums = loadings.sum(axis=1, keepdims=True)
+            row_sums[row_sums == 0] = 1.0
+            loadings_normed = loadings / row_sums
+            kept_importance = loadings_normed.T @ pc_importance
 
-        # (n_kept_features, n_outputs) = loadings_normed.T @ pc_importance
-        kept_importance = loadings_normed.T @ pc_importance
-
-        # Expand back to the full original feature set (fill 0 for removed cols)
+        # Expand from kept-features space → original feature space
         full_importance = np.zeros((n_original, kept_importance.shape[1]))
         full_importance[self._kept_feature_mask] = kept_importance
 
@@ -244,22 +417,39 @@ class PanelFeatureReducer:
             return full_importance.ravel()
         return full_importance
 
+    # ------------------------------------------------------------------
+    # Properties
+    # ------------------------------------------------------------------
+
     @property
     def n_components(self) -> int:
-        """Number of PCA components after fitting."""
+        """Number of output components after fitting."""
         return self._n_components_fitted
 
     @property
     def explained_variance_ratio(self) -> float:
-        """Total explained variance ratio of the fitted PCA."""
-        if self._pca is not None:
+        """
+        Total explained variance ratio.
+
+        For ``'pca'`` mode: cumulative PCA explained variance ratio.
+        For ``'pls'`` mode: estimated proportion of X variance captured by
+            the PLS x-scores (approximation; PLS optimises covariance with y,
+            not X-variance).
+        For ``'threshold_only'`` mode: 1.0 (no compression applied).
+        """
+        if self.mode == 'pca' and self._pca is not None:
             return float(np.sum(self._pca.explained_variance_ratio_))
         if self.mode == 'threshold_only' and self._fitted:
-            return 1.0  # threshold-only retains all variance of kept features
+            return 1.0
+        if self.mode == 'pls':
+            if self._pls is not None:
+                return self._pls_evr_
+            if self._pca is not None:  # PLS fallback to PCA
+                return float(np.sum(self._pca.explained_variance_ratio_))
         return 0.0
 
     def get_summary(self) -> str:
-        """Human-readable summary of the reduction."""
+        """Human-readable summary of the reduction pipeline."""
         if not self._fitted:
             return "PanelFeatureReducer: not fitted"
         n_orig = len(self._original_feature_names)
@@ -267,10 +457,22 @@ class PanelFeatureReducer:
         if self.mode == 'threshold_only':
             return (
                 f"PanelFeatureReducer (threshold_only): "
-                f"{n_orig} → {n_kept} features (variance filter, no PCA)"
+                f"{n_orig} → {n_kept} features (variance filter, no scaling)"
             )
+        if self.mode == 'pls' and self._pls is not None:
+            n_mi = int(self._mi_mask.sum()) if self._mi_mask is not None else n_kept
+            return (
+                f"PanelFeatureReducer (pls): "
+                f"{n_orig} → {n_kept} (variance) "
+                f"→ {n_mi} (MI filter) "
+                f"→ {self._n_components_fitted} PLS components "
+                f"(≈{self._pls_evr_:.1%} X-variance)"
+            )
+        evr = self.explained_variance_ratio
+        evr_str = f"{evr:.1%}" if not (evr != evr) else "n/a"  # NaN check
         return (
-            f"PanelFeatureReducer: {n_orig} → {n_kept} (variance filter) "
-            f"→ {self._n_components_fitted} PCs "
-            f"({self.explained_variance_ratio:.1%} variance retained)"
+            f"PanelFeatureReducer ({self.mode}): "
+            f"{n_orig} → {n_kept} (variance filter) "
+            f"→ {self._n_components_fitted} components "
+            f"({evr_str} variance retained)"
         )

@@ -510,10 +510,18 @@ class ReportWriter:
         L.append('# 8. Machine-Learning Forecasting')
         L.append('')
         if forecast_result is not None:
+            _ti = forecast_result.training_info or {}
+            _n_models   = len(forecast_result.model_contributions or {})
+            _target_xf  = bool(_ti.get('target_transformed', False))
+            _n_feat     = _ti.get('n_features', '?')
+            _n_feat_pls = _ti.get('n_features_pca', '?')
+            _n_feat_tree= _ti.get('n_features_tree', '?')
             L.append(
-                'A Super Learner meta-ensemble (van der Laan et al., 2007) forecasts '
-                'provincial scores one period ahead.  Prediction intervals are obtained '
-                'through Conformal Prediction (Vovk et al., 2005).'
+                f'A {_n_models}-model Super Learner meta-ensemble (van der Laan et al., 2007) '
+                'forecasts provincial scores one period ahead.  '
+                'Prediction intervals are obtained through Conformal Prediction (Vovk et al., 2005).  '
+                f'Feature engineering produced {_n_feat} temporal/panel features (12 blocks, Phase 1).'
+                + (' **Target transformation applied** (logit/Yeo-Johnson → inverse-transform applied to all outputs).' if _target_xf else '')
             )
             L.append('')
 
@@ -535,17 +543,45 @@ class ReportWriter:
                 L.append('## 8.2 Individual Model Performance')
                 L.append('')
                 perf = forecast_result.model_performance
-                all_metrics = sorted({m for d in perf.values() for m in d})
+                # Scalar metrics only (exclude list-valued per-criterion keys)
+                _scalar_keys = sorted({
+                    m for d in perf.values() for m in d
+                    if not isinstance(d.get(m), (list, np.ndarray))
+                })
                 L.append('**Table 14. Out-of-sample performance metrics.**')
                 L.append('')
-                hdr = '| Model | ' + ' | '.join(m.upper() for m in all_metrics) + ' |'
-                sep = '| :--- |' + ' ---: |' * len(all_metrics)
+                hdr = '| Model | ' + ' | '.join(m.upper() for m in _scalar_keys) + ' |'
+                sep = '| :--- |' + ' ---: |' * len(_scalar_keys)
                 L.append(hdr)
                 L.append(sep)
                 for model in sorted(perf.keys()):
-                    row = ' | '.join(f'{perf[model].get(m, 0):.4f}' for m in all_metrics)
+                    row = ' | '.join(f'{perf[model].get(m, 0):.4f}' for m in _scalar_keys)
                     L.append(f'| {model} | {row} |')
                 L.append('')
+
+                # Per-criterion RMSE table (Phase 4 — only if available)
+                _crit_models = [
+                    (m, d['per_criterion_rmse_mean'])
+                    for m, d in perf.items()
+                    if 'per_criterion_rmse_mean' in d
+                    and isinstance(d['per_criterion_rmse_mean'], list)
+                    and len(d['per_criterion_rmse_mean']) > 0
+                ]
+                if _crit_models:
+                    _n_crit = len(_crit_models[0][1])
+                    L.append('**Table 14b. Per-criterion CV RMSE (mean ± std across folds).**')
+                    L.append('')
+                    _crit_cols = [f'C{i+1:02d}' for i in range(_n_crit)]
+                    L.append('| Model | ' + ' | '.join(_crit_cols) + ' |')
+                    L.append('| :--- |' + ' ---: |' * _n_crit)
+                    for m, means in _crit_models:
+                        stds = perf[m].get('per_criterion_rmse_std', [0.0] * _n_crit)
+                        cells = ' | '.join(
+                            f'{mu:.4f}±{sd:.4f}'
+                            for mu, sd in zip(means, stds)
+                        )
+                        L.append(f'| {m} | {cells} |')
+                    L.append('')
 
             # 8.3 CV
             if hasattr(forecast_result, 'cross_validation_scores') and forecast_result.cross_validation_scores:
@@ -566,7 +602,10 @@ class ReportWriter:
                 L.append('## 8.4 Holdout Validation')
                 L.append('')
                 for metric, val in forecast_result.holdout_performance.items():
-                    L.append(f'- **{metric}:** {val:.4f}')
+                    if isinstance(val, (int, float)) and not isinstance(val, bool):
+                        L.append(f'- **{metric}:** {val:.4f}')
+                    else:
+                        L.append(f'- **{metric}:** {val}')
                 L.append('')
 
             # 8.5 Feature importance
@@ -602,6 +641,27 @@ class ReportWriter:
                     L.append(f'- **Median Width:** {np.median(widths):.4f}')
                     L.append(f'- **Range:** [{widths.min():.4f}, {widths.max():.4f}]')
                     L.append('')
+
+            # 8.7 Training configuration summary
+            _ti7 = forecast_result.training_info or {}
+            if _ti7:
+                L.append('## 8.7 Training Configuration')
+                L.append('')
+                L.append('| Parameter | Value |')
+                L.append('| :--- | :--- |')
+                _disp = [
+                    ('Raw features (Blocks 1–12)', _ti7.get('n_features', '?')),
+                    ('PLS track features', _ti7.get('n_features_pca', '?')),
+                    ('Threshold-only track features', _ti7.get('n_features_tree', '?')),
+                    ('PLS variance retained', f"{_ti7.get('pca_variance_retained', 1.0):.4f}"),
+                    ('Training samples', _ti7.get('n_samples', '?')),
+                    ('Target transformed', str(bool(_ti7.get('target_transformed', False)))),
+                    ('Conformal calibrated', str(bool(_ti7.get('conformal_calibrated', False)))),
+                    ('Ensemble method', _ti7.get('ensemble_method', '?')),
+                ]
+                for label, val in _disp:
+                    L.append(f'| {label} | {val} |')
+                L.append('')
         else:
             L.append('*Forecasting module was not executed.*')
             L.append('')
