@@ -194,6 +194,16 @@ class PanelFeatureReducer:
         X_var = self._var_selector.fit_transform(X)
         self._kept_feature_mask = self._var_selector.get_support()
 
+        # Store per-column training means of variance-filtered features.
+        # Used as a fallback NaN fill in transform() when the MICE imputer
+        # was not fitted (training was NaN-free) but holdout / prediction
+        # features carry residual NaN values.  Column-mean imputation is the
+        # correct strategy: it avoids the semantically-wrong "overall mean"
+        # fill that fill_missing_features produces for 1-D row vectors, and
+        # it is leakage-free because only training statistics are used.
+        _col_means = np.nanmean(X_var, axis=0)
+        self._var_col_means_ = np.where(np.isnan(_col_means), 0.0, _col_means)
+
         # ── TREE TRACK ────────────────────────────────────────────────────
         if self.mode == 'threshold_only':
             # No scaling, no compression.  Trees are scale-invariant; adding
@@ -332,6 +342,14 @@ class PanelFeatureReducer:
             X = self._imputer.transform(X)
 
         X_var = self._var_selector.transform(X)
+
+        # Fallback NaN fill with training column means when no MICE imputer
+        # was fitted (training data was NaN-free) but holdout / prediction
+        # features carry residual NaN.  Without this guard, StandardScaler
+        # raises "Input contains NaN" crashing stage2/stage3 transforms.
+        if np.isnan(X_var).any():
+            _means = getattr(self, '_var_col_means_', np.zeros(X_var.shape[1]))
+            X_var = np.where(np.isnan(X_var), _means[np.newaxis, :], X_var)
 
         if self.mode == 'threshold_only':
             # Raw variance-filtered features — no scaling for tree models

@@ -330,9 +330,36 @@ class PanelVARForecaster(BaseForecaster):
                 if X_parts:
                     X_fit = np.vstack(X_parts)
                     y_fit = np.vstack(y_parts)
-                else:            # fallback: no entity had enough rows
-                    X_fit = self._build_lag_matrix(X_panel, self.selected_lags_)
-                    y_fit = y[self.selected_lags_:]
+                else:
+                    # All entities have ≤ selected_lags_ rows.  Rather than
+                    # building a cross-entity lag matrix (which violates the
+                    # VAR panel independence assumption by using entity A's
+                    # last row as entity B's lag), reduce the lag order until
+                    # per-entity lag matrices can be constructed.
+                    _reduced = False
+                    for lag_try in range(self.selected_lags_ - 1, -1, -1):
+                        X_parts_sub, y_parts_sub = [], []
+                        for _ent in np.unique(entity_indices):
+                            _m = entity_indices == _ent
+                            _Xe, _ye = X_panel[_m], y[_m]
+                            if lag_try == 0:
+                                X_parts_sub.append(_Xe)
+                                y_parts_sub.append(_ye)
+                            elif _Xe.shape[0] > lag_try:
+                                X_parts_sub.append(
+                                    self._build_lag_matrix(_Xe, lag_try)
+                                )
+                                y_parts_sub.append(_ye[lag_try:])
+                        if X_parts_sub:
+                            self.selected_lags_ = lag_try
+                            X_fit = np.vstack(X_parts_sub)
+                            y_fit = np.vstack(y_parts_sub)
+                            _reduced = True
+                            break
+                    if not _reduced:
+                        # Degenerate: use raw panel (lag=0, no temporal feature)
+                        self.selected_lags_ = 0
+                        X_fit, y_fit = X_panel, y
             else:
                 X_fit = self._build_lag_matrix(X_panel, self.selected_lags_)
                 y_fit = y[self.selected_lags_:]
@@ -341,12 +368,27 @@ class PanelVARForecaster(BaseForecaster):
             y_fit = y
 
         # Guard: ensure enough effective training rows after lag removal.
-        # Use the *original* feature count (before entity-dummy expansion
-        # and lag multiplication) so that the threshold stays feasible
-        # even with many entities.  The old formula used X_fit.shape[1]
-        # (post-expansion), which grew to ~174 columns with 63 entities
-        # and made the threshold geometrically impossible in CV folds.
-        min_required = max(self._n_base_features + self.selected_lags_ + 5, 10)
+        #
+        # Ridge regression does NOT require n_samples > n_features — the
+        # regularisation term (X'X + λI)⁻¹ is always invertible for λ > 0,
+        # making the OLS rule n ≥ p mathematically irrelevant here.
+        #
+        # The previous threshold ``n_base_features + n_lags + 5`` (~254) was
+        # derived from OLS intuition and geometrically impossible on early CV
+        # folds where the NaN-target filter leaves only one year-cohort per
+        # entity (~63 rows → 61 after lag-1 removal).
+        #
+        # The new threshold requires only enough rows to:
+        #   (a) estimate temporal autocorrelation (selected_lags_ * 2 + 5), and
+        #   (b) cover at least ¼ of the entities with one valid lag-removed row.
+        # Both conditions are satisfied for Ridge; more data is always better
+        # but is not a hard mathematical requirement.
+        _n_ent = max(self._n_entities, 1)
+        min_required = max(
+            _n_ent // 4 + self.selected_lags_ * 2,
+            self.selected_lags_ * 3 + 5,
+            10,
+        )
         if X_fit.shape[0] < min_required:
             raise ValueError(
                 f"PanelVAR: only {X_fit.shape[0]} effective training rows "

@@ -503,7 +503,14 @@ class SuperLearner:
                     # Forward entity_indices to models that accept them
                     self._fit_model(model_copy, _X_fit, _y_fit, _ent_fit)
 
-                    pred = model_copy.predict(X_val_cv)
+                    # S-1 fix: forward val entity_indices so panel models
+                    # (PanelVAR) use the correct fixed effects for each
+                    # validation entity rather than the reference entity.
+                    _val_ent = (
+                        entity_indices[val_idx]
+                        if entity_indices is not None else None
+                    )
+                    pred = self._predict_model(model_copy, X_val_cv, _val_ent)
                     if pred.ndim == 1:
                         pred = pred.reshape(-1, 1)
                     elif np.ndim(pred) == 0:
@@ -518,19 +525,35 @@ class SuperLearner:
 
                     # Compute CV score: mean R² across all output columns
                     # for this fold (one value per fold, not per output).
+                    # Filter NaN validation-target rows per column — targets
+                    # intentionally preserve NaN for missing governance data
+                    # (features.py M-04) and r2_score / mean_squared_error
+                    # raise ValueError on NaN inputs.
                     fold_r2s = []
                     fold_rmse_per_criterion = []
                     for out_col in range(y_val_cv.shape[1]):
                         pred_col = min(out_col, pred.shape[1] - 1)
+                        y_col = y_val_cv[:, out_col]
+                        p_col = pred[:, pred_col]
+                        _valid_val = ~np.isnan(y_col)
+                        if _valid_val.sum() < 2:
+                            fold_r2s.append(np.nan)
+                            fold_rmse_per_criterion.append(np.nan)
+                            continue
                         fold_r2s.append(
-                            r2_score(y_val_cv[:, out_col], pred[:, pred_col])
+                            r2_score(y_col[_valid_val], p_col[_valid_val])
                         )
                         fold_rmse_per_criterion.append(
                             float(np.sqrt(mean_squared_error(
-                                y_val_cv[:, out_col], pred[:, pred_col]
+                                y_col[_valid_val], p_col[_valid_val]
                             )))
                         )
-                    self._cv_scores[name].append(float(np.mean(fold_r2s)))
+                    _mean_r2 = (
+                        float(np.nanmean(fold_r2s))
+                        if not all(np.isnan(r) for r in fold_r2s)
+                        else np.nan
+                    )
+                    self._cv_scores[name].append(_mean_r2)
                     self._cv_scores_per_criterion_[name].append(fold_rmse_per_criterion)
 
                 except Exception as e:
@@ -539,6 +562,10 @@ class SuperLearner:
                     self._cv_scores[name].append(np.nan)
 
         # Compute OOF R² for each model (per-model valid mask, not joint)
+        # CRITICAL: filter NaN from y here — targets preserve NaN for missing
+        # governance data (features.py M-04).  Without this filter r2_score
+        # raises "Input contains NaN" and crashes the entire fit() call,
+        # which propagates as "! Forecasting skipped: Input contains NaN."
         for m_idx, name in enumerate(self.base_models):
             model_cols = slice(
                 m_idx * self._n_outputs, (m_idx + 1) * self._n_outputs
@@ -548,9 +575,17 @@ class SuperLearner:
                 r2_vals = []
                 for out_col in range(self._n_outputs):
                     col_idx = m_idx * self._n_outputs + out_col
-                    r2 = r2_score(y[valid, out_col], oof_predictions[valid, col_idx])
-                    r2_vals.append(r2)
-                self._oof_r2[name] = np.mean(r2_vals)
+                    y_col = y[valid, out_col]
+                    p_col = oof_predictions[valid, col_idx]
+                    # Additional filter: drop rows where y itself is NaN
+                    _y_ok = ~np.isnan(y_col)
+                    if _y_ok.sum() < 2:
+                        r2_vals.append(-1.0)
+                        continue
+                    r2_vals.append(
+                        r2_score(y_col[_y_ok], p_col[_y_ok])
+                    )
+                self._oof_r2[name] = float(np.mean(r2_vals))
             else:
                 self._oof_r2[name] = -1.0
 
