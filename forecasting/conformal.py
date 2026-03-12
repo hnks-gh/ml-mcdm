@@ -101,6 +101,8 @@ class ConformalPredictor:
         gamma: float = 0.02,
         symmetric: bool = True,
         random_state: int = 42,
+        stratify_by_missingness: bool = False,
+        n_strata: int = 3,
     ):
         if alpha <= 0 or alpha >= 1:
             raise ValueError(f"alpha must be in (0, 1), got {alpha}")
@@ -111,6 +113,8 @@ class ConformalPredictor:
         self.gamma = gamma
         self.symmetric = symmetric
         self.random_state = random_state
+        self.stratify_by_missingness = stratify_by_missingness
+        self.n_strata = n_strata
 
         # Calibration state
         self._conformity_scores: Optional[np.ndarray] = None
@@ -124,6 +128,12 @@ class ConformalPredictor:
         # ACI tracking state
         self._aci_alpha_t: float = alpha
         self._aci_history: List[float] = []
+        
+        # M-13: Stratified conformal state
+        self._stratified: bool = False
+        self._stratum_quantiles: Optional[Dict[int, Tuple[float, float]]] = None
+        self._stratum_boundaries: Optional[np.ndarray] = None
+        self._missingness_rates_cal: Optional[np.ndarray] = None
 
     def calibrate(
         self,
@@ -466,18 +476,166 @@ class ConformalPredictor:
 
         self._n_cal = n_cal
 
+    def calibrate_stratified(
+        self,
+        residuals: np.ndarray,
+        missingness_rates: np.ndarray,
+    ) -> "ConformalPredictor":
+        """
+        Calibrate conformal intervals with stratification by missingness rate.
+
+        Enhancement M-13: Missingness-Stratified Conformal Intervals
+        -------------------------------------------------------------
+        Computes per-stratum quantiles to provide honest uncertainty
+        quantification that reflects feature missingness. Samples with
+        higher missingness receive wider intervals.
+
+        Theoretical Foundation:
+            - Barber et al. (2023): Conformal prediction with conditional
+              coverage guarantees
+            - Stratification ensures valid coverage within each missingness
+              regime (low/medium/high)
+            - Uses adaptive quantiles: q_s = ⌈(1-α)(n_s+1)⌉/n_s per stratum
+
+        Args:
+            residuals: Calibration absolute residuals or conformity scores
+            missingness_rates: Per-sample missingness rates (fraction of NaN
+                             features) for calibration set
+
+        Returns:
+            self (for method chaining)
+
+        Raises:
+            ValueError: If not initialized with stratify_by_missingness=True
+        """
+        if not self._stratified:
+            raise ValueError(
+                "calibrate_stratified() requires stratify_by_missingness=True"
+            )
+
+        if len(residuals) != len(missingness_rates):
+            raise ValueError(
+                f"Residuals ({len(residuals)}) and missingness_rates "
+                f"({len(missingness_rates)}) must have same length"
+            )
+
+        # Store calibration missingness rates for boundary computation
+        self._missingness_rates_cal = missingness_rates
+
+        # Assign calibration samples to strata based on missingness quantiles
+        strata = self._assign_to_strata(missingness_rates)
+
+        # Compute per-stratum quantiles with finite-sample correction
+        self._stratum_quantiles = {}
+        for s in range(self.n_strata):
+            stratum_mask = strata == s
+            stratum_residuals = residuals[stratum_mask]
+
+            if len(stratum_residuals) < 3:
+                # Too few samples in stratum — use global quantile
+                if self.symmetric:
+                    q_level = min(
+                        np.ceil((1 - self.alpha) * (len(residuals) + 1))
+                        / len(residuals),
+                        1.0,
+                    )
+                    q_s = np.quantile(np.abs(residuals), q_level)
+                    self._stratum_quantiles[s] = (q_s, q_s)
+                else:
+                    alpha_half = self.alpha / 2
+                    q_upper_level = min(
+                        np.ceil((1.0 - alpha_half) * (len(residuals) + 1))
+                        / len(residuals),
+                        1.0,
+                    )
+                    q_lower_level = max(
+                        np.floor(alpha_half * (len(residuals) + 1))
+                        / len(residuals),
+                        0.0,
+                    )
+                    q_lower_s = np.quantile(residuals, q_lower_level)
+                    q_upper_s = np.quantile(residuals, q_upper_level)
+                    self._stratum_quantiles[s] = (q_lower_s, q_upper_s)
+                continue
+
+            # Compute stratum-specific quantiles with (n+1)/n correction
+            n_s = len(stratum_residuals)
+            if self.symmetric:
+                q_level = min(
+                    np.ceil((1 - self.alpha) * (n_s + 1)) / n_s, 1.0
+                )
+                q_s = np.quantile(np.abs(stratum_residuals), q_level)
+                self._stratum_quantiles[s] = (q_s, q_s)
+            else:
+                alpha_half = self.alpha / 2
+                q_upper_level = min(
+                    np.ceil((1.0 - alpha_half) * (n_s + 1)) / n_s, 1.0
+                )
+                q_lower_level = max(
+                    np.floor(alpha_half * (n_s + 1)) / n_s, 0.0
+                )
+                q_lower_s = np.quantile(stratum_residuals, q_lower_level)
+                q_upper_s = np.quantile(stratum_residuals, q_upper_level)
+                self._stratum_quantiles[s] = (q_lower_s, q_upper_s)
+
+        # Store conformity scores
+        self._conformity_scores = residuals
+        self._n_cal = len(residuals)
+
+        return self
+
+    def _assign_to_strata(self, missingness_rates: np.ndarray) -> np.ndarray:
+        """
+        Assign samples to missingness strata.
+
+        Uses quantile-based binning to create balanced strata. If stratum
+        boundaries are already computed (from calibration), uses those.
+        Otherwise, computes new boundaries from input data.
+
+        Args:
+            missingness_rates: Per-sample missingness rates (fraction of NaN)
+
+        Returns:
+            Stratum assignments (0 to n_strata-1) for each sample
+        """
+        # Compute stratum boundaries if not already set
+        if self._stratum_boundaries is None:
+            # Use quantile-based boundaries
+            quantiles = np.linspace(0, 1, self.n_strata + 1)
+            self._stratum_boundaries = np.quantile(missingness_rates, quantiles)
+            # Ensure boundaries are unique (if data has limited unique values)
+            self._stratum_boundaries = np.unique(self._stratum_boundaries)
+
+        # Assign samples to strata using digitize (bins are right-inclusive)
+        # digitize returns 0 for values < boundaries[0], so subtract 1
+        strata = np.digitize(missingness_rates, self._stratum_boundaries) - 1
+
+        # Clip to valid range [0, n_strata-1]
+        strata = np.clip(strata, 0, self.n_strata - 1)
+
+        return strata
+
     def predict_intervals(
         self,
         X: np.ndarray,
         point_predictions: Optional[np.ndarray] = None,
+        missingness_rates: Optional[np.ndarray] = None,
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Compute prediction intervals with guaranteed coverage.
+        
+        Enhancement M-13: Missingness-Stratified Conformal Intervals
+        -------------------------------------------------------------
+        When stratify_by_missingness=True, prediction intervals are
+        calibrated per missingness stratum. Samples with higher feature
+        missingness receive wider intervals, reflecting higher uncertainty.
 
         Args:
             X: Feature matrix for new predictions
             point_predictions: Optional pre-computed point predictions.
                              If None, uses base_model.predict(X).
+            missingness_rates: Optional per-sample missingness rates (fraction
+                             of NaN features). Required if stratify_by_missingness=True.
 
         Returns:
             Tuple of (lower_bound, upper_bound) arrays with
@@ -495,14 +653,45 @@ class ConformalPredictor:
                 if point_predictions.shape[1] > 1
                 else point_predictions.ravel()
             )
-
-        if self.symmetric:
-            lower = point_predictions - self._q_hat
-            upper = point_predictions + self._q_hat
+        
+        n_test = len(point_predictions)
+        lower = np.zeros(n_test)
+        upper = np.zeros(n_test)
+        
+        # M-13: Stratified conformal intervals
+        if self._stratified and missingness_rates is not None:
+            # Assign each test sample to a stratum
+            test_strata = self._assign_to_strata(missingness_rates)
+            
+            for stratum_id in range(self.n_strata):
+                stratum_mask = test_strata == stratum_id
+                if not stratum_mask.any():
+                    continue
+                
+                # Get stratum-specific quantiles
+                if stratum_id in self._stratum_quantiles:
+                    q_lower_s, q_upper_s = self._stratum_quantiles[stratum_id]
+                else:
+                    # Fallback to global quantiles if stratum not calibrated
+                    q_lower_s, q_upper_s = self._q_lower, self._q_upper
+                
+                if self.symmetric:
+                    q_s = (q_upper_s - q_lower_s) / 2.0 if q_lower_s is not None else q_upper_s
+                    lower[stratum_mask] = point_predictions[stratum_mask] - q_s
+                    upper[stratum_mask] = point_predictions[stratum_mask] + q_s
+                else:
+                    lower[stratum_mask] = point_predictions[stratum_mask] + q_lower_s
+                    upper[stratum_mask] = point_predictions[stratum_mask] + q_upper_s
+        
         else:
-            # Asymmetric intervals
-            lower = point_predictions + self._q_lower  # q_lower is negative
-            upper = point_predictions + self._q_upper
+            # Standard (unstratified) intervals
+            if self.symmetric:
+                lower = point_predictions - self._q_hat
+                upper = point_predictions + self._q_hat
+            else:
+                # Asymmetric intervals
+                lower = point_predictions + self._q_lower  # q_lower is negative
+                upper = point_predictions + self._q_upper
 
         return lower, upper
 

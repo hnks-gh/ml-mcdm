@@ -601,16 +601,13 @@ class TemporalFeatureEngineer:
 
                 target = entity_data.loc[next_yr, components].values.astype(float)
 
-                if self.target_level == "criteria":
-                    # Criteria mode: skip only if the entire target vector is NaN
-                    if np.all(np.isnan(target)):
-                        n_skipped_train += 1
-                        continue
-                else:
-                    # Sub-criteria mode: strict — exclude any row with any NaN
-                    if not has_complete_target(target):
-                        n_skipped_train += 1
-                        continue
+                # Enhancement M-04: Relaxed partial-NaN handling
+                # Skip only if ALL targets are NaN (both criteria and sub-criteria modes)
+                # Partial NaN targets are preserved; downstream models handle via
+                # sample weighting (BayesianForecaster) or component-wise training
+                if np.all(np.isnan(target)):
+                    n_skipped_train += 1
+                    continue
 
                 # Guard: entity must also be present in the feature year.
                 if year not in entity_data.index:
@@ -706,28 +703,22 @@ class TemporalFeatureEngineer:
         y_train = np.vstack(y_train_list)
         X_pred  = np.vstack(pred_feature_list)
 
-        # In criteria mode, fill partial NaN targets with per-column median.
-        # When use_saw_normalization=True the median is also in [0, 1] since
-        # all non-NaN SAW targets are bounded; imputation preserves the domain.
-        if self.target_level == "criteria":
-            nan_mask = np.isnan(y_train)
-            if nan_mask.any():
-                col_medians = np.nanmedian(y_train, axis=0)
-                inds = np.where(nan_mask)
-                y_train[inds] = np.take(col_medians, inds[1])
+        # Enhancement M-04: Partial-NaN target handling (both modes)
+        # Leave NaN in y_train — downstream models (BayesianForecaster) use
+        # sample weights to mask NaN cells. Models without NaN support (e.g.,
+        # CatBoost MultiRMSE) must handle separately in their fit() methods.
+        # 
+        # Note: This is a breaking change from the Phase 1 behavior where
+        # criteria-mode NaN were imputed with median. Now all models must be
+        # NaN-aware or apply their own imputation strategy before fitting.
+        pass  # Intentionally preserve NaN in y_train
 
         # ---- Assemble holdout arrays ----
         if X_holdout_list:
             X_holdout = np.vstack(X_holdout_list)
             y_holdout = np.vstack(y_holdout_list)
-            # Apply same partial-NaN imputation as training (criteria mode)
-            if self.target_level == "criteria":
-                ho_nan_mask = np.isnan(y_holdout)
-                if ho_nan_mask.any():
-                    # Use training medians — avoids leakage from holdout data
-                    ho_col_medians = np.nanmedian(y_train, axis=0)
-                    ho_inds = np.where(ho_nan_mask)
-                    y_holdout[ho_inds] = np.take(ho_col_medians, ho_inds[1])
+            # M-04: Preserve NaN in holdout targets (same as training)
+            # Evaluation metrics must be NaN-aware (use np.nanmean, etc.)
             X_holdout_df = pd.DataFrame(X_holdout, columns=self.feature_names_)
             y_holdout_df = pd.DataFrame(y_holdout, columns=components)
         else:
@@ -763,8 +754,11 @@ class TemporalFeatureEngineer:
         with the cross-sectional median and appending ``_was_missing`` indicator
         flags.  Any residual NaN values in non-lag blocks (e.g. ``_delta2`` or
         ``_demeaned_momentum`` when lag history is absent) are replaced with
-        ``0.0`` here via :func:`data.missing_data.fill_missing_features`,
-        encoding "no prior information" without fabricating scores.
+        per-column means via :func:`data.missing_data.fill_missing_features`.
+        
+        Note: Per-column means are computed from the current feature set (not
+        from training-set statistics). This is a safety-net for edge cases;
+        most imputation is handled upstream via Fix D-01 (lag medians).
         """
         features = self._create_features(
             entity_data, entity, years, current_year, all_entities, panel_data

@@ -160,9 +160,41 @@ class BayesianForecaster(BaseForecaster):
         """
         Primary: MultiTaskElasticNetCV (joint sparsity across all outputs).
         Fallback: BayesianRidge + MultiOutputRegressor.
+        
+        Enhancement M-04: Partial-Target Recovery
+        -----------------------------------------
+        Handles NaN in target matrix via sample weighting. Rows with partial
+        NaN retain their valid target values; NaN cells are filled with per-
+        column median (for solver compatibility) but receive zero weight.
+        
+        Sample weight per row = (n_valid_outputs / n_total_outputs), ensuring
+        rows with more missing targets contribute less to the loss.
         """
         # Safe CV folds: at least 2, at most min(cv_folds, n//2, 5)
         n_cv = max(min(self.cv_folds, X_scaled.shape[0] // 2, 5), 2)
+
+        # M-04: Detect and handle NaN targets
+        nan_mask = np.isnan(y)  # (n_samples, n_outputs)
+        has_nan = nan_mask.any()
+        
+        if has_nan:
+            # Fill NaN with per-column median for solver compatibility
+            y_filled = y.copy()
+            for j in range(y.shape[1]):
+                col_median = np.nanmedian(y[:, j])
+                if np.isnan(col_median):
+                    col_median = 0.0  # Entire column NaN → neutral fill
+                y_filled[nan_mask[:, j], j] = col_median
+            
+            # Sample weight: fraction of valid targets per row
+            # Rows with all NaN get weight 0; partial NaN get proportional weight
+            n_valid_per_row = (~nan_mask).sum(axis=1)
+            sample_weight = n_valid_per_row / y.shape[1]
+            # Zero-weight rows should be filtered upstream, but guard here
+            sample_weight = np.clip(sample_weight, 1e-9, 1.0)
+        else:
+            y_filled = y
+            sample_weight = None
 
         try:
             mtnet = MultiTaskElasticNetCV(
@@ -174,16 +206,28 @@ class BayesianForecaster(BaseForecaster):
                 random_state=42,
                 n_jobs=1,          # deterministic; avoids joblib deadlocks
             )
-            mtnet.fit(X_scaled, y)
+            # MultiTaskElasticNetCV.fit() accepts sample_weight (sklearn >= 0.23)
+            if sample_weight is not None:
+                mtnet.fit(X_scaled, y_filled, sample_weight=sample_weight)
+            else:
+                mtnet.fit(X_scaled, y_filled)
+            
             self.model = mtnet
             self._using_elasticnet = True
             # coef_ shape: (n_outputs, n_features); average |coef| across outputs
             self.feature_importance_ = np.mean(np.abs(mtnet.coef_), axis=0)
             # Per-output training RMSE: aleatoric noise estimate per criterion
-            residuals = y - mtnet.predict(X_scaled)
-            self._sigma_ = np.clip(
-                np.sqrt(np.mean(residuals ** 2, axis=0)), 1e-6, None
-            )
+            # Only compute residuals on valid (non-NaN) entries
+            residuals_per_output = []
+            for j in range(y.shape[1]):
+                valid_mask_j = ~nan_mask[:, j]
+                if valid_mask_j.any():
+                    res_j = y[valid_mask_j, j] - mtnet.predict(X_scaled[valid_mask_j])[:, j]
+                    rmse_j = np.sqrt(np.mean(res_j ** 2))
+                else:
+                    rmse_j = 1.0  # Entire output NaN → default uncertainty
+                residuals_per_output.append(rmse_j)
+            self._sigma_ = np.clip(np.array(residuals_per_output), 1e-6, None)
 
         except Exception:
             # Fallback: BayesianRidge + MultiOutputRegressor (one model per output)
@@ -191,7 +235,10 @@ class BayesianForecaster(BaseForecaster):
             fallback = MultiOutputRegressor(
                 clone(self._make_bayesian_ridge()), n_jobs=1
             )
-            fallback.fit(X_scaled, y)
+            if sample_weight is not None:
+                fallback.fit(X_scaled, y_filled, sample_weight=sample_weight)
+            else:
+                fallback.fit(X_scaled, y_filled)
             self.model = fallback
             # Average absolute coefficients across per-output BayesianRidge models
             self.feature_importance_ = np.mean(

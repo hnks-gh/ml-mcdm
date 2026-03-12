@@ -101,7 +101,7 @@ class PanelFeatureReducer:
         n_pls_components: Optional[int] = None,
         mi_prefilter: bool = True,
         mi_k: Union[int, str] = 'half',
-        use_mice_imputation: bool = False,
+        use_mice_imputation: bool = True,  # M-02: Activated by default
         random_state: int = 42,
         mode: Literal['pls', 'threshold_only', 'pca'] = 'pca',
     ):
@@ -160,13 +160,29 @@ class PanelFeatureReducer:
             else [f"f{i}" for i in range(n_features)]
         )
 
-        # Optional MICE imputation (P-04) — only if NaN present
+        # M-02/M-08: Enhanced MICE imputation with MissForest configuration
+        # Uses ExtraTreesRegressor (not RandomForest) for better handling of
+        # correlated governance features. ExtraTrees provides lower variance
+        # predictions due to extreme randomization of splits.
+        # Enhanced parameters: max_iter=20 for convergence, add_indicator=True
+        # for explicit missingness flags, n_nearest_features limits to most
+        # informationally relevant neighbors.
         if self.use_mice_imputation and np.isnan(X).any():
+            from sklearn.ensemble import ExtraTreesRegressor
             self._imputer = IterativeImputer(
-                estimator=RandomForestRegressor(
-                    n_estimators=50, random_state=self.random_state
+                estimator=ExtraTreesRegressor(
+                    n_estimators=100,      # stability: was 50 in original MICE
+                    max_depth=6,           # avoid overfitting on N≈756
+                    min_samples_leaf=3,    # M-08: conservative for N=63 provinces
+                    max_features='sqrt',   # reduces tree correlation
+                    bootstrap=True,
+                    random_state=self.random_state,
                 ),
-                max_iter=5,
+                max_iter=20,               # M-08: convergence-based (was 5, Phase 1: 15)
+                tol=1e-3,                  # convergence tolerance (sklearn default, now explicit)
+                initial_strategy='median', # robust to outliers
+                n_nearest_features=min(20, n_features),  # efficiency
+                add_indicator=True,        # append missingness flags
                 random_state=self.random_state,
             )
             X = self._imputer.fit_transform(X)
