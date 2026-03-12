@@ -222,7 +222,13 @@ class BayesianForecaster(BaseForecaster):
             for j in range(y.shape[1]):
                 valid_mask_j = ~nan_mask[:, j]
                 if valid_mask_j.any():
-                    res_j = y[valid_mask_j, j] - mtnet.predict(X_scaled[valid_mask_j])[:, j]
+                    pred_j = mtnet.predict(X_scaled[valid_mask_j])
+                    # Ensure pred_j is 2D (n_samples, n_outputs)
+                    if pred_j.ndim == 1:
+                        pred_j = pred_j.reshape(-1, 1)
+                    # Get column j safely
+                    col_idx = min(j, pred_j.shape[1] - 1)
+                    res_j = y[valid_mask_j, j] - pred_j[:, col_idx]
                     rmse_j = np.sqrt(np.mean(res_j ** 2))
                 else:
                     rmse_j = 1.0  # Entire output NaN → default uncertainty

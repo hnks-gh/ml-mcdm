@@ -284,7 +284,10 @@ class CatBoostForecaster(BaseForecaster):
         if self.model is None:
             return np.tile(self._const_vals_, (n_test, 1))
         pred = self.model.predict(X)
-        if pred.ndim == 1:
+        # Handle 0-D scalars and ensure 2-D shape
+        if np.ndim(pred) == 0:
+            pred = np.asarray([[pred[()]]] * n_test)
+        elif pred.ndim == 1:
             pred = pred.reshape(-1, 1)
         # Reconstruct full output array when some columns were held constant.
         if self._const_mask_ is not None and self._const_mask_.any():
@@ -512,7 +515,10 @@ class LightGBMForecaster(BaseForecaster):
         if self.model is None:
             return np.tile(self._const_vals_, (n_test, 1))
         pred = self.model.predict(X)
-        if pred.ndim == 1:
+        # Handle 0-D scalars and ensure 2-D shape
+        if np.ndim(pred) == 0:
+            pred = np.asarray([[pred[()]]] * n_test)
+        elif pred.ndim == 1:
             pred = pred.reshape(-1, 1)
         # Reconstruct full output array when some columns were held constant.
         if self._const_mask_ is not None and self._const_mask_.any():

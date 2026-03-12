@@ -492,6 +492,9 @@ class SuperLearner:
                     pred = model_copy.predict(X_val_cv)
                     if pred.ndim == 1:
                         pred = pred.reshape(-1, 1)
+                    elif np.ndim(pred) == 0:
+                        # Handle 0-D scalar case
+                        pred = np.asarray([[pred[()]]] * X_val_cv.shape[0])
 
                     # Store OOF predictions
                     for out_col in range(self._n_outputs):

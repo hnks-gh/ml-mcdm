@@ -465,7 +465,13 @@ class PanelVARForecaster(BaseForecaster):
             scaler = self.scalers_[col]
             model = self.models_[col]
             X_scaled = scaler.transform(X_lagged)
-            predictions[:, col] = model.predict(X_scaled)
+            pred_col = model.predict(X_scaled)
+            # Ensure pred_col is 1D array (handles 0-D scalars and higher dims)
+            if np.ndim(pred_col) == 0:
+                pred_col = np.asarray([pred_col])
+            elif np.ndim(pred_col) != 1:
+                pred_col = pred_col.ravel()
+            predictions[:, col] = pred_col
 
         if self._n_outputs == 1:
             return predictions.ravel()

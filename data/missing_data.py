@@ -462,8 +462,16 @@ def fill_missing_features(
         col_means = np.nanmean(arr, axis=0)
         fallback_values = np.where(np.isnan(col_means), 0.0, col_means)
 
+    # Ensure fallback_values is at least 1D (handle 0-D scalar case)
+    fallback_values = np.atleast_1d(fallback_values)
+
     # Broadcast fallback_values across rows and fill NaN positions
-    filled = np.where(nan_mask, fallback_values[np.newaxis, :], arr)
+    if arr.ndim == 1:
+        # 1D array case: simple replacement
+        filled = np.where(nan_mask, fallback_values[0], arr)
+    else:
+        # 2D array case: broadcast across rows
+        filled = np.where(nan_mask, fallback_values[np.newaxis, :], arr)
 
     if return_mask:
         return filled, nan_mask
