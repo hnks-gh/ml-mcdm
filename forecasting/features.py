@@ -65,10 +65,13 @@ Phase 1 Enhancement Summary
 
 import numpy as np
 import pandas as pd
+import logging
 from scipy import stats as _scipy_stats
 from typing import Dict, List, Optional, Tuple
 
 from data.missing_data import fill_missing_features, has_complete_target
+
+logger = logging.getLogger('ml_mcdm')
 
 # ---------------------------------------------------------------------------
 # Vietnam province → geographic region mapping (5 regions, 0-indexed)
@@ -467,8 +470,8 @@ class TemporalFeatureEngineer:
             for sc, count in sorted(sc_target_year_valid.items()):
                 total = len(train_feature_years)
                 if count < total:
-                    print(
-                        f"    {sc}: {count}/{total} valid target years "
+                    logger.debug(
+                        f"{sc}: {count}/{total} valid target years "
                         f"({total - count} missing → excluded from training)"
                     )
 
@@ -698,13 +701,13 @@ class TemporalFeatureEngineer:
             pred_entities.append(entity)
 
         if n_skipped_train > 0:
-            print(
-                f"    Forecasting: {n_skipped_train} training observations "
+            logger.info(
+                f"Forecasting: {n_skipped_train} training observations "
                 f"excluded (missing target values or inactive province-year pairs)"
             )
         if n_skipped_pred > 0:
-            print(
-                f"    Forecasting: {n_skipped_pred} province(s) excluded "
+            logger.info(
+                f"Forecasting: {n_skipped_pred} province(s) excluded "
                 f"from prediction (not in target-year active set)"
             )
 

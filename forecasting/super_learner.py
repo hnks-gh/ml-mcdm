@@ -44,10 +44,13 @@ References:
 
 import numpy as np
 import pandas as pd
+import logging
 from typing import Dict, List, Optional, Tuple, Any
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.linear_model import ElasticNetCV, RidgeCV, Ridge
 from sklearn.metrics import r2_score, mean_squared_error
+
+logger = logging.getLogger('ml_mcdm')
 from sklearn.preprocessing import StandardScaler
 from scipy.optimize import nnls
 import copy
@@ -463,8 +466,9 @@ class SuperLearner:
         n_samples = X.shape[0]
         n_models = len(self.base_models)
 
-        if self.verbose:
-            print(f"  Super Learner: {n_models} base models, {self.n_cv_folds} CV folds")
+        logger.info(
+            f"Super Learner: {n_models} base models, {self.n_cv_folds} CV folds"
+        )
 
         # ============================================================
         # Stage 1: Generate out-of-fold predictions
@@ -633,8 +637,7 @@ class SuperLearner:
                     self._cv_scores_per_criterion_[name].append(fold_rmse_per_criterion)
 
                 except Exception as e:
-                    if self.verbose:
-                        print(f"    Warning: {name} failed on fold {fold_idx}: {e}")
+                    logger.warning(f"{name} failed on fold {fold_idx}: {e}")
                     self._cv_scores[name].append(np.nan)
 
         # Compute OOF R² for each model (per-model valid mask, not joint)
@@ -680,8 +683,7 @@ class SuperLearner:
         )
         if max_valid_per_model < 5:
             # Fallback: use simple averaging if not enough OOF data
-            if self.verbose:
-                print("  Warning: Not enough OOF data, falling back to weighted avg")
+            logger.warning("Not enough OOF data, falling back to weighted avg")
             self._meta_weights = self._fallback_weights()
         else:
             # Pass full OOF matrix; _fit_meta_learner handles NaN
@@ -777,18 +779,16 @@ class SuperLearner:
                 self._fit_model(fitted_model, X_m, _ry_clean, _rei_clean)
                 self._fitted_base_models[name] = fitted_model
             except Exception as e:
-                if self.verbose:
-                    print(f"    Warning: {name} failed on full data: {e}")
+                logger.warning(f"{name} failed on full data: {e}")
 
         self._fitted = True
 
-        if self.verbose:
-            print("  Super Learner meta-weights:")
-            for name, w in sorted(
-                self._meta_weights.items(), key=lambda x: x[1], reverse=True
-            ):
-                bar = "█" * int(w * 30)
-                print(f"    {name:25s}: {w:.4f} {bar}")
+        logger.info("Super Learner meta-weights:")
+        for name, w in sorted(
+            self._meta_weights.items(), key=lambda x: x[1], reverse=True
+        ):
+            bar = "█" * int(w * 30)
+            logger.info(f"  {name:25s}: {w:.4f} {bar}")
 
         return self
 

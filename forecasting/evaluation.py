@@ -31,6 +31,7 @@ References:
 
 import numpy as np
 import pandas as pd
+import logging
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple, Any, Callable
 from sklearn.metrics import (
@@ -44,6 +45,8 @@ from .super_learner import _WalkForwardYearlySplit
 import copy
 import warnings
 import functools
+
+logger = logging.getLogger('ml_mcdm')
 
 
 def _silence_warnings(func):
@@ -382,20 +385,17 @@ class ForecastEvaluator:
         results = {}
 
         # Cross-validation evaluation
-        if self.verbose:
-            print("  Evaluating: Cross-validation...")
+        logger.info("Evaluating: Cross-validation...")
         results["cv"] = self._cross_validate(model, X, y,
                                               year_labels=year_labels)
 
         # Holdout evaluation
         if X_test is not None and y_test is not None:
-            if self.verbose:
-                print("  Evaluating: Holdout test set...")
+            logger.info("Evaluating: Holdout test set...")
             results["holdout"] = self._evaluate_holdout(model, X, y, X_test, y_test)
 
         # Residual diagnostics
-        if self.verbose:
-            print("  Evaluating: Residual diagnostics...")
+        logger.info("Evaluating: Residual diagnostics...")
         results["diagnostics"] = self._residual_diagnostics(
             model, X, y, entity_indices=entity_indices)
 
@@ -449,8 +449,7 @@ class ForecastEvaluator:
 
                 fold_results.append(fold_metrics)
             except Exception as e:
-                if self.verbose:
-                    print(f"    Fold {fold_idx} failed: {e}")
+                logger.warning(f"Fold {fold_idx} failed: {e}")
 
         # Aggregate across folds
         if not fold_results:

@@ -42,12 +42,15 @@ Reliability
 
 import numpy as np
 import pandas as pd
+import logging
 from typing import Dict, List, Optional, Tuple, Union, Any
 from dataclasses import dataclass, field
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 import warnings
 import copy
+
+logger = logging.getLogger('ml_mcdm')
 
 from .base import BaseForecaster
 from .gradient_boosting import CatBoostForecaster, LightGBMForecaster
@@ -759,8 +762,7 @@ class UnifiedForecaster:
             import optuna
             optuna.logging.set_verbosity(optuna.logging.WARNING)
         except ImportError:
-            if self.verbose:
-                print("  HP tuning skipped (optuna not installed).")
+            logger.warning("HP tuning skipped (optuna not installed).")
             return
 
         n_trials = (
@@ -770,11 +772,10 @@ class UnifiedForecaster:
         X_tree      = self.X_train_tree_
         y           = self.y_train_.values
         year_labels = self._year_labels_arr_
-        if self.verbose:
-            print(
-                f"  Phase 4 (E-09): Panel-safe Optuna HP search "
-                f"({n_trials} trials × 2 models, MedianPruner)..."
-            )
+        logger.info(
+            f"Phase 4 (E-09): Panel-safe Optuna HP search "
+            f"({n_trials} trials × 2 models, MedianPruner)..."
+        )
 
         def _cv_objective(trial, forecaster_class, model_key):
             """Build params from trial, run walk-forward CV, report per-fold RMSE."""
@@ -847,10 +848,11 @@ class UnifiedForecaster:
             self._tuned_gb_params_[name] = study.best_params
             pruned = len([t for t in study.trials
                           if t.state == optuna.trial.TrialState.PRUNED])
-            if self.verbose:
-                print(f"    {name} best HPs: {study.best_params} "
-                      f"(best RMSE={study.best_value:.4f}, "
-                      f"{pruned}/{n_trials} trials pruned)")
+            logger.info(
+                f"  {name} best HPs: {study.best_params} "
+                f"(best RMSE={study.best_value:.4f}, "
+                f"{pruned}/{n_trials} trials pruned)"
+            )
 
     def _create_models(self) -> Dict[str, BaseForecaster]:
         """
@@ -1069,8 +1071,7 @@ class UnifiedForecaster:
         entity_info_     Row-level metadata (``entity_index``, ``year_label``).
         holdout_year_    Calendar year held out; ``None`` if insufficient history.
         """
-        if self.verbose:
-            print("  Stage 1: Engineering temporal features...")
+        logger.info("Stage 1: Engineering temporal features...")
 
         self._panel_data_ = panel_data
         self._target_year_ = target_year
@@ -1086,6 +1087,8 @@ class UnifiedForecaster:
             _holdout_year = max(_train_years) if _train_years else None
         self.holdout_year_ = _holdout_year
 
+        logger.debug(f"  Target year: {target_year}, Holdout year: {_holdout_year}")
+
         X_train, y_train, X_pred, entity_info, X_holdout, y_holdout = (
             self.feature_engineer_.fit_transform(
                 panel_data,
@@ -1093,6 +1096,12 @@ class UnifiedForecaster:
                 use_saw_normalization=self.use_saw_targets,
                 holdout_year=_holdout_year,
             )
+        )
+
+        logger.info(
+            f"  Features engineered: "
+            f"X_train={X_train.shape}, y_train={y_train.shape}, "
+            f"X_pred={X_pred.shape}"
         )
 
         # ── Public stage outputs ─────────────────────────────────────────
@@ -1132,14 +1141,12 @@ class UnifiedForecaster:
                 self.y_holdout_ = pd.DataFrame(
                     _y_ho_t, index=y_holdout.index, columns=y_holdout.columns
                 )
-            if self.verbose:
-                _t_min = float(self.y_train_.values.min())
-                _t_max = float(self.y_train_.values.max())
-                print(
-                    f"    Target transform '{_tt_mode}': "
-                    f"y_train ∈ [{_t_min:.4f}, {_t_max:.4f}] "
-                    f"(transformed space)"
-                )
+            _t_min = float(self.y_train_.values.min())
+            _t_max = float(self.y_train_.values.max())
+            logger.info(
+                f"  Target transform '{_tt_mode}': "
+                f"y_train ∈ [{_t_min:.4f}, {_t_max:.4f}]"
+            )
         else:
             # identity: still call fit_transform for consistent state
             self.target_transformer_.fit_transform(y_train.values)
@@ -1221,8 +1228,7 @@ class UnifiedForecaster:
         reducer_pca_     Fitted PLS reducer (attribute name kept for compat).
         reducer_tree_    Fitted threshold-only reducer.
         """
-        if self.verbose:
-            print("  Stage 2: Two-track dimensionality reduction...")
+        logger.info("Stage 2: Two-track dimensionality reduction...")
 
         X_arr = self.X_train_.values
         y_arr = self.y_train_.values
@@ -1244,12 +1250,11 @@ class UnifiedForecaster:
                 self._entity_indices_,
                 self._year_labels_arr_,
             )
-            if self.verbose:
-                print(
-                    f"    PanelMICE: {self._panel_mice_.nan_before_} NaN → "
-                    f"{self._panel_mice_.nan_after_} "
-                    f"({self._panel_mice_.nan_reduction_pct:.1f}% eliminated)"
-                )
+            logger.info(
+                f"  PanelMICE: {self._panel_mice_.nan_before_} NaN → "
+                f"{self._panel_mice_.nan_after_} "
+                f"({self._panel_mice_.nan_reduction_pct:.1f}% eliminated)"
+            )
             # Apply transform() to the prediction feature matrix (target year,
             # no hold-out data available so only Phase 1+2+3 transform is used).
             if self._pred_entity_indices_ is not None:
@@ -1324,9 +1329,12 @@ class UnifiedForecaster:
             'NAM':              self.X_pred_tree_,
         }
 
-        if self.verbose:
-            print(f"    PLS track:      {self.reducer_pca_.get_summary()}")
-            print(f"    Threshold-only: {self.reducer_tree_.get_summary()}")
+        logger.info(
+            f"  PLS track:      {self.reducer_pca_.get_summary()}"
+        )
+        logger.info(
+            f"  Threshold-only: {self.reducer_tree_.get_summary()}"
+        )
 
     def stage2b_augment_data(self) -> None:
         """Stage 2b (E-06): Conditional synthetic data augmentation.
@@ -1362,15 +1370,13 @@ class UnifiedForecaster:
             or self._entity_indices_ is None
             or self._year_labels_arr_ is None
         ):
-            if self.verbose:
-                print("  Stage 2b: Augmentation skipped — stage2 not complete.")
+            logger.info("Stage 2b: Augmentation skipped — stage2 not complete.")
             return
 
-        if self.verbose:
-            print(
-                "  Stage 2b: Conditional panel augmentation (Gaussian copula + "
-                "VAR(1))..."
-            )
+        logger.info(
+            "Stage 2b: Conditional panel augmentation (Gaussian copula + "
+            "VAR(1))..."
+        )
 
         y_arr = self.y_train_.values
         threshold = float(
@@ -1465,18 +1471,16 @@ class UnifiedForecaster:
                           ``(n_train, n_components)`` array or ``None``.
         _cv_scores_       Per-model cross-validation R² score lists.
         """
-        if self.verbose:
-            print("  Stage 3: Training Super Learner meta-ensemble...")
+        logger.info("Stage 3: Training Super Learner meta-ensemble...")
 
         # Phase 4: conditionally run one-time Optuna HP search for GB models
         if self._config is not None and getattr(self._config, 'auto_tune_gb', False):
             self._tune_gb_hyperparameters()
 
         self.models_ = self._create_models()
-        if self.verbose:
-            print(f"    {len(self.models_)} diverse base models:")
-            for name in self.models_:
-                print(f"    - {name}")
+        logger.info(f"  {len(self.models_)} base models created:")
+        for name in self.models_:
+            logger.debug(f"    - {name}")
 
         y_arr = self.y_train_.values
         _n_train = len(self.X_train_tree_)
@@ -1572,8 +1576,7 @@ class UnifiedForecaster:
                 verbose=self.verbose,
             )
             self._shift_detector_ = _shift_det
-            if self.verbose:
-                print("    Covariate shift detection enabled (E-08, MMD² α=0.05)")
+            logger.info("  Covariate shift detection enabled (E-08, MMD² α=0.05)")
 
         self.super_learner_.fit(
             _X_cv_tree,
@@ -1609,6 +1612,8 @@ class UnifiedForecaster:
         self._oof_conformal_residuals_ = (
             self.super_learner_._oof_conformal_residuals_
         )
+
+        logger.info(f"  Super Learner fitted with CV scores computed")
 
     def stage3b_incremental_update(
         self,
@@ -1669,8 +1674,7 @@ class UnifiedForecaster:
                 "stage3b_incremental_update() requires a fitted SuperLearner. "
                 "Call stage3_fit_base_models() first."
             )
-        if self.verbose:
-            print("  Stage 3b: Incremental ensemble update (E-10)...")
+        logger.info("Stage 3b: Incremental ensemble update (E-10)...")
 
         strategy = str(
             getattr(self._config, 'incremental_update_strategy', 'auto')
@@ -1719,7 +1723,7 @@ class UnifiedForecaster:
         )
 
         if self.verbose:
-            print("    Incremental update complete — meta-weights re-calibrated.")
+            logger.info("  Incremental update complete — meta-weights re-calibrated.")
 
     def stage4_fit_meta_learner(self) -> None:
         """Stage 4: Extract meta-weights and generate ensemble predictions.
@@ -1751,10 +1755,10 @@ class UnifiedForecaster:
         _intervals_         Dict ``'lower'/'upper'`` with fallback Gaussian
                             intervals (DataFrames matching ``_pred_df_``).
         """
-        if self.verbose:
-            print("  Stage 4: Extracting meta-weights and generating predictions...")
+        logger.info("Stage 4: Extracting meta-weights and generating predictions...")
 
         self.model_weights_ = self.super_learner_.get_meta_weights()
+        logger.debug(f"  Meta-weights: {self.model_weights_}")
 
         predictions_arr, uncertainty_arr = (
             self.super_learner_.predict_with_uncertainty(
@@ -1975,8 +1979,7 @@ class UnifiedForecaster:
 
         if _use_conformal:
             # ── Conformal prediction path ─────────────────────────────────
-            if self.verbose:
-                print("  Stage 5: Per-component conformal prediction calibration...")
+            logger.info("Stage 5: Per-component conformal prediction calibration...")
 
             class _SingleOutputWrapper:
                 """Wrap a multi-output model to expose a single column."""
@@ -2093,9 +2096,8 @@ class UnifiedForecaster:
                     )
 
             except Exception as e:
-                if self.verbose:
-                    print(f"    Warning: Conformal calibration failed: {e}")
-                    print("    Using standard Gaussian intervals as fallback.")
+                logger.warning(f"Conformal calibration failed: {e}")
+                logger.warning("Using standard Gaussian intervals as fallback.")
                 self.conformal_predictor_ = None
 
         self.prediction_intervals_ = intervals
@@ -2133,8 +2135,7 @@ class UnifiedForecaster:
         _model_performance_   Per-model CV R² dict.
         _training_info_       Training-info dict for UnifiedForecastResult.
         """
-        if self.verbose:
-            print("  Stage 6: Evaluation and feature importance...")
+        logger.info("Stage 6: Evaluation and feature importance...")
 
         n_comps = self.y_train_.shape[1]
         y_arr = self.y_train_.values
@@ -2142,8 +2143,7 @@ class UnifiedForecaster:
         # ── Stage 6a: Genuine holdout model comparison ────────────────────
         self.model_comparison_ = None
         if not self.X_holdout_.empty and len(self.y_holdout_) > 0:
-            if self.verbose:
-                print("    Stage 6a: Evaluating all models on genuine holdout set...")
+            logger.info("  Stage 6a: Evaluating all models on genuine holdout set...")
             try:
                 _X_ho_arr  = self.X_holdout_.values
                 _X_ho_pca  = self.reducer_pca_.transform(_X_ho_arr)
@@ -2162,11 +2162,9 @@ class UnifiedForecaster:
                         per_model_X_pred=_per_model_X_holdout,
                     )
                 except Exception as _ens_ho_exc:
-                    if self.verbose:
-                        print(
-                            f"      Ensemble holdout inference failed: "
-                            f"{_ens_ho_exc}"
-                        )
+                    logger.warning(
+                        f"Ensemble holdout inference failed: {_ens_ho_exc}"
+                    )
                     _ens_ho_arr = np.full(
                         (len(_X_ho_arr), n_comps), np.nan
                     )
@@ -2181,7 +2179,7 @@ class UnifiedForecaster:
                     component_names=self.y_train_.columns.tolist(),
                     target_entities=list(self.X_pred_.index),
                 )
-                if self.verbose and self.model_comparison_:
+                if self.model_comparison_:
                     _best_mc = next(
                         (r for r in self.model_comparison_ if r.is_best), None
                     )
@@ -2196,27 +2194,25 @@ class UnifiedForecaster:
                     )
                     if _best_mc and _ens_mc and _base_mc:
                         if _best_mc.model_name == 'Ensemble':
-                            print(
-                                f"      Best model: Ensemble "
+                            logger.info(
+                                f"  Best model: Ensemble "
                                 f"(R²={_best_mc.holdout_r2:.4f}) outperforms "
                                 f"best base model {_base_mc.model_name} "
                                 f"(R²={_base_mc.holdout_r2:.4f})"
                             )
                         else:
-                            print(
-                                f"      Best model: {_best_mc.model_name} "
+                            logger.info(
+                                f"  Best model: {_best_mc.model_name} "
                                 f"(R²={_best_mc.holdout_r2:.4f}) outperforms "
                                 f"Ensemble (R²={_ens_mc.holdout_r2:.4f})"
                             )
             except Exception as _cmp_exc:
-                if self.verbose:
-                    print(
-                        f"      Stage 6a failed: "
-                        f"{type(_cmp_exc).__name__}: {_cmp_exc}"
-                    )
-        elif self.verbose:
-            print(
-                "    Stage 6a: Skipped (no holdout data — "
+                logger.warning(
+                    f"Stage 6a failed: {type(_cmp_exc).__name__}: {_cmp_exc}"
+                )
+        else:
+            logger.info(
+                "Stage 6a: Skipped (no holdout data — "
                 "insufficient training history)."
             )
 
@@ -2588,8 +2584,9 @@ class UnifiedForecaster:
         """
         _mode = self.pipeline_mode
 
+        logger.info(f"Starting ML Forecasting for {target_year}...")
         if self.verbose:
-            print(f"Starting ML Forecasting for {target_year}...")
+            logger.debug(f"Pipeline mode: {_mode}")
 
         # ── evaluate_only: stages 5–7 on an already-fitted forecaster ──────
         if _mode == 'evaluate_only':
@@ -2609,11 +2606,10 @@ class UnifiedForecaster:
         self.stage1_engineer_features(panel_data, target_year)
 
         if _mode == 'features_only':
-            if self.verbose:
-                print(
-                    "  pipeline_mode='features_only': stopping after Stage 2 "
-                    "(feature inspection only — no model fitting)."
-                )
+            logger.info(
+                "Pipeline mode='features_only': stopping after Stage 2 "
+                "(feature inspection only — no model fitting)."
+            )
             self.stage2_reduce_features()
             return None
 
@@ -2629,11 +2625,10 @@ class UnifiedForecaster:
         self.stage4_fit_meta_learner()
 
         if _mode == 'fit_only':
-            if self.verbose:
-                print(
-                    "  pipeline_mode='fit_only': stopping after Stage 4 "
-                    "(no interval estimation or evaluation)."
-                )
+            logger.info(
+                "Pipeline mode='fit_only': stopping after Stage 4 "
+                "(no interval estimation or evaluation)."
+            )
             return None
 
         # ── Stages 5–7: Intervals + evaluation + composite ────────────────
@@ -2641,11 +2636,9 @@ class UnifiedForecaster:
         self.stage6_evaluate_all()
         self.stage7_postprocess()
 
-        if self.verbose:
-            print(
-                f"  Forecasting complete. "
-                f"{len(self.model_weights_)} models combined."
-            )
+        logger.info(
+            f"Forecasting complete. {len(self.model_weights_)} models combined."
+        )
 
         return self._assemble_result()
 
