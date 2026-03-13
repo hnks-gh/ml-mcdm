@@ -1,0 +1,528 @@
+# -*- coding: utf-8 -*-
+"""
+Incremental Ensemble Updater (E-10)
+=====================================
+
+After the SuperLearner is trained on years 2012–2023 and validated on 2024,
+this module performs a lightweight update to incorporate the 2024 observations
+before generating the 2025 forecast.  Two complementary strategies ensure
+that all available data is exploited for the final prediction.
+
+Strategies
+----------
+``'auto'`` (default)
+    Chooses the best strategy per model type:
+
+    * **CatBoost**: gradient continuation — load existing model via
+      ``init_model`` and continue boosting on new data (additional iterations
+      at a reduced learning-rate, preventing over-fitting to 2024).
+    * **LightGBM**: warm-start re-fit — set ``warm_start=True`` and add
+      ``n_estimators_increment`` additional rounds on new data.
+    * **BayesianForecaster / others**: full retrain on all available data
+      when ``X_all`` is supplied, otherwise fine-tune on new data.
+    * **PanelVAR**: Recursive Least Squares (RLS) closed-form update with
+      forgetting factor λ (default 0.95), or full retrain if insufficient
+      per-entity data for RLS.
+
+``'full_retrain'``
+    All base models refitted on ``(X_all, y_all)`` if provided; falls back
+    to new data only when ``X_all`` is ``None``.
+
+Meta-weight Update
+------------------
+After base model updates, predictions on the new observations are used to
+re-calibrate ensemble weights:
+
+    w_updated = (1 − γ) · w_prev  +  γ · w_new_calibration
+
+where γ=0.3 (configurable).  ``w_new_calibration`` is computed via NNLS on
+the new-year predictions, so the blend retains historical stability while
+absorbing the most recent signal.
+
+References
+----------
+Ljung & Söderström (1983). Theory and Practice of Recursive Identification.
+    MIT Press.
+"""
+from __future__ import annotations
+
+import copy
+import warnings
+from typing import Dict, Optional
+
+import numpy as np
+from scipy.optimize import nnls
+
+
+class IncrementalEnsembleUpdater:
+    """Online update of a fitted SuperLearner ensemble with new observations.
+
+    Primary use-case: update a 2012–2023 trained ensemble with 2024 data
+    prior to generating the 2025 forecast, exploiting 100% of available
+    history without re-running the full multi-fold training pipeline.
+
+    Parameters
+    ----------
+    strategy : {'auto', 'full_retrain'}
+        Update strategy per base model (see module docstring).
+    gamma : float
+        Blending weight for meta-weight calibration (default 0.3).
+        Higher γ → more weight on new calibration signal.
+    catboost_extra_iter : int
+        Additional CatBoost iterations during gradient continuation (E-10B).
+    catboost_lr_factor : float
+        Learning-rate multiplier for gradient continuation (< 1 to prevent
+        over-fitting to the new year, default 0.5).
+    lgbm_extra_iter : int
+        Additional LightGBM estimators during warm-start update.
+    rls_lambda : float
+        Forgetting factor for PanelVAR RLS update (0 < λ ≤ 1, default 0.95).
+        λ=1 → no forgetting (equal weight to all observations).
+    min_rls_obs : int
+        Minimum observations per entity for RLS; uses full retrain otherwise.
+    verbose : bool
+    """
+
+    def __init__(
+        self,
+        strategy: str = 'auto',
+        gamma: float = 0.3,
+        catboost_extra_iter: int = 50,
+        catboost_lr_factor: float = 0.5,
+        lgbm_extra_iter: int = 50,
+        rls_lambda: float = 0.95,
+        min_rls_obs: int = 5,
+        verbose: bool = True,
+    ):
+        self.strategy            = strategy
+        self.gamma               = float(np.clip(gamma, 0.0, 1.0))
+        self.catboost_extra_iter = catboost_extra_iter
+        self.catboost_lr_factor  = catboost_lr_factor
+        self.lgbm_extra_iter     = lgbm_extra_iter
+        self.rls_lambda          = rls_lambda
+        self.min_rls_obs         = min_rls_obs
+        self.verbose             = verbose
+
+        # Diagnostics populated after update()
+        self.updated_models_:   list = []
+        self.update_strategy_per_model_: Dict[str, str] = {}
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def update(
+        self,
+        ensemble,
+        X_new: np.ndarray,
+        y_new: np.ndarray,
+        entity_indices_new: Optional[np.ndarray] = None,
+        year_label_new: Optional[int] = None,
+        X_all: Optional[np.ndarray] = None,
+        y_all: Optional[np.ndarray] = None,
+        entity_indices_all: Optional[np.ndarray] = None,
+        per_model_X_new: Optional[Dict[str, np.ndarray]] = None,
+        per_model_X_all: Optional[Dict[str, np.ndarray]] = None,
+    ):
+        """Update base models and meta-weights with new observations.
+
+        Parameters
+        ----------
+        ensemble : SuperLearner (fitted)
+            The fitted ``SuperLearner`` instance to update in-place.
+            A *deep copy* is made so the original is never mutated.
+        X_new : ndarray, shape (n_new, n_features)
+            Features for the new year (e.g., 2024).
+        y_new : ndarray, shape (n_new,) or (n_new, n_outputs)
+            Targets for the new year.
+        entity_indices_new : ndarray, shape (n_new,), optional
+        year_label_new : int, optional
+            Calendar year of the new observations (for logging only).
+        X_all : ndarray, shape (n_all, n_features), optional
+            Full historical feature matrix (2012–2024) for ``full_retrain``.
+            When ``None``, models that cannot be incrementally updated are
+            updated on ``X_new`` only.
+        y_all : ndarray, shape (n_all, n_outputs), optional
+            Full historical targets (2012–2024).
+        entity_indices_all : ndarray, optional
+        per_model_X_new : dict, optional
+            Model-specific feature matrices for new year (mirrors
+            ``per_model_X`` in ``SuperLearner.fit``).
+        per_model_X_all : dict, optional
+            Model-specific feature matrices for all years.
+
+        Returns
+        -------
+        updated_ensemble : SuperLearner
+            Deep copy of ``ensemble`` with updated base models and
+            blended meta-weights.  Original ``ensemble`` is unchanged.
+        """
+        if y_new.ndim == 1:
+            y_new = y_new.reshape(-1, 1)
+        if y_all is not None and y_all.ndim == 1:
+            y_all = y_all.reshape(-1, 1)
+
+        # Work on a deep copy
+        sl = copy.deepcopy(ensemble)
+
+        yr_str = f" ({year_label_new})" if year_label_new is not None else ""
+        if self.verbose:
+            print(f"  IncrementalUpdater: updating ensemble with {len(X_new)}"
+                  f" new observations{yr_str}...")
+
+        # Step 1: Update each base model
+        for name, model in sl._fitted_base_models.items():
+            strat = self._model_strategy(name)
+            self.update_strategy_per_model_[name] = strat
+
+            # Select per-model feature matrices
+            X_m_new = (per_model_X_new[name] if per_model_X_new
+                       and name in per_model_X_new else X_new)
+            X_m_all = (per_model_X_all[name] if per_model_X_all
+                       and name in per_model_X_all
+                       else X_all)
+
+            try:
+                if strat == 'catboost_continuation':
+                    self._catboost_continuation(model, X_m_new, y_new,
+                                                X_m_all, y_all)
+                elif strat == 'lgbm_warmstart':
+                    self._lgbm_warmstart(model, X_m_new, y_new,
+                                         X_m_all, y_all,
+                                         entity_indices=entity_indices_new)
+                elif strat == 'panel_var_rls':
+                    self._panel_var_rls(model, X_m_new, y_new,
+                                        entity_indices_new, X_m_all,
+                                        y_all, entity_indices_all)
+                else:  # 'full_retrain' or fallback
+                    self._full_retrain(model, X_m_new, y_new,
+                                       entity_indices_new,
+                                       X_m_all, y_all, entity_indices_all)
+                self.updated_models_.append(name)
+            except Exception as exc:
+                if self.verbose:
+                    print(f"    [{name}] update failed ({exc}), skipping.")
+
+        # Step 2: Update meta-weights via calibration blend
+        self._update_meta_weights(sl, X_new, y_new, entity_indices_new,
+                                   per_model_X_new)
+
+        if self.verbose:
+            print(f"  Updated: {self.updated_models_}")
+
+        return sl
+
+    # ------------------------------------------------------------------
+    # Per-model update strategies
+    # ------------------------------------------------------------------
+
+    def _model_strategy(self, name: str) -> str:
+        """Map model name to update strategy when strategy='auto'."""
+        if self.strategy == 'full_retrain':
+            return 'full_retrain'
+        # 'auto' routing
+        name_lo = name.lower()
+        if 'catboost' in name_lo or 'gradientboost' in name_lo:
+            return 'catboost_continuation'
+        if 'lightgbm' in name_lo or 'lgbm' in name_lo:
+            return 'lgbm_warmstart'
+        if 'panelvar' in name_lo or 'panel_var' in name_lo:
+            return 'panel_var_rls'
+        return 'full_retrain'     # BayesianRidge, QuantileRF, NAM, others
+
+    def _catboost_continuation(
+        self,
+        model,
+        X_new: np.ndarray,
+        y_new: np.ndarray,
+        X_all: Optional[np.ndarray],
+        y_all: Optional[np.ndarray],
+    ) -> None:
+        """CatBoost gradient continuation from existing booster.
+
+        Uses CatBoost's ``init_model`` parameter to resume training for
+        ``catboost_extra_iter`` additional rounds at a reduced learning rate.
+        Trains on the new data only (or full history when X_all is provided)
+        so the booster sees a weight-adjusted loss that incorporates the
+        current residuals.
+
+        Falls back to full retrain if CatBoost API is unavailable.
+        """
+        cb_model = getattr(model, 'model', None)
+        if cb_model is None or not hasattr(cb_model, 'fit'):
+            self._full_retrain(model, X_new, y_new, None, X_all, y_all, None)
+            return
+
+        # Determine training data: prefer full history
+        X_fit  = np.vstack([X_all, X_new])   if X_all is not None else X_new
+        y_fit  = np.vstack([y_all, y_new])   if y_all is not None else y_new
+        if y_fit.ndim > 1 and y_fit.shape[1] == 1:
+            y_fit = y_fit.ravel()
+
+        try:
+            # Import CatBoostRegressor to create continuation model
+            from catboost import CatBoostRegressor as _CBR
+            n_out = y_fit.shape[1] if y_fit.ndim > 1 else 1
+            loss  = 'MultiRMSE' if n_out > 1 else 'RMSE'
+            cont_model = _CBR(
+                iterations      = self.catboost_extra_iter,
+                learning_rate   = max(
+                    cb_model.get_params().get('learning_rate', 0.05)
+                    * self.catboost_lr_factor, 1e-4
+                ),
+                depth           = cb_model.get_params().get('depth', 6),
+                l2_leaf_reg     = cb_model.get_params().get('l2_leaf_reg', 3.0),
+                loss_function   = loss,
+                bootstrap_type  = 'Bernoulli',
+                subsample       = cb_model.get_params().get('subsample', 0.8),
+                boosting_type   = 'Plain',
+                random_seed     = 42,
+                verbose         = 0,
+                allow_writing_files = False,
+            )
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore')
+                cont_model.fit(X_fit, y_fit, init_model=cb_model)
+            model.model = cont_model
+            model._fitted = True
+        except Exception:
+            # Fallback: full retrain
+            self._full_retrain(model, X_new, y_new, None, X_all, y_all, None)
+
+    def _lgbm_warmstart(
+        self,
+        model,
+        X_new: np.ndarray,
+        y_new: np.ndarray,
+        X_all: Optional[np.ndarray],
+        y_all: Optional[np.ndarray],
+        entity_indices=None,
+    ) -> None:
+        """LightGBM warm-start: enable warm_start and add more estimators.
+
+        Training data: full history (X_all) when available, otherwise new
+        data (X_new).  Warm_start=True avoids refit from scratch.
+        """
+        X_fit = np.vstack([X_all, X_new]) if X_all is not None else X_new
+        y_fit = np.vstack([y_all, y_new]) if y_all is not None else y_new
+
+        lgbm_multi = getattr(model, 'model', None)
+        if lgbm_multi is None or not hasattr(lgbm_multi, 'estimators_'):
+            self._full_retrain(model, X_new, y_new, entity_indices,
+                               X_all, y_all, None)
+            return
+
+        try:
+            for est in lgbm_multi.estimators_:
+                out_col_idx = lgbm_multi.estimators_.index(est)
+                y_col = (y_fit[:, out_col_idx]
+                         if y_fit.ndim > 1 else y_fit.ravel())
+                est.set_params(
+                    warm_start    = True,
+                    n_estimators  = (est.n_estimators
+                                     + self.lgbm_extra_iter),
+                )
+                with warnings.catch_warnings():
+                    warnings.simplefilter('ignore')
+                    est.fit(X_fit, y_col)
+        except Exception:
+            self._full_retrain(model, X_new, y_new, entity_indices,
+                               X_all, y_all, None)
+
+    def _panel_var_rls(
+        self,
+        model,
+        X_new:               np.ndarray,
+        y_new:               np.ndarray,
+        entity_indices_new:  Optional[np.ndarray],
+        X_all:               Optional[np.ndarray],
+        y_all:               Optional[np.ndarray],
+        entity_indices_all:  Optional[np.ndarray],
+    ) -> None:
+        """PanelVAR per-output Recursive Least Squares update.
+
+        For each output column col, updates the fitted Ridge/ElasticNet
+        model's coefficients via the RLS recursion:
+
+            Θ_{t+1} = Θ_t + K_{t+1} (y_{t+1} − X_{t+1} Θ_t)
+            K_{t+1} = P_t X_{t+1}^T (λ + X_{t+1} P_t X_{t+1}^T)^{-1}
+            P_{t+1} = (I − K_{t+1} X_{t+1}) P_t / λ
+
+        Requires Ridge models to have ``coef_`` and ``intercept_`` attributes.
+        Falls back to full retrain when conditions are not met.
+        """
+        models_dict = getattr(model, 'models_', None)
+        scalers_dict = getattr(model, 'scalers_', None)
+
+        if models_dict is None:
+            self._full_retrain(model, X_new, y_new, entity_indices_new,
+                               X_all, y_all, entity_indices_all)
+            return
+
+        n_obs  = len(X_new)
+        if n_obs < self.min_rls_obs:
+            self._full_retrain(model, X_new, y_new, entity_indices_new,
+                               X_all, y_all, entity_indices_all)
+            return
+
+        lam = self.rls_lambda
+
+        for col, ridge in list(models_dict.items()):
+            if not hasattr(ridge, 'coef_'):
+                continue
+            # Transform X_new with the column's scaler if available
+            scaler = scalers_dict.get(col) if scalers_dict else None
+            try:
+                X_s = scaler.transform(X_new) if scaler else X_new
+                # Augment with intercept column
+                X_aug = np.column_stack([X_s, np.ones(n_obs)])
+                theta  = np.append(ridge.coef_.ravel(), ridge.intercept_.ravel())
+                n_feat = len(theta)
+
+                # Approximate P_0 from ridge regularisation (P ∝ α^{-1} I)
+                alpha_reg = getattr(ridge, 'alpha', 1.0)
+                P = (1.0 / max(alpha_reg, 1e-6)) * np.eye(n_feat)
+
+                # RLS sweep over new observations
+                for i in range(n_obs):
+                    xi   = X_aug[i:i+1, :]               # (1, p)
+                    yi   = float(y_new[i, col] if y_new.ndim > 1
+                                 else y_new[i])
+                    if np.isnan(yi):
+                        continue
+                    Pxi  = P @ xi.T                       # (p, 1)
+                    denom = lam + float(xi @ Pxi)          # scalar
+                    K    = Pxi / denom                     # (p, 1)
+                    e    = yi - float(xi @ theta)          # prediction error
+                    theta = theta + (K * e).ravel()
+                    P    = (P - K @ xi @ P) / lam
+
+                ridge.coef_       = theta[:-1].reshape(ridge.coef_.shape)
+                ridge.intercept_  = np.atleast_1d(theta[-1])
+            except Exception:
+                continue  # leave this output's model unchanged
+
+    def _full_retrain(
+        self,
+        model,
+        X_new:          np.ndarray,
+        y_new:          np.ndarray,
+        entity_indices: Optional[np.ndarray],
+        X_all:          Optional[np.ndarray],
+        y_all:          Optional[np.ndarray],
+        entity_all:     Optional[np.ndarray],
+    ) -> None:
+        """Full retrain on either X_all (preferred) or X_new (fallback)."""
+        if X_all is not None and y_all is not None:
+            X_fit = X_all
+            y_fit = y_all
+            ent   = entity_all
+        else:
+            X_fit = X_new
+            y_fit = y_new
+            ent   = entity_indices
+
+        import inspect
+        sig = inspect.signature(model.fit)
+        try:
+            if 'entity_indices' in sig.parameters and ent is not None:
+                model.fit(X_fit, y_fit, entity_indices=ent)
+            else:
+                model.fit(X_fit, y_fit)
+        except Exception:
+            pass  # leave model unchanged
+
+    # ------------------------------------------------------------------
+    # Meta-weight update
+    # ------------------------------------------------------------------
+
+    def _update_meta_weights(
+        self,
+        sl,
+        X_new:          np.ndarray,
+        y_new:          np.ndarray,
+        entity_indices: Optional[np.ndarray],
+        per_model_X_new: Optional[Dict[str, np.ndarray]],
+    ) -> None:
+        """Blend existing meta-weights with new-year calibration weights.
+
+        1. Collects predictions from all updated base models on X_new.
+        2. Fits NNLS on those predictions → new-year calibration weights w_new.
+        3. Blends: w_final = (1−γ)·w_prev + γ·w_new, normalised to sum=1.
+        """
+        if y_new.ndim == 1:
+            y_new = y_new.reshape(-1, 1)
+
+        n_models = len(sl._fitted_base_models)
+        model_names = list(sl._fitted_base_models.keys())
+        n_outputs = sl._n_outputs
+
+        # Collect new-year predictions
+        preds = []
+        active_names = []
+        for name, model in sl._fitted_base_models.items():
+            X_m = (per_model_X_new[name] if per_model_X_new
+                   and name in per_model_X_new else X_new)
+            try:
+                import inspect
+                sig = inspect.signature(model.predict)
+                if 'entity_indices' in sig.parameters and entity_indices is not None:
+                    p = model.predict(X_m, entity_indices=entity_indices)
+                else:
+                    p = model.predict(X_m)
+                if isinstance(p, np.ndarray):
+                    if p.ndim == 1:
+                        p = p.reshape(-1, 1)
+                    preds.append(p)
+                    active_names.append(name)
+            except Exception:
+                pass
+
+        if len(preds) < 2:
+            return  # not enough models to recalibrate
+
+        # Per-output NNLS calibration → w_new
+        all_calib_coefs = []
+        for out_col in range(n_outputs):
+            preds_stack = np.column_stack([
+                p[:, min(out_col, p.shape[1] - 1)] for p in preds
+            ])   # (n_new, n_active)
+            y_col = y_new[:, out_col]
+            valid = ~np.isnan(preds_stack).any(axis=1) & ~np.isnan(y_col)
+            if valid.sum() < 2:
+                # Not enough data: equal weights
+                all_calib_coefs.append(
+                    np.ones(len(active_names)) / len(active_names)
+                )
+                continue
+            try:
+                coefs, _ = nnls(preds_stack[valid], y_col[valid])
+            except Exception:
+                coefs = np.ones(len(active_names)) / len(active_names)
+            s = coefs.sum()
+            all_calib_coefs.append(coefs / s if s > 1e-12 else coefs)
+
+        w_new_active = np.mean(all_calib_coefs, axis=0)  # (n_active,)
+
+        # Map back to full model vector
+        w_new_full = np.zeros(n_models)
+        for i, name in enumerate(active_names):
+            if name in model_names:
+                w_new_full[model_names.index(name)] = w_new_active[i]
+        s = w_new_full.sum()
+        if s < 1e-12:
+            return  # calibration failed; keep existing weights
+        w_new_full /= s
+
+        # Blend with existing weights
+        w_prev  = np.array([sl._meta_weights.get(n, 0.0) for n in model_names])
+        w_blend = (1.0 - self.gamma) * w_prev + self.gamma * w_new_full
+        w_blend = np.maximum(w_blend, 0.0)
+        s_blend = w_blend.sum()
+        if s_blend > 1e-12:
+            w_blend /= s_blend
+            sl._meta_weights = dict(zip(model_names, w_blend))
+
+        if self.verbose:
+            print("  Meta-weights post-update:",
+                  {n: round(v, 4) for n, v in sl._meta_weights.items()})

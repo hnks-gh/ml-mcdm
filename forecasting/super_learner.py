@@ -413,6 +413,7 @@ class SuperLearner:
         refit_per_model_X: Optional[Dict[str, np.ndarray]] = None,
         refit_entity_indices: Optional[np.ndarray] = None,
         fold_correction_fn=None,
+        shift_detector=None,
     ) -> "SuperLearner":
         """
         Fit the Super Learner ensemble.
@@ -445,6 +446,13 @@ class SuperLearner:
                 feature matrices inside the CV loop (E-01 fix).  Called
                 once per (fold, model) pair for training and validation folds.
                 When None, no correction is applied (default).
+            shift_detector: Optional :class:`PanelCovariateShiftDetector`
+                (E-08).  When not ``None``, per-fold MMD²-based covariate
+                shift detection is run before base-model fitting.  Detected
+                shifts yield per-sample importance weights that are forwarded
+                to base models whose ``fit()`` accepts ``sample_weight``.
+                Uniform weights (1.0) are used when no shift is detected.
+                When ``None``, no shift detection is performed (default).
 
         Returns:
             Self for method chaining
@@ -485,6 +493,16 @@ class SuperLearner:
 
         for fold_idx, (train_idx, val_idx) in enumerate(cv_iter):
             y_train_cv, y_val_cv = y[train_idx], y[val_idx]
+
+            # ── E-08: fold-level covariate shift detection ─────────────────
+            # Run MMD² on the common X (tree-track).  Returns uniform (1.0)
+            # weights when no significant shift is detected, so the extra
+            # computation is the only cost in the no-shift case.
+            _fold_weights: Optional[np.ndarray] = None
+            if shift_detector is not None:
+                _fold_weights = shift_detector.compute_fold_weights(
+                    X[train_idx], X[val_idx]
+                )
 
             if self.verbose and year_labels is not None:
                 train_yrs = np.unique(year_labels[train_idx])
@@ -547,10 +565,19 @@ class SuperLearner:
                     _X_fit, _y_fit = X_train_cv, y_train_cv
                     _ent_fit = (entity_indices[train_idx]
                                 if entity_indices is not None else None)
+
+                # ── E-08: slice importance weights to NaN-dropped rows ─────
+                # _fold_weights covers the full train_idx; align to _X_fit.
+                _sw: Optional[np.ndarray] = None
+                if _fold_weights is not None:
+                    _sw = _fold_weights[~_y_nan] if _y_nan.any() else _fold_weights
+
                 try:
                     model_copy = copy.deepcopy(model)
-                    # Forward entity_indices to models that accept them
-                    self._fit_model(model_copy, _X_fit, _y_fit, _ent_fit)
+                    # Forward entity_indices and sample_weight to models that
+                    # accept them (inspect-based dispatch in _fit_model).
+                    self._fit_model(model_copy, _X_fit, _y_fit, _ent_fit,
+                                    sample_weight=_sw)
 
                     # S-1 fix: forward val entity_indices so panel models
                     # (PanelVAR) use the correct fixed effects for each
@@ -766,16 +793,39 @@ class SuperLearner:
         return self
 
     @staticmethod
-    def _fit_model(model, X, y, entity_indices=None):
-        """Fit a base model, forwarding entity_indices when supported."""
+    def _fit_model(model, X, y, entity_indices=None, sample_weight=None):
+        """Fit a base model, forwarding entity_indices and sample_weight when supported.
+
+        Uses ``inspect.signature`` to detect which keyword arguments the model's
+        ``fit()`` accepts, then passes only the supported ones.  This avoids
+        coupling the SuperLearner to any specific base-model interface.
+
+        Parameters
+        ----------
+        model : BaseForecaster
+            The model to fit (already deep-copied by the caller).
+        X, y : ndarray
+            Feature matrix and targets.
+        entity_indices : ndarray, optional
+            Panel entity IDs forwarded to models that accept ``entity_indices``
+            or ``group_indices`` (e.g. PanelVARForecaster).
+        sample_weight : ndarray of shape (n_train,), optional
+            Per-sample importance weights from E-08
+            ``PanelCovariateShiftDetector``.  Forwarded only when the model's
+            ``fit()`` declares a ``sample_weight`` parameter.
+        """
         import inspect
         sig = inspect.signature(model.fit)
+        fit_kwargs: dict = {}
+        # Entity routing
         if 'entity_indices' in sig.parameters and entity_indices is not None:
-            model.fit(X, y, entity_indices=entity_indices)
+            fit_kwargs['entity_indices'] = entity_indices
         elif 'group_indices' in sig.parameters and entity_indices is not None:
-            model.fit(X, y, group_indices=entity_indices)
-        else:
-            model.fit(X, y)
+            fit_kwargs['group_indices'] = entity_indices
+        # Importance weights routing
+        if 'sample_weight' in sig.parameters and sample_weight is not None:
+            fit_kwargs['sample_weight'] = sample_weight
+        model.fit(X, y, **fit_kwargs)
 
     @staticmethod
     def _predict_model(model, X, entity_indices=None):

@@ -67,6 +67,12 @@ from .conformal import ConformalPredictor
 from .evaluation import ForecastEvaluator, AblationStudy
 from .evaluation_diagnostics import LeaveOneEntityOutCV
 
+# Phase 3 — SOTA modules (E-05, E-06, E-08, E-10)
+from .panel_mice import PanelSequentialMICE
+from .augmentation import ConditionalPanelAugmenter, SyntheticAwareCV
+from .shift_detection import PanelCovariateShiftDetector
+from .incremental_update import IncrementalEnsembleUpdater
+
 # Unified orchestrator
 from .unified import (
     UnifiedForecaster,
@@ -95,6 +101,12 @@ __all__ = [
     'ForecastEvaluator',
     'AblationStudy',
     'LeaveOneEntityOutCV',
+    # Phase 3 — SOTA modules
+    'PanelSequentialMICE',
+    'ConditionalPanelAugmenter',
+    'SyntheticAwareCV',
+    'PanelCovariateShiftDetector',
+    'IncrementalEnsembleUpdater',
     # Unified
     'UnifiedForecaster',
     'UnifiedForecastResult',

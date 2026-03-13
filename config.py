@@ -487,6 +487,97 @@ class ForecastConfig:
         configuration settings without re-fitting the ensemble.
     """
 
+    # ── Phase 3 — SOTA modules (E-05, E-06, E-08, E-10) ──────────────────
+    use_panel_mice: bool = False
+    """Enable three-phase PanelSequentialMICE imputation of missing features
+    before dimensionality reduction (E-05).
+
+    When True, ``stage2_reduce_features()`` applies
+    ``PanelSequentialMICE.fit_transform()`` to the raw training feature matrix
+    before the PLS and threshold-only reducers.  The fitted imputer is then
+    applied via ``transform()`` to the prediction and holdout matrices.
+
+    Default False: uses the existing 0-fill strategy (faster; appropriate
+    when structured missingness is low).  Set True for panels with >5% NaN
+    to improve feature quality flowing into the ensemble.
+    """
+
+    use_shift_detection: bool = False
+    """Enable MMD²-based covariate shift detection and importance-weighted CV
+    (E-08).
+
+    When True, ``stage3_fit_base_models()`` creates a
+    ``PanelCovariateShiftDetector`` and passes it to ``SuperLearner.fit()``
+    as ``shift_detector``.  For each CV fold the detector computes the
+    MMD² between the training and validation cross-sections; when a
+    statistically significant shift is detected (p < ``alpha=0.05``), a
+    logistic-regression density ratio re-weights the training rows so the
+    base-model CV fits are biased toward the validation distribution.
+
+    Default False: standard uniform-weight CV (faster; no shift assumption).
+    Set True for panels with suspected structural break between training
+    and recent years.
+    """
+
+    use_data_augmentation: bool = False
+    """Enable Gaussian-copula + VAR(1) synthetic data augmentation (E-06).
+
+    When True, ``stage2b_augment_data()`` is called between stage2 and
+    stage3.  ``ConditionalPanelAugmenter.fit_augment_if_beneficial()``
+    generates synthetic entity-year rows via per-entity VAR(1) dynamics
+    seeded by a Gaussian copula capturing cross-entity correlation.
+    Augmented data is committed only when 5-fold walk-forward CV shows
+    ΔR² > ``augment_gain_threshold`` (default 0.005).
+
+    Default False: no augmentation (faster; avoids risk of distributional
+    mismatch from synthetic data).  Set True when n < 500 and the ensemble
+    shows high variance.
+    """
+
+    augment_gain_threshold: float = 0.005
+    """Minimum 5-fold walk-forward ΔR² required to commit augmented data
+    (E-06 gate).  Lower values commit augmentation more aggressively;
+    set to 0.0 to always commit, or >1.0 to always skip.
+
+    Only used when ``use_data_augmentation=True``.
+    """
+
+    use_incremental_update: bool = False
+    """Enable ``IncrementalEnsembleUpdater`` for model continuation when new
+    data becomes available (E-10).
+
+    When True and ``stage3b_incremental_update()`` is called with
+    ``(X_new, y_new)``, each base model is updated using its most
+    efficient strategy (CatBoost gradient continuation, LightGBM warm-
+    start, Ridge RLS, full retrain for others) and the meta-weights are
+    re-calibrated via γ-blending with the new data.
+
+    Default False: the standard workflow re-runs the full pipeline when
+    new data arrives.  Set True for 2024→2025 update scenarios where
+    re-fitting all models from scratch is prohibitively slow.
+    """
+
+    incremental_update_strategy: str = "auto"
+    """Strategy for ``IncrementalEnsembleUpdater`` (E-10).
+
+    ``'auto'`` — use the most efficient per-model strategy (CatBoost
+        continuation, LightGBM warm-start, Ridge RLS, full retrain fallback).
+    ``'full_retrain'`` — always retrain every base model from scratch on the
+        combined (historical + new) data.
+    """
+
+    incremental_update_gamma: float = 0.3
+    """Meta-weight blending factor γ for ``IncrementalEnsembleUpdater``
+    (E-10).  ``w_final = (1-γ)·w_prev + γ·w_new_calib``.
+
+    Smaller γ → more stable, historical-data-weighted meta-weights.
+    Larger γ → faster adaptation to new-data calibration.
+    Default 0.3 preserves historical stability while incorporating
+    new-year information.
+
+    Only used when ``use_incremental_update=True``.
+    """
+
 
 # =========================================================================
 # Validation & Sensitivity

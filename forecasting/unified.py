@@ -62,6 +62,11 @@ from .super_learner import SuperLearner, _WalkForwardYearlySplit as PanelWalkFor
 from .conformal import ConformalPredictor
 from .preprocessing import PanelFeatureReducer
 from .evaluation import ForecastEvaluator, AblationStudy, ModelComparisonResult, compare_all_models
+# Phase 3 — SOTA modules (E-05, E-06, E-08, E-10)
+from .panel_mice import PanelSequentialMICE
+from .augmentation import ConditionalPanelAugmenter
+from .shift_detection import PanelCovariateShiftDetector
+from .incremental_update import IncrementalEnsembleUpdater
 import functools
 
 from config import ForecastConfig
@@ -721,6 +726,12 @@ class UnifiedForecaster:
         # ── Stage 7 public outputs ────────────────────────────────────────────
         self.composite_predictions_: Optional[pd.Series] = None
 
+        # ── Phase 3 — SOTA module instances (E-05, E-06, E-08, E-10) ─────────
+        self._panel_mice_:       Optional[PanelSequentialMICE]        = None
+        self._augmenter_:        Optional[ConditionalPanelAugmenter]   = None
+        self._shift_detector_:   Optional[PanelCovariateShiftDetector] = None
+        self._incremental_updater_: Optional[IncrementalEnsembleUpdater] = None
+
     def _tune_gb_hyperparameters(self) -> None:
         """Phase 4: Panel-safe Optuna HP search for CatBoost and LightGBM (E-09).
 
@@ -1217,6 +1228,69 @@ class UnifiedForecaster:
         y_arr = self.y_train_.values
         feature_names = self.feature_engineer_.get_feature_names()
 
+        # ── E-05: Three-phase PanelSequentialMICE imputation ──────────────
+        # Applied to the raw feature matrices BEFORE dimensionality reduction
+        # so imputed values flow into PLS supervision correctly.  Only runs
+        # when enabled in ForecastConfig and when NaN is actually present.
+        if (
+            getattr(self._config, 'use_panel_mice', False)
+            and self._entity_indices_ is not None
+            and self._year_labels_arr_ is not None
+            and np.isnan(X_arr).any()
+        ):
+            self._panel_mice_ = PanelSequentialMICE(verbose=self.verbose)
+            X_arr = self._panel_mice_.fit_transform(
+                X_arr,
+                self._entity_indices_,
+                self._year_labels_arr_,
+            )
+            if self.verbose:
+                print(
+                    f"    PanelMICE: {self._panel_mice_.nan_before_} NaN → "
+                    f"{self._panel_mice_.nan_after_} "
+                    f"({self._panel_mice_.nan_reduction_pct:.1f}% eliminated)"
+                )
+            # Apply transform() to the prediction feature matrix (target year,
+            # no hold-out data available so only Phase 1+2+3 transform is used).
+            if self._pred_entity_indices_ is not None:
+                _pred_yr = np.full(
+                    len(self.X_pred_), int(self._target_year_), dtype=int
+                )
+                _pred_imp = self._panel_mice_.transform(
+                    self.X_pred_.values,
+                    self._pred_entity_indices_,
+                    _pred_yr,
+                )
+                self.X_pred_ = pd.DataFrame(
+                    _pred_imp,
+                    index=self.X_pred_.index,
+                    columns=self.X_pred_.columns,
+                )
+            # Apply transform() to the holdout feature matrix when present.
+            if (
+                not self.X_holdout_.empty
+                and self.holdout_year_ is not None
+                and self._panel_data_ is not None
+            ):
+                _ent_to_idx = {
+                    e: i for i, e in enumerate(self._panel_data_.provinces)
+                }
+                _ho_ent_idx = np.array(
+                    [_ent_to_idx.get(e, 0) for e in self.X_holdout_.index],
+                    dtype=int,
+                )
+                _ho_yr = np.full(
+                    len(self.X_holdout_), int(self.holdout_year_), dtype=int
+                )
+                _ho_imp = self._panel_mice_.transform(
+                    self.X_holdout_.values, _ho_ent_idx, _ho_yr
+                )
+                self.X_holdout_ = pd.DataFrame(
+                    _ho_imp,
+                    index=self.X_holdout_.index,
+                    columns=self.X_holdout_.columns,
+                )
+
         # PLS track for linear models: supervised compression with MI pre-filter
         self.reducer_pca_ = PanelFeatureReducer(mode='pls', mi_prefilter=True)
         # Threshold-only track for tree models: variance filter, no scaling
@@ -1253,6 +1327,112 @@ class UnifiedForecaster:
         if self.verbose:
             print(f"    PLS track:      {self.reducer_pca_.get_summary()}")
             print(f"    Threshold-only: {self.reducer_tree_.get_summary()}")
+
+    def stage2b_augment_data(self) -> None:
+        """Stage 2b (E-06): Conditional synthetic data augmentation.
+
+        Optionally augments the training feature and target matrices with
+        synthetic entity-year rows generated by a Gaussian-copula + VAR(1)
+        model fitted per entity.  Augmentation is committed only when a 5-fold
+        walk-forward CV shows ΔR² > ``config.augment_gain_threshold`` (default
+        0.005), preventing spurious data inflation.
+
+        Augmented rows are appended to the TREE track (``X_train_tree_``,
+        ``_per_model_X_train_`` for tree models) so that the linear / PLS
+        track (``BayesianRidge``) always trains on the original data only.
+        Synthetic rows receive entity+year labels so ``SyntheticAwareCV``
+        ensures they never appear in CV validation folds.
+
+        Pre-requisite: :meth:`stage2_reduce_features` must have been called.
+
+        Outputs modified on ``self``
+        ----------------------------
+        X_train_tree_         May be row-extended with synthetic rows.
+        y_train_ (values)     Corresponding synthetic targets appended.
+        _entity_indices_      Extended with synthetic entity IDs.
+        _year_labels_arr_     Extended with synthetic year labels.
+        _per_model_X_train_   Tree-model entries updated to extended matrix.
+        augmenter_            Fitted :class:`ConditionalPanelAugmenter`.
+        """
+        if not getattr(self._config, 'use_data_augmentation', False):
+            return
+
+        if (
+            self.X_train_tree_ is None
+            or self._entity_indices_ is None
+            or self._year_labels_arr_ is None
+        ):
+            if self.verbose:
+                print("  Stage 2b: Augmentation skipped — stage2 not complete.")
+            return
+
+        if self.verbose:
+            print(
+                "  Stage 2b: Conditional panel augmentation (Gaussian copula + "
+                "VAR(1))..."
+            )
+
+        y_arr = self.y_train_.values
+        threshold = float(
+            getattr(self._config, 'augment_gain_threshold', 0.005)
+        )
+
+        augmenter = ConditionalPanelAugmenter(
+            gain_threshold=threshold,
+            random_state=self.random_state,
+            verbose=self.verbose,
+        )
+
+        # fit_augment_if_beneficial runs 5-fold walk-forward CV on the
+        # tree-track matrix (consistent with how base models see features).
+        X_aug, y_aug, ent_aug, yr_aug, committed = (
+            augmenter.fit_augment_if_beneficial(
+                X=self.X_train_tree_,
+                y=y_arr,
+                entity_indices=self._entity_indices_,
+                year_labels=self._year_labels_arr_,
+            )
+        )
+
+        self._augmenter_ = augmenter
+
+        if not committed:
+            if self.verbose:
+                print(
+                    f"    Augmentation rejected: ΔR² below threshold "
+                    f"({threshold:.4f})"
+                )
+            return
+
+        if self.verbose:
+            n_synth = len(X_aug) - len(self.X_train_tree_)
+            print(
+                f"    Augmentation committed: +{n_synth} synthetic rows "
+                f"({len(X_aug)} total)"
+            )
+
+        # Extend tree-track arrays only (PLS/Bayesian track unchanged)
+        self.X_train_tree_ = X_aug
+        self._entity_indices_ = ent_aug
+        self._year_labels_arr_ = yr_aug
+        # y_aug is already in transformed target space because fit_augment
+        # receives self.y_train_.values (transformed); augmenter synthesises
+        # entity means of transformed values → no further transformation needed.
+        _aug_index = pd.RangeIndex(len(y_aug))
+        # Rebuild y_train_ DataFrame with augmented rows
+        self.y_train_ = pd.DataFrame(
+            y_aug,
+            index=_aug_index,
+            columns=self.y_train_.columns,
+        )
+        # Also update X_train_ to stay consistent (using NaN-extended index)
+        # NOTE: Only tree models use the extended data; PLS models continue
+        # to use their own unreduced per_model_X_train_ entry.
+        self._per_model_X_train_['GradientBoosting'] = self.X_train_tree_
+        self._per_model_X_train_['LightGBM']         = self.X_train_tree_
+        self._per_model_X_train_['QuantileRF']        = self.X_train_tree_
+        self._per_model_X_train_['PanelVAR']          = self.X_train_tree_
+        self._per_model_X_train_['NAM']               = self.X_train_tree_
 
     def stage3_fit_base_models(self) -> None:
         """Stage 3: Create base models and train the Super Learner ensemble.
@@ -1379,6 +1559,22 @@ class UnifiedForecaster:
                 'GradientBoosting', 'LightGBM', 'QuantileRF', 'PanelVAR', 'NAM'
             },
         )
+        # ── E-08: Create shift detector when enabled ──────────────────────────
+        # PanelCovariateShiftDetector is passed to SuperLearner.fit() which
+        # runs per-fold MMD² and computes importance weights for shifted folds.
+        _shift_det = None
+        if getattr(self._config, 'use_shift_detection', False):
+            _shift_det = PanelCovariateShiftDetector(
+                alpha=0.05,
+                n_bootstrap=200,
+                max_weight_ratio=10.0,
+                random_state=self.random_state,
+                verbose=self.verbose,
+            )
+            self._shift_detector_ = _shift_det
+            if self.verbose:
+                print("    Covariate shift detection enabled (E-08, MMD² α=0.05)")
+
         self.super_learner_.fit(
             _X_cv_tree,
             _y_cv,
@@ -1390,6 +1586,7 @@ class UnifiedForecaster:
             refit_per_model_X=self._per_model_X_train_,
             refit_entity_indices=self._entity_indices_,
             fold_correction_fn=_fold_correction_fn,
+            shift_detector=_shift_det,
         )
 
         # Trim OOF arrays to n_train rows so Stage 5 (conformal calibration)
@@ -1412,6 +1609,117 @@ class UnifiedForecaster:
         self._oof_conformal_residuals_ = (
             self.super_learner_._oof_conformal_residuals_
         )
+
+    def stage3b_incremental_update(
+        self,
+        X_new: np.ndarray,
+        y_new: np.ndarray,
+        entity_indices_new: Optional[np.ndarray] = None,
+        X_all: Optional[np.ndarray] = None,
+        y_all: Optional[np.ndarray] = None,
+        entity_indices_all: Optional[np.ndarray] = None,
+    ) -> None:
+        """Stage 3b (E-10): Incremental ensemble update for newly available data.
+
+        When new observations become available (e.g., 2024 data arrives after
+        the 2024→2025 pipeline was already fitted), this method updates base
+        models efficiently without repeating the full Stage 3 pipeline:
+
+        * **CatBoost** — gradient continuation via ``init_model=`` (50 extra
+          rounds at ``lr × 0.5``).
+        * **LightGBM** — warm-start via ``warm_start=True`` and
+          ``n_estimators += increment``.
+        * **PanelVAR (Ridge)** — Recursive Least Squares update with
+          forgetting factor λ (default 0.95) — tracks structural shifts.
+        * **All other models** — full retrain on ``X_all / y_all`` (or
+          ``X_new / y_new`` if historical data is not supplied).
+
+        Meta-weights are re-calibrated on new predictions via NNLS and
+        γ-blended with the previous weights (``w = (1-γ)·w_prev + γ·w_new``).
+
+        Pre-requisite: :meth:`stage3_fit_base_models` must have been called.
+
+        Parameters
+        ----------
+        X_new : ndarray, shape (n_new, n_features)
+            New observation feature matrix (tree-track, threshold-only).
+        y_new : ndarray, shape (n_new, n_outputs)
+            New observation target values.
+        entity_indices_new : ndarray, shape (n_new,), optional
+            Entity IDs for the new rows.
+        X_all : ndarray, shape (n_total, n_features), optional
+            Full historical + new feature matrix, used for full-retrain fallback.
+            When ``None``, full-retrain models use ``X_new`` only.
+        y_all : ndarray, shape (n_total, n_outputs), optional
+            Full historical + new targets.  When ``None``, full-retrain uses
+            ``y_new`` only.
+        entity_indices_all : ndarray, optional
+            Entity IDs for the full dataset.
+
+        Outputs modified on ``self``
+        ----------------------------
+        super_learner_    Deep-copied, updated ensemble (base models +
+                          re-calibrated meta-weights).
+        _incremental_updater_  Fitted :class:`IncrementalEnsembleUpdater`.
+        """
+        if not getattr(self._config, 'use_incremental_update', False):
+            return
+        if self.super_learner_ is None:
+            raise RuntimeError(
+                "stage3b_incremental_update() requires a fitted SuperLearner. "
+                "Call stage3_fit_base_models() first."
+            )
+        if self.verbose:
+            print("  Stage 3b: Incremental ensemble update (E-10)...")
+
+        strategy = str(
+            getattr(self._config, 'incremental_update_strategy', 'auto')
+        )
+        gamma = float(
+            getattr(self._config, 'incremental_update_gamma', 0.3)
+        )
+
+        updater = IncrementalEnsembleUpdater(
+            strategy=strategy,
+            gamma=gamma,
+            verbose=self.verbose,
+        )
+        self._incremental_updater_ = updater
+
+        # per_model_X_new: new rows per model (both tracks use tree-track here)
+        _per_model_X_new = {
+            'BayesianRidge':    X_new,
+            'GradientBoosting': X_new,
+            'LightGBM':         X_new,
+            'QuantileRF':       X_new,
+            'PanelVAR':         X_new,
+            'NAM':              X_new,
+        }
+        _per_model_X_all = None
+        if X_all is not None:
+            _per_model_X_all = {
+                'BayesianRidge':    X_all,
+                'GradientBoosting': X_all,
+                'LightGBM':         X_all,
+                'QuantileRF':       X_all,
+                'PanelVAR':         X_all,
+                'NAM':              X_all,
+            }
+
+        self.super_learner_ = updater.update(
+            ensemble=self.super_learner_,
+            X_new=X_new,
+            y_new=y_new,
+            entity_indices_new=entity_indices_new,
+            X_all=X_all,
+            y_all=y_all,
+            entity_indices_all=entity_indices_all,
+            per_model_X_new=_per_model_X_new,
+            per_model_X_all=_per_model_X_all,
+        )
+
+        if self.verbose:
+            print("    Incremental update complete — meta-weights re-calibrated.")
 
     def stage4_fit_meta_learner(self) -> None:
         """Stage 4: Extract meta-weights and generate ensemble predictions.
@@ -2310,6 +2618,11 @@ class UnifiedForecaster:
             return None
 
         self.stage2_reduce_features()
+
+        # E-06: Conditional synthetic augmentation — applied after feature
+        # reduction so the augmenter works on the compressed tree-track
+        # features and commits only when it improves 5-fold CV R².
+        self.stage2b_augment_data()
 
         # ── Stages 3–4: Base model training + ensemble predictions ─────────
         self.stage3_fit_base_models()

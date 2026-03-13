@@ -157,7 +157,8 @@ class CatBoostForecaster(BaseForecaster):
     # Public API  (BaseForecaster interface)
     # ------------------------------------------------------------------
 
-    def fit(self, X: np.ndarray, y: np.ndarray) -> "CatBoostForecaster":
+    def fit(self, X: np.ndarray, y: np.ndarray,
+            sample_weight: Optional[np.ndarray] = None) -> "CatBoostForecaster":
         """
         Fit the CatBoost model.
 
@@ -170,6 +171,9 @@ class CatBoostForecaster(BaseForecaster):
             Feature matrix.  No pre-scaling required.
         y : ndarray, shape (n_samples,) or (n_samples, n_outputs)
             Target values.
+        sample_weight : ndarray, shape (n_samples,), optional
+            Per-sample importance weights (e.g., from
+            ``PanelCovariateShiftDetector``).  ``None`` = uniform weights.
 
         Returns
         -------
@@ -213,7 +217,8 @@ class CatBoostForecaster(BaseForecaster):
         # smaller than the original if some columns are constant).
         self._n_outputs = y_fit.shape[1]
 
-        self._fit_catboost(X, y_fit, eff_depth, eff_iter)
+        self._fit_catboost(X, y_fit, eff_depth, eff_iter,
+                           sample_weight=sample_weight)
         self._fitted = True
         return self
 
@@ -222,7 +227,12 @@ class CatBoostForecaster(BaseForecaster):
     # ------------------------------------------------------------------
 
     def _fit_catboost(
-        self, X: np.ndarray, y: np.ndarray, eff_depth: int, eff_iter: int
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        eff_depth: int,
+        eff_iter: int,
+        sample_weight: Optional[np.ndarray] = None,
     ) -> None:
         """
         Fit ``CatBoostRegressor`` with joint MultiRMSE (multi-output) or RMSE.
@@ -230,6 +240,14 @@ class CatBoostForecaster(BaseForecaster):
         MultiRMSE fits all outputs simultaneously through a single shared
         oblivious-tree structure, exploiting cross-criterion correlation.
         RMSE is used for single-output targets.
+
+        Parameters
+        ----------
+        sample_weight : ndarray, shape (n_samples,), optional
+            Per-sample importance weights forwarded to CatBoost's ``fit()``.
+            Ignored when ``None`` (uniform weights).  Uses a ``TypeError``
+            fallback for CatBoost versions that do not accept
+            ``sample_weight`` for certain loss functions.
         """
         loss_function = "MultiRMSE" if self._n_outputs > 1 else "RMSE"
         self.model = _CatBoostRegressor(
@@ -247,7 +265,12 @@ class CatBoostForecaster(BaseForecaster):
             verbose=0,                     # suppress per-iteration logs
             allow_writing_files=False,     # no catboost_info/ directory
         )
-        self.model.fit(X, y)
+        try:
+            self.model.fit(X, y, sample_weight=sample_weight)
+        except TypeError:
+            # Some CatBoost loss functions do not support sample_weight;
+            # fall back to unweighted fit rather than crashing.
+            self.model.fit(X, y)
         # PredictionValuesChange pooled across all outputs for MultiRMSE
         # → shape (n_features,) as required by inverse_importance().
         self.feature_importance_ = self.model.get_feature_importance()
@@ -407,7 +430,12 @@ class LightGBMForecaster(BaseForecaster):
     # Public API  (BaseForecaster interface)
     # ------------------------------------------------------------------
 
-    def fit(self, X: np.ndarray, y: np.ndarray) -> "LightGBMForecaster":
+    def fit(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        sample_weight: Optional[np.ndarray] = None,
+    ) -> "LightGBMForecaster":
         """
         Fit independent per-output LightGBM models.
 
@@ -417,6 +445,11 @@ class LightGBMForecaster(BaseForecaster):
             Feature matrix.  No pre-scaling required.
         y : ndarray, shape (n_samples,) or (n_samples, n_outputs)
             Target values.
+        sample_weight : ndarray, shape (n_samples,), optional
+            Per-sample importance weights (e.g., from
+            ``PanelCovariateShiftDetector``).  Forwarded to each
+            ``LGBMRegressor`` via ``MultiOutputRegressor.fit()``.
+            ``None`` = uniform weights.
 
         Returns
         -------
@@ -454,7 +487,7 @@ class LightGBMForecaster(BaseForecaster):
         # smaller than the original if some columns are constant).
         self._n_outputs = y_fit.shape[1]
 
-        self._fit_lightgbm(X, y_fit, eff_depth, eff_iter)
+        self._fit_lightgbm(X, y_fit, eff_depth, eff_iter, sample_weight=sample_weight)
         self._fitted = True
         return self
 
@@ -463,9 +496,21 @@ class LightGBMForecaster(BaseForecaster):
     # ------------------------------------------------------------------
 
     def _fit_lightgbm(
-        self, X: np.ndarray, y: np.ndarray, eff_depth: int, eff_iter: int
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        eff_depth: int,
+        eff_iter: int,
+        sample_weight: Optional[np.ndarray] = None,
     ) -> None:
-        """Fit ``MultiOutputRegressor(LGBMRegressor)`` — independent per output."""
+        """Fit ``MultiOutputRegressor(LGBMRegressor)`` — independent per output.
+
+        Parameters
+        ----------
+        sample_weight : ndarray, shape (n_samples,), optional
+            Forwarded to ``MultiOutputRegressor.fit(sample_weight=...)``,
+            which propagates it to each ``LGBMRegressor`` estimator.
+        """
         lgbm = _LGBMRegressor(
             n_estimators=eff_iter,
             max_depth=eff_depth,
@@ -479,7 +524,7 @@ class LightGBMForecaster(BaseForecaster):
             n_jobs=1,                   # deterministic; avoids joblib deadlocks
         )
         self.model = _MultiOutputRegressor(lgbm, n_jobs=1)
-        self.model.fit(X, y)
+        self.model.fit(X, y, sample_weight=sample_weight)
         # Average gain-based importance across per-output LightGBM models
         self.feature_importance_ = np.mean(
             [est.feature_importances_ for est in self.model.estimators_], axis=0
