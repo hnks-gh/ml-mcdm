@@ -490,9 +490,22 @@ class TemporalFeatureEngineer:
         #     here.  This is standard panel econometrics ("within estimator").
         #   - Year pairs where at least one endpoint is NaN in the entity's
         #     time series are skipped in the mean-delta computation (NaN-safe).
+        #
+        # E-01 (fold-aware correction):
+        #   Additionally, per-entity per-year raw values are stored in
+        #   ``_entity_yearly_values_`` so that ``compute_fold_entity_corrections``
+        #   can recompute entity means restricted to any temporal training
+        #   window — correcting the look-ahead bias that arises when the CV
+        #   loop validates on year k but entity means include years k+1…T.
         # ------------------------------------------------------------------
         self._entity_means_ = {}
         self._entity_mean_deltas_ = {}
+
+        # E-01: per-entity per-year raw values for fold-aware demean correction
+        self._entity_yearly_values_: Dict = {}
+        self._entities_: List[str] = list(entities)
+        self._components_: List[str] = list(components)
+        self._all_train_feature_years_: List[int] = list(train_feature_years)
 
         for _entity in entities:
             _edata = _get_entity_data(_entity).reindex(years)
@@ -515,6 +528,14 @@ class TemporalFeatureEngineer:
                 self._entity_mean_deltas_[(_entity, _c)] = (
                     float(np.mean(_deltas)) if _deltas else 0.0
                 )
+
+                # ── E-01: store per-year raw value ─────────────────────────
+                for _yr in train_feature_years:
+                    _raw = (
+                        float(_edata.loc[_yr, _c])
+                        if _yr in _edata.index else np.nan
+                    )
+                    self._entity_yearly_values_[(_entity, _c, _yr)] = _raw
 
         # ------------------------------------------------------------------
         # Pre-compute cross-sectional medians per (year, component) for
@@ -738,7 +759,100 @@ class TemporalFeatureEngineer:
         )
 
         return X_train_df, y_train_df, X_pred_df, entity_index_df, X_holdout_df, y_holdout_df
-    
+
+    # ------------------------------------------------------------------
+    # E-01 helper: fold-aware entity demean corrections
+    # ------------------------------------------------------------------
+
+    def compute_fold_entity_corrections(
+        self,
+        max_feature_year: int,
+    ) -> Tuple[Dict, Dict]:
+        """
+        Compute entity-mean and entity-mean-delta restricted to feature
+        years ≤ ``max_feature_year``.
+
+        This corrects the look-ahead bias in entity-demeaned features when
+        they are used inside a CV fold whose training window ends before
+        the full panel.  The correction offset for each row is::
+
+            Δ_mean  = global_entity_mean  − fold_entity_mean
+            Δ_delta = global_entity_delta − fold_entity_delta
+
+        Adding these offsets to the pre-computed ``_demeaned`` /
+        ``_demeaned_momentum`` columns in ``X_train_tree_`` yields values
+        equivalent to having computed entity statistics from the fold's
+        training window only, without re-running the full feature pipeline.
+
+        Parameters
+        ----------
+        max_feature_year : int
+            Maximum feature year (= max CV training target year − 1) whose
+            data should be included in the fold-restricted entity means.
+            Rows from ``train_feature_years`` with year > this value are
+            excluded from the fold mean computation.
+
+        Returns
+        -------
+        fold_means : dict  {(entity_name, component): float}
+            Per-(entity, component) mean computed from feature years
+            ≤ ``max_feature_year``.
+        fold_mean_deltas : dict  {(entity_name, component): float}
+            Per-(entity, component) mean first-difference from feature
+            years ≤ ``max_feature_year``.
+
+        Notes
+        -----
+        * Returns global statistics unchanged when ``max_feature_year``
+          equals or exceeds the largest training feature year — no
+          correction is needed in that case.
+        * Falls back to 0.0 for entities/components with no valid values
+          in the restricted window (safe: demeaning by 0 is a no-op).
+        """
+        if not self._all_train_feature_years_:
+            return dict(self._entity_means_), dict(self._entity_mean_deltas_)
+
+        global_max_feat_year = max(self._all_train_feature_years_)
+        if max_feature_year >= global_max_feat_year:
+            # No future leakage in this fold — global stats are correct
+            return dict(self._entity_means_), dict(self._entity_mean_deltas_)
+
+        eligible_years = sorted(
+            [y for y in self._all_train_feature_years_ if y <= max_feature_year]
+        )
+        if not eligible_years:
+            return dict(self._entity_means_), dict(self._entity_mean_deltas_)
+
+        fold_means: Dict = {}
+        fold_mean_deltas: Dict = {}
+
+        for entity in self._entities_:
+            for comp in self._components_:
+                vals = [
+                    self._entity_yearly_values_.get((entity, comp, yr), np.nan)
+                    for yr in eligible_years
+                ]
+                valid_vals = [v for v in vals if not (isinstance(v, float) and np.isnan(v))]
+                fold_means[(entity, comp)] = (
+                    float(np.mean(valid_vals)) if valid_vals else 0.0
+                )
+
+                deltas: List[float] = []
+                for i in range(1, len(eligible_years)):
+                    v_curr = self._entity_yearly_values_.get(
+                        (entity, comp, eligible_years[i]), np.nan
+                    )
+                    v_prev = self._entity_yearly_values_.get(
+                        (entity, comp, eligible_years[i - 1]), np.nan
+                    )
+                    if not (np.isnan(v_curr) or np.isnan(v_prev)):
+                        deltas.append(float(v_curr) - float(v_prev))
+                fold_mean_deltas[(entity, comp)] = (
+                    float(np.mean(deltas)) if deltas else 0.0
+                )
+
+        return fold_means, fold_mean_deltas
+
     def _create_features_safe(
         self,
         entity_data: 'pd.DataFrame',

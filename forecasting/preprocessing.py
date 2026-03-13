@@ -125,6 +125,7 @@ class PanelFeatureReducer:
         self._original_feature_names: Optional[List[str]] = None
         self._kept_feature_mask: Optional[np.ndarray] = None
         self._n_components_fitted: int = 0
+        self._selected_feature_names_: Optional[List[str]] = None  # E-01
         self._fitted: bool = False
 
     # ------------------------------------------------------------------
@@ -215,6 +216,22 @@ class PanelFeatureReducer:
             self._pca = None
             self._mi_mask = None
             self._n_components_fitted = X_var.shape[1]
+
+            # E-01: store post-threshold feature names so that
+            # ``get_demeaned_column_indices`` can identify which columns
+            # in the reduced matrix correspond to ``_demeaned`` and
+            # ``_demeaned_momentum`` features without a full feature
+            # name scan outside this class.
+            _selected_idxs = np.where(self._kept_feature_mask)[0]
+            if self._original_feature_names is not None:
+                self._selected_feature_names_ = [
+                    self._original_feature_names[i] for i in _selected_idxs
+                ]
+            else:
+                self._selected_feature_names_ = [
+                    f"f{i}" for i in range(X_var.shape[1])
+                ]
+
             self._fitted = True
             return self
 
@@ -510,3 +527,46 @@ class PanelFeatureReducer:
             f"→ {self._n_components_fitted} components "
             f"({evr_str} variance retained)"
         )
+
+    def get_demeaned_column_indices(self) -> tuple:
+        """
+        Return column indices of entity-demeaned features in the reduced
+        (post-variance-threshold) feature matrix.
+
+        Used by the E-01 fold-correction logic in ``SuperLearner.fit()``
+        to identify which columns in ``X_train_tree_`` correspond to
+        ``{comp}_demeaned`` and ``{comp}_demeaned_momentum`` features.
+        These are the only columns whose values depend on entity-level
+        means computed from ALL training years, and therefore the only
+        columns that require fold-specific correction inside the CV loop.
+
+        Only meaningful for ``mode='threshold_only'`` (tree track).
+
+        Returns
+        -------
+        demeaned_indices : list[int]
+            Column indices where feature name ends with ``'_demeaned'``
+            (but NOT ``'_demeaned_momentum'``).
+        demeaned_momentum_indices : list[int]
+            Column indices where feature name ends with
+            ``'_demeaned_momentum'``.
+
+        Both lists are empty when ``_selected_feature_names_`` has not
+        been populated (i.e. the reducer is not in ``threshold_only``
+        mode, or ``fit()`` was called without feature names).
+        """
+        if (
+            self._selected_feature_names_ is None
+            or len(self._selected_feature_names_) == 0
+        ):
+            return [], []
+
+        demeaned_idx: List[int] = []
+        demeaned_mom_idx: List[int] = []
+        for i, name in enumerate(self._selected_feature_names_):
+            if name.endswith('_demeaned_momentum'):
+                demeaned_mom_idx.append(i)
+            elif name.endswith('_demeaned'):
+                demeaned_idx.append(i)
+
+        return demeaned_idx, demeaned_mom_idx

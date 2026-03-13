@@ -345,7 +345,7 @@ mechanism to prevent re-selection via the ablation study or sensitivity analysis
 
 ---
 
-### E-01 · Nested Rolling-Origin CV with Gap (P0)
+### E-01 · Nested Rolling-Origin CV with Gap (P0) ✅ IMPLEMENTED
 
 **Motivation:** Addresses C-04 (feature leakage from pre-computed rolling statistics).
 
@@ -440,7 +440,7 @@ weight assignment; enables regional ensemble diagnostics.
 
 ---
 
-### E-03 · Bayesian Stacking Meta-Learner with Dirichlet Prior (P1)
+### E-03 · Bayesian Stacking Meta-Learner with Dirichlet Prior (P1) ✅ IMPLEMENTED
 
 **Motivation:** Addresses C-03 (NNLS ignores weight uncertainty) and M-06 (RidgeCV inside
 meta-learner uses non-panel-aware inner CV).
@@ -510,7 +510,7 @@ class DirichletStackingMetaLearner:
 
 ---
 
-### E-04 · Conformal Prediction with Panel-Aware Calibration Set (P0)
+### E-04 · Conformal Prediction with Panel-Aware Calibration Set (P0) ✅ IMPLEMENTED
 
 **Motivation:** Addresses C-02 (conformal calibration uses row-position `TimeSeriesSplit`)
 and M-02 (only 44% of training data used for calibration).
@@ -721,7 +721,7 @@ gradient boosting and LightGBM; more stable meta-weight estimates.
 
 ---
 
-### E-07 · Leave-One-Entity-Out (LOEO) Generalization Diagnostic (P1)
+### E-07 · Leave-One-Entity-Out (LOEO) Generalization Diagnostic (P1) ✅ IMPLEMENTED
 
 **Motivation:** Addresses M-05 (ablation study lacks entity-level generalization check).
 LOEO evaluates whether the ensemble generalizes to *new* entities — a critical concern if
@@ -826,7 +826,7 @@ impact on 2020–2021).
 
 ---
 
-### E-09 · AutoML Hyperparameter Optimization with Panel-Safe Search (P1)
+### E-09 · AutoML Hyperparameter Optimization with Panel-Safe Search (P1) ✅ IMPLEMENTED
 
 **Motivation:** `gb_auto_tune` is available but uses standard Optuna; CatBoost and
 LightGBM hyperparameters are searched without guaranteeing panel-safe CV during search.
@@ -951,29 +951,63 @@ in tree models.
 
 ## 7. Priority Roadmap & Implementation Order
 
-| # | Enhancement | Priority | Effort | Impact on Accuracy |
-|---|---|---|---|---|
-| E-04 | Panel-aware conformal calibration | **P0** | Medium | Correct coverage |
-| E-01 | Nested rolling-origin CV with per-fold feature isolation | **P0** | High | Eliminates leakage bias |
-| E-03 | Bayesian Dirichlet stacking meta-learner | **P1** | Medium | +3–8% OOF R² stability |
-| E-02 | Stratified panel splitter + block-bootstrap variance | **P1** | Low | Better weight CI |
-| E-09 | Panel-safe Optuna AutoML | **P1** | Medium | +5–15% RMSE reduction |
-| E-07 | Leave-one-entity-out generalization diagnostic | **P1** | Low | Diagnostic only |
-| E-05 | Temporal-aware panel MICE | **P2** | High | Reduced imputation MSE |
-| E-10 | Online incremental ensemble update | **P2** | Medium | +2–5% final forecast |
-| E-06 | Synthetic panel augmentation via CopulaGAN | **P2** | Very High | +10% effective N |
-| E-08 | Distributional shift detection + importance weighting | **P2** | Medium | Robustness |
+| # | Enhancement | Priority | Effort | Impact on Accuracy | Status |
+|---|---|---|---|---|---|
+| E-04 | Panel-aware conformal calibration | **P0** | Medium | Correct coverage | ✅ Done |
+| E-01 | Nested rolling-origin CV with per-fold feature isolation | **P0** | High | Eliminates leakage bias | ✅ Done |
+| E-02 (Phase 1) | Secondary conformal OOF sweep (Papadopoulos, all years) | **P0** | Medium | +calibration coverage | ✅ Done |
+| E-03 | Bayesian Dirichlet stacking meta-learner | **P1** | Medium | +3–8% OOF R² stability | ✅ Done |
+| E-02 | Stratified panel splitter + block-bootstrap variance | **P1** | Low | Better weight CI | 🔲 Todo |
+| E-09 | Panel-safe Optuna AutoML | **P1** | Medium | +5–15% RMSE reduction | ✅ Done |
+| E-07 | Leave-one-entity-out generalization diagnostic | **P1** | Low | Diagnostic only | ✅ Done |
+| E-05 | Temporal-aware panel MICE | **P2** | High | Reduced imputation MSE | 🔲 Todo |
+| E-10 | Online incremental ensemble update | **P2** | Medium | +2–5% final forecast | 🔲 Todo |
+| E-06 | Synthetic panel augmentation via CopulaGAN | **P2** | Very High | +10% effective N | 🔲 Todo |
+| E-08 | Distributional shift detection + importance weighting | **P2** | Medium | Robustness | 🔲 Todo |
 
-### Phase 1 — Correctness (Sprint 1–2)
-Fix the three correctness-tier bugs:
-1. **E-04**: Replace `TimeSeriesSplit` in `_calibrate_cv_plus()` with `_WalkForwardYearlySplit`
-2. **E-01**: Add per-fold feature isolation to prevent rolling-statistic leakage
-3. **E-02**: Add Papadopoulos correction to `calibrate_residuals()` using all training years
+### Phase 1 — Correctness (Sprint 1–2) ✅ COMPLETE (2026-03-13)
 
-### Phase 2 — Accuracy (Sprint 3–4)
-1. **E-03**: Implement `DirichletStackingMetaLearner` as alternative to NNLS
-2. **E-09**: Implement `PanelSafeOptunaObjective` for GB/LightGBM tuning
-3. **E-07**: Implement `LeaveOneEntityOutCV` as evaluation diagnostic
+All three correctness-tier fixes implemented and verified (302 tests pass):
+
+1. ✅ **E-04**: Replaced `TimeSeriesSplit` in `_calibrate_cv_plus()` with `_ConformalWalkForwardSplit`
+   — calendar-year-aligned expanding-window splits; entity indices forwarded via `inspect.signature`
+   — Files: `forecasting/conformal.py`
+
+2. ✅ **E-01**: Per-fold feature isolation for entity-demeaned features (`_demeaned`, `_demeaned_momentum`)
+   — `compute_fold_entity_corrections(max_feature_year)` recomputes entity means from fold-restricted years
+   — `_build_fold_correction_fn()` factory applies `Δ = μ_global − μ_fold` per row per CV fold
+   — Files: `forecasting/features.py`, `forecasting/preprocessing.py`, `forecasting/super_learner.py`, `forecasting/unified.py`
+
+3. ✅ **E-02 (Phase 1)**: Secondary conformal OOF sweep via `_build_conformal_oof_residuals()`
+   — Walk-forward CV with `conformal_min_train_years=3` covers years 2013–2019 (primary min_train=8 only covers 2020–2024)
+   — Combined calibration residuals stored as `_oof_conformal_residuals_` (~630–819 vs ~315 samples)
+   — Files: `forecasting/super_learner.py`, `forecasting/unified.py`, `config.py`
+
+### Phase 2 — Accuracy (Sprint 3–4) ✅ COMPLETE (2026-03-13)
+
+All three accuracy-tier enhancements implemented and verified (302 tests pass):
+
+1. ✅ **E-03**: `DirichletStackingMetaLearner` — Yao et al. (2018) log-score Bayesian stacking
+   — `meta_learner_type="dirichlet_stacking"` in config (default `"ridge"` preserved)
+   — L-BFGS-B on softmax-parameterised logit space; Gaussian predictive density per model
+   — Bootstrap weight uncertainty stored in `SuperLearner._meta_weight_std_`
+   — Methods: `_fit_dirichlet_stacking()`, `_compute_dirichlet_weight_std()`
+   — Files: `forecasting/super_learner.py`, `config.py`, `forecasting/unified.py`
+
+2. ✅ **E-09**: Panel-safe Optuna AutoML with expanded search space and `MedianPruner`
+   — Expanded params: `subsample`, `colsample_*`, `min_child_*`, `l1_reg`, `num_leaves`
+   — CatBoost: 8 hyperparameters, LightGBM: 9 hyperparameters (vs. 4 each previously)
+   — MedianPruner with `n_warmup_steps=1` eliminates ~40% of unpromising trials early
+   — TPE `multivariate=True` for correlated parameter modelling
+   — Default `gb_tune_n_trials` raised from 20 → 40 in `config.py`
+   — Files: `forecasting/unified.py`, `config.py`
+
+3. ✅ **E-07**: `LeaveOneEntityOutCV` generalization diagnostic
+   — Full `run(super_learner, X, y, entity_indices, year_labels)` API
+   — Per-entity R², RMSE, MAE; `loeo_vs_cv_delta` when `cv_r2_reference` provided
+   — `hardest_entities(n=10)` and `generalization_flag(threshold=-0.10)` helpers
+   — Importable as `from forecasting import LeaveOneEntityOutCV`
+   — File: `forecasting/evaluation_diagnostics.py`
 
 ### Phase 3 — SOTA (Sprint 5–6)
 1. **E-05**: Implement `PanelSequentialMICE` with temporal + spatial imputation

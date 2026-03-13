@@ -310,6 +310,44 @@ class ForecastConfig:
     fold.  With year_labels = target years (2012–2024), setting 8 means the
     first validation year is 2020 (index 8 in [2012…2024]), matching the
     desired fold design: Fold 1 → train 2011–2019, validate 2020."""
+    cv_conformal_min_train_years: int = 3
+    """Minimum training cohorts for the **conformal-only** extended OOF sweep
+    (E-02).  The SuperLearner runs a secondary walk-forward pass to generate
+    OOF residuals for early years not covered by the primary CV
+    (``cv_min_train_years=8`` leaves years 2012–2019 without OOF).
+
+    Setting 3 yields early folds: val = 2015, 2016, 2017, 2018, 2019 on
+    top of the primary 5 folds (val = 2020...2024), giving ~8 additional
+    fold-years × 63 entities = 504 more calibration residuals.  These
+    extended residuals are pooled with the primary OOF residuals for
+    conformal calibration only — they do NOT influence meta-weights.
+
+    Minimum 2 required (at least 2 training cohorts before first val year).
+    Set equal to ``cv_min_train_years`` to disable the secondary sweep."""
+
+    meta_learner_type: str = "ridge"
+    """Second-level meta-learner used to combine base-model OOF predictions.
+
+    Options
+    -------
+    ``"ridge"`` (default)
+        Non-negative least squares (NNLS) when ``positive_weights=True``
+        (the production default), otherwise scikit-learn ``RidgeCV``.
+        Fast, deterministic, low-variance despite small OOF count.
+    ``"dirichlet_stacking"``
+        Yao et al. (2018) approximate Bayesian model stacking.
+        Maximises the leave-one-fold-out log predictive score via
+        L-BFGS-B in logit (softmax) space with Gaussian predictive
+        densities.  Naturally handles model uncertainty; avoids the
+        NNLS hard zero-weight artefact.  Adds ~2–5 s fitting overhead
+        and stores bootstrap weight std in ``_meta_weight_std_``.
+    ``"bayesian_stacking"``
+        Lightweight temperature-softmax over OOF R² scores.  Fast but
+        ignores predictive density — kept for backwards compatibility.
+    ``"elasticnet"``
+        ElasticNetCV with positive constraint; useful when base models
+        are highly collinear.
+    """
 
     # ── Reproducibility ──────────────────────────────────────────────────
     random_state: int = 42
@@ -331,9 +369,11 @@ class ForecastConfig:
     Default False: production default uses configured HPs (faster, reproducible).
     Set True for exploratory runs where raw accuracy matters more than speed.
     """
-    gb_tune_n_trials: int = 20
+    gb_tune_n_trials: int = 40
     """Number of optuna TPE trials per model during hyperparameter search.
-    20 trials ≈ 5–10 min per model on CPU.  Reduce for faster runs.
+    40 trials ≈ 10–20 min per model on CPU (E-09 expanded search space);
+    reduce for faster runs.  MedianPruner eliminates ~40% of trials early,
+    so net wall time is ~22–24 completed evaluations.
     Only used when ``auto_tune_gb=True``.
     """
 

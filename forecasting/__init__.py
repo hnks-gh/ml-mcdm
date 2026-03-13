@@ -65,6 +65,7 @@ from .super_learner import SuperLearner
 # Calibration and evaluation
 from .conformal import ConformalPredictor
 from .evaluation import ForecastEvaluator, AblationStudy
+from .evaluation_diagnostics import LeaveOneEntityOutCV
 
 # Unified orchestrator
 from .unified import (
@@ -93,6 +94,7 @@ __all__ = [
     'ConformalPredictor',
     'ForecastEvaluator',
     'AblationStudy',
+    'LeaveOneEntityOutCV',
     # Unified
     'UnifiedForecaster',
     'UnifiedForecastResult',

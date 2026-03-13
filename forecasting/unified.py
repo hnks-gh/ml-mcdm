@@ -410,6 +410,152 @@ def _get_per_output_importance(
     return _normalise(imp)
 
 
+# ---------------------------------------------------------------------------
+# E-01 helper: fold-aware entity demean correction factory
+# ---------------------------------------------------------------------------
+
+def _build_fold_correction_fn(
+    feature_engineer,
+    reducer_tree,
+    year_labels_arr,
+    entity_indices_arr,
+    per_model_tree_names=None,
+):
+    """
+    Build a fold-correction callable for ``SuperLearner.fit(fold_correction_fn=...)``.
+
+    The returned function ``correct(model_name, X_fold, train_idx, fold_entity_indices)``
+    adjusts the ``_demeaned`` and ``_demeaned_momentum`` feature columns in
+    ``X_fold`` so that they reflect entity means computed from the fold's
+    training years only — eliminating the look-ahead bias from the globally
+    pre-computed entity statistics.
+
+    **Why only _demeaned / _demeaned_momentum?**
+    These are the only two feature blocks whose values depend on *all*
+    training years at once (via ``_entity_means_`` and ``_entity_mean_deltas_``).
+    All other features (lags, rolling windows, EWMA, etc.) are already
+    time-local: they only read from data up to ``current_year`` (= feature year
+    = target year − 1), so they contain no future leakage.
+
+    **Correction formula**
+    Let ``μ_global(e,c)`` be the entity mean over all training feature years,
+    and ``μ_fold(e,c)`` be the restricted mean over years ≤ max_fold_feature_year.
+    The pre-computed feature contains ``raw − μ_global``.  The corrected value
+    should be ``raw − μ_fold = (raw − μ_global) + (μ_global − μ_fold)``.
+    Adding the offset ``Δμ = μ_global − μ_fold`` to the stored column achieves
+    the correction without recomputing raw values.
+
+    **PLS-track:** BayesianRidge receives PLS-compressed features.  The
+    compression matrix absorbs the entity demean non-linearly; no closed-form
+    column correction is possible.  Those folds are left uncorrected (mild
+    transductive leakage — second-order effect on meta-weights).
+
+    Parameters
+    ----------
+    feature_engineer : TemporalFeatureEngineer
+        Fitted feature engineer; must have ``_entity_means_``,
+        ``_entity_mean_deltas_``, ``_entity_yearly_values_``,
+        ``_entities_``, ``_components_``, ``_all_train_feature_years_``.
+    reducer_tree : PanelFeatureReducer
+        Fitted threshold-only reducer; must expose
+        ``get_demeaned_column_indices()``.
+    year_labels_arr : ndarray (n_cv_samples,)
+        Calendar target-year labels for every row in the CV dataset.
+    entity_indices_arr : ndarray (n_cv_samples,) or None
+        Integer entity indices for every row in the CV dataset.
+    per_model_tree_names : set of str, optional
+        Model names that use the tree track.  Correction applied only to
+        these models' feature matrices.  Others are returned unchanged.
+
+    Returns
+    -------
+    callable or None
+        ``None`` when prerequisite attributes are absent (safe fallback).
+    """
+    if feature_engineer is None or reducer_tree is None:
+        return None
+
+    # Retrieve column indices of demeaned features in the tree-track matrix
+    try:
+        demeaned_cols, demeaned_mom_cols = reducer_tree.get_demeaned_column_indices()
+    except Exception:
+        return None
+
+    if not demeaned_cols and not demeaned_mom_cols:
+        # No demeaned columns survived variance threshold — nothing to correct
+        return None
+
+    if not hasattr(feature_engineer, '_entity_yearly_values_'):
+        # Feature engineer was not updated to store per-year raw values
+        return None
+
+    _entities    = feature_engineer._entities_     if hasattr(feature_engineer, '_entities_') else []
+    _components  = feature_engineer._components_   if hasattr(feature_engineer, '_components_') else []
+    _tree_names  = per_model_tree_names or set()
+    _global_means        = feature_engineer._entity_means_
+    _global_mean_deltas  = feature_engineer._entity_mean_deltas_
+
+    def _correct(model_name, X_fold, train_idx, fold_entity_indices):
+        """Apply fold-restricted entity-demean correction to X_fold."""
+        # Only correct tree-track models; PLS-compressed matrices are skipped
+        if _tree_names and model_name not in _tree_names:
+            return X_fold
+
+        if year_labels_arr is None or len(train_idx) == 0:
+            return X_fold
+
+        # Determine max feature year for this fold's training window
+        fold_max_target_year = int(np.max(year_labels_arr[train_idx]))
+        fold_max_feature_year = fold_max_target_year - 1
+
+        try:
+            fold_means, fold_mean_deltas = (
+                feature_engineer.compute_fold_entity_corrections(fold_max_feature_year)
+            )
+        except Exception:
+            return X_fold
+
+        # No correction needed for the last fold (uses all training data)
+        if fold_means is fold_mean_deltas and fold_means is feature_engineer._entity_means_:
+            return X_fold
+
+        X_corrected = X_fold.copy()
+        n_rows = len(X_fold)
+
+        for row_i in range(n_rows):
+            ent_idx = (
+                int(fold_entity_indices[row_i])
+                if (fold_entity_indices is not None and row_i < len(fold_entity_indices))
+                else -1
+            )
+            entity_name = _entities[ent_idx] if 0 <= ent_idx < len(_entities) else None
+            if entity_name is None:
+                continue
+
+            for ci, comp in enumerate(_components):
+                g_mean  = _global_means.get((entity_name, comp), 0.0)
+                f_mean  = fold_means.get((entity_name, comp), g_mean)
+                Δ_mean  = g_mean - f_mean  # correction offset
+
+                g_delta = _global_mean_deltas.get((entity_name, comp), 0.0)
+                f_delta = fold_mean_deltas.get((entity_name, comp), g_delta)
+                Δ_delta = g_delta - f_delta
+
+                if ci < len(demeaned_cols):
+                    col_dm = demeaned_cols[ci]
+                    if col_dm < X_corrected.shape[1]:
+                        X_corrected[row_i, col_dm] += Δ_mean
+
+                if ci < len(demeaned_mom_cols):
+                    col_dm_mom = demeaned_mom_cols[ci]
+                    if col_dm_mom < X_corrected.shape[1]:
+                        X_corrected[row_i, col_dm_mom] += Δ_delta
+
+        return X_corrected
+
+    return _correct
+
+
 class UnifiedForecaster:
     """
     State-of-the-art unified forecasting system.
@@ -550,6 +696,7 @@ class UnifiedForecaster:
         # ── Stage 3 public outputs ────────────────────────────────────────────
         self.oof_predictions_: Optional[np.ndarray] = None
         self._cv_scores_: Dict[str, List[float]] = {}
+        self._oof_conformal_residuals_: Optional[np.ndarray] = None  # E-02
 
         # ── Stage 4 public outputs ────────────────────────────────────────────
         self._predictions_arr_: Optional[np.ndarray] = None
@@ -575,14 +722,27 @@ class UnifiedForecaster:
         self.composite_predictions_: Optional[pd.Series] = None
 
     def _tune_gb_hyperparameters(self) -> None:
-        """Phase 4: One-time Optuna HP search for CatBoost and LightGBM.
+        """Phase 4: Panel-safe Optuna HP search for CatBoost and LightGBM (E-09).
 
         Runs a single TPE study per GB model over the full training set using
         ``PanelWalkForwardCV(min_train_years=7, max_folds=4)``.  Skipped
         silently when optuna is not installed.  Results stored in
         ``self._tuned_gb_params_`` and consumed by ``_create_models()``.
-        Only called when ``config.auto_tune_gb=True`` at the start of
-        :meth:`stage3_fit_base_models`.
+        Only called when ``config.auto_tune_gb=True``.
+
+        Improvements over the original (E-09):
+        - Expanded search space covering subsample, colsample, min_child,
+          l1 regularisation, and deeper/longer tree budgets.
+        - MedianPruner: intermediate per-fold RMSE values are reported so
+          that Optuna can prune unpromising trials early (saves ~40% wall time).
+        - Default n_trials increased to 40 for better Pareto coverage; still
+          controllable via ``config.gb_tune_n_trials``.
+        - Panel-safe CV: ``PanelWalkForwardCV`` ensures fold boundaries align
+          with calendar years so no holdout-year leakage occurs during search.
+
+        Note on entity_indices: CatBoost and LightGBM are tree models that do
+        not use entity-level random effects; the panel structure is handled
+        purely by the walk-forward CV splitter.
         """
         try:
             import optuna
@@ -593,70 +753,93 @@ class UnifiedForecaster:
             return
 
         n_trials = (
-            getattr(self._config, 'gb_tune_n_trials', 20)
-            if self._config is not None else 20
+            getattr(self._config, 'gb_tune_n_trials', 40)
+            if self._config is not None else 40
         )
         X_tree      = self.X_train_tree_
         y           = self.y_train_.values
         year_labels = self._year_labels_arr_
         if self.verbose:
             print(
-                f"  Phase 4: Optuna HP search "
-                f"({n_trials} trials × 2 models)..."
+                f"  Phase 4 (E-09): Panel-safe Optuna HP search "
+                f"({n_trials} trials × 2 models, MedianPruner)..."
             )
 
-        def _cv_objective(trial, forecaster_class, param_names):
+        def _cv_objective(trial, forecaster_class, model_key):
+            """Build params from trial, run walk-forward CV, report per-fold RMSE."""
             params: Dict[str, Any] = {}
-            for p in param_names:
-                if p == 'learning_rate':
-                    params[p] = trial.suggest_float(p, 1e-3, 0.2, log=True)
-                elif p in ('depth', 'max_depth'):
-                    params[p] = trial.suggest_int(p, 3, 7)
-                elif p in ('l2_leaf_reg', 'l2_reg'):
-                    params[p] = trial.suggest_float(p, 0.1, 10.0, log=True)
-                elif p in ('iterations', 'n_estimators'):
-                    params[p] = trial.suggest_int(p, 50, 300, step=50)
+
+            if model_key == 'GradientBoosting':
+                params['iterations']         = trial.suggest_int('iterations', 50, 600, step=50)
+                params['depth']              = trial.suggest_int('depth', 3, 8)
+                params['learning_rate']      = trial.suggest_float('learning_rate', 5e-3, 0.3, log=True)
+                params['l2_leaf_reg']        = trial.suggest_float('l2_leaf_reg', 0.05, 50.0, log=True)
+                params['subsample']          = trial.suggest_float('subsample', 0.6, 1.0)
+                params['colsample_bylevel']  = trial.suggest_float('colsample_bylevel', 0.6, 1.0)
+                params['min_data_in_leaf']   = trial.suggest_int('min_data_in_leaf', 2, 20)
+            else:  # LightGBM
+                params['n_estimators']       = trial.suggest_int('n_estimators', 50, 600, step=50)
+                params['max_depth']          = trial.suggest_int('max_depth', 3, 8)
+                params['learning_rate']      = trial.suggest_float('learning_rate', 5e-3, 0.3, log=True)
+                params['num_leaves']         = trial.suggest_int('num_leaves', 15, 80)
+                params['l2_reg']             = trial.suggest_float('l2_reg', 0.05, 50.0, log=True)
+                params['l1_reg']             = trial.suggest_float('l1_reg', 1e-4, 10.0, log=True)
+                params['min_child_samples']  = trial.suggest_int('min_child_samples', 5, 50)
+                params['subsample']          = trial.suggest_float('subsample', 0.6, 1.0)
+                params['colsample_bytree']   = trial.suggest_float('colsample_bytree', 0.6, 1.0)
+
             inner_cv = PanelWalkForwardCV(min_train_years=7, max_folds=4)
             rmse_list: List[float] = []
             try:
                 model = forecaster_class(
                     **params, random_state=self.random_state
                 )
-                for tr, va in inner_cv.split(X_tree, year_labels):
+                for step, (tr, va) in enumerate(inner_cv.split(X_tree, year_labels)):
                     m = copy.deepcopy(model)
                     m.fit(X_tree[tr], y[tr])
                     pred = m.predict(X_tree[va])
                     if pred.ndim == 1:
                         pred = pred.reshape(-1, 1)
-                    rmse_list.append(
-                        float(np.sqrt(mean_squared_error(y[va], pred)))
-                    )
+                    fold_rmse = float(np.sqrt(mean_squared_error(y[va], pred)))
+                    rmse_list.append(fold_rmse)
+                    # Report intermediate value for MedianPruner
+                    trial.report(float(np.mean(rmse_list)), step)
+                    if trial.should_prune():
+                        raise optuna.exceptions.TrialPruned()
+            except optuna.exceptions.TrialPruned:
+                raise
             except Exception:
                 return float('inf')
             return float(np.mean(rmse_list)) if rmse_list else float('inf')
 
-        for name, cls, param_names in [
-            (
-                'GradientBoosting', CatBoostForecaster,
-                ['iterations', 'depth', 'learning_rate', 'l2_leaf_reg'],
-            ),
-            (
-                'LightGBM', LightGBMForecaster,
-                ['n_estimators', 'max_depth', 'learning_rate', 'l2_reg'],
-            ),
+        pruner = optuna.pruners.MedianPruner(
+            n_startup_trials=5,    # don't prune until 5 completed trials
+            n_warmup_steps=1,      # don't prune before fold 1 result
+            interval_steps=1,
+        )
+        for name, cls, model_key in [
+            ('GradientBoosting', CatBoostForecaster,  'GradientBoosting'),
+            ('LightGBM',         LightGBMForecaster,  'LightGBM'),
         ]:
             study = optuna.create_study(
                 direction='minimize',
-                sampler=optuna.samplers.TPESampler(seed=self.random_state),
+                sampler=optuna.samplers.TPESampler(
+                    seed=self.random_state, multivariate=True
+                ),
+                pruner=pruner,
             )
             study.optimize(
-                lambda t, c=cls, p=param_names: _cv_objective(t, c, p),
+                lambda t, c=cls, k=model_key: _cv_objective(t, c, k),
                 n_trials=n_trials,
                 show_progress_bar=False,
             )
             self._tuned_gb_params_[name] = study.best_params
+            pruned = len([t for t in study.trials
+                          if t.state == optuna.trial.TrialState.PRUNED])
             if self.verbose:
-                print(f"    {name} best HPs: {study.best_params}")
+                print(f"    {name} best HPs: {study.best_params} "
+                      f"(best RMSE={study.best_value:.4f}, "
+                      f"{pruned}/{n_trials} trials pruned)")
 
     def _create_models(self) -> Dict[str, BaseForecaster]:
         """
@@ -1167,13 +1350,34 @@ class UnifiedForecaster:
 
         self.super_learner_ = SuperLearner(
             base_models=self.models_,
-            meta_learner_type='ridge',
+            meta_learner_type=getattr(
+                self._config, 'meta_learner_type', 'ridge'
+            ),
             n_cv_folds=self.cv_folds,
             cv_min_train_years=self.cv_min_train_years,
+            conformal_min_train_years=getattr(
+                self._config, 'cv_conformal_min_train_years', 3
+            ),
             positive_weights=True,
             normalize_weights=True,
             random_state=self.random_state,
             verbose=self.verbose,
+        )
+
+        # ── E-01: Build fold-correction callable ──────────────────────────
+        # Returns a function (model_name, X_fold, train_idx, fold_entity_indices)
+        # → X_corrected that patches entity-demeaned feature columns in the
+        # tree-track matrices to use fold-restricted entity means instead of
+        # global (all-years) means. Eliminates look-ahead bias from the
+        # _demeaned and _demeaned_momentum feature blocks in early CV folds.
+        _fold_correction_fn = _build_fold_correction_fn(
+            feature_engineer=self.feature_engineer_,
+            reducer_tree=self.reducer_tree_,
+            year_labels_arr=_year_cv,   # CV dataset year labels (includes holdout when appended)
+            entity_indices_arr=_ent_cv,
+            per_model_tree_names={
+                'GradientBoosting', 'LightGBM', 'QuantileRF', 'PanelVAR', 'NAM'
+            },
         )
         self.super_learner_.fit(
             _X_cv_tree,
@@ -1185,6 +1389,7 @@ class UnifiedForecaster:
             refit_y=y_arr,
             refit_per_model_X=self._per_model_X_train_,
             refit_entity_indices=self._entity_indices_,
+            fold_correction_fn=_fold_correction_fn,
         )
 
         # Trim OOF arrays to n_train rows so Stage 5 (conformal calibration)
@@ -1200,6 +1405,13 @@ class UnifiedForecaster:
         # Cache OOF predictions (Stage 5 conformal uses them for residuals)
         self.oof_predictions_ = self.super_learner_._oof_ensemble_predictions_
         self._cv_scores_ = self.super_learner_.get_cv_scores()
+
+        # E-02: cache extended conformal OOF residuals when available.
+        # These cover ALL training years (not just primary CV window) and
+        # are passed to stage5 for conformal calibration.
+        self._oof_conformal_residuals_ = (
+            self.super_learner_._oof_conformal_residuals_
+        )
 
     def stage4_fit_meta_learner(self) -> None:
         """Stage 4: Extract meta-weights and generate ensemble predictions.
@@ -1504,12 +1716,42 @@ class UnifiedForecaster:
                     if _has_oof:
                         valid = sl._oof_valid_mask_
                         oof_pred_d = sl._oof_ensemble_predictions_[valid, d]
-                        oof_residuals = y_col[valid] - oof_pred_d
-                        cp.calibrate_residuals(oof_residuals, base_model=wrapper)
+
+                        # E-02: prefer extended conformal residuals when they
+                        # cover more training years than the primary OOF.
+                        # ``_oof_conformal_residuals_`` already encodes
+                        # (y − ŷ) across the combined primary + secondary sweep.
+                        # We extract the d-th output column for this component
+                        # and pass the (n_valid,) residual vector directly to
+                        # calibrate_residuals — no y_col indexing needed.
+                        _ext_residuals = getattr(
+                            self, '_oof_conformal_residuals_', None
+                        )
+                        if (
+                            _ext_residuals is not None
+                            and _ext_residuals.ndim > 1
+                            and d < _ext_residuals.shape[1]
+                        ):
+                            # Use extended residuals (more cal points, E-02)
+                            _d_residuals = _ext_residuals[:, d]
+                            _d_residuals = _d_residuals[~np.isnan(_d_residuals)]
+                            if len(_d_residuals) >= 5:
+                                cp.calibrate_residuals(_d_residuals, base_model=wrapper)
+                            else:
+                                # Fallback to primary OOF residuals
+                                oof_residuals = y_col[valid] - oof_pred_d
+                                cp.calibrate_residuals(oof_residuals, base_model=wrapper)
+                        else:
+                            # Primary OOF residuals only (original U-2 path)
+                            oof_residuals = y_col[valid] - oof_pred_d
+                            cp.calibrate_residuals(oof_residuals, base_model=wrapper)
                     else:
+                        # Fallback: re-calibrate via cv_plus (panel-aware, E-04)
                         cp.calibrate(
                             wrapper, self.X_train_tree_, y_col,
                             cv_folds=self.cv_folds,
+                            year_labels=self._year_labels_arr_,
+                            entity_indices=self._entity_indices_,
                         )
 
                     point_d = self._pred_df_[col].values

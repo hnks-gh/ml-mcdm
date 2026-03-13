@@ -346,6 +346,7 @@ class SuperLearner:
         meta_learner_type: str = "ridge",
         n_cv_folds: int = 5,
         cv_min_train_years: int = 8,
+        conformal_min_train_years: int = 3,
         positive_weights: bool = True,
         normalize_weights: bool = True,
         meta_alpha_range: Optional[List[float]] = None,
@@ -357,6 +358,7 @@ class SuperLearner:
         self.meta_learner_type = meta_learner_type
         self.n_cv_folds = n_cv_folds
         self.cv_min_train_years = cv_min_train_years
+        self.conformal_min_train_years = max(2, conformal_min_train_years)
         self.positive_weights = positive_weights
         self.normalize_weights = normalize_weights
         self.meta_alpha_range = meta_alpha_range or [
@@ -381,6 +383,19 @@ class SuperLearner:
         self._oof_ensemble_predictions_: Optional[np.ndarray] = None  # (n_samples, n_outputs)
         self._oof_valid_mask_: Optional[np.ndarray] = None            # (n_samples,) bool
 
+        # E-02: extended conformal OOF residuals collected via secondary
+        # walk-forward sweep (min_train_years = conformal_min_train_years).
+        # Shape: (n_total, n_outputs) — covers ALL training years, not just
+        # the primary CV window.  Used by stage5 to widen the conformal
+        # calibration set for tighter, more reliable coverage.
+        self._oof_conformal_residuals_: Optional[np.ndarray] = None   # (n_total, n_outputs)
+
+        # E-03: Dirichlet stacking weight uncertainty estimates.
+        # Shape: {model_name: std_of_weight} — computed via bootstrap
+        # resampling of OOF rows during meta-learner fit.  Only populated
+        # when meta_learner_type == "dirichlet_stacking".
+        self._meta_weight_std_: Optional[Dict[str, float]] = None
+
         # Per-criterion RMSE across CV folds (Phase 4).
         # Shape: {model_name: [ [rmse_c1, ..., rmse_cK]_fold1, ... ]}
         self._cv_scores_per_criterion_: Dict[str, List[List[float]]] = {}
@@ -397,6 +412,7 @@ class SuperLearner:
         refit_y: Optional[np.ndarray] = None,
         refit_per_model_X: Optional[Dict[str, np.ndarray]] = None,
         refit_entity_indices: Optional[np.ndarray] = None,
+        fold_correction_fn=None,
     ) -> "SuperLearner":
         """
         Fit the Super Learner ensemble.
@@ -404,6 +420,8 @@ class SuperLearner:
         Stage 1: Generate out-of-fold predictions via temporal CV
         Stage 2: Train meta-learner on OOF predictions
         Stage 3: Re-train base models on refit data (or full data)
+        Stage 4: (E-02) Secondary conformal OOF sweep to extend calibration
+                 residuals to ALL training years, not just the primary window.
 
         Args:
             X: Feature matrix used for the CV/OOF phase (n_samples, n_features).
@@ -421,6 +439,12 @@ class SuperLearner:
             refit_y: Targets paired with ``refit_X``.
             refit_per_model_X: Per-model matrices paired with ``refit_X``.
             refit_entity_indices: Entity indices paired with ``refit_X``.
+            fold_correction_fn: Optional callable ``(model_name, X_fold,
+                train_idx, fold_entity_indices) -> X_fold_corrected`` that
+                applies fold-aware entity-demean corrections to tree-track
+                feature matrices inside the CV loop (E-01 fix).  Called
+                once per (fold, model) pair for training and validation folds.
+                When None, no correction is applied (default).
 
         Returns:
             Self for method chaining
@@ -483,6 +507,31 @@ class SuperLearner:
                 X_m = per_model_X[name] if (per_model_X and name in per_model_X) else X
                 X_train_cv = X_m[train_idx]
                 X_val_cv = X_m[val_idx]
+
+                # ── E-01: Apply fold-aware entity demean correction ────────
+                # The entity-demeaned features in X_train_tree_ were computed
+                # using global entity means (all training years).  In early
+                # CV folds some of those years are in the future (leakage).
+                # fold_correction_fn adjusts only the _demeaned and
+                # _demeaned_momentum columns to use fold-restricted means.
+                # Applied only to tree-track matrices (the callable returns
+                # the input unchanged for PLS-compressed matrices).
+                if fold_correction_fn is not None:
+                    _train_ent_fold = (
+                        entity_indices[train_idx]
+                        if entity_indices is not None else None
+                    )
+                    _val_ent_fold = (
+                        entity_indices[val_idx]
+                        if entity_indices is not None else None
+                    )
+                    X_train_cv = fold_correction_fn(
+                        name, X_train_cv, train_idx, _train_ent_fold
+                    )
+                    X_val_cv = fold_correction_fn(
+                        name, X_val_cv, train_idx, _val_ent_fold
+                    )
+
                 # Drop rows where any y target is NaN — partial-NaN rows are
                 # preserved upstream for imputation reporting but base models
                 # require complete target vectors.
@@ -638,6 +687,38 @@ class SuperLearner:
         self._oof_ensemble_predictions_ = oof_ensemble
         self._oof_valid_mask_ = ~np.isnan(oof_ensemble).any(axis=1)
 
+        # ================================================================
+        # Stage 4 (E-02): Extended conformal OOF sweep
+        # ================================================================
+        # When ``conformal_min_train_years < cv_min_train_years`` and
+        # ``year_labels`` is available, run an additional walk-forward pass
+        # starting from ``conformal_min_train_years`` to collect OOF
+        # residuals for early training years not covered by the primary CV.
+        #
+        # Example: primary CV (min=8) → val years 2020–2024 (315 residuals)
+        #          secondary sweep (min=3) → val years 2015–2019 (315 more)
+        #          combined calibration set: 630 residuals → tighter q̂
+        #
+        # The secondary sweep uses the same base_models (unfitted templates),
+        # re-fitting each per fold with the same entity_indices routing.
+        # Meta-weights from Stage 2 are applied to produce ensemble OOF
+        # predictions, which are compared against y to form residuals.
+        #
+        # Theoretical validity: conservative coverage guaranteed because
+        # early-fold base models are trained on fewer years → slightly larger
+        # residuals → q̂ may be slightly inflated → intervals are wider than
+        # necessary but never under-covering (distribution-free guarantee).
+        # ================================================================
+        self._oof_conformal_residuals_ = self._build_conformal_oof_residuals(
+            X=X,
+            y=y,
+            entity_indices=entity_indices,
+            per_model_X=per_model_X,
+            year_labels=year_labels,
+            primary_oof=oof_ensemble,
+            fold_correction_fn=fold_correction_fn,
+        )
+
         # ============================================================
         # Stage 3: Re-train all base models on refit data
         # ============================================================
@@ -704,6 +785,158 @@ class SuperLearner:
         if 'entity_indices' in sig.parameters and entity_indices is not None:
             return model.predict(X, entity_indices=entity_indices)
         return model.predict(X)
+
+    def _build_conformal_oof_residuals(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        entity_indices: Optional[np.ndarray],
+        per_model_X: Optional[Dict[str, np.ndarray]],
+        year_labels: Optional[np.ndarray],
+        primary_oof: np.ndarray,
+        fold_correction_fn=None,
+    ) -> Optional[np.ndarray]:
+        """
+        E-02 — Extended conformal OOF residuals covering ALL training years.
+
+        Runs a secondary walk-forward CV starting from
+        ``self.conformal_min_train_years`` and collects ensemble OOF
+        predictions for every year *not* covered by the primary CV.  The
+        returned array is the element-wise difference ``y − ŷ_oof`` over
+        the extended window, pooled with the primary OOF residuals so that
+        conformal calibration uses the full training history.
+
+        Returns
+        -------
+        combined_residuals : ndarray, shape (n_total_valid, n_outputs), or None
+            Extended OOF residuals combining primary and secondary sweeps.
+            ``None`` when ``year_labels`` is absent (non-panel mode) or when
+            ``conformal_min_train_years >= cv_min_train_years`` (no secondary
+            sweep needed because primary already covers all years).
+        """
+        n_samples, n_outputs = y.shape[0], y.shape[1] if y.ndim > 1 else 1
+
+        # Guard: secondary sweep only makes sense with year_labels and when
+        # the secondary window starts earlier than the primary.
+        if (
+            year_labels is None
+            or self.conformal_min_train_years >= self.cv_min_train_years
+        ):
+            return None
+
+        # Determine which validation years are already in the primary OOF.
+        primary_has_oof = ~np.isnan(primary_oof).all(axis=1)
+        primary_val_years = (
+            set(int(yy) for yy in np.unique(year_labels[primary_has_oof]))
+            if primary_has_oof.any() else set()
+        )
+
+        # Build secondary splitter — starts earlier than primary.
+        secondary_splitter = _WalkForwardYearlySplit(
+            min_train_years=self.conformal_min_train_years,
+            max_folds=999,  # exhaust all years
+        )
+
+        # Collect per-row secondary OOF predictions
+        secondary_oof = np.full((n_samples, n_outputs), np.nan)
+
+        for _fold_idx, (_train_idx, _val_idx) in enumerate(
+            secondary_splitter.split(X, year_labels)
+        ):
+            _val_years = set(int(yy) for yy in np.unique(year_labels[_val_idx]))
+            # Skip folds whose val_year is already covered by primary OOF
+            if _val_years.issubset(primary_val_years):
+                continue
+
+            _y_train = y[_train_idx]
+            _y_nan = (
+                np.isnan(_y_train).any(axis=1)
+                if _y_train.ndim > 1 else np.isnan(_y_train)
+            )
+            _valid = ~_y_nan
+            _ent_train = (
+                entity_indices[_train_idx][_valid]
+                if entity_indices is not None else None
+            )
+            _ent_val = (
+                entity_indices[_val_idx]
+                if entity_indices is not None else None
+            )
+
+            # Fit all base models and combine with current meta-weights
+            secondary_preds = []
+            secondary_weights = []
+            for m_idx, (name, model) in enumerate(self.base_models.items()):
+                w = self._meta_weights.get(name, 0.0)
+                if w == 0.0:
+                    continue
+                X_m = (
+                    per_model_X[name]
+                    if (per_model_X and name in per_model_X) else X
+                )
+                _X_train_cv = X_m[_train_idx][_valid]
+                _X_val_cv   = X_m[_val_idx]
+
+                # Apply fold correction for entity demean features (E-01)
+                if fold_correction_fn is not None:
+                    _X_train_cv = fold_correction_fn(
+                        name, _X_train_cv, _train_idx[_valid], _ent_train
+                    )
+                    _X_val_cv = fold_correction_fn(
+                        name, _X_val_cv, _train_idx, _ent_val
+                    )
+
+                try:
+                    model_copy = copy.deepcopy(model)
+                    self._fit_model(
+                        model_copy, _X_train_cv, _y_train[_valid], _ent_train
+                    )
+                    pred = self._predict_model(model_copy, _X_val_cv, _ent_val)
+                    if pred.ndim == 1:
+                        pred = pred.reshape(-1, 1)
+                    elif np.ndim(pred) == 0:
+                        pred = np.asarray([[float(pred)]] * len(_val_idx))
+                    secondary_preds.append(pred)
+                    secondary_weights.append(w)
+                except Exception:
+                    continue
+
+            if not secondary_preds:
+                continue
+
+            # Weighted ensemble prediction for secondary fold
+            total_w = sum(secondary_weights)
+            if total_w < 1e-12:
+                continue
+            ens_pred = sum(
+                (pw / total_w) * pp
+                for pw, pp in zip(secondary_weights, secondary_preds)
+            )
+            if ens_pred.shape[1] < n_outputs:
+                # some models only produced 1 output — broadcast
+                ens_pred = np.tile(ens_pred, (1, n_outputs))[:, :n_outputs]
+
+            for out_col in range(n_outputs):
+                secondary_oof[_val_idx, out_col] = ens_pred[:, min(out_col, ens_pred.shape[1] - 1)]
+
+        # Pool primary and secondary OOF residuals
+        # primary_oof covers the later calibration years, secondary_oof the earlier
+        combined_oof = np.where(
+            np.isnan(primary_oof), secondary_oof, primary_oof
+        )
+        valid_rows = ~np.isnan(combined_oof).all(axis=1)
+
+        if valid_rows.sum() == 0:
+            return None
+
+        # Return residuals (y - ŷ_oof) over the combined valid set
+        y_valid  = y[valid_rows]
+        oof_valid = combined_oof[valid_rows]
+
+        # Zero-out NaN target cells before residual computation
+        _y_ok = ~np.isnan(y_valid)
+        residuals = np.where(_y_ok, y_valid - oof_valid, np.nan)
+        return residuals
 
     def _fit_meta_learner(self, oof_X: np.ndarray, oof_y: np.ndarray):
         """Fit the second-level meta-learner on OOF predictions.
@@ -773,6 +1006,14 @@ class SuperLearner:
                 scores = np.clip(scores, 0, None)
                 exp_scores = np.exp(self.temperature * scores)
                 active_coefs = exp_scores / exp_scores.sum()
+            elif self.meta_learner_type == "dirichlet_stacking":
+                # Yao et al. (2018) — true log-score Bayesian model stacking.
+                # Maximises: w* = argmax_{w ∈ Δ_K} Σ_n log( Σ_k w_k · N(y_n; ŷ_kn, σ_k²) )
+                # where σ_k² = OOF MSE of model k (Gaussian predictive density approx).
+                # Optimisation: unconstrained L-BFGS-B in logit space, softmax → simplex.
+                active_coefs = self._fit_dirichlet_stacking(
+                    active_preds_valid, y_valid
+                )
             else:  # ridge
                 if self.positive_weights:
                     # Use NNLS for a proper non-negative least-squares
@@ -828,6 +1069,161 @@ class SuperLearner:
                 avg_coefs = np.ones(len(self.base_models)) / len(self.base_models)
 
         self._meta_weights = dict(zip(self.base_models.keys(), avg_coefs))
+
+        # E-03: For dirichlet stacking, estimate meta-weight uncertainty via
+        # parametric bootstrap so downstream callers (e.g. predict_with_uncertainty)
+        # can propagate weight variance into forecast variance.
+        if self.meta_learner_type == "dirichlet_stacking":
+            self._meta_weight_std_ = self._compute_dirichlet_weight_std(oof_X, oof_y)
+
+    def _fit_dirichlet_stacking(
+        self,
+        preds: np.ndarray,   # (n_valid, K_active)  OOF predictions for active models
+        y: np.ndarray,       # (n_valid,)            true targets for this output column
+        max_iter: int = 500,
+    ) -> np.ndarray:
+        """Yao et al. (2018) log-score Bayesian stacking for one output column.
+
+        Maximises the leave-one-fold-out log predictive score:
+
+            w* = argmax_{w ∈ Δ_K} Σ_n log( Σ_k w_k · N(y_n; ŷ_kn, σ_k²) )
+
+        where σ_k² = mean OOF squared error of model k (Gaussian predictive
+        density approximation for point forecasters).
+
+        Parametrisation: w = softmax(logits) — guarantees w ∈ Δ_K without
+        constraint handling.  Optimised via L-BFGS-B in unconstrained logit
+        space.  Falls back to NNLS if scipy is unavailable.
+
+        Parameters
+        ----------
+        preds : ndarray, shape (n_valid, K_active)
+            OOF predictions, one column per active base model.
+        y : ndarray, shape (n_valid,)
+            True target values (no NaNs expected).
+        max_iter : int
+            Maximum L-BFGS-B iterations.
+
+        Returns
+        -------
+        weights : ndarray, shape (K_active,)
+            Non-negative mixture weights summing to 1.
+        """
+        K = preds.shape[1]
+        if K == 1:
+            return np.ones(1)
+
+        try:
+            from scipy.optimize import minimize
+            from scipy.special import softmax as _sfx
+        except ImportError:
+            # scipy not available — fall back to equal weights
+            return np.ones(K) / K
+
+        # Per-model predictive variance σ_k² = MSE on OOF rows.
+        # Clamped to ≥ 1e-8 to avoid log(0) in the density.
+        sigma2 = np.maximum(
+            np.mean((y[:, np.newaxis] - preds) ** 2, axis=0),
+            1e-8,
+        )  # (K,)
+        log_sigma     = 0.5 * np.log(sigma2)           # (K,)
+        inv_2sigma2   = 0.5 / sigma2                    # (K,)
+
+        def _neg_log_score(logits: np.ndarray) -> float:
+            w     = _sfx(logits)                        # (K,)  simplex
+            log_w = np.log(w + 1e-30)                   # (K,)
+
+            # log N(y_n; ŷ_kn, σ_k²) = -0.5*(y_n−ŷ_kn)²/σ_k² − log(σ_k) − const
+            diff2  = (y[:, np.newaxis] - preds) ** 2   # (n, K)
+            log_pk = -inv_2sigma2 * diff2 - log_sigma   # (n, K)  [const omitted — same for all w]
+
+            # log mixture: log Σ_k w_k p_k(y_n) via log-sum-exp trick
+            lse_in  = log_w[np.newaxis, :] + log_pk    # (n, K)
+            lse_max = lse_in.max(axis=1, keepdims=True) # (n, 1)
+            log_mix = lse_max[:, 0] + np.log(
+                np.exp(lse_in - lse_max).sum(axis=1) + 1e-30
+            )                                           # (n,)
+            return float(-np.sum(log_mix))
+
+        x0  = np.zeros(K)
+        res = minimize(
+            _neg_log_score, x0,
+            method='L-BFGS-B',
+            options={'maxiter': max_iter, 'ftol': 1e-12, 'gtol': 1e-8},
+        )
+        return _sfx(res.x)
+
+    def _compute_dirichlet_weight_std(
+        self,
+        oof_X: np.ndarray,    # (n_samples, n_models * n_outputs)
+        oof_y: np.ndarray,    # (n_samples, n_outputs)
+        n_boot: int = 200,
+    ) -> Dict[str, float]:
+        """Bootstrap estimate of Dirichlet stacking weight standard deviation.
+
+        Resamples OOF rows with replacement ``n_boot`` times, refits
+        ``_fit_dirichlet_stacking`` per output column, averages across output
+        columns, then returns the per-model std across bootstrap replicates as
+        a dict keyed by model name.
+
+        Parameters
+        ----------
+        oof_X : ndarray, shape (n_samples, n_models × n_outputs)
+            OOF predictions stacked column-wise (same layout as in
+            ``_fit_meta_learner``).
+        oof_y : ndarray, shape (n_samples, n_outputs)
+        n_boot : int
+            Number of bootstrap replicates (200 ≈ ±2% std error on std).
+
+        Returns
+        -------
+        weight_std : dict  {model_name: float}
+        """
+        n_models     = len(self.base_models)
+        model_names  = list(self.base_models.keys())
+        n_samples    = oof_X.shape[0]
+        rng          = np.random.RandomState(self.random_state)
+        boot_weights: list = []   # list of (K_full,) arrays
+
+        for _ in range(n_boot):
+            idx     = rng.randint(0, n_samples, size=n_samples)
+            b_X     = oof_X[idx]
+            b_y     = oof_y[idx]
+
+            per_out_coefs = []
+            for out_col in range(self._n_outputs):
+                model_preds = np.column_stack([
+                    b_X[:, m * self._n_outputs + out_col]
+                    for m in range(n_models)
+                ])
+                y_col = b_y[:, out_col] if b_y.ndim > 1 else b_y
+                model_has_data = [(~np.isnan(model_preds[:, m])).sum() > 0
+                                  for m in range(n_models)]
+                active_idx = [m for m in range(n_models) if model_has_data[m]]
+                if not active_idx:
+                    per_out_coefs.append(np.ones(n_models) / n_models)
+                    continue
+                active_preds = model_preds[:, active_idx]
+                valid = ~np.isnan(active_preds).any(axis=1) & ~np.isnan(y_col)
+                if valid.sum() < 3:
+                    per_out_coefs.append(np.ones(n_models) / n_models)
+                    continue
+                a_coefs = self._fit_dirichlet_stacking(
+                    active_preds[valid], y_col[valid], max_iter=200
+                )
+                full = np.zeros(n_models)
+                for i, mi in enumerate(active_idx):
+                    full[mi] = a_coefs[i]
+                s = full.sum()
+                per_out_coefs.append(full / s if s > 1e-12 else full)
+
+            # Average across output columns (mirrors _fit_meta_learner averaging)
+            avg = np.mean(per_out_coefs, axis=0)
+            s   = avg.sum()
+            boot_weights.append(avg / s if s > 1e-12 else avg)
+
+        std_arr = np.std(boot_weights, axis=0)   # (K_full,)
+        return dict(zip(model_names, std_arr))
 
     def _fallback_weights(self) -> Dict[str, float]:
         """Compute fallback weights from CV scores when meta-learner fails.
