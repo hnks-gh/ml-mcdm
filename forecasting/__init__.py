@@ -54,6 +54,10 @@ from .gradient_boosting import CatBoostForecaster
 # Bayesian linear method
 from .bayesian import BayesianForecaster
 
+# Kernel methods (T-03a, T-03b)
+from .kernel_ridge import KernelRidgeForecaster
+from .svr import SVRForecaster
+
 # Advanced models (state-of-the-art)
 from .panel_var import PanelVARForecaster
 from .quantile_forest import QuantileRandomForestForecaster
@@ -90,6 +94,9 @@ __all__ = [
     'CatBoostForecaster',
     # Bayesian linear
     'BayesianForecaster',
+    # Kernel methods (T-03a, T-03b)
+    'KernelRidgeForecaster',
+    'SVRForecaster',
     # Advanced models (SOTA)
     'PanelVARForecaster',
     'QuantileRandomForestForecaster',

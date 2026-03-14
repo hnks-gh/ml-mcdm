@@ -962,7 +962,9 @@ class TestAuditRegressions:
         from forecasting.unified import UnifiedForecaster
         from config import ForecastConfig
 
-        cfg = ForecastConfig(gb_max_depth=3, gb_n_estimators=50, nam_n_basis=15, nam_n_iterations=3)
+        cfg = ForecastConfig(gb_max_depth=3, gb_n_estimators=50,
+                             nam_n_basis=15, nam_n_iterations=3,
+                             use_nam=True)
         uf = UnifiedForecaster(config=cfg)
         models = uf._create_models()
 
@@ -1187,19 +1189,23 @@ class TestPipelineDecoupling:
         )
 
     def test_stage2_per_model_dicts_populated(self):
-        """_per_model_X_train_ and _per_model_X_pred_ must cover all 5 base models."""
+        """_per_model_X_train_ and _per_model_X_pred_ must cover all 6 default base models.
+
+        Default ensemble (use_nam=False, use_panel_var=False):
+        BayesianRidge, CatBoost, LightGBM, QuantileRF, KernelRidge, SVR.
+        """
         panel = self._make_mock_panel()
         uf    = self._make_uf()
         uf.stage1_engineer_features(panel, 2018)
         uf.stage2_reduce_features()
 
-        expected_models = {'BayesianRidge', 'CatBoost', 'QuantileRF',
-                           'PanelVAR', 'NAM'}
+        expected_models = {'BayesianRidge', 'CatBoost', 'LightGBM',
+                           'QuantileRF', 'KernelRidge', 'SVR'}
         assert expected_models <= set(uf._per_model_X_train_.keys()), (
-            "_per_model_X_train_ must cover all 5 base models"
+            "_per_model_X_train_ must cover all 6 default base models"
         )
         assert expected_models <= set(uf._per_model_X_pred_.keys()), (
-            "_per_model_X_pred_ must cover all 5 base models"
+            "_per_model_X_pred_ must cover all 6 default base models"
         )
 
     # ------------------------------------------------------------------

@@ -56,6 +56,9 @@ from .base import BaseForecaster
 from .gradient_boosting import CatBoostForecaster, LightGBMForecaster
 from .bayesian import BayesianForecaster
 from .features import TemporalFeatureEngineer
+# Kernel methods (T-03a, T-03b)
+from .kernel_ridge import KernelRidgeForecaster
+from .svr import SVRForecaster
 
 # State-of-the-art advanced models
 from .panel_var import PanelVARForecaster
@@ -881,6 +884,13 @@ class UnifiedForecaster:
         nam_n_basis = cfg.nam_n_basis               if cfg is not None else 30
         nam_n_iter  = cfg.nam_n_iterations          if cfg is not None else 10
         pvar_method = cfg.pvar_lag_selection_method if cfg is not None else "cv"
+        krr_alpha   = getattr(cfg, 'krr_alpha',   1.0)   if cfg is not None else 1.0
+        krr_gamma   = getattr(cfg, 'krr_gamma',   "scale") if cfg is not None else "scale"
+        svr_C       = getattr(cfg, 'svr_C',       1.0)   if cfg is not None else 1.0
+        svr_eps     = getattr(cfg, 'svr_epsilon',  0.1)   if cfg is not None else 0.1
+        svr_gamma   = getattr(cfg, 'svr_gamma',   "scale") if cfg is not None else "scale"
+        use_pvar    = getattr(cfg, 'use_panel_var', False) if cfg is not None else False
+        use_nam     = getattr(cfg, 'use_nam',      False) if cfg is not None else False
 
         models = {}
 
@@ -904,22 +914,34 @@ class UnifiedForecaster:
             random_state=self.random_state,
         )
 
-        # --- Tier 1b: Bayesian linear -------------------------------------
+        # --- Tier 1b: Bayesian linear + kernel methods (PCA track) --------
         models['BayesianRidge'] = BayesianForecaster()
+        models['KernelRidge'] = KernelRidgeForecaster(
+            alpha=krr_alpha, gamma=krr_gamma,
+            random_state=self.random_state,
+        )
+        models['SVR'] = SVRForecaster(
+            C=svr_C, epsilon=svr_eps, gamma=svr_gamma,
+            random_state=self.random_state,
+        )
 
-        # --- Tier 1c: Advanced panel-specific models ----------------------
+        # --- Tier 1c: Tree-track models -----------------------------------
         models['QuantileRF'] = QuantileRandomForestForecaster(
             n_estimators=100, random_state=self.random_state
         )
-        models['PanelVAR'] = PanelVARForecaster(
-            n_lags=1, alpha=0.5, use_fixed_effects=True,
-            lag_selection_method=pvar_method,
-            random_state=self.random_state
-        )
-        models['NAM'] = NeuralAdditiveForecaster(
-            n_basis_per_feature=nam_n_basis, n_iterations=nam_n_iter,
-            random_state=self.random_state
-        )
+
+        # --- Optional models (T-02 toggles) -------------------------------
+        if use_pvar:
+            models['PanelVAR'] = PanelVARForecaster(
+                n_lags=1, alpha=0.5, use_fixed_effects=True,
+                lag_selection_method=pvar_method,
+                random_state=self.random_state
+            )
+        if use_nam:
+            models['NAM'] = NeuralAdditiveForecaster(
+                n_basis_per_feature=nam_n_basis, n_iterations=nam_n_iter,
+                random_state=self.random_state
+            )
 
         return models
 
@@ -1325,23 +1347,32 @@ class UnifiedForecaster:
         )
         self.X_pred_tree_ = self.reducer_tree_.transform(self.X_pred_.values)
 
-        # Per-model routing: BayesianRidge → PLS track; trees/NAM → threshold.
+        # Per-model routing: PCA track (linear/kernel) → PLS; tree track → threshold.
+        # PCA track: BayesianRidge, KernelRidge, SVR (smooth/kernel methods)
+        # Tree track: CatBoost, LightGBM, QuantileRF, [PanelVAR], [NAM]
         self._per_model_X_train_ = {
             'BayesianRidge':    self.X_train_pca_,
-            'CatBoost': self.X_train_tree_,
+            'KernelRidge':      self.X_train_pca_,
+            'SVR':              self.X_train_pca_,
+            'CatBoost':         self.X_train_tree_,
             'LightGBM':         self.X_train_tree_,
             'QuantileRF':       self.X_train_tree_,
-            'PanelVAR':         self.X_train_tree_,
-            'NAM':              self.X_train_tree_,
         }
         self._per_model_X_pred_ = {
             'BayesianRidge':    self.X_pred_pca_,
-            'CatBoost': self.X_pred_tree_,
+            'KernelRidge':      self.X_pred_pca_,
+            'SVR':              self.X_pred_pca_,
+            'CatBoost':         self.X_pred_tree_,
             'LightGBM':         self.X_pred_tree_,
             'QuantileRF':       self.X_pred_tree_,
-            'PanelVAR':         self.X_pred_tree_,
-            'NAM':              self.X_pred_tree_,
         }
+        # Conditionally add optional models (T-02)
+        if getattr(self._config, 'use_panel_var', False):
+            self._per_model_X_train_['PanelVAR'] = self.X_train_tree_
+            self._per_model_X_pred_['PanelVAR']  = self.X_pred_tree_
+        if getattr(self._config, 'use_nam', False):
+            self._per_model_X_train_['NAM'] = self.X_train_tree_
+            self._per_model_X_pred_['NAM']  = self.X_pred_tree_
 
         logger.info(
             f"  PLS track:      {self.reducer_pca_.get_summary()}"
@@ -1451,8 +1482,10 @@ class UnifiedForecaster:
         self._per_model_X_train_['CatBoost'] = self.X_train_tree_
         self._per_model_X_train_['LightGBM']         = self.X_train_tree_
         self._per_model_X_train_['QuantileRF']        = self.X_train_tree_
-        self._per_model_X_train_['PanelVAR']          = self.X_train_tree_
-        self._per_model_X_train_['NAM']               = self.X_train_tree_
+        # Update optional tree-track models only when they exist (T-02)
+        for _opt in ('PanelVAR', 'NAM'):
+            if _opt in self._per_model_X_train_:
+                self._per_model_X_train_[_opt] = self.X_train_tree_
 
     def stage3_fit_base_models(self) -> None:
         """Stage 3: Create base models and train the Super Learner ensemble.
@@ -1531,13 +1564,12 @@ class UnifiedForecaster:
                 np.concatenate([self._entity_indices_, _ho_entity_idx])
                 if self._entity_indices_ is not None else None
             )
+            # Build CV routing from _per_model_X_train_ keys, substituting
+            # per-track CV matrices (PCA or tree track with holdout appended)
+            _pca_cv_track = {'BayesianRidge', 'KernelRidge', 'SVR'}
             _per_model_cv = {
-                'BayesianRidge':    _X_cv_pca,
-                'CatBoost': _X_cv_tree,
-                'LightGBM':         _X_cv_tree,
-                'QuantileRF':       _X_cv_tree,
-                'PanelVAR':         _X_cv_tree,
-                'NAM':              _X_cv_tree,
+                mname: (_X_cv_pca if mname in _pca_cv_track else _X_cv_tree)
+                for mname in self._per_model_X_train_
             }
         else:
             _X_cv_tree    = self.X_train_tree_
@@ -1574,7 +1606,8 @@ class UnifiedForecaster:
             year_labels_arr=_year_cv,   # CV dataset year labels (includes holdout when appended)
             entity_indices_arr=_ent_cv,
             per_model_tree_names={
-                'CatBoost', 'LightGBM', 'QuantileRF', 'PanelVAR', 'NAM'
+                name for name in self.models_
+                if name not in {'BayesianRidge', 'KernelRidge', 'SVR'}
             },
         )
         # ── E-08: Create shift detector when enabled ──────────────────────────
@@ -1705,24 +1738,10 @@ class UnifiedForecaster:
         self._incremental_updater_ = updater
 
         # per_model_X_new: new rows per model (both tracks use tree-track here)
-        _per_model_X_new = {
-            'BayesianRidge':    X_new,
-            'CatBoost': X_new,
-            'LightGBM':         X_new,
-            'QuantileRF':       X_new,
-            'PanelVAR':         X_new,
-            'NAM':              X_new,
-        }
+        _per_model_X_new = {name: X_new for name in self.models_}
         _per_model_X_all = None
         if X_all is not None:
-            _per_model_X_all = {
-                'BayesianRidge':    X_all,
-                'CatBoost': X_all,
-                'LightGBM':         X_all,
-                'QuantileRF':       X_all,
-                'PanelVAR':         X_all,
-                'NAM':              X_all,
-            }
+            _per_model_X_all = {name: X_all for name in self.models_}
 
         self.super_learner_ = updater.update(
             ensemble=self.super_learner_,
@@ -2162,13 +2181,10 @@ class UnifiedForecaster:
                 _X_ho_arr  = self.X_holdout_.values
                 _X_ho_pca  = self.reducer_pca_.transform(_X_ho_arr)
                 _X_ho_tree = self.reducer_tree_.transform(_X_ho_arr)
+                _pca_ho_track = {'BayesianRidge', 'KernelRidge', 'SVR'}
                 _per_model_X_holdout = {
-                    'BayesianRidge':    _X_ho_pca,
-                    'CatBoost': _X_ho_tree,
-                    'LightGBM':         _X_ho_tree,
-                    'QuantileRF':       _X_ho_tree,
-                    'PanelVAR':         _X_ho_tree,
-                    'NAM':              _X_ho_tree,
+                    name: (_X_ho_pca if name in _pca_ho_track else _X_ho_tree)
+                    for name in self.super_learner_._fitted_base_models
                 }
                 try:
                     _ens_ho_arr, _ = self.super_learner_.predict_with_uncertainty(

@@ -578,6 +578,61 @@ class ForecastConfig:
     Only used when ``use_incremental_update=True``.
     """
 
+    # ── Model toggles (T-02) ─────────────────────────────────────────────
+    use_nam: bool = False
+    """Enable NeuralAdditiveForecaster in the ensemble (T-02).
+
+    NAM is computationally expensive (O(n × p × basis × iter) per
+    backfitting pass).  Default False keeps the ensemble fast; set True
+    for runs where interpretable RFF shape functions are desired.
+    """
+
+    use_panel_var: bool = False
+    """Enable PanelVARForecaster in the ensemble (T-02).
+
+    PanelVAR requires ≥ n_lags + 2 training years per entity and is
+    expensive for large p (O(n³) Ridge solve per lag order).  Default
+    False keeps the ensemble lean; set True when autoregressive dynamics
+    are suspected to be a key signal driver.
+    """
+
+    # ── Kernel Ridge Regression hyperparameters (T-03a) ──────────────────
+    krr_alpha: float = 1.0
+    """Tikhonov regularisation strength for KernelRidgeForecaster.
+
+    Corresponds to ``sklearn.kernel_ridge.KernelRidge(alpha=.)``.
+    Larger values increase bias and reduce variance.
+    """
+
+    krr_gamma: str = "scale"
+    """RBF kernel bandwidth for KernelRidgeForecaster.
+
+    ``'scale'`` → γ = 1 / (n_features × Var[X]), adapts to data scale.
+    ``'auto'``  → γ = 1 / n_features.
+    Or pass a float string for a fixed bandwidth.
+    """
+
+    # ── SVR hyperparameters (T-03b) ───────────────────────────────────────
+    svr_C: float = 1.0
+    """Regularisation parameter C for SVRForecaster.
+
+    Larger C → lower bias, higher variance (tighter fit, more support
+    vectors); smaller C → higher bias, lower variance.
+    """
+
+    svr_epsilon: float = 0.1
+    """ε-tube half-width for SVRForecaster.
+
+    Training samples with residual |yᵢ − ŷᵢ| ≤ ε contribute zero loss;
+    only boundary / violating samples become support vectors.
+    """
+
+    svr_gamma: str = "scale"
+    """RBF kernel bandwidth for SVRForecaster.
+
+    Shares the same semantics as ``krr_gamma``.
+    """
+
 
 # =========================================================================
 # Validation & Sensitivity
