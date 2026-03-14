@@ -79,6 +79,7 @@ dev = [
     "isort>=5.13.0",         # Import sorting
     "mypy>=1.8.0",           # Type checking
     "pylint>=3.0.0",         # Static analysis
+    "optuna>=4.0.0",         # Optuna
 ]
 ml = [
     "tensorflow>=2.10.0",  # Deep learning
