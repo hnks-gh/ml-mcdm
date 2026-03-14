@@ -7,8 +7,8 @@ Seven-phase production pipeline:
 
   Phase 1  Data Loading
   Phase 2  Weight Calculation       (Hybrid Weighting — two-level MC Ensemble)
-  Phase 3  Hierarchical Ranking     (6 traditional MCDM + two-stage ER)
-  Phase 4  ML Forecasting           (6 models + Super Learner + Conformal)
+  Phase 3  Hierarchical Ranking     (6 traditional MCDM + optional ER)
+  Phase 4  ML Forecasting           (base models + Meta-Learner + Conformal)
   Phase 5  Sensitivity Analysis     (Hierarchical multi-level robustness)
   Phase 6  Visualization            (high-resolution figures)
   Phase 7  Result Export            (CSV / JSON / text report)
@@ -103,12 +103,12 @@ class PipelineResult:
     # ---- convenience accessors ----
 
     def get_final_ranking_df(self) -> pd.DataFrame:
-        """Sorted DataFrame with province, rank, score, Kendall's W."""
+        """Sorted DataFrame with province, rank, score."""
         return pd.DataFrame({
             'Province': self.ranking_result.final_ranking.index,
-            'ER_Score': self.ranking_result.final_scores.values,
-            'ER_Rank':  self.ranking_result.final_ranking.values,
-        }).sort_values('ER_Rank').reset_index(drop=True)
+            'Score': self.ranking_result.final_scores.values,
+            'Rank':  self.ranking_result.final_ranking.values,
+        }).sort_values('Rank').reset_index(drop=True)
 
 
 # =========================================================================
@@ -125,7 +125,7 @@ class MLMCDMPipeline:
     * 6 traditional MCDM methods per criterion group:
         TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS, SAW
     * Two-stage Evidential Reasoning aggregation (Yang & Xu, 2002)
-    * ML Forecasting: 6-model ensemble + Super Learner (optional)
+    * ML Forecasting: 6-model ensemble + Meta-Learner (optional)
     * Hierarchical sensitivity analysis
     """
 
@@ -201,10 +201,10 @@ class MLMCDMPipeline:
                     self.logger.warning(
                         'Per-year CRITIC weights failed (non-fatal): %s', _wt_exc)
 
-            # Phase 3: Hierarchical Ranking (6 MCDM methods + ER)
+            # Phase 3: Hierarchical Ranking (6 MCDM methods + optional ER)
             multi_year_results: Dict[int, Any] = {}
             ranking_result: Optional[HierarchicalRankingResult] = None
-            with self.console.phase('Hierarchical Ranking (Traditional MCDM + ER)') as ph:
+            with self.console.phase('Hierarchical Ranking (Traditional MCDM)') as ph:
                 # PL-1: guard against primary ranking failure so the pipeline
                 # can still save partial results (weights, data) rather than
                 # crashing entirely — consistent with phases 4-7.
@@ -236,7 +236,7 @@ class MLMCDMPipeline:
                             f'Multi-year ranking failed (non-fatal): {_myr_exc}'
                         )
 
-            # Phase 4: ML Forecasting (6 models + Super Learner + Conformal)
+            # Phase 4: ML Forecasting (base models + Meta-Learner + Conformal)
             forecast_result = None
             with self.console.phase('Ensemble ML Forecasting') as ph:
                 try:
@@ -609,9 +609,14 @@ class MLMCDMPipeline:
         panel_data: PanelData,
         weights: Dict[str, Any],
     ) -> HierarchicalRankingResult:
+        use_er = getattr(
+            getattr(self.config, 'ranking', None),
+            'use_evidential_reasoning', False,
+        )
         pipeline = HierarchicalRankingPipeline(
             n_grades=self.config.er.n_grades,
             method_weight_scheme=self.config.er.method_weight_scheme,
+            use_evidential_reasoning=use_er,
         )
         return pipeline.rank(
             panel_data          = panel_data,
@@ -649,6 +654,10 @@ class MLMCDMPipeline:
         crit_weights = weights['criterion_weights']
         n_grades     = self.config.er.n_grades
         scheme       = self.config.er.method_weight_scheme
+        use_er       = getattr(
+            getattr(self.config, 'ranking', None),
+            'use_evidential_reasoning', False,
+        )
 
         # Resolve max_parallel_years: config → cpu_count → len(years)
         _cfg_max = getattr(getattr(self.config, 'ranking', None),
@@ -669,6 +678,7 @@ class MLMCDMPipeline:
                 _pl = HierarchicalRankingPipeline(
                     n_grades=n_grades,
                     method_weight_scheme=scheme,
+                    use_evidential_reasoning=use_er,
                 )
                 result = _pl.rank(
                     panel_data          = panel_data,
@@ -716,7 +726,7 @@ class MLMCDMPipeline:
         
         Architecture:
         - 6 diverse base models (GB, BayesianRidge, QuantileRF, PanelVAR, HierarchBayes, NAM)
-        - Super Learner meta-ensemble (automatic optimal weighting)
+        - Meta-Learner ensemble (automatic optimal weighting)
         - Conformal Prediction (distribution-free 95% intervals)
         """
         if not self.config.forecast.enabled:
@@ -734,14 +744,16 @@ class MLMCDMPipeline:
             target_year = max(panel_data.years) + 1
         
         self.logger.info(f"Target year: {target_year}")
-        _base_model_names = [
-            "GradientBoosting", "BayesianRidge", "QuantileRF",
-            "PanelVAR", "NAM",
-        ]
+        # Build the log-time model list to mirror _create_models() logic
+        _base_model_names = ["CatBoost", "LightGBM", "BayesianRidge", "QuantileRF"]
+        if getattr(self.config.forecast, 'use_panel_var', False):
+            _base_model_names.append("PanelVAR")
+        if getattr(self.config.forecast, 'use_nam', False):
+            _base_model_names.append("NAM")
         self.logger.info(
             f"Base models: {len(_base_model_names)} ({', '.join(_base_model_names)})"
         )
-        self.logger.info(f"Meta-learner: Super Learner (Ridge)")
+        self.logger.info(f"Meta-learner: {getattr(self.config.forecast, 'meta_learner_type', 'ridge')}")
         self.logger.info(f"Calibration: Conformal {self.config.forecast.conformal_method} (α={self.config.forecast.conformal_alpha})")
         
         forecaster = UnifiedForecaster(
@@ -758,7 +770,7 @@ class MLMCDMPipeline:
         
         # Log results
         if hasattr(result, 'model_contributions'):
-            self.logger.info("Super Learner weights:")
+            self.logger.info("Meta-Learner weights:")
             for model, weight in sorted(result.model_contributions.items(), key=lambda x: x[1], reverse=True):
                 self.logger.info(f"  {model:20s}: {weight:.4f}")
         

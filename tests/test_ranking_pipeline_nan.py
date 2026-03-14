@@ -154,3 +154,78 @@ class TestMinMaxNormalizeNaN:
         assert 'impute_neutral_score' not in dir(_mod), (
             "impute_neutral_score should not be in hierarchical_pipeline's namespace"
         )
+
+
+# ---------------------------------------------------------------------------
+# TestERToggle — T-01: use_evidential_reasoning config toggle
+#
+# Validates that:
+#   1. HierarchicalRankingPipeline defaults to use_evidential_reasoning=True.
+#   2. rank_fast() returns None immediately when ER is disabled.
+#   3. HierarchicalRankingResult with er_result=None returns None from all
+#      ER-derived properties (final_ranking, final_scores, kendall_w, top_n).
+#   4. summary() returns a meaningful string even without er_result.
+# ---------------------------------------------------------------------------
+
+from ranking.hierarchical_pipeline import HierarchicalRankingResult
+
+
+class TestERToggle:
+    """T-01: use_evidential_reasoning config toggle."""
+
+    def test_pipeline_default_er_is_true(self):
+        """Pipeline must default to use_evidential_reasoning=True (backward compat)."""
+        pl = HierarchicalRankingPipeline()
+        assert pl.use_evidential_reasoning is True
+
+    def test_pipeline_er_false_init(self):
+        """Pipeline can be created with use_evidential_reasoning=False."""
+        pl = HierarchicalRankingPipeline(use_evidential_reasoning=False)
+        assert pl.use_evidential_reasoning is False
+
+    def test_rank_fast_returns_none_when_er_disabled(self):
+        """rank_fast() must return None immediately when ER is disabled."""
+        pl = HierarchicalRankingPipeline(use_evidential_reasoning=False)
+        result = pl.rank_fast(
+            precomputed_scores={},
+            subcriteria_weights={},
+            hierarchy=None,   # not reached — returns None before using it
+            alternatives=[],
+        )
+        assert result is None
+
+    def _make_result_no_er(self):
+        """Helper: build a HierarchicalRankingResult with er_result=None."""
+        return HierarchicalRankingResult(
+            er_result=None,
+            criterion_method_scores={'C01': {'TOPSIS': pd.Series({'P1': 0.8})}},
+            criterion_method_ranks={'C01': {'TOPSIS': pd.Series({'P1': 1})}},
+            criterion_weights_used={'C01': 1.0},
+            subcriteria_weights_used={'C01': {'SC11': 1.0}},
+            methods_used=['TOPSIS', 'VIKOR', 'PROMETHEE', 'COPRAS', 'EDAS', 'Base'],
+            target_year=2024,
+        )
+
+    def test_final_ranking_is_none_when_er_disabled(self):
+        result = self._make_result_no_er()
+        assert result.final_ranking is None
+
+    def test_final_scores_is_none_when_er_disabled(self):
+        result = self._make_result_no_er()
+        assert result.final_scores is None
+
+    def test_kendall_w_is_nan_when_er_disabled(self):
+        result = self._make_result_no_er()
+        kw = result.kendall_w
+        # When ER is disabled, kendall_w is either None or NaN (no ER consensus)
+        assert kw is None or (kw != kw)  # NaN != NaN is True
+
+    def test_top_n_is_none_when_er_disabled(self):
+        result = self._make_result_no_er()
+        assert result.top_n(5) is None
+
+    def test_summary_returns_string_when_er_disabled(self):
+        result = self._make_result_no_er()
+        s = result.summary()
+        assert isinstance(s, str)
+        assert len(s) > 0

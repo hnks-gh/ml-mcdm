@@ -1125,9 +1125,9 @@ class CsvWriter:
                 except Exception as _exc:
                     _logger.debug('model column %s skipped: %s', model_name, _exc)
 
-            # Ensemble / Super Learner column
+            # Ensemble / Meta-Learner column
             if not ensemble_preds.empty and ensemble_preds.shape[1] >= 1:
-                df['SuperLearner_pred'] = ensemble_preds.iloc[:, 0].values
+                df['MetaLearner_pred'] = ensemble_preds.iloc[:, 0].values
 
             # Conformal prediction intervals
             try:

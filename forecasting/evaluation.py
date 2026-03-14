@@ -67,7 +67,7 @@ class ModelComparisonResult:
     Parameters
     ----------
     model_name : str
-        Human-readable model identifier: 'BayesianRidge', 'GradientBoosting',
+        Human-readable model identifier: 'BayesianRidge', 'CatBoost',
         'QuantileRF', 'PanelVAR', 'NAM', or 'Ensemble'.
     holdout_r2 : float
         Global R² computed across all output dimensions on the withheld year.

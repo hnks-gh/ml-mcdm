@@ -12,8 +12,8 @@ Pipeline Phases
 ---------------
 1. Data Loading        – yearly CSVs from data/
 2. Weight Calculation  – Deterministic CRITIC
-3. Hierarchical Ranking – 5 MCDM + two-stage ER
-4. ML Forecasting       – 6-model ensemble + Super Learner + Conformal
+3. Hierarchical Ranking – 5 MCDM methods (+ optional ER aggregation)
+4. ML Forecasting       – base models + Meta-Learner + Conformal
 5. Sensitivity Analysis  – Monte Carlo weight perturbation
 6. Visualisation         – high-resolution PNGs
 7. Result Export         – CSV / JSON / text report

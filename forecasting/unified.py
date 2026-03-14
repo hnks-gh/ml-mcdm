@@ -781,7 +781,7 @@ class UnifiedForecaster:
             """Build params from trial, run walk-forward CV, report per-fold RMSE."""
             params: Dict[str, Any] = {}
 
-            if model_key == 'GradientBoosting':
+            if model_key == 'CatBoost':
                 params['iterations']         = trial.suggest_int('iterations', 50, 600, step=50)
                 params['depth']              = trial.suggest_int('depth', 3, 8)
                 params['learning_rate']      = trial.suggest_float('learning_rate', 5e-3, 0.3, log=True)
@@ -830,7 +830,7 @@ class UnifiedForecaster:
             interval_steps=1,
         )
         for name, cls, model_key in [
-            ('GradientBoosting', CatBoostForecaster,  'GradientBoosting'),
+            ('CatBoost', CatBoostForecaster,  'CatBoost'),
             ('LightGBM',         LightGBMForecaster,  'LightGBM'),
         ]:
             study = optuna.create_study(
@@ -864,7 +864,7 @@ class UnifiedForecaster:
         be adjusted without modifying source code.
 
         Default decisions:
-            GradientBoosting : max_depth=5 (32 leaves ≈ 24 samples/leaf at
+            CatBoost         : max_depth=5 (32 leaves ≈ 24 samples/leaf at
                                n=756), n_estimators=200 (class default)
             LightGBM         : max_depth=5, n_estimators=200 — same scale as
                                CatBoost; leaf-wise growth provides complementary
@@ -885,11 +885,11 @@ class UnifiedForecaster:
         models = {}
 
         # ── Phase 4: merge tuned HPs with config defaults (tuned take priority)
-        _gb_params   = self._tuned_gb_params_.get('GradientBoosting', {})
+        _gb_params   = self._tuned_gb_params_.get('CatBoost', {})
         _lgbm_params = self._tuned_gb_params_.get('LightGBM', {})
 
         # --- Tier 1a: Tree-based (two independent GB members) --------------
-        models['GradientBoosting'] = CatBoostForecaster(
+        models['CatBoost'] = CatBoostForecaster(
             iterations=_gb_params.get('iterations', gb_n_est),
             depth=_gb_params.get('depth', gb_depth),
             learning_rate=_gb_params.get('learning_rate', 0.05),
@@ -1328,7 +1328,7 @@ class UnifiedForecaster:
         # Per-model routing: BayesianRidge → PLS track; trees/NAM → threshold.
         self._per_model_X_train_ = {
             'BayesianRidge':    self.X_train_pca_,
-            'GradientBoosting': self.X_train_tree_,
+            'CatBoost': self.X_train_tree_,
             'LightGBM':         self.X_train_tree_,
             'QuantileRF':       self.X_train_tree_,
             'PanelVAR':         self.X_train_tree_,
@@ -1336,7 +1336,7 @@ class UnifiedForecaster:
         }
         self._per_model_X_pred_ = {
             'BayesianRidge':    self.X_pred_pca_,
-            'GradientBoosting': self.X_pred_tree_,
+            'CatBoost': self.X_pred_tree_,
             'LightGBM':         self.X_pred_tree_,
             'QuantileRF':       self.X_pred_tree_,
             'PanelVAR':         self.X_pred_tree_,
@@ -1448,7 +1448,7 @@ class UnifiedForecaster:
         # Also update X_train_ to stay consistent (using NaN-extended index)
         # NOTE: Only tree models use the extended data; PLS models continue
         # to use their own unreduced per_model_X_train_ entry.
-        self._per_model_X_train_['GradientBoosting'] = self.X_train_tree_
+        self._per_model_X_train_['CatBoost'] = self.X_train_tree_
         self._per_model_X_train_['LightGBM']         = self.X_train_tree_
         self._per_model_X_train_['QuantileRF']        = self.X_train_tree_
         self._per_model_X_train_['PanelVAR']          = self.X_train_tree_
@@ -1485,7 +1485,7 @@ class UnifiedForecaster:
                           ``(n_train, n_components)`` array or ``None``.
         _cv_scores_       Per-model cross-validation R² score lists.
         """
-        logger.info("Stage 3: Training Super Learner meta-ensemble...")
+        logger.info("Stage 3: Training Meta-Learner ensemble...")
 
         # Phase 4: conditionally run one-time Optuna HP search for GB models
         if self._config is not None and getattr(self._config, 'auto_tune_gb', False):
@@ -1533,7 +1533,7 @@ class UnifiedForecaster:
             )
             _per_model_cv = {
                 'BayesianRidge':    _X_cv_pca,
-                'GradientBoosting': _X_cv_tree,
+                'CatBoost': _X_cv_tree,
                 'LightGBM':         _X_cv_tree,
                 'QuantileRF':       _X_cv_tree,
                 'PanelVAR':         _X_cv_tree,
@@ -1574,7 +1574,7 @@ class UnifiedForecaster:
             year_labels_arr=_year_cv,   # CV dataset year labels (includes holdout when appended)
             entity_indices_arr=_ent_cv,
             per_model_tree_names={
-                'GradientBoosting', 'LightGBM', 'QuantileRF', 'PanelVAR', 'NAM'
+                'CatBoost', 'LightGBM', 'QuantileRF', 'PanelVAR', 'NAM'
             },
         )
         # ── E-08: Create shift detector when enabled ──────────────────────────
@@ -1627,7 +1627,7 @@ class UnifiedForecaster:
             self.super_learner_._oof_conformal_residuals_
         )
 
-        logger.info(f"  Super Learner fitted with CV scores computed")
+        logger.info("  Meta-Learner fitted with CV scores computed")
 
     def stage3b_incremental_update(
         self,
@@ -1707,7 +1707,7 @@ class UnifiedForecaster:
         # per_model_X_new: new rows per model (both tracks use tree-track here)
         _per_model_X_new = {
             'BayesianRidge':    X_new,
-            'GradientBoosting': X_new,
+            'CatBoost': X_new,
             'LightGBM':         X_new,
             'QuantileRF':       X_new,
             'PanelVAR':         X_new,
@@ -1717,7 +1717,7 @@ class UnifiedForecaster:
         if X_all is not None:
             _per_model_X_all = {
                 'BayesianRidge':    X_all,
-                'GradientBoosting': X_all,
+                'CatBoost': X_all,
                 'LightGBM':         X_all,
                 'QuantileRF':       X_all,
                 'PanelVAR':         X_all,
@@ -2164,7 +2164,7 @@ class UnifiedForecaster:
                 _X_ho_tree = self.reducer_tree_.transform(_X_ho_arr)
                 _per_model_X_holdout = {
                     'BayesianRidge':    _X_ho_pca,
-                    'GradientBoosting': _X_ho_tree,
+                    'CatBoost': _X_ho_tree,
                     'LightGBM':         _X_ho_tree,
                     'QuantileRF':       _X_ho_tree,
                     'PanelVAR':         _X_ho_tree,

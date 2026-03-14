@@ -55,8 +55,9 @@ class HierarchicalRankingResult:
 
     Attributes
     ----------
-    er_result : HierarchicalERResult
+    er_result : HierarchicalERResult or None
         Full ER aggregation output (rankings, beliefs, uncertainty).
+        ``None`` when ``use_evidential_reasoning=False``.
     criterion_method_scores : dict
         {criterion: {method: pd.Series}} — raw normalized scores.
     criterion_method_ranks : dict
@@ -66,37 +67,73 @@ class HierarchicalRankingResult:
     subcriteria_weights_used : dict
         {criterion: {subcrit: float}} — subcriteria weights within each group.
     methods_used : list
-        Names of the 5 traditional MCDM methods.
+        Names of all methods (MCDM × 5 + Base).
     target_year : int
         Year for which ranking was computed.
+    final_scores_direct : pd.Series or None
+        When ER is disabled, holds the criterion-weighted mean-of-method
+        composite score. ``None`` when ER is enabled.
+    final_ranking_direct : pd.Series or None
+        When ER is disabled, holds the rank order from ``final_scores_direct``.
+        ``None`` when ER is enabled.
     """
 
-    er_result: HierarchicalERResult
-    criterion_method_scores: Dict[str, Dict[str, pd.Series]]
-    criterion_method_ranks: Dict[str, Dict[str, pd.Series]]
+    er_result: Optional['HierarchicalERResult']
+    criterion_method_scores: Dict[str, Dict[str, 'pd.Series']]
+    criterion_method_ranks: Dict[str, Dict[str, 'pd.Series']]
     criterion_weights_used: Dict[str, float]
     subcriteria_weights_used: Dict[str, Dict[str, float]]
     methods_used: List[str]
     target_year: int
+    # Optional fields — populated only in non-ER mode
+    final_scores_direct: Optional['pd.Series'] = None
+    final_ranking_direct: Optional['pd.Series'] = None
 
-    # Convenience delegation to ER result
-    @property
-    def final_ranking(self) -> pd.Series:
-        return self.er_result.final_ranking
-
-    @property
-    def final_scores(self) -> pd.Series:
-        return self.er_result.final_scores
+    # ------------------------------------------------------------------
+    # Convenience delegation — transparently handles ER-on and ER-off modes
+    # ------------------------------------------------------------------
 
     @property
-    def kendall_w(self) -> float:
-        return self.er_result.kendall_w
+    def final_ranking(self) -> Optional['pd.Series']:
+        if self.er_result is not None:
+            return self.er_result.final_ranking
+        return self.final_ranking_direct
 
-    def top_n(self, n: int = 10) -> pd.DataFrame:
-        return self.er_result.top_n(n)
+    @property
+    def final_scores(self) -> Optional['pd.Series']:
+        if self.er_result is not None:
+            return self.er_result.final_scores
+        return self.final_scores_direct
+
+    @property
+    def kendall_w(self) -> Optional[float]:
+        if self.er_result is not None:
+            return self.er_result.kendall_w
+        return float('nan')
+
+    def top_n(self, n: int = 10) -> Optional['pd.DataFrame']:
+        if self.er_result is not None:
+            return self.er_result.top_n(n)
+        # Non-ER fallback
+        if self.final_scores_direct is None or self.final_ranking_direct is None:
+            return None
+        import pandas as _pd
+        df = _pd.DataFrame({
+            'Score': self.final_scores_direct,
+            'Rank': self.final_ranking_direct,
+        })
+        return df.nsmallest(n, 'Rank')
 
     def summary(self) -> str:
-        return self.er_result.summary()
+        if self.er_result is not None:
+            return self.er_result.summary()
+        n_alts = len(self.final_scores_direct) if self.final_scores_direct is not None else 0
+        return (
+            f"Hierarchical ranking (ER disabled) — "
+            f"{n_alts} alternatives, "
+            f"{len(self.criterion_method_scores)} criteria, "
+            f"year {self.target_year}."
+        )
 
 
 # =========================================================================
@@ -124,6 +161,11 @@ class HierarchicalRankingPipeline:
         ``'equal'`` or ``'rank_performance'``.
     cost_criteria : list, optional
         Subcriteria codes where lower values are preferred.
+    use_evidential_reasoning : bool
+        When True (default), execute two-stage ER aggregation and produce a
+        composite ranking.  When False, Stage 1 MCDM scores are computed but
+        Stage 2 ER is skipped; no composite ranking is produced (``er_result``
+        and all derived properties are ``None``).
     """
 
     # All methods stored in results (includes standalone Base baseline)
@@ -137,12 +179,14 @@ class HierarchicalRankingPipeline:
         n_grades: int = 5,
         method_weight_scheme: str = 'equal',
         cost_criteria: Optional[List[str]] = None,
+        use_evidential_reasoning: bool = True,
     ):
         self.n_grades = n_grades
         self.method_weight_scheme = method_weight_scheme
         self.cost_criteria = cost_criteria or []
+        self.use_evidential_reasoning = use_evidential_reasoning
 
-        # Initialise ER aggregator
+        # Initialise ER aggregator (only used when ER is enabled)
         self.er_aggregator = HierarchicalEvidentialReasoning(
             n_grades=n_grades,
             method_weight_scheme=method_weight_scheme,
@@ -301,44 +345,59 @@ class HierarchicalRankingPipeline:
             all_method_ranks[crit_id]  = crit_ranks
 
         # ------------------------------------------------------------------
-        # Stage 2: ER aggregation (5 MCDM methods only — Base excluded)
+        # Stage 2: Ranking aggregation
         # ------------------------------------------------------------------
-        # Build a filtered view of method scores that excludes the Base
-        # baseline so ER aggregation is not influenced by the raw sum.
-        er_method_scores: Dict[str, Dict[str, pd.Series]] = {
-            crit_id: {
-                m: s for m, s in crit_data.items() if m in self.ER_METHODS
+        if self.use_evidential_reasoning:
+            # ER aggregation (5 MCDM methods only — Base excluded)
+            # Build a filtered view of method scores that excludes the Base
+            # baseline so ER aggregation is not influenced by the raw sum.
+            er_method_scores: Dict[str, Dict[str, pd.Series]] = {
+                crit_id: {
+                    m: s for m, s in crit_data.items() if m in self.ER_METHODS
+                }
+                for crit_id, crit_data in all_method_scores.items()
             }
-            for crit_id, crit_data in all_method_scores.items()
-        }
-        # The ER engine uses `.get(alt, 0.5)` for alternatives absent from a
-        # criterion's score Series — mapping to a uniform (max-uncertainty)
-        # belief distribution.  Only `alternatives` (active provinces) are
-        # ranked; fully excluded provinces never appear here.
-        logger.info("  Running Evidential Reasoning aggregation (5 MCDM methods)...")
-        er_result = self.er_aggregator.aggregate(
-            method_scores=er_method_scores,
-            criterion_weights=criterion_weights,
-            alternatives=alternatives,
-        )
-
-        logger.info(f"  Kendall's W = {er_result.kendall_w:.4f}")
-        if len(er_result.final_ranking) > 0:
-            best = er_result.final_scores.idxmax()
-            logger.info(
-                f"  Top: {best} "
-                f"(score={er_result.final_scores.max():.4f})"
+            logger.info("  Running Evidential Reasoning aggregation (5 MCDM methods)...")
+            er_result = self.er_aggregator.aggregate(
+                method_scores=er_method_scores,
+                criterion_weights=criterion_weights,
+                alternatives=alternatives,
             )
 
-        return HierarchicalRankingResult(
-            er_result=er_result,
-            criterion_method_scores=all_method_scores,
-            criterion_method_ranks=all_method_ranks,
-            criterion_weights_used=criterion_weights,
-            subcriteria_weights_used=group_subcrit_weights,
-            methods_used=self.ALL_METHODS,
-            target_year=target_year,
-        )
+            logger.info(f"  Kendall's W = {er_result.kendall_w:.4f}")
+            if len(er_result.final_ranking) > 0:
+                best = er_result.final_scores.idxmax()
+                logger.info(
+                    f"  Top: {best} "
+                    f"(score={er_result.final_scores.max():.4f})"
+                )
+
+            return HierarchicalRankingResult(
+                er_result=er_result,
+                criterion_method_scores=all_method_scores,
+                criterion_method_ranks=all_method_ranks,
+                criterion_weights_used=criterion_weights,
+                subcriteria_weights_used=group_subcrit_weights,
+                methods_used=self.ALL_METHODS,
+                target_year=target_year,
+            )
+        else:
+            # ER disabled — Stage 2 is entirely skipped.
+            # No composite ranking is produced; the 5 MCDM methods and Base
+            # remain as separate independent outputs in criterion_method_scores.
+            logger.info(
+                "  ER disabled — Stage 2 skipped. "
+                "Individual method scores preserved (no composite ranking)."
+            )
+            return HierarchicalRankingResult(
+                er_result=None,
+                criterion_method_scores=all_method_scores,
+                criterion_method_ranks=all_method_ranks,
+                criterion_weights_used=criterion_weights,
+                subcriteria_weights_used=group_subcrit_weights,
+                methods_used=self.ALL_METHODS,
+                target_year=target_year,
+            )
 
     def rank_fast(
         self,
@@ -347,34 +406,20 @@ class HierarchicalRankingPipeline:
         hierarchy: 'HierarchyMapping',
         alternatives: List[str],
         criterion_weights: Optional[Dict[str, float]] = None,
-    ) -> 'HierarchicalERResult':
+    ) -> Optional['HierarchicalERResult']:
         """
-        Lightweight ER-only re-ranking using precomputed MCDM scores.
+        Lightweight re-ranking using precomputed MCDM scores.
 
-        Skips ALL 5 MCDM method computations and re-runs only the ER
-        aggregation step with new criterion weights derived from
-        *subcriteria_weights*.  Yields ~50-100x speedup over
-        :meth:`rank` for sensitivity-analysis weight perturbations
-        where the underlying data and MCDM scores are unchanged.
+        When ER is enabled, skips ALL 5 MCDM method computations and re-runs
+        only the ER aggregation step with new criterion weights derived from
+        *subcriteria_weights*.  Yields ~50-100x speedup over :meth:`rank` for
+        sensitivity-analysis weight perturbations.
 
-        Parameters
-        ----------
-        precomputed_scores : dict
-            Structure ``{criterion_id: {method_name: pd.Series(score)}}``
-            as returned by
-            :attr:`HierarchicalRankingResult.criterion_method_scores`.
-        subcriteria_weights : dict
-            Perturbed subcriteria weights ``{SC01: w, …}``.
-        hierarchy : HierarchyMapping
-            Hierarchy definition used to derive criterion-level weights.
-        alternatives : list of str
-            Province / alternative labels in canonical order.
-
-        Returns
-        -------
-        HierarchicalERResult
-            ER aggregation result with the perturbed weights.
+        When ER is disabled, returns None (callers must check).
         """
+        if not self.use_evidential_reasoning:
+            return None
+
         # Derive criterion-level weights inline (no info logging to avoid spam)
         if criterion_weights is not None:
             # Use externally computed weights directly (from Level 2 MC ensemble)

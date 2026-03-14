@@ -966,13 +966,13 @@ class TestAuditRegressions:
         uf = UnifiedForecaster(config=cfg)
         models = uf._create_models()
 
-        assert models["GradientBoosting"].depth == 3
-        assert models["GradientBoosting"].iterations == 50
+        assert models["CatBoost"].depth == 3
+        assert models["CatBoost"].iterations == 50
         assert models["NAM"].n_basis_per_feature == 15
         assert models["NAM"].n_iterations == 3
 
     # -----------------------------------------------------------------------
-    # B-10  GradientBoosting class default max_depth=5 (Phase 10)
+    # B-10  CatBoost class default max_depth=5 (Phase 10)
     # -----------------------------------------------------------------------
 
     def test_b10_gb_class_default_max_depth_is_5(self):
@@ -1193,7 +1193,7 @@ class TestPipelineDecoupling:
         uf.stage1_engineer_features(panel, 2018)
         uf.stage2_reduce_features()
 
-        expected_models = {'BayesianRidge', 'GradientBoosting', 'QuantileRF',
+        expected_models = {'BayesianRidge', 'CatBoost', 'QuantileRF',
                            'PanelVAR', 'NAM'}
         assert expected_models <= set(uf._per_model_X_train_.keys()), (
             "_per_model_X_train_ must cover all 5 base models"

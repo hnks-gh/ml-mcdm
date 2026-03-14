@@ -322,19 +322,20 @@ class ReportWriter:
         L.append(f'| IQR | {iqr:.4f} |')
         L.append('')
 
-        # ER Uncertainty
-        try:
-            unc = ranking_result.er_result.uncertainty
-            L.append('### Evidential Reasoning Uncertainty')
-            L.append('')
-            L.append(f'- **Mean Belief Entropy:** {unc["belief_entropy"].mean():.4f} '
-                     f'(SD = {unc["belief_entropy"].std():.4f})')
-            L.append(f'- **Mean Utility Interval Width:** '
-                     f'{unc["utility_interval_width"].mean():.4f} '
-                     f'(SD = {unc["utility_interval_width"].std():.4f})')
-            L.append('')
-        except Exception as _exc:
-            _logger.debug('section skipped: %s', _exc)
+        # ER Uncertainty (only when ER is enabled)
+        if getattr(ranking_result, 'er_result', None) is not None:
+            try:
+                unc = ranking_result.er_result.uncertainty
+                L.append('### Evidential Reasoning Uncertainty')
+                L.append('')
+                L.append(f'- **Mean Belief Entropy:** {unc["belief_entropy"].mean():.4f} '
+                         f'(SD = {unc["belief_entropy"].std():.4f})')
+                L.append(f'- **Mean Utility Interval Width:** '
+                         f'{unc["utility_interval_width"].mean():.4f} '
+                         f'(SD = {unc["utility_interval_width"].std():.4f})')
+                L.append('')
+            except Exception as _exc:
+                _logger.debug('section skipped: %s', _exc)
 
         # ============================================================
         # 5. Criterion-Level
@@ -517,7 +518,7 @@ class ReportWriter:
             _n_feat_pls = _ti.get('n_features_pca', '?')
             _n_feat_tree= _ti.get('n_features_tree', '?')
             L.append(
-                f'A {_n_models}-model Super Learner meta-ensemble (van der Laan et al., 2007) '
+                f'A {_n_models}-model Meta-Learner ensemble (van der Laan et al., 2007) '
                 'forecasts provincial scores one period ahead.  '
                 'Prediction intervals are obtained through Conformal Prediction (Vovk et al., 2005).  '
                 f'Feature engineering produced {_n_feat} temporal/panel features (12 blocks, Phase 1).'
@@ -527,7 +528,7 @@ class ReportWriter:
 
             # 8.1 Model contributions
             if hasattr(forecast_result, 'model_contributions') and forecast_result.model_contributions:
-                L.append('## 8.1 Super Learner Model Contributions')
+                L.append('## 8.1 Meta-Learner Model Contributions')
                 L.append('')
                 L.append('**Table 13. Base-learner weights.**')
                 L.append('')
@@ -727,7 +728,7 @@ class ReportWriter:
         L.append('## 10.4 Machine-Learning Forecasting')
         L.append('')
         L.append(
-            'Super Learner (van der Laan, Polley & Hubbard, 2007) constructs an optimal '
+            'Meta-Learner (van der Laan, Polley & Hubbard, 2007) constructs an optimal '
             'convex combination of heterogeneous base learners. Conformal Prediction '
             '(Vovk, Gammerman & Shafer, 2005) provides distribution-free intervals.'
         )

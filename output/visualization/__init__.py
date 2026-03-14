@@ -316,11 +316,13 @@ class VisualizationOrchestrator:
                 top_n=getattr(self, '_ranking_top_n', 20),
             )
 
-        # fig01d — ER belief distribution heatmap
-        _safe(self.ranking.plot_belief_heatmap, ranking_result, provinces)
+        # fig01d — ER belief distribution heatmap (ER-only)
+        if getattr(ranking_result, 'er_result', None) is not None:
+            _safe(self.ranking.plot_belief_heatmap, ranking_result, provinces)
 
-        # fig01e — rank vs uncertainty scatter
-        _safe(self.ranking.plot_rank_uncertainty_scatter, ranking_result, provinces)
+        # fig01e — rank vs uncertainty scatter (ER-only)
+        if getattr(ranking_result, 'er_result', None) is not None:
+            _safe(self.ranking.plot_rank_uncertainty_scatter, ranking_result, provinces)
 
         # fig02 — score distribution histogram + KDE
         _safe(self.ranking.plot_score_distribution, scores)
@@ -383,11 +385,13 @@ class VisualizationOrchestrator:
                 save_name=f'fig08_{crit_id}_scores.png',
             )
 
-        # fig08b — MCDM composite vs ER final score scatter
-        _safe(self.mcdm.plot_mcdm_composite_scatter, ranking_result, provinces)
+        # fig08b — MCDM composite vs ER final score scatter (ER-only)
+        if getattr(ranking_result, 'er_result', None) is not None:
+            _safe(self.mcdm.plot_mcdm_composite_scatter, ranking_result, provinces)
 
-        # fig08c — Province × Criterion ER utility heatmap
-        _safe(self.mcdm.plot_criterion_er_utility_heatmap, ranking_result, provinces)
+        # fig08c — Province × Criterion ER utility heatmap (ER-only)
+        if getattr(ranking_result, 'er_result', None) is not None:
+            _safe(self.mcdm.plot_criterion_er_utility_heatmap, ranking_result, provinces)
         # fig08e — Method stability comparison (cross-criteria Spearman ρ)
         _safe(self.mcdm.plot_method_stability_comparison, ranking_result)
 
@@ -463,12 +467,13 @@ class VisualizationOrchestrator:
                     top_n_stab,
                 )
 
-        # ER uncertainty (fig15)
-        try:
-            unc = ranking_result.er_result.uncertainty
-            _inc(self.sensitivity.plot_er_uncertainty(unc, provinces))
-        except Exception as _exc:
-            _logger.debug('ER uncertainty plot skipped: %s', _exc)
+        # ER uncertainty (fig15) — only when ER is enabled
+        if getattr(ranking_result, 'er_result', None) is not None:
+            try:
+                unc = ranking_result.er_result.uncertainty
+                _inc(self.sensitivity.plot_er_uncertainty(unc, provinces))
+            except Exception as _exc:
+                _logger.debug('ER uncertainty plot skipped: %s', _exc)
 
         # ── Forecast ──────────────────────────────────────────────
         if forecast_result is not None:

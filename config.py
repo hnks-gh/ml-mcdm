@@ -252,13 +252,13 @@ class ForecastConfig:
     """
     State-of-the-art forecasting configuration for UnifiedForecaster.
 
-    Uses 5 diverse base models + Super Learner meta-ensemble + Conformal
+    Uses diverse base models + Meta-Learner ensemble + Conformal
     Prediction calibration.  Optimised for small-to-medium panel data (N < 1000).
 
     Model hyperparameters
     ---------------------
     gb_max_depth / gb_n_estimators
-        GradientBoostingForecaster (Huber-loss sequential trees).
+        CatBoostForecaster (oblivious symmetric trees, MultiRMSE objective).
         ``max_depth=5`` is the principled midpoint between the underfitting
         depth-4 and the overfitting depth-6 at n≈756: depth-5 yields
         32 leaves ≈ 24 samples/leaf, providing a healthy bias-variance
@@ -353,7 +353,7 @@ class ForecastConfig:
     random_state: int = 42
     verbose: bool = True
 
-    # ── GradientBoosting hyperparameters ─────────────────────────────────
+    # ── CatBoost hyperparameters ─────────────────────────────────────────
     gb_max_depth: int = 5
     """Tree depth. 5 ≈ 32 leaves → ~24 samples/leaf at n=756."""
     gb_n_estimators: int = 200
@@ -601,6 +601,16 @@ class RankingConfig:
     """
     Hierarchical ranking configuration.
 
+    use_evidential_reasoning
+        When True, the ranking pipeline uses the full two-stage Evidential
+        Reasoning aggregation (Yang & Xu, 2002) with belief distributions
+        and utility intervals.  When False, ER is skipped entirely — the
+        pipeline runs the 5 MCDM methods per criterion and stores their
+        scores/ranks, but does not aggregate them into a single composite.
+        No fallback aggregation is applied; the 5 MCDM methods (TOPSIS,
+        VIKOR, PROMETHEE, COPRAS, EDAS) and Base remain as separate
+        independent outputs in criterion_method_scores.
+
     run_all_years
         When True, the ranking pipeline is executed for every year in the
         panel (not just the target year) to enable temporal charts.
@@ -616,6 +626,7 @@ class RankingConfig:
         (mean_rank, std_rank, prob_top1, prob_topK) are carried through
         the details dict so CSV writers can persist them.
     """
+    use_evidential_reasoning: bool = True
     run_all_years: bool = True
     max_parallel_years: Optional[int] = None   # None → auto (cpu_count)
     expose_mc_province_stats: bool = True

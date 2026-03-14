@@ -248,10 +248,10 @@ class ForecastPlotter(BasePlotter):
         for t in texts:
             t.set_fontsize(10)
 
-        ax.set_title('Super Learner — Base Model Weights', fontsize=14, pad=20)
+        ax.set_title('Meta-Learner — Base Model Weights', fontsize=14, pad=20)
         centre = plt.Circle((0, 0), 0.55, fc='white')
         ax.add_artist(centre)
-        ax.text(0, 0, 'Super\nLearner', ha='center', va='center',
+        ax.text(0, 0, 'Meta-\nLearner', ha='center', va='center',
                 fontsize=14, fontweight='bold', color='#333333')
         return self._save(fig, save_name)
 
@@ -470,7 +470,7 @@ class ForecastPlotter(BasePlotter):
         """Comprehensive holdout forecast comparison: per-model predicted vs actual.
 
         This is the primary diagnostic for evaluating how well each base model
-        and the Super Learner ensemble predict scores on the temporal holdout
+        and the Meta-Learner ensemble predict scores on the temporal holdout
         set (the last observed year used as a pseudo-test split).
 
         The figure contains four panels:
@@ -499,7 +499,7 @@ class ForecastPlotter(BasePlotter):
         if per_model_predictions:
             for name, arr in per_model_predictions.items():
                 model_preds[name] = np.asarray(arr, dtype=float).ravel()[:n]
-        model_preds['Super Learner'] = y_pred
+        model_preds['Meta-Learner'] = y_pred
 
         model_names = list(model_preds.keys())
         n_models = len(model_names)
@@ -510,12 +510,12 @@ class ForecastPlotter(BasePlotter):
         # Model family colour mapping
         _family_color = {
             'lightgbm': '#2ECC71', 'lgbm': '#2ECC71',
-            'xgboost': '#E74C3C', 'xgb': '#E74C3C',
+            'xgboost': '#E74C3C', 'xgb': '#E74C3C', 'catboost': '#E74C3C',
             'random': '#3498DB', 'rf': '#3498DB', 'forest': '#3498DB',
             'neural': '#9B59B6', 'nam': '#9B59B6', 'additive': '#9B59B6',
             'bayesian': '#F39C12', 'bayes': '#F39C12', 'hierarchical': '#F39C12',
             'var': '#1ABC9C', 'panel': '#1ABC9C',
-            'super': '#E67E22', 'learner': '#E67E22', 'ensemble': '#E67E22',
+            'meta': '#E67E22', 'learner': '#E67E22', 'ensemble': '#E67E22',
             'quantile': '#E91E63', 'qrf': '#E91E63',
         }
         def _model_color(name: str) -> str:
@@ -540,7 +540,7 @@ class ForecastPlotter(BasePlotter):
 
         for i, (name, pred) in enumerate(model_preds.items()):
             col = colors[i]
-            is_ensemble = (name == 'Super Learner')
+            is_ensemble = (name == 'Meta-Learner')
             marker = '*' if is_ensemble else 'o'
             ms = 80 if is_ensemble else 40
             zorder = 6 if is_ensemble else 3
@@ -737,7 +737,7 @@ class ForecastPlotter(BasePlotter):
         """Static matplotlib flowchart of the 3-tier ensemble pipeline.
 
         Tier 1 — Six base estimators (LightGBM, XGBoost, RF, NAM, Bayesian, VAR)
-        Tier 2 — Super Learner (stacked generalisation)
+        Tier 2 — Meta-Learner (stacked generalisation)
         Tier 3 — Conformal Prediction (distribution-free coverage guarantee)
         """
         if not HAS_MATPLOTLIB:
@@ -812,11 +812,11 @@ class ForecastPlotter(BasePlotter):
             _box(xi, 8.5, 2.1, 1.15, name, sub, kind='base', fontsize=8.5)
             _arrow(8, 9.68, xi, 9.08)
 
-        # ── Tier 2 – Super Learner ─────────────────────────────────
+        # ── Tier 2 – Meta-Learner ─────────────────────────────────
         ax.text(8, 7.5, 'Tier 2 — Stacked Generalisation', ha='center',
                 fontsize=9, color='#1E8449', style='italic')
 
-        _box(8, 6.85, 5.8, 0.9, 'Super Learner', 'Optimal linear combination', kind='ensemble')
+        _box(8, 6.85, 5.8, 0.9, 'Meta-Learner', 'Optimal linear combination', kind='ensemble')
         for xi in xs_base:
             _arrow(xi, 7.93, 8, 7.30)
 
@@ -872,11 +872,11 @@ class ForecastPlotter(BasePlotter):
         model_performance: Optional[Dict[str, Dict[str, float]]] = None,
         save_name: str = 'fig19b_model_contribution_dots.png',
     ) -> Optional[str]:
-        """Bubble chart: Super Learner weight (x) vs CV R² score (y).
+        """Bubble chart: Meta-Learner weight (x) vs CV R² score (y).
 
         Bubble size encodes the contribution weight; color encodes model family.
         Annotates each model to show the weight–performance trade-off made by
-        the Super Learner during stacking.
+        the Meta-Learner during stacking.
         """
         if not HAS_MATPLOTLIB:
             return None
@@ -902,13 +902,15 @@ class ForecastPlotter(BasePlotter):
 
         # Model family colour mapping
         _family_color = {
+            'catboost': '#E74C3C', 'xgboost': '#E74C3C', 'xgb': '#E74C3C',
             'lightgbm': '#2ECC71', 'lgbm': '#2ECC71',
-            'xgboost': '#E74C3C', 'xgb': '#E74C3C',
             'random': '#3498DB', 'rf': '#3498DB', 'forest': '#3498DB',
+            'quantile': '#E91E63', 'qrf': '#E91E63',
             'neural': '#9B59B6', 'nam': '#9B59B6', 'additive': '#9B59B6',
             'bayesian': '#F39C12', 'bayes': '#F39C12', 'hierarchical': '#F39C12',
             'var': '#1ABC9C', 'panel': '#1ABC9C',
-            'super': '#E67E22', 'learner': '#E67E22',
+            'meta': '#E67E22', 'learner': '#E67E22', 'kernel': '#8E44AD',
+            'svr': '#C0392B', 'ridge': '#D35400',
         }
         colors_ = []
         for m in models:
@@ -952,9 +954,9 @@ class ForecastPlotter(BasePlotter):
                 fontsize=8, color='#333333',
             )
 
-        ax.set_xlabel('Super Learner Contribution Weight', fontsize=11)
+        ax.set_xlabel('Meta-Learner Contribution Weight', fontsize=11)
         ax.set_ylabel('Mean Cross-Validation R²', fontsize=11)
-        ax.set_title('Model Contribution vs CV Performance — Super Learner Diagnostics',
+        ax.set_title('Model Contribution vs CV Performance — Meta-Learner Diagnostics',
                      pad=12)
 
         # Size legend
