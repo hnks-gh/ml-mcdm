@@ -716,6 +716,17 @@ class SuperLearner:
         self._oof_ensemble_predictions_ = oof_ensemble
         self._oof_valid_mask_ = ~np.isnan(oof_ensemble).any(axis=1)
 
+        # ── F-05c C2: per-model OOF predictions for downstream diagnostics ──
+        # Slice each base model's columns out of the raw oof_predictions matrix
+        # and keep only the valid (non-NaN ensemble) rows so callers get arrays
+        # aligned with _oof_ensemble_predictions_[_oof_valid_mask_].
+        self._oof_predictions_per_model_: Dict[str, np.ndarray] = {}
+        _oof_valid_rows = self._oof_valid_mask_
+        for _m_idx, _m_name in enumerate(self.base_models):
+            _cols = slice(_m_idx * self._n_outputs, (_m_idx + 1) * self._n_outputs)
+            _per_m = oof_predictions[:, _cols]          # (n_samples, n_outputs)
+            self._oof_predictions_per_model_[_m_name] = _per_m[_oof_valid_rows]
+
         # ================================================================
         # Stage 4 (E-02): Extended conformal OOF sweep
         # ================================================================

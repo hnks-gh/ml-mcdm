@@ -477,106 +477,104 @@ class VisualizationOrchestrator:
 
         # ── Forecast ──────────────────────────────────────────────
         if forecast_result is not None:
-            try:
-                _fr = forecast_result  # convenience alias
-                _ti = getattr(_fr, 'training_info', {}) or {}
-                _actual    = _ti.get('y_test')
-                _predicted = _ti.get('y_pred')
-                _ent       = _ti.get('test_entities')
-                _contribs  = getattr(_fr, 'model_contributions', {}) or {}
-                _cv_scores = getattr(_fr, 'cross_validation_scores', {}) or {}
-                _intervals = getattr(_fr, 'prediction_intervals', {}) or {}
-                _pred_df   = getattr(_fr, 'predictions', None)
-                _pred_year = getattr(_fr, 'target_year', max(panel_data.years) + 1)
+            # Extract all data up-front; each figure call is independent via
+            # _safe() — one failure never aborts the remaining figures.
+            _fr = forecast_result  # convenience alias
+            _ti = getattr(_fr, 'training_info', {}) or {}
+            _actual    = _ti.get('y_test')
+            _predicted = _ti.get('y_pred')
+            _ent       = _ti.get('test_entities')
+            _contribs  = getattr(_fr, 'model_contributions', {}) or {}
+            _cv_scores = getattr(_fr, 'cross_validation_scores', {}) or {}
+            _intervals = getattr(_fr, 'prediction_intervals', {}) or {}
+            _pred_df   = getattr(_fr, 'predictions', None)
+            _pred_year = getattr(_fr, 'target_year', max(panel_data.years) + 1)
 
-                # Holdout per-model predictions
-                _per_model_ho = _ti.get('per_model_holdout_predictions')
+            # Per-model holdout predictions (populated when holdout year exists)
+            _per_model_ho = _ti.get('per_model_holdout_predictions')
 
+            # fig16b — ensemble architecture flowchart (data-driven model list)
+            _safe(self.forecast.plot_ensemble_architecture,
+                  model_names=list(_contribs.keys()) if _contribs else None,
+                  model_contributions=_contribs or None)
+
+            # fig16 / fig17 / fig22b / fig16c — require actual vs predicted data
+            if _actual is not None and _predicted is not None:
+                _a = np.asarray(_actual)
+                _p = np.asarray(_predicted)
                 # fig16 — actual vs predicted scatter
-                if _actual is not None and _predicted is not None:
-                    _a = np.asarray(_actual)
-                    _p = np.asarray(_predicted)
-                    _inc(self.forecast.plot_forecast_scatter(
-                        _a, _p, entity_names=_ent,
-                    ))
-                    # fig17 — residual diagnostics (4-panel)
-                    _inc(self.forecast.plot_forecast_residuals(_a, _p))
-                    # fig22b — conformal coverage calibration curve
-                    _inc(self.forecast.plot_conformal_coverage(_a, _p))
-                    # fig16c — comprehensive holdout comparison
-                    _inc(self.forecast.plot_holdout_comparison(
-                        _a, _p,
-                        per_model_predictions=_per_model_ho,
-                        entity_names=_ent,
-                        model_contributions=_contribs or None,
-                    ))
+                _safe(self.forecast.plot_forecast_scatter,
+                      _a, _p, entity_names=_ent)
+                # fig17 — residual diagnostics (4-panel)
+                _safe(self.forecast.plot_forecast_residuals, _a, _p)
+                # fig22b — conformal coverage calibration curve
+                _safe(self.forecast.plot_conformal_coverage, _a, _p)
+                # fig16c — holdout comparison (per-model lines + ensemble)
+                _safe(self.forecast.plot_holdout_comparison,
+                      _a, _p,
+                      per_model_predictions=_per_model_ho,
+                      entity_names=_ent,
+                      model_contributions=_contribs or None)
 
-                # fig18 — feature importance lollipop
-                if hasattr(_fr, 'feature_importance'):
-                    _imp = _fr.feature_importance
-                    if hasattr(_imp, 'columns'):
-                        _imp_dict = (
-                            _imp['Importance'].to_dict()
-                            if 'Importance' in _imp.columns
-                            else _imp.iloc[:, 0].to_dict()
-                        )
-                    else:
-                        _imp_dict = _imp
-                    _inc(self.forecast.plot_feature_importance(_imp_dict))
+            # fig18 — feature importance lollipop
+            if hasattr(_fr, 'feature_importance'):
+                _imp = _fr.feature_importance
+                if hasattr(_imp, 'columns'):
+                    _imp_dict = (
+                        _imp['Importance'].to_dict()
+                        if 'Importance' in _imp.columns
+                        else _imp.iloc[:, 0].to_dict()
+                    )
+                else:
+                    _imp_dict = _imp
+                _safe(self.forecast.plot_feature_importance, _imp_dict)
 
-                # fig19 — model weights donut
-                if _contribs:
-                    _inc(self.forecast.plot_model_weights_donut(_contribs))
+            # fig19 — model weights donut
+            if _contribs:
+                _safe(self.forecast.plot_model_weights_donut, _contribs)
 
-                # fig19b — model contribution bubble (weight vs CV R²)
-                if _contribs:
-                    _inc(self.forecast.plot_model_contribution_dots(
-                        _contribs,
-                        cross_validation_scores=_cv_scores or None,
-                        model_performance=getattr(_fr, 'model_performance', None),
-                    ))
+            # fig19b — model contribution bubble (weight vs CV R²)
+            if _contribs:
+                _safe(self.forecast.plot_model_contribution_dots,
+                      _contribs,
+                      cross_validation_scores=_cv_scores or None,
+                      model_performance=getattr(_fr, 'model_performance', None))
 
-                # fig20 — model performance comparison
-                if getattr(_fr, 'model_performance', None):
-                    _inc(self.forecast.plot_model_performance(
-                        _fr.model_performance,
-                    ))
+            # fig20 — per-model performance comparison bars
+            if getattr(_fr, 'model_performance', None):
+                _safe(self.forecast.plot_model_performance,
+                      _fr.model_performance)
 
-                # fig21 — CV box plots
-                if _cv_scores:
-                    _inc(self.forecast.plot_cv_boxplots(_cv_scores))
+            # fig21 — CV box plots (per-fold R² distribution)
+            if _cv_scores:
+                _safe(self.forecast.plot_cv_boxplots, _cv_scores)
 
-                # fig22 — conformal prediction intervals (top-N)
-                if _intervals and _pred_df is not None:
-                    _lower = _intervals.get('lower')
-                    _upper = _intervals.get('upper')
-                    if _lower is not None and _upper is not None:
-                        _inc(self.forecast.plot_prediction_intervals(
-                            _pred_df, _lower, _upper,
-                        ))
+            # fig22 — conformal prediction intervals (top-N provinces)
+            if _intervals and _pred_df is not None:
+                _lower = _intervals.get('lower')
+                _upper = _intervals.get('upper')
+                if _lower is not None and _upper is not None:
+                    _safe(self.forecast.plot_prediction_intervals,
+                          _pred_df, _lower, _upper)
 
-                # fig23 — rank change bubble
-                if _pred_df is not None and len(_pred_df.columns) > 0:
-                    _pc = _pred_df.columns[0]
-                    _ps = _pred_df[_pc].values
-                    _inc(self.forecast.plot_rank_change_bubble(
-                        provinces, scores, _ps, prediction_year=_pred_year,
-                    ))
-                    # fig23b — actual vs forecast grouped bar (top-N provinces)
-                    _inc(self.forecast.plot_province_forecast_comparison(
-                        provinces, scores, _pred_df,
-                        intervals=_intervals or None,
-                        prediction_year=_pred_year,
-                    ))
-                    # fig23c — score trajectory: historical line + forecast CI
-                    _inc(self.forecast.plot_score_trajectory(
-                        provinces, scores, _pred_df,
-                        intervals=_intervals or None,
-                        panel_years=list(panel_data.years),
-                        target_year=_pred_year,
-                    ))
-            except Exception as _exc:
-                _logger.warning('Forecast visualization failed: %s', _exc)
+            # fig23 / fig23b / fig23c — require predictions DataFrame
+            if _pred_df is not None and len(_pred_df.columns) > 0:
+                _pc = _pred_df.columns[0]
+                _ps = _pred_df[_pc].values
+                # fig23 — rank change bubble (historical vs forecast)
+                _safe(self.forecast.plot_rank_change_bubble,
+                      provinces, scores, _ps, prediction_year=_pred_year)
+                # fig23b — actual vs forecast grouped bar (top-N provinces)
+                _safe(self.forecast.plot_province_forecast_comparison,
+                      provinces, scores, _pred_df,
+                      intervals=_intervals or None,
+                      prediction_year=_pred_year)
+                # fig23c — score trajectory: historical line + forecast CI
+                _safe(self.forecast.plot_score_trajectory,
+                      provinces, scores, _pred_df,
+                      intervals=_intervals or None,
+                      panel_years=list(panel_data.years),
+                      target_year=_pred_year)
 
         return count
 

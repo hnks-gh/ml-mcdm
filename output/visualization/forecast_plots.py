@@ -731,14 +731,32 @@ class ForecastPlotter(BasePlotter):
 
     def plot_ensemble_architecture(
         self,
+        model_names: Optional[List[str]] = None,
         model_contributions: Optional[Dict[str, float]] = None,
         save_name: str = 'fig16b_ensemble_architecture.png',
     ) -> Optional[str]:
-        """Static matplotlib flowchart of the 3-tier ensemble pipeline.
+        """Data-driven matplotlib flowchart of the 3-tier ensemble pipeline.
 
-        Tier 1 — Six base estimators (LightGBM, XGBoost, RF, NAM, Bayesian, VAR)
-        Tier 2 — Meta-Learner (stacked generalisation)
+        The base-estimator tier is built from the live ``model_names`` list so
+        the figure always reflects the actual active model set.
+
+        Tier 1 — Base Estimators (dynamic, derived from ``model_names``)
+        Tier 2 — Meta-Learner (stacked generalisation, NNLS weights)
         Tier 3 — Conformal Prediction (distribution-free coverage guarantee)
+
+        Parameters
+        ----------
+        model_names : list of str, optional
+            Ordered list of active base model keys (e.g. ``['CatBoost',
+            'LightGBM', 'BayesianRidge', 'KernelRidge', 'SVR', 'QuantileRF']``).
+            If None, derived from ``model_contributions`` keys; if that is also
+            None, falls back to the default 6-model roster.
+        model_contributions : dict, optional
+            ``{model_name: weight}`` from the fitted Meta-Learner.  Used to
+            annotate top-3 contributors in the Meta-Learner box and to derive
+            ``model_names`` when that argument is not provided.
+        save_name : str
+            Output filename (relative to the configured figures directory).
         """
         if not HAS_MATPLOTLIB:
             return None
@@ -799,17 +817,37 @@ class ForecastPlotter(BasePlotter):
         ax.text(8, 9.35, 'Tier 1 — Base Estimators', ha='center',
                 fontsize=9, color='#1A5276', style='italic')
 
-        base_models = [
-            ('LightGBM', 'Gradient\nBoosting'),
-            ('XGBoost', 'Gradient\nBoosting'),
-            ('Random\nForest', 'Bagging'),
-            ('Neural\nAdditive', 'NAM'),
-            ('Hierarchical\nBayes', 'Bayesian'),
-            ('Panel\nVAR', 'Time-Series'),
+        # Resolve model names: explicit arg > model_contributions keys > default
+        _DEFAULT_MODELS = [
+            'CatBoost', 'LightGBM', 'BayesianRidge',
+            'KernelRidge', 'SVR', 'QuantileRF',
         ]
-        xs_base = np.linspace(1.2, 14.8, 6)
-        for xi, (name, sub) in zip(xs_base, base_models):
-            _box(xi, 8.5, 2.1, 1.15, name, sub, kind='base', fontsize=8.5)
+        _MODEL_LABELS: Dict[str, tuple] = {
+            'CatBoost':     ('CatBoost',    'Symmetric GB'),
+            'LightGBM':     ('LightGBM',    'Leaf-wise GB'),
+            'BayesianRidge':('Bayesian\nRidge', 'Group Lasso'),
+            'KernelRidge':  ('Kernel\nRidge', 'RBF L2'),
+            'SVR':          ('SVR',          'ε-insensitive'),
+            'QuantileRF':   ('Quantile\nRF', 'Distributional'),
+            'PanelVAR':     ('Panel\nVAR',   'Fixed Effects'),
+            'NAM':          ('Neural\nAdditive', 'Interpretable'),
+        }
+        if model_names is not None:
+            _active = list(model_names)
+        elif model_contributions:
+            _active = list(model_contributions.keys())
+        else:
+            _active = _DEFAULT_MODELS
+
+        n_base = max(len(_active), 1)
+        # Dynamic box width: shrink when more models but never exceed 2.2
+        _bw = min(2.2, max(1.0, 13.6 / n_base - 0.3))
+        xs_base = np.linspace(1.2, 14.8, n_base)
+
+        for xi, mkey in zip(xs_base, _active):
+            _lbl, _sub = _MODEL_LABELS.get(mkey, (mkey, ''))
+            _box(xi, 8.5, _bw, 1.15, _lbl, _sub, kind='base',
+                 fontsize=max(6.5, 8.5 - max(0, n_base - 6) * 0.4))
             _arrow(8, 9.68, xi, 9.08)
 
         # ── Tier 2 – Meta-Learner ─────────────────────────────────

@@ -2173,6 +2173,14 @@ class UnifiedForecaster:
         n_comps = self.y_train_.shape[1]
         y_arr = self.y_train_.values
 
+        # F-05b B3 / F-05c: intermediate storage populated below
+        self._ho_y_test_fallback_: Optional[np.ndarray] = None
+        self._ho_y_pred_fallback_: Optional[np.ndarray] = None
+        self._ho_entity_names_fallback_: Optional[List[str]] = None
+        _per_model_ho_preds: Dict[str, np.ndarray] = {}
+        _oof_entity_names: List[str] = []
+        _per_model_oof_preds: Dict[str, np.ndarray] = {}
+
         # ── Stage 6a: Genuine holdout model comparison ────────────────────
         self.model_comparison_ = None
         if not self.X_holdout_.empty and len(self.y_holdout_) > 0:
@@ -2209,6 +2217,45 @@ class UnifiedForecaster:
                     component_names=self.y_train_.columns.tolist(),
                     target_entities=list(self.X_pred_.index),
                 )
+
+                # ── F-05c C3: per-model holdout predictions ───────────────
+                # Predict each fitted base model on the holdout feature matrix
+                # so downstream visualisation can show per-model scatter plots.
+                for _m_name, _m_fitted in (
+                    self.super_learner_._fitted_base_models.items()
+                ):
+                    try:
+                        _X_m = _per_model_X_holdout.get(_m_name, _X_ho_tree)
+                        _pred_m = SuperLearner._predict_model(_m_fitted, _X_m)
+                        if np.ndim(_pred_m) == 0:
+                            _pred_m = np.full(
+                                (len(_X_m), n_comps), float(_pred_m)
+                            )
+                        elif np.ndim(_pred_m) == 1:
+                            _pred_m = _pred_m.reshape(-1, 1)
+                        _per_model_ho_preds[_m_name] = _pred_m
+                    except Exception as _p_exc:
+                        logger.debug(
+                            f"Per-model holdout predict {_m_name}: {_p_exc}"
+                        )
+
+                # ── F-05b B3: save stage 6a fallback (transformed space) ──
+                # Used below when stage 6b OOF data are insufficient or NaN.
+                _y_ho_arr   = self.y_holdout_.values        # transformed space
+                _ho_nan_ok  = ~np.isnan(_y_ho_arr).any(axis=1)
+                if (
+                    _ho_nan_ok.sum() >= 2
+                    and not np.all(np.isnan(_ens_ho_arr))
+                ):
+                    _yh_clean = _y_ho_arr[_ho_nan_ok]
+                    _yp_clean = _ens_ho_arr[
+                        _ho_nan_ok, :_y_ho_arr.shape[1]
+                    ]
+                    self._ho_y_test_fallback_ = _yh_clean.ravel()
+                    self._ho_y_pred_fallback_ = _yp_clean.ravel()
+                    self._ho_entity_names_fallback_ = list(
+                        self.X_holdout_.index[_ho_nan_ok]
+                    )
                 if self.model_comparison_:
                     _best_mc = next(
                         (r for r in self.model_comparison_ if r.is_best), None
@@ -2260,48 +2307,80 @@ class UnifiedForecaster:
                 and _oof_mask is not None
                 and _oof_mask.sum() >= 5
             ):
-                y_oof      = y_arr[_oof_mask]
-                y_oof_pred = _oof_preds[_oof_mask, :y_arr.shape[1]]
-                self.holdout_performance_ = {
-                    'r2':    float(r2_score(y_oof.ravel(), y_oof_pred.ravel())),
-                    'rmse':  float(
-                        np.sqrt(mean_squared_error(y_oof, y_oof_pred))
-                    ),
-                    'mae':   float(mean_absolute_error(y_oof, y_oof_pred)),
-                    'n_oof': int(_oof_mask.sum()),
-                    'note':  (
-                        'OOF cross-validation estimate '
-                        '(genuinely out-of-sample)'
-                    ),
-                }
-                self._holdout_y_test_ = y_oof.ravel()
-                self._holdout_y_pred_ = y_oof_pred.ravel()
-                # Phase 5: inverse-transform OOF estimates to original space
-                # for meaningful external reporting (R²/RMSE in target units)
-                if (
-                    self.target_transformer_ is not None
-                    and not self.target_transformer_.is_identity
-                ):
-                    try:
-                        self._holdout_y_test_ = (
-                            self.target_transformer_
-                            .inverse_transform(y_oof)
-                            .ravel()
+                y_oof_raw      = y_arr[_oof_mask]
+                y_oof_pred_raw = _oof_preds[_oof_mask, :y_arr.shape[1]]
+                # F-05b B1: drop rows where the governance target itself is NaN
+                # (M-04 complete-case strategy preserves NaN in y_train_).
+                _oof_nan_free = ~np.isnan(y_oof_raw).any(axis=1)
+                if _oof_nan_free.sum() < 5:
+                    if self.verbose:
+                        print(
+                            "    Stage 6b: OOF evaluation skipped "
+                            "(insufficient non-NaN OOF targets)"
                         )
-                        self._holdout_y_pred_ = (
-                            self.target_transformer_
-                            .inverse_transform(y_oof_pred)
-                            .ravel()
-                        )
-                    except Exception:
-                        pass  # keep transformed-space fallback
-                if self.verbose:
-                    print(
-                        f"    Stage 6b: OOF R² = "
-                        f"{self.holdout_performance_['r2']:.4f}, "
-                        f"RMSE = {self.holdout_performance_['rmse']:.4f}  "
-                        f"[n_oof={self.holdout_performance_['n_oof']}]"
+                else:
+                    y_oof      = y_oof_raw[_oof_nan_free]
+                    y_oof_pred = y_oof_pred_raw[_oof_nan_free]
+                    # F-05b B2: entity names aligned to NaN-clean OOF rows
+                    _oof_row_idx    = np.where(_oof_mask)[0][_oof_nan_free]
+                    _oof_entity_names = list(
+                        self.X_train_.index[_oof_row_idx]
                     )
+                    # F-05c: per-model OOF predictions in NaN-clean OOF space
+                    _m_oof_store = getattr(
+                        self.super_learner_,
+                        '_oof_predictions_per_model_', {}
+                    ) or {}
+                    _per_model_oof_preds = {
+                        _mn: _mp[_oof_nan_free]
+                        for _mn, _mp in _m_oof_store.items()
+                        if _mp is not None and len(_mp) == len(_oof_nan_free)
+                    }
+                    self.holdout_performance_ = {
+                        'r2':    float(
+                            r2_score(y_oof.ravel(), y_oof_pred.ravel())
+                        ),
+                        'rmse':  float(
+                            np.sqrt(mean_squared_error(y_oof, y_oof_pred))
+                        ),
+                        'mae':   float(
+                            mean_absolute_error(y_oof, y_oof_pred)
+                        ),
+                        'n_oof': int(_oof_nan_free.sum()),
+                        'note':  (
+                            'OOF cross-validation estimate '
+                            '(genuinely out-of-sample)'
+                        ),
+                    }
+                    self._holdout_y_test_ = y_oof.ravel()
+                    self._holdout_y_pred_ = y_oof_pred.ravel()
+                    # Phase 5: inverse-transform OOF estimates to original
+                    # space for meaningful external reporting (R²/RMSE in
+                    # target units).
+                    if (
+                        self.target_transformer_ is not None
+                        and not self.target_transformer_.is_identity
+                    ):
+                        try:
+                            self._holdout_y_test_ = (
+                                self.target_transformer_
+                                .inverse_transform(y_oof)
+                                .ravel()
+                            )
+                            self._holdout_y_pred_ = (
+                                self.target_transformer_
+                                .inverse_transform(y_oof_pred)
+                                .ravel()
+                            )
+                        except Exception:
+                            pass  # keep transformed-space fallback
+                    if self.verbose:
+                        print(
+                            f"    Stage 6b: OOF R² = "
+                            f"{self.holdout_performance_['r2']:.4f}, "
+                            f"RMSE = {self.holdout_performance_['rmse']:.4f}"
+                            f"  [n_oof={self.holdout_performance_['n_oof']}]"
+                        )
             else:
                 if self.verbose:
                     print(
@@ -2315,11 +2394,79 @@ class UnifiedForecaster:
                     f"{type(e).__name__}: {e}"
                 )
 
+        # ── F-05b B3: fallback to stage 6a holdout when OOF unavailable ───
+        # If stage 6b produced no y_test/y_pred (OOF all-NaN, too few samples,
+        # or raised), substitute the genuine-holdout arrays saved in stage 6a.
+        # Apply the same inverse-transform so the data is in reporting space.
+        if self._holdout_y_test_ is None and (
+            self._ho_y_test_fallback_ is not None
+        ):
+            logger.info(
+                "Stage 6: OOF unavailable — using stage 6a holdout fallback."
+            )
+            _fb_y = self._ho_y_test_fallback_.reshape(-1, 1)
+            _fb_p = self._ho_y_pred_fallback_.reshape(-1, 1)
+            if (
+                self.target_transformer_ is not None
+                and not self.target_transformer_.is_identity
+            ):
+                try:
+                    _fb_y = self.target_transformer_.inverse_transform(_fb_y)
+                    _fb_p = self.target_transformer_.inverse_transform(_fb_p)
+                except Exception:
+                    pass
+            self._holdout_y_test_   = _fb_y.ravel()
+            self._holdout_y_pred_   = _fb_p.ravel()
+            _oof_entity_names = (
+                list(self._ho_entity_names_fallback_)
+                if self._ho_entity_names_fallback_ is not None else []
+            )
+
         # ── Feature importance ────────────────────────────────────────────
         self._feature_importance_ = self._aggregate_feature_importance(
             self.feature_engineer_.get_feature_names(),
             self.y_train_.columns.tolist(),
         )
+
+        # F-05c C1: per-model feature importance in original feature space
+        # Uses the same reducer-aware mapping as _aggregate_feature_importance
+        # so importances are comparable across PCA-track and tree-track models.
+        _per_model_fi: Dict[str, np.ndarray] = {}
+        _feat_names   = self.feature_engineer_.get_feature_names()
+        _comp_names   = self.y_train_.columns.tolist()
+        _pca_model_fi = {'BayesianRidge'}
+        for _fi_name, _fi_model in (
+            self.super_learner_._fitted_base_models.items()
+        ):
+            try:
+                if (
+                    _fi_name in _pca_model_fi
+                    and getattr(self, 'reducer_pca_', None) is not None
+                    and self.reducer_pca_._fitted
+                ):
+                    _reducer = self.reducer_pca_
+                elif (
+                    getattr(self, 'reducer_tree_', None) is not None
+                    and self.reducer_tree_._fitted
+                ):
+                    _reducer = self.reducer_tree_
+                else:
+                    _reducer = None
+                _n_mf = (
+                    _reducer.n_components
+                    if _reducer is not None
+                    else len(_feat_names)
+                )
+                _per_out = _get_per_output_importance(
+                    _fi_model, len(_comp_names), _n_mf
+                )
+                if _per_out.shape == (_n_mf, len(_comp_names)):
+                    _per_model_fi[_fi_name] = (
+                        _reducer.inverse_importance(_per_out)
+                        if _reducer is not None else _per_out
+                    )
+            except Exception:
+                pass
 
         # ── Per-model CV performance summary ─────────────────────────────
         self._model_performance_ = {}
@@ -2369,10 +2516,19 @@ class UnifiedForecaster:
                 and not self.target_transformer_.is_identity
             ),
             # OOF residuals for downstream visualisation
-            'y_test':    self._holdout_y_test_,
-            'y_pred':    self._holdout_y_pred_,
-            'test_entities': None,
-            'per_model_holdout_predictions': None,
+            'y_test':       self._holdout_y_test_,
+            'y_pred':       self._holdout_y_pred_,
+            # F-05c C4: entity names, per-model predictions & importances
+            'test_entities': _oof_entity_names if _oof_entity_names else None,
+            'per_model_holdout_predictions': (
+                _per_model_ho_preds if _per_model_ho_preds else None
+            ),
+            'per_model_oof_predictions': (
+                _per_model_oof_preds if _per_model_oof_preds else None
+            ),
+            'per_model_feature_importance': (
+                _per_model_fi if _per_model_fi else None
+            ),
         }
 
         if self.verbose:
