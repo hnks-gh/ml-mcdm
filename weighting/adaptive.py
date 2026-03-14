@@ -114,7 +114,9 @@ class AdaptiveWeightCalculator:
             c for c in data.columns if c != entity_col
         ] if entity_col in data.columns else list(data.columns)
 
-        # Delegate all NaN filtering + mean imputation to the centralised utility
+        # Delegate all-NaN row/column filtering to the centralised utility.
+        # Partial NaN cells are preserved (no imputation); CRITICWeightCalculator
+        # handles them via its own complete-case exclusion (F-03 guard).
         filtered_data, report = prepare_decision_matrix(
             data,
             entity_col=entity_col,
@@ -122,7 +124,7 @@ class AdaptiveWeightCalculator:
             min_cols=self.min_criteria,
         )
 
-        # Calculate weights on the cleaned, complete sub-matrix
+        # Calculate weights on the filtered sub-matrix (partial NaN handled downstream)
         if self.method == "critic":
             base_result = self.critic_calc.calculate(filtered_data)
         else:

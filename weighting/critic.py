@@ -15,9 +15,14 @@ where:
     r_jk = correlation between criteria j and k
 """
 
+import logging
+
 import numpy as np
 import pandas as pd
+
 from .base import WeightResult
+
+logger = logging.getLogger(__name__)
 
 
 class CRITICWeightCalculator:
@@ -91,7 +96,10 @@ class CRITICWeightCalculator:
         Raises
         ------
         ValueError
-            If data is empty or has less than 2 observations
+            If *data* is empty or the original (pre-NaN-exclusion) row count
+            is less than 2.  Note: if NaN rows are present and dropping them
+            leaves fewer than 2 complete-case rows, equal weights are returned
+            rather than raising (so that upstream pipelines degrade gracefully).
         TypeError
             If data contains non-numeric columns
         """
@@ -105,16 +113,61 @@ class CRITICWeightCalculator:
         if non_numeric:
             raise TypeError(f"Non-numeric columns found: {non_numeric}")
         
-        n = len(data)
-        # Impute any NaN cells with the column mean before computing weights.
-        # Upstream callers should pre-impute, but this is a defensive guard.
-        # For wholly-missing columns fall back to epsilon (avoids NaN std/corr).
+        # ── Complete-case exclusion ───────────────────────────────────────
+        # Drop rows containing any NaN before computing CRITIC statistics.
+        #
+        # Rationale: imputing NaN with column means (the former behaviour)
+        # causes two distinct statistical biases:
+        #   1. Variance attenuation — imputed rows all equal the column mean,
+        #      so σ_j is artificially reduced.
+        #   2. Spurious correlation — columns with overlapping NaN positions
+        #      are both pulled toward their respective means, inflating r_{jk}.
+        # Both effects corrupt C_j = σ_j × Σ_k(1 − r_{jk}) and, therefore,
+        # the final weights.  Complete-case analysis is the statistically
+        # correct estimator when missingness is structural (e.g. a governance
+        # indicator not yet collected for certain years), not random.
+        #
+        # Callers (CRITICWeightingCalculator F-01/F-02) already perform
+        # per-group dropna before invoking CRITIC, so this guard fires only
+        # for secondary callers that pass raw data.
         data = data.copy()
         if data.isnull().any().any():
-            _col_means = data.mean()
-            _col_means = _col_means.fillna(self.epsilon)  # all-NaN col fallback
-            data = data.fillna(_col_means)
-        X = data.values  # (n, p)
+            n_before = len(data)
+            valid_mask = ~data.isnull().any(axis=1)
+            data = data[valid_mask]
+            n_dropped = n_before - len(data)
+            logger.warning(
+                "CRITICWeightCalculator: %d row(s) with NaN dropped "
+                "(%d → %d rows). Callers should pre-filter via complete-case "
+                "exclusion; imputation removed to prevent biased weight "
+                "estimation (variance attenuation + spurious correlation).",
+                n_dropped, n_before, len(data),
+            )
+            # Synchronise sample_weights: drop weights for excluded rows so
+            # the positional alignment with the surviving rows is preserved.
+            if sample_weights is not None:
+                _sw_arr = np.asarray(sample_weights, dtype=float)
+                if _sw_arr.shape[0] == n_before:
+                    sample_weights = _sw_arr[valid_mask.values]
+            if len(data) < 2:
+                n_criteria = len(data.columns)
+                logger.warning(
+                    "CRITICWeightCalculator: fewer than 2 complete-case rows "
+                    "remain after NaN exclusion — returning equal weights.",
+                )
+                return WeightResult(
+                    weights={c: 1.0 / n_criteria for c in data.columns},
+                    method="critic",
+                    details={
+                        "note": (
+                            "equal_weights: fewer than 2 complete-case rows "
+                            "remain after NaN exclusion"
+                        )
+                    },
+                )
+
+        n = len(data)
+        X = data.values  # (n, p) — NaN-free beyond this point
         columns = data.columns.tolist()
         
         if sample_weights is not None:

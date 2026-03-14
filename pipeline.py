@@ -65,7 +65,10 @@ class PipelineResult:
     """Container for all pipeline results."""
     # Data
     panel_data: PanelData
-    decision_matrix: np.ndarray
+    decision_matrix: np.ndarray   # latest-year snapshot (avail_provs × avail_scs);
+                                  # may contain NaN for Type 1/3 structural gaps —
+                                  # no imputation applied.  MCDM phases use
+                                  # panel_data directly and are unaffected.
 
     # Weights (new — two-level hierarchical MC ensemble)
     sc_weights: np.ndarray               # global SC weights array (p,)
@@ -317,53 +320,20 @@ class MLMCDMPipeline:
             avail_scs = [sc for sc in subcriteria if sc in cs.columns]
             avail_provs = [p for p in active_provs if p in cs.index]
 
-            # PL-2: NaN handling for decision_matrix — year/SC mismatches can
-            # leave some province-SC cells empty (e.g. a new SC introduced in
-            # a year where some provinces have missing reports).
+            # Build the display snapshot for the latest year.
+            # NaN cells (Type 1 structural gaps, Type 3 partial province data)
+            # are preserved — no back-fill or median imputation is applied.
+            # MCDM ranking and weighting phases use panel_data directly via
+            # YearContext and are entirely unaffected by NaN in this field.
             dm_df = cs.loc[avail_provs, avail_scs].copy()
-            nan_count_before = int(dm_df.isna().sum().sum())
-            if nan_count_before > 0:
-                self.logger.warning(
-                    'Decision matrix has %d NaN cell(s) in year %d '
-                    '(%d province-SC pairs affected); attempting imputation.',
-                    nan_count_before, latest_year,
-                    int(dm_df.isna().any(axis=1).sum()),
-                )
-                # Step 1: back-fill from prior years, province by province
-                prior_years = sorted(
-                    [yr for yr in panel_data.years if yr < latest_year], reverse=True
-                )
-                for prior_yr in prior_years:
-                    if dm_df.isna().sum().sum() == 0:
-                        break
-                    prior_cs = panel_data.subcriteria_cross_section.get(prior_yr)
-                    if prior_cs is None:
-                        continue
-                    for prov in avail_provs:
-                        if prov not in prior_cs.index:
-                            continue
-                        for sc in avail_scs:
-                            if pd.isna(dm_df.at[prov, sc]) and sc in prior_cs.columns:
-                                prior_val = prior_cs.at[prov, sc]
-                                if not pd.isna(prior_val):
-                                    dm_df.at[prov, sc] = prior_val
-
-                # Step 2: fill any remaining NaNs with column median
-                nan_count_after_fill = int(dm_df.isna().sum().sum())
-                if nan_count_after_fill > 0:
-                    col_medians = dm_df.median()
-                    dm_df = dm_df.fillna(col_medians)
-                    self.logger.warning(
-                        '  %d cell(s) could not be back-filled from prior years; '
-                        'replaced with column median.',
-                        nan_count_after_fill,
-                    )
-
-                nan_count_final = int(dm_df.isna().sum().sum())
+            nan_count = int(dm_df.isna().sum().sum())
+            if nan_count > 0:
                 self.logger.info(
-                    '  Decision matrix NaN imputation complete: '
-                    '%d → %d remaining NaN(s).',
-                    nan_count_before, nan_count_final,
+                    'Decision matrix for year %d: %d NaN cell(s) across %d '
+                    'province-SC pair(s). NaN values preserved — no imputation '
+                    'applied (strategy: complete-case exclusion).',
+                    latest_year, nan_count,
+                    int(dm_df.isna().any(axis=1).sum()),
                 )
 
             decision_matrix = dm_df.values

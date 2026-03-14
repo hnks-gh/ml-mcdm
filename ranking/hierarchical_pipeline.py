@@ -32,7 +32,6 @@ from dataclasses import dataclass, field
 import logging
 
 from data import PanelData, HierarchyMapping
-from data.missing_data import impute_neutral_score
 from .topsis import TOPSISCalculator
 from .vikor import VIKORCalculator
 from .promethee import PROMETHEECalculator
@@ -283,6 +282,9 @@ class HierarchicalRankingPipeline:
                 df_crit = df_crit.loc[
                     [p for p in crit_alternatives if p in df_crit.index]
                 ]
+                # No YearContext: province rows with any missing SC are excluded
+                # (complete-case strategy; consistent with the primary YearContext path).
+                df_crit = df_crit.dropna()
 
             if df_crit.empty:
                 logger.warning(f"  {crit_id}: empty decision matrix — skipped")
@@ -660,10 +662,17 @@ class HierarchicalRankingPipeline:
     ) -> pd.DataFrame:
         """Min-max normalize to [0, 1].  Cost criteria are inverted.
 
-        NaN cells (partially missing observations) are filled with 0.5 after
-        normalisation so that downstream MCDM algorithms receive a complete,
-        numeric matrix.  The neutral mid-point value avoids biasing the
-        ranking in either direction for missing sub-criterion scores.
+        In the primary path, ``df`` is guaranteed NaN-free:
+        :meth:`PanelData.get_criterion_matrix` uses ``YearContext`` to return
+        only observed province-SC pairs (complete-case matrix).  No NaN
+        imputation is performed here — any residual NaN cells are preserved
+        so that the absence of data is visible downstream rather than masked
+        by a synthetic neutral score.
+
+        The degenerate case (constant or all-NaN column) sets the full column
+        to 0.5 as an undefined-normalisation fallback; this is not imputation
+        — it indicates that CRITIC / MCDM has no discriminating information
+        for that sub-criterion.
         """
         result = df.copy().astype(float)
         cost_criteria = cost_criteria or []
@@ -674,15 +683,15 @@ class HierarchicalRankingPipeline:
             rng = col_max - col_min
 
             if pd.isna(rng) or rng < 1e-12:
-                result[col] = 0.5  # constant (or all-NaN) column
+                result[col] = 0.5  # constant or all-NaN column (degenerate — not imputation)
             elif col in cost_criteria:
                 result[col] = (col_max - result[col]) / rng
             else:
                 result[col] = (result[col] - col_min) / rng
 
-        # Fill any NaN cells (partially missing rows) with the neutral 0.5
-        # so all MCDM algorithms receive a fully numeric matrix.
-        return impute_neutral_score(result)
+        # NaN cells are preserved; callers must supply a NaN-free matrix
+        # (guaranteed by get_criterion_matrix / YearContext in the primary path).
+        return result
 
     @staticmethod
     def _normalize_scores(

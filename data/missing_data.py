@@ -6,8 +6,8 @@ than scattering ad-hoc ``fillna`` / ``notna`` calls throughout the codebase,
 this module provides a single, tested set of primitives that each phase calls:
 
 **Weighting phase** (``weighting/adaptive.py``)
-    :func:`prepare_decision_matrix` — filter all-NaN rows/columns then impute
-    remaining partial cells with the per-column mean.
+    :func:`prepare_decision_matrix` — filter all-NaN rows/columns; remaining
+    partial NaN cells are preserved (no imputation applied).
     :func:`impute_panel_temporal` — advanced temporal imputation for panel
     data using within-entity interpolation before cross-sectional fallback.
 
@@ -88,7 +88,7 @@ class MatrixFilterReport:
             "excluded_rows":    self.n_excluded_rows,
             "included_columns": self.n_included_columns,
             "excluded_columns": self.n_excluded_columns,
-            "note": "excluded = all-NaN; partial NaN imputed with column mean",
+            "note": "excluded = all-NaN rows/columns; partial NaN cells preserved (no imputation)",
         }
 
 
@@ -276,7 +276,7 @@ def prepare_decision_matrix(
 ) -> Tuple[pd.DataFrame, MatrixFilterReport]:
     """Full missing-data preparation pipeline for a numeric decision matrix.
 
-    Applies three sequential steps:
+    Applies two sequential filtering steps:
 
     1. **Strip entity column** — remove the province/entity identifier column
        (if *entity_col* is given and present) so only numeric criterion values
@@ -285,9 +285,13 @@ def prepare_decision_matrix(
        are excluded entirely.
     3. **Filter all-NaN columns** — criteria where every province is NaN are
        excluded entirely.
-    4. **Impute partial NaN** — remaining isolated NaN cells are filled with the
-       column mean so the downstream calculator receives a complete numeric
-       matrix.
+
+    Partial NaN cells (a province has *some* valid sub-criteria but not all)
+    are **preserved unchanged**.  Downstream calculators must apply their own
+    complete-case strategy (e.g. ``CRITICWeightCalculator`` uses per-row
+    exclusion via its F-03 guard).  Imputing partial cells with column means
+    would attenuate variance and inflate inter-criteria correlations —
+    biasing objective CRITIC weights.
 
     Parameters
     ----------
@@ -304,7 +308,8 @@ def prepare_decision_matrix(
     Returns
     -------
     data : pd.DataFrame
-        Cleaned, NaN-free numeric decision matrix.
+        Filtered numeric decision matrix; partial NaN cells are preserved
+        (no imputation applied).
     report : MatrixFilterReport
         Details of what was included and excluded.
 
@@ -350,9 +355,6 @@ def prepare_decision_matrix(
         )
     data = data.loc[:, col_mask].copy()
 
-    # Step 3: Impute remaining partial NaN cells with column mean
-    data = impute_column_mean(data)
-
     report = MatrixFilterReport(
         included_rows=included_rows,
         excluded_rows=excluded_rows,
@@ -372,16 +374,21 @@ def impute_neutral_score(
 ) -> pd.DataFrame:
     """Fill NaN cells with *neutral* (default ``0.5``).
 
-    Used in the ranking phase after min-max normalisation: provinces with
-    partially-missing sub-criterion data receive the neutral mid-point score
-    so they are not artificially promoted or demoted relative to provinces
-    that have complete data.
+    .. deprecated::
+        This function is **no longer called** by the ranking pipeline.
+        :meth:`HierarchicalRankingPipeline._minmax_normalize` previously
+        called this to fill partial-NaN cells with the neutral mid-point
+        after normalisation.  That call was removed (F-04) because imputing
+        0.5 manufactured ordinal information that was never observed —
+        violating the complete-case strategy applied everywhere else.
+        The function is retained for backward compatibility with any external
+        callers, but should not be used in new MCDM code.
 
     Parameters
     ----------
     df : pd.DataFrame
-        Normalised decision matrix (values in ``[0, 1]``) that may contain NaN
-        cells for provinces lacking a particular sub-criterion score.
+        Normalised decision matrix (values in ``[0, 1]``) that may contain
+        NaN cells.
     neutral : float
         Fill value.  Defaults to ``0.5`` (mid-point of the ``[0, 1]`` scale).
 

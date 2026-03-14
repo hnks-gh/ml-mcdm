@@ -299,3 +299,153 @@ class TestERNumericalTextbook:
         r1 = engine.combine([src1, src2], weights=np.array([0.6, 0.4]))
         r2 = engine.combine([src1, src2], weights=np.array([6.0, 4.0]))
         np.testing.assert_allclose(r1.beliefs, r2.beliefs, atol=1e-9)
+
+
+# ---------------------------------------------------------------------------
+# TestHierarchicalERF07 — F-07: per-province available-criterion ER
+#
+# Validates that Stage 1 correctly skips absent provinces and Stage 2
+# renormalises criterion weights per province (Type 3 structural gaps).
+# ---------------------------------------------------------------------------
+
+import pandas as pd
+from ranking.evidential_reasoning.hierarchical_er import HierarchicalEvidentialReasoning
+
+
+class TestHierarchicalERF07:
+    """F-07: Per-province available-criterion ER — NaN cells not imputed."""
+
+    @pytest.fixture
+    def partial_province_setup(self):
+        """
+        P1 and P2 have scores for both C01 and C02.
+        P3 has scores ONLY for C01 (absent from C02 — Type 3 structural gap).
+        """
+        return {
+            'method_scores': {
+                'C01': {'TOPSIS': pd.Series({'P1': 0.8, 'P2': 0.5, 'P3': 0.6})},
+                'C02': {'TOPSIS': pd.Series({'P1': 0.7, 'P2': 0.4})},   # P3 absent
+            },
+            'criterion_weights': {'C01': 0.5, 'C02': 0.5},
+            'alternatives': ['P1', 'P2', 'P3'],
+        }
+
+    def test_partial_province_has_final_score(self, partial_province_setup):
+        """All three provinces must produce a final score (no KeyError)."""
+        s = partial_province_setup
+        er = HierarchicalEvidentialReasoning(n_grades=5)
+        result = er.aggregate(s['method_scores'], s['criterion_weights'],
+                              s['alternatives'])
+        assert 'P3' in result.final_scores.index
+
+    def test_absent_criterion_not_in_criterion_beliefs(self, partial_province_setup):
+        """P3's criterion_beliefs must contain C01 but NOT C02."""
+        s = partial_province_setup
+        er = HierarchicalEvidentialReasoning(n_grades=5)
+        result = er.aggregate(s['method_scores'], s['criterion_weights'],
+                              s['alternatives'])
+        assert 'C01' in result.criterion_beliefs['P3']
+        assert 'C02' not in result.criterion_beliefs['P3']
+
+    def test_partial_province_score_equals_single_criterion_score(
+        self, partial_province_setup
+    ):
+        """
+        P3's ER score (with C02 absent) must equal what it would get if ranked
+        on C01 alone with weight 1.0 (available-case ER renormalisation).
+        """
+        s = partial_province_setup
+        er = HierarchicalEvidentialReasoning(n_grades=5)
+        result = er.aggregate(s['method_scores'], s['criterion_weights'],
+                              s['alternatives'])
+
+        result_c01_only = er.aggregate(
+            {'C01': s['method_scores']['C01']},
+            {'C01': 1.0},
+            ['P3'],
+        )
+        assert abs(
+            result.final_scores['P3'] - result_c01_only.final_scores['P3']
+        ) < 1e-8, (
+            "P3's score must equal the C01-only score after weight renormalisation"
+        )
+
+    def test_full_provinces_unaffected(self, partial_province_setup):
+        """P1 and P2 (full data) must have beliefs for all criteria."""
+        s = partial_province_setup
+        er = HierarchicalEvidentialReasoning(n_grades=5)
+        result = er.aggregate(s['method_scores'], s['criterion_weights'],
+                              s['alternatives'])
+        for alt in ['P1', 'P2']:
+            assert 'C01' in result.criterion_beliefs[alt]
+            assert 'C02' in result.criterion_beliefs[alt]
+
+    def test_get_criterion_belief_returns_none_for_absent_pair(
+        self, partial_province_setup
+    ):
+        """get_criterion_belief() must return None for (P3, C02) — no KeyError."""
+        s = partial_province_setup
+        er = HierarchicalEvidentialReasoning(n_grades=5)
+        result = er.aggregate(s['method_scores'], s['criterion_weights'],
+                              s['alternatives'])
+        val = result.get_criterion_belief('P3', 'C02')
+        assert val is None
+
+    def test_get_criterion_belief_returns_belief_for_present_pair(
+        self, partial_province_setup
+    ):
+        """get_criterion_belief() must return a BeliefDistribution for (P3, C01)."""
+        from ranking.evidential_reasoning.base import BeliefDistribution
+        s = partial_province_setup
+        er = HierarchicalEvidentialReasoning(n_grades=5)
+        result = er.aggregate(s['method_scores'], s['criterion_weights'],
+                              s['alternatives'])
+        val = result.get_criterion_belief('P3', 'C01')
+        assert isinstance(val, BeliefDistribution)
+
+    def test_province_with_no_data_gets_minimum_utility(self):
+        """
+        A province absent from ALL criterion score Series must receive
+        the minimum utility (0.0) — not raise KeyError or crash.
+        """
+        method_scores = {
+            'C01': {'TOPSIS': pd.Series({'P1': 0.8, 'P2': 0.5})},
+            # P3 absent from all criteria
+        }
+        criterion_weights = {'C01': 1.0}
+        alternatives = ['P1', 'P2', 'P3']
+
+        er = HierarchicalEvidentialReasoning(n_grades=5)
+        result = er.aggregate(method_scores, criterion_weights, alternatives)
+
+        assert 'P3' in result.final_scores.index
+        assert result.final_scores['P3'] == pytest.approx(0.0)
+
+    def test_multiple_absent_criteria_each_skipped(self):
+        """
+        Province P2 absent from C01 and C02, but present for C03.
+        P2's criterion_beliefs must contain only C03.
+        """
+        method_scores = {
+            'C01': {'M1': pd.Series({'P1': 0.9, 'P3': 0.7})},
+            'C02': {'M1': pd.Series({'P1': 0.6, 'P3': 0.5})},
+            'C03': {'M1': pd.Series({'P1': 0.8, 'P2': 0.4, 'P3': 0.6})},
+        }
+        criterion_weights = {'C01': 0.4, 'C02': 0.3, 'C03': 0.3}
+        alternatives = ['P1', 'P2', 'P3']
+
+        er = HierarchicalEvidentialReasoning(n_grades=5)
+        result = er.aggregate(method_scores, criterion_weights, alternatives)
+
+        assert 'C01' not in result.criterion_beliefs['P2']
+        assert 'C02' not in result.criterion_beliefs['P2']
+        assert 'C03' in result.criterion_beliefs['P2']
+        # P2's score should equal C03-only score with weight 1.0
+        result_c03_only = er.aggregate(
+            {'C03': method_scores['C03']},
+            {'C03': 1.0},
+            ['P2'],
+        )
+        assert abs(
+            result.final_scores['P2'] - result_c03_only.final_scores['P2']
+        ) < 1e-8

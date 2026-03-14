@@ -1006,9 +1006,23 @@ class UnifiedForecaster:
                 )
             return scores.mean(axis=1).rename('composite_score')
 
-        # ── Step 3: impute residual NaN with column mean ──────────────────
+        # ── Step 3: exclude rows with residual NaN (no imputation) ───────
+        # Consistent with the complete-case strategy applied throughout the
+        # pipeline: rows (entities) whose predicted criterion scores contain
+        # NaN are excluded from the weight-estimation step rather than filled
+        # with synthetic means.  Criterion weights are column properties and
+        # can be reliably estimated from the remaining complete-case entities;
+        # the full ``scores`` matrix is then used for the final composite.
         if scores_active.isnull().any().any():
-            scores_active = scores_active.fillna(scores_active.mean())
+            scores_active = scores_active.dropna(how='any')
+            if len(scores_active) < 2:
+                if self.verbose:
+                    print(
+                        "    _compute_critic_composite: fewer than 2 "
+                        "complete-case rows after NaN exclusion — "
+                        "using equal-weight composite."
+                    )
+                return scores.mean(axis=1).rename('composite_score')
 
         # ── Steps 4–6: CRITIC weights → weighted composite ───────────────
         try:

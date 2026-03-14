@@ -27,10 +27,13 @@ References
 [2] Xu, D.L. et al. (2006). "Intelligent decision system." EJOR 170(1).
 """
 
+import logging
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass, field
+
+logger = logging.getLogger(__name__)
 
 from .base import BeliefDistribution, EvidentialReasoningEngine
 
@@ -66,6 +69,12 @@ class HierarchicalERResult:
     method_scores: Dict[str, Dict[str, pd.Series]]
     uncertainty: pd.DataFrame
     kendall_w: float
+
+    def get_criterion_belief(
+        self, alt: str, crit: str
+    ) -> 'Optional[BeliefDistribution]':
+        """Return criterion belief for (alt, crit), or None if data was absent."""
+        return self.criterion_beliefs.get(alt, {}).get(crit, None)
 
     def top_n(self, n: int = 10) -> pd.DataFrame:
         return pd.DataFrame({
@@ -185,9 +194,25 @@ class HierarchicalEvidentialReasoning:
                 all_method_rankings[crit][m_name] = ranks
 
             for alt in alternatives:
+                # A province is "present" for this criterion only if it
+                # actually appeared in the underlying MCDM calculations —
+                # i.e. it was in YearContext.criterion_alternatives[crit].
+                # Absent provinces (Type 3 structural gaps) have no score in
+                # any method's Series for this criterion.
+                # Do NOT store a synthesised belief; Stage 2 handles the
+                # absence via per-province weight renormalisation.
+                alt_has_data = any(
+                    alt in crit_method_scores[m_name].index
+                    for m_name in method_names
+                )
+                if not alt_has_data:
+                    continue  # no belief stored for (alt, crit)
+
                 beliefs_list: List[BeliefDistribution] = []
                 w_list: List[float] = []
                 for m_idx, m_name in enumerate(method_names):
+                    # alt IS in the score Series here; .get() is still safe
+                    # for edge cases where one method failed but others succeeded.
                     score = float(crit_method_scores[m_name].get(alt, 0.5))
                     bd = self.er_engine.score_to_belief(score)
                     beliefs_list.append(bd)
@@ -203,11 +228,39 @@ class HierarchicalEvidentialReasoning:
         final_beliefs: Dict[str, BeliefDistribution] = {}
         final_scores_list: List[float] = []
 
-        crit_w_arr = np.array([criterion_weights[c] for c in criteria_ids])
-
         for alt in alternatives:
-            crit_beliefs = [criterion_beliefs[alt][c] for c in criteria_ids]
-            global_belief = self.er_engine.combine(crit_beliefs, crit_w_arr)
+            # Gather only the criteria for which this province has actual
+            # ER beliefs (computed from genuine MCDM scores).
+            active_crits_for_alt = [
+                c for c in criteria_ids if c in criterion_beliefs[alt]
+            ]
+            if not active_crits_for_alt:
+                # Province has no data for any active criterion — assign
+                # the lowest possible utility (worst achievable score).
+                logger.warning(
+                    "ER Stage 2: province '%s' has no criterion beliefs for "
+                    "year under evaluation; assigned minimum utility (0.0).",
+                    alt,
+                )
+                final_beliefs[alt] = self.er_engine.score_to_belief(0.0)
+                final_scores_list.append(0.0)
+                continue
+
+            # Renormalise criterion weights to sum to 1 over this province's
+            # available criteria only.  This implements available-case ER:
+            # the province is ranked relative to others using only the
+            # governance dimensions for which it has been measured.
+            alt_crit_w = np.array(
+                [criterion_weights.get(c, 0.0) for c in active_crits_for_alt]
+            )
+            w_total = alt_crit_w.sum()
+            if w_total > 0:
+                alt_crit_w = alt_crit_w / w_total
+            else:
+                alt_crit_w = np.ones(len(active_crits_for_alt)) / len(active_crits_for_alt)
+
+            crit_beliefs = [criterion_beliefs[alt][c] for c in active_crits_for_alt]
+            global_belief = self.er_engine.combine(crit_beliefs, alt_crit_w)
             final_beliefs[alt] = global_belief
             final_scores_list.append(global_belief.average_utility())
 
