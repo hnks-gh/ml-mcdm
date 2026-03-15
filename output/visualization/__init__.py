@@ -491,7 +491,17 @@ class VisualizationOrchestrator:
             _pred_year = getattr(_fr, 'target_year', max(panel_data.years) + 1)
 
             # Per-model holdout predictions (populated when holdout year exists)
-            _per_model_ho = _ti.get('per_model_holdout_predictions')
+            _per_model_ho  = _ti.get('per_model_holdout_predictions')
+            # Phase D: new data keys
+            _per_model_oof = _ti.get('per_model_oof_predictions')
+            _per_model_fi  = _ti.get('per_model_feature_importance')
+            _cv_fold_years = _ti.get('cv_fold_val_years')
+            # Feature names for fig18b (from aggregated importance DataFrame)
+            _feat_names: Optional[List[str]] = None
+            if hasattr(_fr, 'feature_importance'):
+                _fi_df = _fr.feature_importance
+                if hasattr(_fi_df, 'index'):
+                    _feat_names = list(_fi_df.index)
 
             # fig16b — ensemble architecture flowchart (data-driven model list)
             _safe(self.forecast.plot_ensemble_architecture,
@@ -575,6 +585,74 @@ class VisualizationOrchestrator:
                       intervals=_intervals or None,
                       panel_years=list(panel_data.years),
                       target_year=_pred_year)
+
+            # ── Phase D: 9 new analytical figures ────────────────────── #
+
+            # fig17b — residual distributions per model + ensemble
+            if (
+                _actual is not None and _predicted is not None
+                and _per_model_oof
+            ):
+                _safe(self.forecast.plot_residual_distributions,
+                      np.asarray(_actual), np.asarray(_predicted),
+                      per_model_predictions=_per_model_oof)
+
+            # fig18b — per-model feature importance heatmap
+            if _per_model_fi:
+                _safe(self.forecast.plot_per_model_importance_heatmap,
+                      _per_model_fi, feature_names=_feat_names)
+
+            # fig20b — multi-metric radar (or R² bar fallback)
+            _mp = getattr(_fr, 'model_performance', None) or {}
+            if _mp or _per_model_oof:
+                _safe(self.forecast.plot_model_metric_radar,
+                      _mp,
+                      per_model_predictions=_per_model_oof or None,
+                      y_test=(np.asarray(_actual)
+                               if _actual is not None else None))
+
+            # fig20c — bootstrap metric confidence intervals
+            if _actual is not None:
+                _safe(self.forecast.plot_bootstrap_metric_ci,
+                      np.asarray(_actual),
+                      per_model_predictions=_per_model_oof or None,
+                      y_pred_ensemble=(np.asarray(_predicted)
+                                       if _predicted is not None else None))
+
+            # fig22c — interval calibration scatter
+            if (
+                _actual is not None and _predicted is not None
+                and _intervals
+            ):
+                _lower_ci = _intervals.get('lower')
+                _upper_ci = _intervals.get('upper')
+                if _lower_ci is not None and _upper_ci is not None:
+                    _safe(self.forecast.plot_interval_calibration_scatter,
+                          np.asarray(_actual), np.asarray(_predicted),
+                          _lower_ci, _upper_ci,
+                          entity_names=_ent)
+
+            # fig23d — entity error analysis (sorted horizontal bars)
+            if _actual is not None and _predicted is not None:
+                _safe(self.forecast.plot_entity_error_analysis,
+                      np.asarray(_actual), np.asarray(_predicted),
+                      entity_names=_ent)
+
+            # fig23e — temporal training curve (walk-forward CV R² vs year)
+            if _cv_scores:
+                _safe(self.forecast.plot_temporal_training_curve,
+                      _cv_scores,
+                      cv_fold_val_years=_cv_fold_years)
+
+            # fig24a — pairwise OOF prediction correlation heatmap
+            if _per_model_oof and len(_per_model_oof) > 1:
+                _safe(self.forecast.plot_prediction_correlation_heatmap,
+                      _per_model_oof)
+
+            # fig24b — pairwise OOF prediction scatter matrix
+            if _per_model_oof and len(_per_model_oof) > 1:
+                _safe(self.forecast.plot_prediction_scatter_matrix,
+                      _per_model_oof)
 
         return count
 

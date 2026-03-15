@@ -2491,6 +2491,17 @@ class UnifiedForecaster:
                         ] = _crit_arr.std(axis=0).tolist()
 
         # ── Training-info dict (consumed by _assemble_result) ─────────────
+        # F-23e: fold validation years for temporal training curve
+        _cv_fold_years: Optional[List[int]] = None
+        if self._year_labels_arr_ is not None and self._cv_scores_:
+            _n_folds = max(
+                (len(v) for v in self._cv_scores_.values() if v),
+                default=0,
+            )
+            if _n_folds > 0:
+                _all_yrs = np.sort(np.unique(self._year_labels_arr_))
+                if len(_all_yrs) >= _n_folds:
+                    _cv_fold_years = [int(y) for y in _all_yrs[-_n_folds:]]
         self._training_info_ = {
             'n_samples':  len(self.X_train_),
             'n_features': self.X_train_.shape[1],
@@ -2529,6 +2540,8 @@ class UnifiedForecaster:
             'per_model_feature_importance': (
                 _per_model_fi if _per_model_fi else None
             ),
+            # fig23e: fold validation years ordered earliest → latest
+            'cv_fold_val_years': _cv_fold_years,
         }
 
         if self.verbose:
