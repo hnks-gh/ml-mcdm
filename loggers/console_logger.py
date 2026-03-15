@@ -219,13 +219,13 @@ class ConsoleLogger:
         self.metric('Criteria', pd_.n_criteria)
 
         # Top 10 rankings
-        self._write(self._c('\n  TOP 10 RANKINGS (Evidential Reasoning)', Colors.BOLD))
+        self._write(self._c('\n  TOP 10 RANKINGS', Colors.BOLD))
         ranking_df = result.get_final_ranking_df()
         rows = []
         for _, row in ranking_df.head(10).iterrows():
-            rows.append([str(int(row['ER_Rank'])), row['Province'],
-                         f'{row["ER_Score"]:.4f}'])
-        self.table(['Rank', 'Province', 'ER Score'], rows, [6, 25, 10])
+            rows.append([str(int(row['Rank'])), row['Province'],
+                         f'{row["Score"]:.4f}'])
+        self.table(['Rank', 'Province', 'Score'], rows, [6, 25, 10])
 
         # Concordance
         self._write(self._c('\n  CONCORDANCE', Colors.BOLD))
