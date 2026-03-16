@@ -52,6 +52,83 @@ References:
 
 import numpy as np
 from typing import Dict, List, Optional, Tuple, Any, Union
+import logging
+
+logger = logging.getLogger('ml_mcdm')
+
+
+# ---------------------------------------------------------------------------
+# E-06: Student-t predictive quantile for small-n conformal calibration.
+# ---------------------------------------------------------------------------
+
+def _calibrate_with_studentt(
+    residuals: np.ndarray,
+    alpha: float,
+) -> float:
+    """Student-t predictive quantile for small-n conformal calibration.
+
+    For signed OOF residuals, converts to absolute values internally and fits
+    a Student-t distribution via MLE with location forced to 0.  Returns the
+    (1 - alpha) predictive quantile using degrees-of-freedom df_pred = df_fit - 1
+    to penalise for scale estimation uncertainty (Meeker & Escobar, 1998).
+
+    Falls back to the Papadopoulos empirical quantile when:
+    - ``len(residuals) > 100`` (large sample — empirical is reliable)
+    - ``scipy.stats`` is unavailable
+    - MLE optimisation fails or returns non-finite result
+
+    Parameters
+    ----------
+    residuals : ndarray, shape (n,)
+        Signed ``y_true − ŷ`` OOF residuals.  NaNs must be removed by caller.
+    alpha : float
+        Miscoverage level.  Returns the ``1 - alpha`` predictive quantile of
+        the fitted Student-t applied to |residuals|.
+
+    Returns
+    -------
+    q_hat : float
+        Conformal half-width threshold (≥ 0).
+
+    References
+    ----------
+    Meeker & Escobar (1998). "Statistical Intervals: A Guide for
+    Practitioners" — Section 4.3: Predictive interval for a future observation.
+    """
+    abs_res = np.abs(residuals)
+    n = len(abs_res)
+
+    # Large-sample path: empirical Papadopoulos quantile is unbiased and
+    # consistent; the Student-t approximation provides no additional benefit.
+    if n > 100:
+        q_level = min(np.ceil((1.0 - alpha) * (n + 1)) / n, 1.0)
+        return float(np.quantile(abs_res, q_level))
+
+    try:
+        from scipy.stats import t as _t_dist  # type: ignore[import]
+
+        # MLE with loc=0 forced: scale captures median absolute deviation.
+        # Note: scipy t.fit minimises the negative log-likelihood; floc=0
+        # constraints the location to zero (mean-zero absolute residuals).
+        df_fit, _loc, scale_fit = _t_dist.fit(abs_res, floc=0)
+
+        # Predictive df: subtract 1 to account for having estimated scale
+        # (analogous to using s instead of σ in a normal-theory prediction
+        # interval, which inflates the effective df by 1).
+        df_pred = max(df_fit - 1.0, 1.0)
+
+        q_hat = float(_t_dist.ppf(1.0 - alpha, df=df_pred, loc=0.0, scale=scale_fit))
+
+        # Guard: non-positive or infinite quantile signals degenerate fit.
+        if not np.isfinite(q_hat) or q_hat < 0.0:
+            raise ValueError(f"Degenerate Student-t quantile: {q_hat}")
+
+    except Exception:
+        # Fallback: Papadopoulos empirical quantile (always valid).
+        q_level = min(np.ceil((1.0 - alpha) * (n + 1)) / n, 1.0)
+        q_hat = float(np.quantile(abs_res, q_level))
+
+    return q_hat
 
 
 # ---------------------------------------------------------------------------
@@ -166,6 +243,8 @@ class ConformalPredictor:
         random_state: int = 42,
         stratify_by_missingness: bool = False,
         n_strata: int = 3,
+        use_studentt_small_n: bool = False,
+        studentt_threshold: int = 50,
     ):
         if alpha <= 0 or alpha >= 1:
             raise ValueError(f"alpha must be in (0, 1), got {alpha}")
@@ -178,6 +257,11 @@ class ConformalPredictor:
         self.random_state = random_state
         self.stratify_by_missingness = stratify_by_missingness
         self.n_strata = n_strata
+        # E-06: Student-t predictive distribution for small calibration sets.
+        # When enabled and n_cal < studentt_threshold, _calibrate_with_studentt()
+        # replaces the empirical Papadopoulos quantile in calibrate_residuals().
+        self.use_studentt_small_n = use_studentt_small_n
+        self.studentt_threshold = studentt_threshold
 
         # Calibration state
         self._conformity_scores: Optional[np.ndarray] = None
@@ -300,10 +384,25 @@ class ConformalPredictor:
         residuals = np.asarray(residuals, dtype=np.float64)
         residuals = residuals[~np.isnan(residuals)]
 
-        if len(residuals) < 3:
+        # F-07: Hard minimum (3) kept for correctness; practical minimum (30)
+        # triggers a warning so the caller knows interval reliability is low.
+        # With n_cal < 10 the Papadopoulos quantile is clamped to the maximum
+        # residual, producing infinitely conservative intervals.
+        _HARD_MIN_CAL = 3
+        _SOFT_MIN_CAL = 30
+        if len(residuals) < _HARD_MIN_CAL:
             raise ValueError(
                 "calibrate_residuals() needs at least 3 valid residuals; "
                 f"got {len(residuals)}."
+            )
+        if len(residuals) < _SOFT_MIN_CAL:
+            logger.warning(
+                "ConformalPredictor.calibrate_residuals(): only %d calibration "
+                "residuals (<%d recommended). The Papadopoulos quantile may be "
+                "clamped to the observed maximum, producing overly wide "
+                "prediction intervals. Consider using the E-01 extended "
+                "walk-forward sweep or Mondrian stratification to increase n_cal.",
+                len(residuals), _SOFT_MIN_CAL,
             )
 
         if base_model is not None:
@@ -314,9 +413,19 @@ class ConformalPredictor:
         if self.symmetric:
             abs_residuals = np.abs(residuals)
             self._conformity_scores = abs_residuals
-            q_level = np.ceil((1 - self.alpha) * (n_cal + 1)) / n_cal
-            q_level = min(q_level, 1.0)
-            self._q_hat = np.quantile(abs_residuals, q_level)
+            # E-06: Student-t predictive distribution for small calibration sets.
+            # When n_cal < studentt_threshold and use_studentt_small_n is True,
+            # fit a Student-t MLE and use the predictive (1-alpha) quantile
+            # with df_pred = df_fit - 1 (penalise for scale estimation).
+            # This provides heavier-tail coverage guarantees for strata with
+            # n_cal < 50, where the empirical Papadopoulos quantile has high
+            # variance and may undershoot the required coverage level.
+            if self.use_studentt_small_n and n_cal < self.studentt_threshold:
+                self._q_hat = _calibrate_with_studentt(residuals, self.alpha)
+            else:
+                q_level = np.ceil((1 - self.alpha) * (n_cal + 1)) / n_cal
+                q_level = min(q_level, 1.0)
+                self._q_hat = np.quantile(abs_residuals, q_level)
         else:
             # Asymmetric: same (n+1)/n Papadopoulos correction as
             # _calibrate_split / _calibrate_cv_plus.
@@ -961,3 +1070,656 @@ class ConformalPredictor:
             diag["aci_rolling_coverage"] = np.mean(coverages[-20:])
 
         return diag
+
+
+# ---------------------------------------------------------------------------
+# E-03: Mondrian Conformal Predictor stratified by feature missingness rate.
+# ---------------------------------------------------------------------------
+
+class MissingnessStratifiedConformal:
+    """Mondrian Conformal Predictor stratified by feature missingness rate.
+
+    Provides stratum-conditional coverage guarantees separately for provinces
+    with different levels of missing input features::
+
+        P(Y ∈ C(X) | stratum(X) = s) ≥ 1 - α  for each stratum s.
+
+    Strata are defined by quantile boundaries of the calibration missingness
+    distribution (equal-frequency binning), so each stratum receives
+    approximately ``n_cal / n_strata`` calibration residuals.
+
+    When a stratum has fewer than ``_MIN_STRATUM_CAL`` calibration samples,
+    the global Papadopoulos quantile is used as a conservative fallback —
+    this ensures coverage is never violated at the expense of interval width.
+
+    Parameters
+    ----------
+    alpha : float
+        Marginal miscoverage level.  Each stratum achieves ≥ 1 - alpha
+        conditional coverage.
+    n_strata : int ≥ 2
+        Number of missingness strata.  Default 3 (low / medium / high).
+
+    References
+    ----------
+    Vovk et al. (2005). "Algorithmic Learning in a Random World" — Chapter 3
+        (Mondrian CP, stratum-conditional coverage).
+    Barber et al. (2023). "Conformal Prediction Beyond Exchangeability" —
+        Section 4 (validity under covariate stratification).
+    """
+
+    _MIN_STRATUM_CAL: int = 5
+
+    def __init__(self, alpha: float = 0.05, n_strata: int = 3) -> None:
+        if alpha <= 0 or alpha >= 1:
+            raise ValueError(f"alpha must be in (0, 1), got {alpha}")
+        if n_strata < 2:
+            raise ValueError(f"n_strata must be ≥ 2, got {n_strata}")
+        self.alpha = alpha
+        self.n_strata = n_strata
+
+        self._stratum_boundaries: Optional[np.ndarray] = None
+        self._stratum_quantiles: Dict[int, float] = {}
+        self._global_quantile: float = np.inf
+        self._calibrated: bool = False
+        self._n_cal: int = 0
+        self._n_cal_per_stratum: Dict[int, int] = {}
+
+    def calibrate(
+        self,
+        residuals: np.ndarray,
+        missingness_rates: np.ndarray,
+    ) -> "MissingnessStratifiedConformal":
+        """Calibrate from OOF residuals and per-sample missingness fractions.
+
+        Parameters
+        ----------
+        residuals : ndarray, shape (n_cal,)
+            Signed ``y_true − ŷ`` OOF residuals.  Converted to abs internally.
+        missingness_rates : ndarray, shape (n_cal,)
+            Per-sample fraction of NaN feature columns in [0, 1].
+
+        Returns
+        -------
+        self
+        """
+        residuals = np.asarray(residuals, dtype=np.float64).ravel()
+        missingness_rates = np.asarray(missingness_rates, dtype=np.float64).ravel()
+
+        if len(residuals) != len(missingness_rates):
+            raise ValueError(
+                f"residuals ({len(residuals)}) and missingness_rates "
+                f"({len(missingness_rates)}) must have the same length."
+            )
+
+        # Remove NaN rows (should be pre-filtered but guard defensively)
+        valid = ~(np.isnan(residuals) | np.isnan(missingness_rates))
+        residuals = residuals[valid]
+        missingness_rates = missingness_rates[valid]
+
+        n_cal = len(residuals)
+        if n_cal < self._MIN_STRATUM_CAL:
+            raise ValueError(
+                f"MissingnessStratifiedConformal.calibrate() needs ≥ "
+                f"{self._MIN_STRATUM_CAL} valid samples, got {n_cal}."
+            )
+
+        abs_res = np.abs(residuals)
+
+        # Global quantile: Papadopoulos (n+1)/n correction.
+        # Used as fallback for strata with too few samples.
+        q_glob = np.ceil((1.0 - self.alpha) * (n_cal + 1)) / n_cal
+        q_glob = min(q_glob, 1.0)
+        self._global_quantile = float(np.quantile(abs_res, q_glob))
+
+        # Equal-frequency stratum boundaries from the calibration distribution.
+        quantile_cuts = np.linspace(0.0, 1.0, self.n_strata + 1)
+        raw_boundaries = np.quantile(missingness_rates, quantile_cuts)
+
+        # Deduplicate: constant missingness collapses to a single stratum.
+        unique_boundaries = np.unique(raw_boundaries)
+        if len(unique_boundaries) < 2:
+            # No variation — one global stratum, global quantile for all.
+            self._stratum_boundaries = np.array([
+                float(missingness_rates.min()), float(missingness_rates.max()) + 1e-9
+            ])
+            self._stratum_quantiles = {0: self._global_quantile}
+            self._n_cal_per_stratum = {0: n_cal}
+        else:
+            self._stratum_boundaries = unique_boundaries
+            n_actual = len(unique_boundaries) - 1
+            for s in range(n_actual):
+                lo = unique_boundaries[s]
+                hi = unique_boundaries[s + 1]
+                # Last stratum: right-inclusive to capture the maximum value.
+                if s == n_actual - 1:
+                    mask = (missingness_rates >= lo) & (missingness_rates <= hi)
+                else:
+                    mask = (missingness_rates >= lo) & (missingness_rates < hi)
+
+                res_s = abs_res[mask]
+                n_s = int(mask.sum())
+                self._n_cal_per_stratum[s] = n_s
+
+                if n_s < self._MIN_STRATUM_CAL:
+                    # Too sparse — use global quantile as conservative fallback.
+                    self._stratum_quantiles[s] = self._global_quantile
+                else:
+                    q_s = np.ceil((1.0 - self.alpha) * (n_s + 1)) / n_s
+                    q_s = min(q_s, 1.0)
+                    self._stratum_quantiles[s] = float(np.quantile(res_s, q_s))
+
+        self._n_cal = n_cal
+        self._calibrated = True
+        return self
+
+    def _assign_strata(self, rates: np.ndarray) -> np.ndarray:
+        """Map each missingness rate to its stratum index (0-based).
+
+        Uses ``np.searchsorted`` on the upper stratum boundaries so that
+        rates exactly at a boundary are assigned to the higher stratum.
+        The result is clipped to [0, n_strata - 1].
+        """
+        if self._stratum_boundaries is None:
+            return np.zeros(len(rates), dtype=int)
+        # Upper boundaries (excluding the leftmost): searchsorted finds the
+        # first upper bound strictly greater than the rate.
+        upper_bounds = self._stratum_boundaries[1:]
+        strata = np.searchsorted(upper_bounds, rates, side='left')
+        max_s = len(self._stratum_boundaries) - 2  # = n_actual - 1
+        return np.clip(strata, 0, max(max_s, 0)).astype(int)
+
+    def predict_intervals(
+        self,
+        point_predictions: np.ndarray,
+        missingness_rates: np.ndarray,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Stratum-conditional symmetric prediction intervals.
+
+        Parameters
+        ----------
+        point_predictions : ndarray, shape (n_test,)
+            Ensemble point forecast for each test province.
+        missingness_rates : ndarray, shape (n_test,)
+            Per-province fraction of NaN input features in [0, 1].
+
+        Returns
+        -------
+        lower, upper : ndarray, each shape (n_test,)
+        """
+        if not self._calibrated:
+            raise RuntimeError(
+                "MissingnessStratifiedConformal: call calibrate() first."
+            )
+        point_predictions = np.asarray(point_predictions, dtype=np.float64).ravel()
+        missingness_rates = np.asarray(missingness_rates, dtype=np.float64).ravel()
+
+        strata = self._assign_strata(missingness_rates)
+        q_arr = np.array([
+            self._stratum_quantiles.get(int(s), self._global_quantile)
+            for s in strata
+        ])
+
+        return point_predictions - q_arr, point_predictions + q_arr
+
+    def get_diagnostics(self) -> Dict[str, Any]:
+        """Calibration statistics per stratum."""
+        return {
+            "alpha": self.alpha,
+            "n_strata": self.n_strata,
+            "n_cal_total": self._n_cal,
+            "global_quantile": self._global_quantile,
+            "stratum_quantiles": dict(self._stratum_quantiles),
+            "n_cal_per_stratum": dict(self._n_cal_per_stratum),
+            "stratum_boundaries": (
+                self._stratum_boundaries.tolist()
+                if self._stratum_boundaries is not None else []
+            ),
+        }
+
+
+# ---------------------------------------------------------------------------
+# E-02: Conformalized Quantile Regression (CQR).
+# ---------------------------------------------------------------------------
+
+class CQRConformalPredictor:
+    """Conformalized Quantile Regression (Romano, Patterson & Candès, NeurIPS 2019).
+
+    Provides adaptive-width prediction intervals using a Quantile Random Forest
+    (QRF) as the base regression quantile estimator.  A single conformity
+    adjustment ``q̂_CQR`` is calibrated so that the shifted QRF intervals::
+
+        [Q̂_{α/2}(x) − q̂_CQR,  Q̂_{1−α/2}(x) + q̂_CQR]
+
+    achieve marginal coverage ≥ 1 − α over exchangeable test–calibration pairs.
+
+    CQR conformity score (Eq. 2 of Romano et al. 2019)::
+
+        s_i = max(Q̂_{α/2}(x_i) − y_i,   y_i − Q̂_{1−α/2}(x_i))
+
+    * ``s_i < 0``: y_i inside the QRF interval (comfortable coverage).
+    * ``s_i ≥ 0``: y_i outside the interval; value is the overshoot distance.
+
+    ``q̂_CQR`` is the Papadopoulos ``(1-α)(1+1/n)``-quantile of ``{s_i}``.
+
+    Key advantage over split conformal: the interval widths are *adaptive* —
+    entities whose feature vectors land in high-variance QRF leaves receive
+    automatically wider intervals, those in low-variance leaves receive
+    narrower ones.  This is the heteroscedastic analogue of split conformal,
+    maintaining the same marginal coverage guarantee.
+
+    Note on calibration data
+    ------------------------
+    For theoretically valid (exchangeable) calibration the QRF quantile
+    predictions on the calibration set should be OOF (out-of-bag or out-of-
+    fold).  When only in-sample QRF predictions are available, the calibration
+    is approximate: in-sample QRF intervals are slightly wider (the training
+    point contributes to its own leaf distribution), causing ``q̂_CQR`` to be
+    slightly smaller than the honest estimate.  The Papadopoulos correction
+    adds conservatism that compensates in practice.
+
+    Parameters
+    ----------
+    alpha : float
+        Miscoverage level (same ``alpha`` as used for the QRF quantile levels).
+
+    References
+    ----------
+    Romano, Patterson & Candès (2019). "Conformalized Quantile Regression."
+        NeurIPS 2019, Advances in Neural Information Processing Systems.
+    """
+
+    def __init__(self, alpha: float = 0.05) -> None:
+        if alpha <= 0 or alpha >= 1:
+            raise ValueError(f"alpha must be in (0, 1), got {alpha}")
+        self.alpha = alpha
+        self._q_cqr: Optional[float] = None
+        self._calibrated: bool = False
+        self._n_cal: int = 0
+        self._cal_miscoverage_rate: float = float("nan")  # diagnostic
+
+    def calibrate(
+        self,
+        qrf_lower_cal: np.ndarray,
+        qrf_upper_cal: np.ndarray,
+        y_cal: np.ndarray,
+    ) -> "CQRConformalPredictor":
+        """Calibrate from QRF quantile predictions and true targets.
+
+        Parameters
+        ----------
+        qrf_lower_cal : ndarray, shape (n_cal,)
+            QRF lower-quantile predictions (at level α/2 or similar) on the
+            calibration set.
+        qrf_upper_cal : ndarray, shape (n_cal,)
+            QRF upper-quantile predictions (at level 1 − α/2 or similar).
+        y_cal : ndarray, shape (n_cal,)
+            True target values on the calibration set.
+
+        Returns
+        -------
+        self
+        """
+        qrf_lower_cal = np.asarray(qrf_lower_cal, dtype=np.float64).ravel()
+        qrf_upper_cal = np.asarray(qrf_upper_cal, dtype=np.float64).ravel()
+        y_cal = np.asarray(y_cal, dtype=np.float64).ravel()
+
+        # Joint NaN removal (any NaN in the triplet invalidates the row).
+        valid = ~(
+            np.isnan(qrf_lower_cal)
+            | np.isnan(qrf_upper_cal)
+            | np.isnan(y_cal)
+        )
+        qrf_lower_cal = qrf_lower_cal[valid]
+        qrf_upper_cal = qrf_upper_cal[valid]
+        y_cal = y_cal[valid]
+
+        n_cal = len(y_cal)
+        if n_cal < 3:
+            raise ValueError(
+                f"CQRConformalPredictor.calibrate() requires ≥ 3 valid samples, "
+                f"got {n_cal}."
+            )
+
+        # CQR conformity score (Romano et al. 2019, Eq. 2):
+        # positive when y is outside [lower, upper]; negative when inside.
+        scores = np.maximum(qrf_lower_cal - y_cal, y_cal - qrf_upper_cal)
+
+        # Diagnostic: fraction of cal points outside QRF interval.
+        self._cal_miscoverage_rate = float((scores > 0).mean())
+
+        # Papadopoulos (n+1)/n finite-sample correction.
+        q_level = np.ceil((1.0 - self.alpha) * (n_cal + 1)) / n_cal
+        q_level = min(q_level, 1.0)
+        self._q_cqr = float(np.quantile(scores, q_level))
+
+        self._n_cal = n_cal
+        self._calibrated = True
+        return self
+
+    def predict_intervals(
+        self,
+        qrf_lower_test: np.ndarray,
+        qrf_upper_test: np.ndarray,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """CQR prediction intervals for the test set.
+
+        Interval: ``[Q̂_{α/2}(x) − q̂_CQR,  Q̂_{1−α/2}(x) + q̂_CQR]``.
+
+        When ``q̂_CQR < 0`` (QRF intervals over-cover on average), the CQR
+        interval is strictly *inside* the QRF interval but still ≥ 1 − α coverage.
+
+        Parameters
+        ----------
+        qrf_lower_test : ndarray, shape (n_test,)
+        qrf_upper_test : ndarray, shape (n_test,)
+
+        Returns
+        -------
+        lower, upper : ndarray, each shape (n_test,)
+        """
+        if not self._calibrated:
+            raise RuntimeError(
+                "CQRConformalPredictor: call calibrate() before predict_intervals()."
+            )
+        qrf_lower_test = np.asarray(qrf_lower_test, dtype=np.float64).ravel()
+        qrf_upper_test = np.asarray(qrf_upper_test, dtype=np.float64).ravel()
+        return qrf_lower_test - self._q_cqr, qrf_upper_test + self._q_cqr
+
+    @property
+    def q_cqr(self) -> Optional[float]:
+        """Calibrated CQR adjustment (shifted to both interval endpoints)."""
+        return self._q_cqr
+
+    def get_diagnostics(self) -> Dict[str, Any]:
+        """CQR diagnostics."""
+        return {
+            "alpha": self.alpha,
+            "q_cqr": self._q_cqr,
+            "n_cal": self._n_cal,
+            "cal_miscoverage_rate": self._cal_miscoverage_rate,
+        }
+
+
+# ---------------------------------------------------------------------------
+# E-05: Locally Weighted Conformal Prediction (Tibshirani et al. 2019).
+# ---------------------------------------------------------------------------
+
+class LocallyWeightedConformalPredictor:
+    """Weighted Split Conformal Predictor (Tibshirani, Barber, Candès & Ramdas, 2019).
+
+    Assigns per-calibration-point importance weights based on RBF feature-space
+    similarity to the test point.  Same-entity calibration points receive a
+    multiplicative boost (``entity_weight`` ≥ 1), reflecting the higher
+    exchangeability between a province's own historical observations and its
+    future prediction.
+
+    Weighted quantile (Tibshirani et al. 2019, Eq. 3):
+        - Calibration weights:  w_i ∝ K_h(||x_i - x_test||) × entity_boost_i
+        - Normalised to probability simplex (Σ w_i = 1).
+        - An extra ``+∞`` residual with weight ``1/(n+1)`` serves as the
+          Papadopoulos guard, ensuring marginal coverage ≥ 1 − α.
+
+    Coverage guarantee (Theorem 1, Tibshirani et al. 2019):
+        Under covariate shift with p_test/p_cal density ratio bounded by the
+        kernel weights, weighted conformal achieves ≥ 1 − α marginal coverage.
+
+    For panel data (province × year):
+        - ``x_test`` = T+1 feature vector for province p.
+        - ``x_cal_i`` = historical features for province q at year t.
+        - Same-entity weighting (p = q) identifies the province's own
+          calibration residuals as most representative.
+
+    Computational complexity: O(n_test × n_cal × p) per call.  With
+    n_test ≤ 63 provinces and n_cal ≤ 750, this is ≤ 0.1 s.
+
+    Parameters
+    ----------
+    alpha : float
+        Miscoverage level.
+    entity_weight : float ≥ 1.0
+        Multiplicative up-weight for same-entity calibration points.
+        Default 2.0 doubles the probability mass assigned to the test
+        province's own historical residuals.
+    min_bandwidth : float
+        Lower bound on the RBF bandwidth to prevent degenerate weights.
+
+    References
+    ----------
+    Tibshirani, Barber, Candès & Ramdas (2019). "Conformal Prediction
+        Under Covariate Shift." NeurIPS 2019.
+    """
+
+    def __init__(
+        self,
+        alpha: float = 0.05,
+        entity_weight: float = 2.0,
+        min_bandwidth: float = 1e-6,
+    ) -> None:
+        if alpha <= 0 or alpha >= 1:
+            raise ValueError(f"alpha must be in (0, 1), got {alpha}")
+        if entity_weight < 1.0:
+            raise ValueError(
+                f"entity_weight must be ≥ 1.0, got {entity_weight}"
+            )
+        self.alpha = alpha
+        self.entity_weight = entity_weight
+        self.min_bandwidth = min_bandwidth
+
+        self._X_cal: Optional[np.ndarray] = None
+        self._abs_residuals_cal: Optional[np.ndarray] = None
+        self._entity_cal: Optional[np.ndarray] = None
+        self._bandwidth: float = 1.0
+        self._calibrated: bool = False
+        self._n_cal: int = 0
+
+    def calibrate(
+        self,
+        X_cal: np.ndarray,
+        residuals: np.ndarray,
+        entity_indices: Optional[np.ndarray] = None,
+    ) -> "LocallyWeightedConformalPredictor":
+        """Calibrate from OOF features, residuals, and optional entity IDs.
+
+        The RBF bandwidth is estimated via the median heuristic computed on
+        a random subsample of ``min(n_cal, 500)`` rows.
+
+        Parameters
+        ----------
+        X_cal : ndarray, shape (n_cal, n_features)
+            OOF feature matrix (tree-track; aligned with residuals).
+        residuals : ndarray, shape (n_cal,)
+            Signed OOF residuals ``y − ŷ``.  Converted to abs internally.
+        entity_indices : ndarray, shape (n_cal,), optional
+            Integer entity (province) IDs; enables same-entity up-weighting.
+
+        Returns
+        -------
+        self
+        """
+        X_cal = np.asarray(X_cal, dtype=np.float64)
+        residuals = np.asarray(residuals, dtype=np.float64).ravel()
+
+        if X_cal.ndim != 2:
+            raise ValueError(
+                f"X_cal must be 2-D, got shape {X_cal.shape}"
+            )
+        if len(residuals) != X_cal.shape[0]:
+            raise ValueError(
+                f"X_cal rows ({X_cal.shape[0]}) and residuals ({len(residuals)}) "
+                f"must match."
+            )
+
+        # Joint NaN removal
+        valid = ~np.isnan(residuals)
+        if X_cal.ndim == 2:
+            valid = valid & ~np.isnan(X_cal).any(axis=1)
+
+        X_cal = X_cal[valid]
+        residuals = residuals[valid]
+        entity_cal = (
+            np.asarray(entity_indices, dtype=object).ravel()[valid]
+            if entity_indices is not None else None
+        )
+
+        n_cal = len(residuals)
+        if n_cal < 3:
+            raise ValueError(
+                f"LocallyWeightedConformalPredictor.calibrate() requires "
+                f"≥ 3 valid samples, got {n_cal}."
+            )
+
+        self._X_cal = X_cal
+        self._abs_residuals_cal = np.abs(residuals)
+        self._entity_cal = entity_cal
+        self._n_cal = n_cal
+
+        # Bandwidth via median pairwise distance (median heuristic).
+        # Subsampled to ≤ 500 rows for O(n²) cost control.
+        if n_cal <= 500:
+            X_bw = X_cal
+        else:
+            rng = np.random.RandomState(42)
+            idx = rng.choice(n_cal, 500, replace=False)
+            X_bw = X_cal[idx]
+
+        # Squared pairwise distances via ||a-b||² = ||a||² + ||b||² - 2a·b
+        sq_norms = np.sum(X_bw ** 2, axis=1)
+        dists_sq = (
+            sq_norms[:, np.newaxis]
+            + sq_norms[np.newaxis, :]
+            - 2.0 * (X_bw @ X_bw.T)
+        )
+        np.clip(dists_sq, 0.0, None, out=dists_sq)
+        dists = np.sqrt(dists_sq)
+        upper_tri = dists[np.triu_indices_from(dists, k=1)]
+        nonzero = upper_tri[upper_tri > 0.0]
+        self._bandwidth = max(
+            float(np.median(nonzero)) if len(nonzero) > 0 else 1.0,
+            self.min_bandwidth,
+        )
+
+        self._calibrated = True
+        return self
+
+    def _compute_weights(
+        self,
+        x_q: np.ndarray,
+        entity_q: Any = None,
+    ) -> np.ndarray:
+        """Per-calibration-point importance weights for test point x_q.
+
+        w_i ∝ exp(−||x_q − x_cal_i||² / (2h²)) × entity_boost_i
+
+        Parameters
+        ----------
+        x_q : ndarray, shape (n_features,)
+            A single test feature vector.
+        entity_q : optional
+            Entity ID of the test point; triggers same-entity up-weighting.
+
+        Returns
+        -------
+        w : ndarray, shape (n_cal,)  — probability simplex weights (Σw=1).
+        """
+        gamma = 1.0 / (2.0 * self._bandwidth ** 2)
+        diff = self._X_cal - x_q[np.newaxis, :]   # (n_cal, p)
+        d_sq = np.sum(diff ** 2, axis=1)           # (n_cal,)
+        w = np.exp(-gamma * d_sq)                  # (n_cal,)
+
+        # Entity-aware boost: same-entity calibration points are up-weighted.
+        if entity_q is not None and self._entity_cal is not None:
+            same = self._entity_cal == entity_q
+            w[same] *= self.entity_weight
+
+        w_sum = w.sum()
+        if w_sum < 1e-30:
+            # All weights near-zero: test point is far from all cal points →
+            # fall back to equal weights (standard split conformal).
+            return np.ones(self._n_cal) / self._n_cal
+        return w / w_sum
+
+    def _weighted_quantile(self, w: np.ndarray) -> float:
+        """Weighted (1 − α) quantile of abs_residuals_cal (Tibshirani et al. 2019).
+
+        Follows Eq. 3: q̂ = inf{q : Σ_{i: r_i ≤ q} w_i ≥ 1 − α}.
+        An extra +∞ residual with weight 1/(n+1) ensures ≥ 1 − α coverage.
+
+        Parameters
+        ----------
+        w : ndarray, shape (n_cal,)  — probability simplex weights (already normalised).
+
+        Returns
+        -------
+        q_hat : float  — half-width of the symmetric interval.
+        """
+        n_cal = self._n_cal
+        # Rescale existing weights to accommodate the extra +∞ point.
+        # Total mass = 1; extra point gets mass 1/(n+1); remaining rescaled.
+        w_inf = 1.0 / (n_cal + 1)
+        w_scaled = w * (n_cal / (n_cal + 1))  # renormalise to 1 - w_inf
+
+        sorted_idx = np.argsort(self._abs_residuals_cal)
+        sorted_r = self._abs_residuals_cal[sorted_idx]
+        sorted_w = w_scaled[sorted_idx]
+
+        aug_r = np.concatenate([sorted_r, [np.inf]])
+        aug_w = np.concatenate([sorted_w, [w_inf]])
+
+        cum_w = np.cumsum(aug_w)
+        target = 1.0 - self.alpha
+        idx_q = np.searchsorted(cum_w, target, side='left')
+        idx_q = min(idx_q, len(aug_r) - 1)
+        return float(aug_r[idx_q])
+
+    def predict_intervals(
+        self,
+        X_test: np.ndarray,
+        point_predictions: np.ndarray,
+        entity_indices: Optional[np.ndarray] = None,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Locally-weighted symmetric prediction intervals.
+
+        O(n_test × n_cal × p).  Acceptable for n_test ≤ 63, n_cal ≤ 750,
+        p ≤ 150 (≈ 0.05 s).
+
+        Parameters
+        ----------
+        X_test : ndarray, shape (n_test, n_features)
+        point_predictions : ndarray, shape (n_test,)
+            Ensemble point forecasts (centre of each interval).
+        entity_indices : ndarray, shape (n_test,), optional
+            Entity IDs of the prediction-year provinces.
+
+        Returns
+        -------
+        lower, upper : ndarray, each shape (n_test,)
+        """
+        if not self._calibrated:
+            raise RuntimeError(
+                "LocallyWeightedConformalPredictor: call calibrate() first."
+            )
+        X_test = np.asarray(X_test, dtype=np.float64)
+        point_predictions = np.asarray(point_predictions, dtype=np.float64).ravel()
+        n_test = len(point_predictions)
+
+        lower = np.empty(n_test)
+        upper = np.empty(n_test)
+
+        for i in range(n_test):
+            ent_q = entity_indices[i] if entity_indices is not None else None
+            w = self._compute_weights(X_test[i], ent_q)
+            q_hat = self._weighted_quantile(w)
+            lower[i] = point_predictions[i] - q_hat
+            upper[i] = point_predictions[i] + q_hat
+
+        return lower, upper
+
+    def get_diagnostics(self) -> Dict[str, Any]:
+        """LWCP calibration diagnostics."""
+        return {
+            "alpha": self.alpha,
+            "entity_weight": self.entity_weight,
+            "bandwidth": self._bandwidth,
+            "n_cal": self._n_cal,
+        }

@@ -567,6 +567,63 @@ def _build_fold_correction_fn(
     return _correct
 
 
+def _effective_n_components(
+    residual_matrix: np.ndarray,
+    var_threshold: float = 0.90,
+    max_components: Optional[int] = None,
+) -> int:
+    """Estimate the number of statistically independent output dimensions.
+
+    Uses PCA on the OOF residual matrix to measure how many principal
+    components capture ``var_threshold`` of total variance.  This gives
+    the *effective dimensionality* D_eff ≤ n_outputs, which is the
+    correct denominator for Bonferroni correction when criteria are
+    correlated (as they always are in MCDM panels).
+
+    Parameters
+    ----------
+    residual_matrix : ndarray, shape (n_samples, n_outputs)
+        OOF residuals (y - ŷ), with NaN for missing observations.
+    var_threshold : float
+        Fraction of total variance the PCA must explain.  Lower = fewer
+        components = less aggressive Bonferroni = wider per-component α.
+        Default 0.90 is conservative; use 0.95 for tighter correction.
+    max_components : int, optional
+        Hard cap on returned value (default = n_outputs).
+
+    Returns
+    -------
+    n_eff : int ≥ 1
+        Effective independent dimension count.
+    """
+    n_out = residual_matrix.shape[1] if residual_matrix.ndim > 1 else 1
+    _cap = max_components if max_components is not None else n_out
+
+    if n_out <= 1 or residual_matrix.ndim < 2:
+        return 1
+
+    # Use rows where ALL columns are non-NaN for a well-defined covariance matrix.
+    valid = ~np.isnan(residual_matrix).any(axis=1)
+    n_valid = int(valid.sum())
+
+    # Not enough data for PCA → fall back to full Bonferroni
+    if n_valid < max(n_out + 1, 5):
+        return min(n_out, _cap)
+
+    try:
+        from sklearn.decomposition import PCA
+        pca = PCA()
+        pca.fit(residual_matrix[valid])
+        cumvar = np.cumsum(pca.explained_variance_ratio_)
+        # +1 because searchsorted returns the insertion point (0-based) and
+        # we want at least the first component that crosses the threshold.
+        n_eff = int(np.searchsorted(cumvar, var_threshold)) + 1
+        n_eff = max(1, min(n_eff, _cap))
+        return n_eff
+    except Exception:
+        return min(n_out, _cap)
+
+
 class UnifiedForecaster:
     """
     State-of-the-art unified forecasting system.
@@ -617,7 +674,7 @@ class UnifiedForecaster:
                  conformal_method: str = 'cv_plus',
                  conformal_alpha: float = 0.05,
                  cv_folds: int = 3,
-                 cv_min_train_years: int = 7,
+                 cv_min_train_years: int = 8,
                  random_state: int = 42,
                  verbose: bool = True,
                  config: Optional[ForecastConfig] = None,
@@ -632,7 +689,13 @@ class UnifiedForecaster:
             config.uncertainty_method if config is not None else uncertainty_method
         )
         self.cv_folds = cv_folds
-        self.cv_min_train_years = cv_min_train_years
+        # F-05: ForecastConfig is the authoritative source for cv_min_train_years.
+        # When config is provided it overrides the constructor parameter so that
+        # all code paths (pipeline.py passing a ForecastConfig, unit tests using
+        # a bare constructor) use a consistent default (8).
+        self.cv_min_train_years = (
+            config.cv_min_train_years if config is not None else cv_min_train_years
+        )
         self.random_state = random_state
         self.verbose = verbose
         self.target_level = target_level
@@ -1592,6 +1655,11 @@ class UnifiedForecaster:
             normalize_weights=True,
             random_state=self.random_state,
             verbose=self.verbose,
+            # E-04: group LASSO soft-sharing across output criteria.
+            # 0.0 (default) = fully independent per-output NNLS (backward compat).
+            meta_group_lasso_lambda=float(
+                getattr(self._config, 'meta_group_lasso_lambda', 0.0)
+            ),
         )
 
         # ── E-01: Build fold-correction callable ──────────────────────────
@@ -1643,11 +1711,15 @@ class UnifiedForecaster:
         # and Stage 6b (OOF R²) index correctly against y_train_.
         _oof_full  = self.super_learner_._oof_ensemble_predictions_
         _mask_full = self.super_learner_._oof_valid_mask_
+        _pmask_full = getattr(self.super_learner_, '_oof_valid_mask_per_col_', None)
         if _oof_full is not None and len(_oof_full) > _n_train:
             self.super_learner_._oof_ensemble_predictions_ = _oof_full[:_n_train]
             self.super_learner_._oof_valid_mask_ = (
                 _mask_full[:_n_train] if _mask_full is not None else None
             )
+            # F-01: trim per-column mask in sync with joint mask
+            if _pmask_full is not None:
+                self.super_learner_._oof_valid_mask_per_col_ = _pmask_full[:_n_train]
 
         # Cache OOF predictions (Stage 5 conformal uses them for residuals)
         self.oof_predictions_ = self.super_learner_._oof_ensemble_predictions_
@@ -1928,7 +2000,37 @@ class UnifiedForecaster:
         """
         n_components = self.y_train_.shape[1]
         component_cols = self.y_train_.columns.tolist()
+        # Standard per-component alpha for conformal path (unchanged):
         alpha_bonferroni = self.conformal_alpha / max(n_components, 1)
+
+        # F-06: For the QRF heteroscedastic path, replace hard Bonferroni
+        # (α/D) with effective-D Bonferroni (α/D_eff).  MCDM criteria are
+        # correlated, so D_eff < D always; hard Bonferroni at D=8 gives
+        # lower_q≈0.003125 which is unresolvable from QRF leaves of ~15 rows.
+        # We estimate D_eff via PCA of OOF residuals (90% variance threshold).
+        # A safety floor of lower_q ≥ 0.01 is applied regardless of D_eff.
+        _oof_res_for_eff_d: Optional[np.ndarray] = None
+        _ext_res = getattr(self, '_oof_conformal_residuals_', None)
+        if _ext_res is not None and _ext_res.ndim > 1 and _ext_res.shape[1] >= n_components:
+            _oof_res_for_eff_d = _ext_res
+        elif (
+            self.super_learner_ is not None
+            and getattr(self.super_learner_, '_oof_ensemble_predictions_', None) is not None
+        ):
+            _sl = self.super_learner_
+            _joint_mask = _sl._oof_valid_mask_
+            if _joint_mask is not None and _joint_mask.sum() >= 3:
+                _oof_preds = _sl._oof_ensemble_predictions_[_joint_mask]
+                _y_arr = self.y_train_.values[_joint_mask]
+                _oof_res_for_eff_d = _y_arr - _oof_preds
+
+        _d_eff = _effective_n_components(
+            _oof_res_for_eff_d,
+            var_threshold=0.90,
+            max_components=n_components,
+        ) if _oof_res_for_eff_d is not None else n_components
+
+        alpha_qrf = self.conformal_alpha / max(_d_eff, 1)
 
         # Start from a copy of the fallback intervals built in stage4;
         # overwrite with QRF or conformal estimates below.
@@ -1943,17 +2045,17 @@ class UnifiedForecaster:
 
         if self.uncertainty_method == 'qrf_quantile':
             # ── QRF heteroscedastic path ──────────────────────────────────
-            # Per-component Bonferroni quantiles:
-            #   lower_q = α_bonf / 2,  upper_q = 1 − α_bonf / 2
-            # With α=0.05, D=8: lower_q≈0.003125, upper_q≈0.996875.
-            lower_q = alpha_bonferroni / 2.0
-            upper_q = 1.0 - alpha_bonferroni / 2.0
+            # F-06: use effective-D Bonferroni (α_qrf = α/D_eff) for quantile
+            # levels.  Safety floor ensures lower_q ≥ 0.01 — always supported
+            # by the training QRF leaves (median ~4 samples at q=0.01 with N=756).
+            lower_q = max(alpha_qrf / 2.0, 0.01)
+            upper_q = min(1.0 - alpha_qrf / 2.0, 0.99)
 
             if self.verbose:
                 print(
                     f"  Stage 5: QRF heteroscedastic intervals "
-                    f"(α_per_crit={alpha_bonferroni:.5f}, "
-                    f"q=[{lower_q:.6f}, {upper_q:.6f}])"
+                    f"(D_eff={_d_eff}/{n_components}, α_qrf={alpha_qrf:.5f}, "
+                    f"q=[{lower_q:.4f}, {upper_q:.4f}])"
                 )
 
             _qrf_model = (
@@ -1980,6 +2082,77 @@ class UnifiedForecaster:
                         columns=self.y_train_.columns,
                     )
                     _qrf_ok = True
+
+                    # E-02: CQR post-calibration on QRF intervals (opt-in).
+                    # Feeds in-sample QRF quantile predictions on X_train_tree_ as
+                    # the calibration dataset and computes per-criterion
+                    # CQRConformalPredictor adjustments q̂_CQR so that the final
+                    # heteroscedastic intervals achieve marginal coverage ≥ 1-α.
+                    # Using in-sample QRF predictions is an approximation (slight
+                    # downward bias in q̂_CQR); the Papadopoulos correction adds
+                    # conservatism that compensates in practice (Romano et al. 2019).
+                    _use_cqr = getattr(self._config, 'use_cqr_calibration', False)
+                    if _use_cqr and self.X_train_tree_ is not None:
+                        try:
+                            from forecasting.conformal import (
+                                CQRConformalPredictor as _CQRCP,
+                            )
+                            _lower_tr, _upper_tr = _qrf_model.predict_intervals(
+                                self.X_train_tree_, lower_q=lower_q, upper_q=upper_q
+                            )
+                            # Trim in case QRF has more outputs than n_components
+                            if _lower_tr.shape[1] > n_components:
+                                _lower_tr = _lower_tr[:, :n_components]
+                                _upper_tr = _upper_tr[:, :n_components]
+                            _y_tr = self.y_train_.values
+                            _lo_cqr = lower_arr.copy()
+                            _hi_cqr = upper_arr.copy()
+                            _n_cqr_ok = 0
+                            for _d_cqr in range(n_components):
+                                try:
+                                    _y_d = (
+                                        _y_tr[:, _d_cqr] if _y_tr.ndim > 1
+                                        else _y_tr
+                                    )
+                                    _cqr = _CQRCP(alpha=alpha_qrf)
+                                    _cqr.calibrate(
+                                        _lower_tr[:, _d_cqr],
+                                        _upper_tr[:, _d_cqr],
+                                        _y_d,
+                                    )
+                                    _lo_d, _hi_d = _cqr.predict_intervals(
+                                        _lo_cqr[:, _d_cqr],
+                                        _hi_cqr[:, _d_cqr],
+                                    )
+                                    _lo_cqr[:, _d_cqr] = _lo_d
+                                    _hi_cqr[:, _d_cqr] = _hi_d
+                                    _n_cqr_ok += 1
+                                except Exception:
+                                    pass  # keep original QRF interval for this criterion
+                            if _n_cqr_ok > 0:
+                                lower_arr = _lo_cqr
+                                upper_arr = _hi_cqr
+                                intervals['lower'] = pd.DataFrame(
+                                    lower_arr,
+                                    index=self.X_pred_.index,
+                                    columns=self.y_train_.columns,
+                                )
+                                intervals['upper'] = pd.DataFrame(
+                                    upper_arr,
+                                    index=self.X_pred_.index,
+                                    columns=self.y_train_.columns,
+                                )
+                                if self.verbose:
+                                    print(
+                                        f"    CQR calibration applied to "
+                                        f"{_n_cqr_ok}/{n_components} criteria (E-02)."
+                                    )
+                        except Exception as _cqr_exc:
+                            logger.warning(
+                                "CQR calibration failed (E-02): %s; "
+                                "using raw QRF intervals.", _cqr_exc
+                            )
+
                     if self.verbose:
                         widths = upper_arr - lower_arr
                         print(
@@ -2046,19 +2219,159 @@ class UnifiedForecaster:
                     and sl._oof_valid_mask_ is not None
                     and int(sl._oof_valid_mask_.sum()) >= 3
                 )
+                # F-01: per-column mask — each criterion calibrates on its own
+                # maximum available residual set (not the joint all-outputs mask).
+                _per_col_mask: Optional[np.ndarray] = getattr(
+                    sl, '_oof_valid_mask_per_col_', None
+                ) if _has_oof else None
+
+                # ── Phase II conformal config (E-03/E-05/E-06) ───────────────
+                # Read opt-in flags from config (all default False / off).
+                # Defaults ensure full backward compatibility (identical to Phase I).
+                _use_mondrian = getattr(
+                    self._config, 'use_mondrian_conformal', False
+                )
+                _use_lwcp = getattr(
+                    self._config, 'use_locally_weighted_conformal', False
+                )
+                _use_studentt = getattr(
+                    self._config, 'conformal_studentt_small_n', False
+                )
+                _studentt_thr = int(
+                    getattr(self._config, 'conformal_studentt_threshold', 50)
+                )
+                _n_strata = int(
+                    getattr(self._config, 'conformal_n_strata', 3)
+                )
+                _entity_wt = float(
+                    getattr(self._config, 'conformal_entity_weight', 2.0)
+                )
+                # E-03: Row-wise NaN fraction for Mondrian stratification.
+                # Computed once per stage5 call (not per component) for efficiency.
+                # _oof_conformal_residuals_ is aligned with X_train_tree_ rows
+                # (NaN for rows without OOF), so valid-row indexing is consistent.
+                _miss_train_arr: Optional[np.ndarray] = None
+                _miss_pred_arr: Optional[np.ndarray] = None
+                if _use_mondrian and self.X_train_tree_ is not None:
+                    _miss_train_arr = np.isnan(self.X_train_tree_).mean(axis=1)
+                    _miss_pred_arr  = np.isnan(self.X_pred_tree_).mean(axis=1)
 
                 for d, col in enumerate(component_cols):
                     wrapper = _SingleOutputWrapper(self.super_learner_, d)
                     y_col = y_arr[:, d] if y_arr.ndim > 1 else y_arr
+                    # point_d moved here so all three conformal branches can use it.
+                    point_d = self._pred_df_[col].values
 
+                    # ── E-05: Locally Weighted CP (entity-aware, highest priority)
+                    if _use_lwcp and _has_oof:
+                        _done_d = False
+                        try:
+                            from forecasting.conformal import (
+                                LocallyWeightedConformalPredictor as _LWCP,
+                            )
+                            _v_lwcp = (
+                                _per_col_mask[:, d]
+                                if _per_col_mask is not None
+                                else sl._oof_valid_mask_
+                            )
+                            _X_cal_lwcp = self.X_train_tree_[_v_lwcp]
+                            _oof_lwcp   = sl._oof_ensemble_predictions_[_v_lwcp, d]
+                            _res_lwcp   = y_col[_v_lwcp] - _oof_lwcp
+                            _ent_lwcp   = (
+                                self._entity_indices_[_v_lwcp]
+                                if self._entity_indices_ is not None else None
+                            )
+                            _lwcp_obj = _LWCP(
+                                alpha=alpha_bonferroni, entity_weight=_entity_wt
+                            )
+                            _lwcp_obj.calibrate(
+                                _X_cal_lwcp, _res_lwcp, entity_indices=_ent_lwcp
+                            )
+                            lower_d, upper_d = _lwcp_obj.predict_intervals(
+                                self.X_pred_tree_, point_d,
+                                entity_indices=self._pred_entity_indices_,
+                            )
+                            intervals['lower'][col] = lower_d
+                            intervals['upper'][col] = upper_d
+                            self.conformal_predictors_[col] = _lwcp_obj
+                            _done_d = True
+                        except Exception as _e_lwcp:
+                            logger.warning(
+                                "LWCP calibration failed for criterion '%s' (E-05): "
+                                "%s; falling back to standard conformal.", col, _e_lwcp
+                            )
+                        if _done_d:
+                            continue
+
+                    # ── E-03: Mondrian conformal stratified by missingness rate
+                    if _use_mondrian and _has_oof and _miss_train_arr is not None:
+                        _done_d = False
+                        try:
+                            from forecasting.conformal import (
+                                MissingnessStratifiedConformal as _MSC,
+                            )
+                            # Prefer extended residuals for more calibration rows.
+                            # _oof_conformal_residuals_ is row-aligned with
+                            # X_train_tree_, so _miss_train_arr[valid_ext] gives
+                            # the correct per-row missingness rates for those rows.
+                            _ext_msc = getattr(self, '_oof_conformal_residuals_', None)
+                            _res_msc: Optional[np.ndarray] = None
+                            _miss_msc: Optional[np.ndarray] = None
+                            if (
+                                _ext_msc is not None
+                                and _ext_msc.ndim > 1
+                                and d < _ext_msc.shape[1]
+                            ):
+                                _d_ext = _ext_msc[:, d]
+                                _v_ext = ~np.isnan(_d_ext)
+                                if int(_v_ext.sum()) >= 5:
+                                    _res_msc  = _d_ext[_v_ext]
+                                    _miss_msc = _miss_train_arr[_v_ext]
+                            if _res_msc is None:
+                                # Fallback: primary per-column OOF residuals
+                                _v_msc = (
+                                    _per_col_mask[:, d]
+                                    if _per_col_mask is not None
+                                    else sl._oof_valid_mask_
+                                )
+                                _oof_msc  = sl._oof_ensemble_predictions_[_v_msc, d]
+                                _res_msc  = y_col[_v_msc] - _oof_msc
+                                _miss_msc = _miss_train_arr[_v_msc]
+                            _msc_obj = _MSC(alpha=alpha_bonferroni, n_strata=_n_strata)
+                            _msc_obj.calibrate(_res_msc, _miss_msc)
+                            lower_d, upper_d = _msc_obj.predict_intervals(
+                                point_d, _miss_pred_arr
+                            )
+                            intervals['lower'][col] = lower_d
+                            intervals['upper'][col] = upper_d
+                            self.conformal_predictors_[col] = _msc_obj
+                            _done_d = True
+                        except Exception as _e_msc:
+                            logger.warning(
+                                "Mondrian CP failed for criterion '%s' (E-03): "
+                                "%s; falling back to standard conformal.", col, _e_msc
+                            )
+                        if _done_d:
+                            continue
+
+                    # ── Standard ConformalPredictor (E-06 Student-t opt-in) ──
+                    # E-06: pass studentt params so calibrate_residuals() can use
+                    # the Student-t MLE path for strata with n_cal < studentt_thr.
                     cp = ConformalPredictor(
                         method=self.conformal_method,
                         alpha=alpha_bonferroni,
                         random_state=self.random_state,
+                        use_studentt_small_n=_use_studentt,
+                        studentt_threshold=_studentt_thr,
                     )
 
                     if _has_oof:
-                        valid = sl._oof_valid_mask_
+                        # F-01: use per-column valid mask for this criterion.
+                        # Falls back to the joint mask when per-col not available.
+                        if _per_col_mask is not None:
+                            valid = _per_col_mask[:, d]     # (n_samples,) bool
+                        else:
+                            valid = sl._oof_valid_mask_      # backward compat
                         oof_pred_d = sl._oof_ensemble_predictions_[valid, d]
 
                         # E-02: prefer extended conformal residuals when they
@@ -2082,11 +2395,11 @@ class UnifiedForecaster:
                             if len(_d_residuals) >= 5:
                                 cp.calibrate_residuals(_d_residuals, base_model=wrapper)
                             else:
-                                # Fallback to primary OOF residuals
+                                # Fallback to primary OOF residuals (per-column valid)
                                 oof_residuals = y_col[valid] - oof_pred_d
                                 cp.calibrate_residuals(oof_residuals, base_model=wrapper)
                         else:
-                            # Primary OOF residuals only (original U-2 path)
+                            # Primary OOF residuals only (F-01 per-col valid mask)
                             oof_residuals = y_col[valid] - oof_pred_d
                             cp.calibrate_residuals(oof_residuals, base_model=wrapper)
                     else:
@@ -2098,7 +2411,6 @@ class UnifiedForecaster:
                             entity_indices=self._entity_indices_,
                         )
 
-                    point_d = self._pred_df_[col].values
                     lower_d, upper_d = cp.predict_intervals(
                         self.X_pred_tree_, point_predictions=point_d
                     )

@@ -356,6 +356,7 @@ class SuperLearner:
         temperature: float = 5.0,
         random_state: int = 42,
         verbose: bool = True,
+        meta_group_lasso_lambda: float = 0.0,
     ):
         self.base_models = base_models
         self.meta_learner_type = meta_learner_type
@@ -370,6 +371,11 @@ class SuperLearner:
         self.temperature = temperature
         self.random_state = random_state
         self.verbose = verbose
+        # E-04: Group LASSO soft-sharing λ.  When > 0, each output criterion's
+        # per-output NNLS weight vector is softly nudged toward the cross-output
+        # mean, borrowing strength across correlated criteria.
+        # '0.0' (default) = fully independent per-output NNLS (backward compat).
+        self._meta_group_lasso_lambda: float = float(meta_group_lasso_lambda)
 
         # Fitted components
         self._fitted_base_models: Dict[str, BaseForecaster] = {}
@@ -380,11 +386,28 @@ class SuperLearner:
         self._n_outputs: int = 1
         self._oof_r2: Dict[str, float] = {}
 
+        # F-02: Per-output meta-weight matrix.
+        # Shape: (n_outputs, n_models) — each row is the NNLS-optimal weight
+        # vector for one output criterion.  This supersedes the scalar
+        # ``_meta_weights`` dict, which holds the column-mean for backward
+        # compatibility only.  Populated by ``_fit_meta_learner()``.
+        self._meta_weights_per_output_: Optional[np.ndarray] = None   # (n_outputs, n_models)
+        self._meta_weights_col_names_: List[str] = []                 # model insertion order
+
+        # F-03: entity indices captured at fit() time for entity-block
+        # bootstrap in ``_compute_dirichlet_weight_std``.
+        self._entity_indices_fit_: Optional[np.ndarray] = None
+
         # OOF ensemble predictions — stored at fit time so that
         # UnifiedForecaster can calibrate conformal intervals from pre-computed
         # residuals without deep-copying the full ensemble (U-2).
         self._oof_ensemble_predictions_: Optional[np.ndarray] = None  # (n_samples, n_outputs)
-        self._oof_valid_mask_: Optional[np.ndarray] = None            # (n_samples,) bool
+        self._oof_valid_mask_: Optional[np.ndarray] = None            # (n_samples,) bool — joint (all cols)
+        # F-01: per-column valid mask: row i is True for col d if col d of the
+        # ensemble OOF prediction at row i is not NaN.  Used by stage5 so that
+        # each criterion's conformal predictor calibrates on the maximum number
+        # of rows available for *that* criterion, not the joint all-outputs mask.
+        self._oof_valid_mask_per_col_: Optional[np.ndarray] = None    # (n_samples, n_outputs)
 
         # E-02: extended conformal OOF residuals collected via secondary
         # walk-forward sweep (min_train_years = conformal_min_train_years).
@@ -402,6 +425,108 @@ class SuperLearner:
         # Per-criterion RMSE across CV folds (Phase 4).
         # Shape: {model_name: [ [rmse_c1, ..., rmse_cK]_fold1, ... ]}
         self._cv_scores_per_criterion_: Dict[str, List[List[float]]] = {}
+
+    # ------------------------------------------------------------------
+    # F-02: per-output weight accessor
+    # ------------------------------------------------------------------
+    def _get_weight(self, model_name: str, out_col: int) -> float:
+        """Return the meta-weight for *model_name* on output column *out_col*.
+
+        Uses ``_meta_weights_per_output_`` when available (populated after a
+        full ``_fit_meta_learner`` call).  Falls back to the scalar
+        ``_meta_weights`` dict for backward compatibility (e.g. unit tests
+        that construct SuperLearner without calling fit:+).
+
+        Parameters
+        ----------
+        model_name : str
+        out_col    : int   0-based index into the n_outputs axis.
+        """
+        if (
+            self._meta_weights_per_output_ is not None
+            and self._meta_weights_col_names_
+            and model_name in self._meta_weights_col_names_
+        ):
+            idx = self._meta_weights_col_names_.index(model_name)
+            return float(self._meta_weights_per_output_[out_col, idx])
+        return self._meta_weights.get(model_name, 0.0)
+
+    # ------------------------------------------------------------------
+    # E-04: Group LASSO soft-sharing for multi-output meta-weights
+    # ------------------------------------------------------------------
+    def _apply_group_lasso_sharing(
+        self,
+        W: np.ndarray,
+        lambda_group: float,
+    ) -> np.ndarray:
+        """Proximal soft-sharing step — group LASSO regularisation.
+
+        Given the per-output NNLS weight matrix ``W`` of shape
+        ``(n_outputs, n_models)``, each row ``W[d, :]`` is the normalised
+        weight vector for output criterion ``d``.  The soft-sharing step
+        nudges every row toward the cross-output mean, borrowing strength
+        across correlated criteria.
+
+        Objective contribution (group LASSO penalty)::
+
+            λ · Σ_k  ||W[:,k] - W_mean[k]||_2
+
+        where ``W_mean[k] = mean_d W[d,k]`` is the average weight for
+        model ``k`` across all output criteria.
+
+        Proximal operator (closed form for this linear structure)::
+
+            W_shared = (1 - γ) · W + γ · W_mean_broadcast
+            γ = λ / (λ + spread + ε)           (adaptive shrinkage factor)
+            spread = ||W - W_mean||_F / n_outputs   (per-model per-output deviation)
+
+        After sharing, each row is L1-renormalised to ensure weights still
+        sum to 1 for every output criterion.
+
+        Parameters
+        ----------
+        W : ndarray, shape (n_outputs, n_models)
+            Per-output NNLS weight matrix, each row summing to 1.
+        lambda_group : float
+            Soft-sharing strength λ > 0.  0 → no sharing.  1 → full
+            equalisation toward the cross-output mean.
+
+        Returns
+        -------
+        W_shared : ndarray, shape (n_outputs, n_models)
+            Shared weight matrix, each row still summing to 1.
+
+        Notes
+        -----
+        With λ = 0.01 and typical spread ≈ 0.05–0.15, γ ≈ 0.06–0.17 —
+        a mild nudge that preserves per-criterion optimality while reducing
+        noise for criteria with sparse calibration data.
+        """
+        if W.ndim != 2 or W.shape[0] < 2:
+            # Single output or degenerate — sharing is a no-op.
+            return W
+
+        # Cross-output mean weight for each model: shape (1, n_models)
+        W_mean = W.mean(axis=0, keepdims=True)
+
+        # Frobenius spread (per-output deviation from the shared mean).
+        diff = W - W_mean          # (n_outputs, n_models)
+        spread = float(np.linalg.norm(diff, 'fro')) / max(W.shape[0], 1)
+
+        # Adaptive shrinkage factor γ ∈ [0, 1).
+        gamma = lambda_group / (lambda_group + spread + 1e-12)
+        gamma = float(np.clip(gamma, 0.0, 1.0))
+
+        # Soft-sharing interpolation.
+        W_shared = (1.0 - gamma) * W + gamma * W_mean  # (n_outputs, n_models)
+
+        # Renormalise each row so weights sum to 1 per output criterion.
+        row_sums = W_shared.sum(axis=1, keepdims=True)  # (n_outputs, 1)
+        # Avoid division by zero for degenerate rows.
+        row_sums = np.where(row_sums < 1e-15, 1.0, row_sums)
+        W_shared = W_shared / row_sums
+
+        return W_shared
 
     @_silence_warnings
     def fit(
@@ -465,6 +590,10 @@ class SuperLearner:
         self._n_outputs = y.shape[1]
         n_samples = X.shape[0]
         n_models = len(self.base_models)
+
+        # F-03: capture entity_indices at fit time so that
+        # _compute_dirichlet_weight_std can use entity-block bootstrap.
+        self._entity_indices_fit_ = entity_indices
 
         logger.info(
             f"Super Learner: {n_models} base models, {self.n_cv_folds} CV folds"
@@ -701,7 +830,8 @@ class SuperLearner:
             weighted_col = np.zeros(n_samples)
             weight_sum_col = np.zeros(n_samples)
             for m_idx, name in enumerate(self.base_models):
-                w = self._meta_weights.get(name, 0.0)
+                # F-02: use per-output weight for this criterion column
+                w = self._get_weight(name, i_out)
                 if w == 0.0:
                     continue
                 col_idx = m_idx * self._n_outputs + i_out
@@ -714,7 +844,12 @@ class SuperLearner:
                 weighted_col[valid_col_any] / weight_sum_col[valid_col_any]
             )
         self._oof_ensemble_predictions_ = oof_ensemble
+        # F-01a: joint valid mask (all outputs non-NaN) — kept for backward
+        # compatibility; diagnostics and _oof_predictions_per_model_ use it.
         self._oof_valid_mask_ = ~np.isnan(oof_ensemble).any(axis=1)
+        # F-01b: per-column valid mask — used by stage5 conformal predictor so
+        # each criterion calibrates on its own maximum available residual set.
+        self._oof_valid_mask_per_col_ = ~np.isnan(oof_ensemble)   # (n_samples, n_outputs)
 
         # ── F-05c C2: per-model OOF predictions for downstream diagnostics ──
         # Slice each base model's columns out of the raw oof_predictions matrix
@@ -924,12 +1059,13 @@ class SuperLearner:
                 if entity_indices is not None else None
             )
 
-            # Fit all base models and combine with current meta-weights
+            # Fit all base models and combine with per-output meta-weights (F-02)
             secondary_preds = []
-            secondary_weights = []
+            secondary_names = []   # track names for _get_weight() calls
             for m_idx, (name, model) in enumerate(self.base_models.items()):
-                w = self._meta_weights.get(name, 0.0)
-                if w == 0.0:
+                # Gate: if scalar (mean) weight is 0 all per-output weights are 0
+                scalar_w = self._meta_weights.get(name, 0.0)
+                if scalar_w == 0.0:
                     continue
                 X_m = (
                     per_model_X[name]
@@ -958,27 +1094,31 @@ class SuperLearner:
                     elif np.ndim(pred) == 0:
                         pred = np.asarray([[float(pred)]] * len(_val_idx))
                     secondary_preds.append(pred)
-                    secondary_weights.append(w)
+                    secondary_names.append(name)
                 except Exception:
                     continue
 
             if not secondary_preds:
                 continue
 
-            # Weighted ensemble prediction for secondary fold
-            total_w = sum(secondary_weights)
-            if total_w < 1e-12:
-                continue
-            ens_pred = sum(
-                (pw / total_w) * pp
-                for pw, pp in zip(secondary_weights, secondary_preds)
-            )
-            if ens_pred.shape[1] < n_outputs:
-                # some models only produced 1 output — broadcast
-                ens_pred = np.tile(ens_pred, (1, n_outputs))[:, :n_outputs]
-
+            # F-02: per-output weighted ensemble for secondary fold.
+            # Each output criterion uses its own optimal weight vector.
+            n_val = len(_val_idx)
+            ens_pred = np.zeros((n_val, n_outputs))
             for out_col in range(n_outputs):
-                secondary_oof[_val_idx, out_col] = ens_pred[:, min(out_col, ens_pred.shape[1] - 1)]
+                wt_sum = 0.0
+                for pp, nm in zip(secondary_preds, secondary_names):
+                    w = self._get_weight(nm, out_col)
+                    if w < 1e-15:
+                        continue
+                    pred_col = min(out_col, pp.shape[1] - 1)
+                    ens_pred[:, out_col] += w * pp[:, pred_col]
+                    wt_sum += w
+                if wt_sum > 1e-15:
+                    ens_pred[:, out_col] /= wt_sum
+
+            # ens_pred is already (n_val, n_outputs) — assign all columns at once
+            secondary_oof[np.ix_(_val_idx, np.arange(n_outputs))] = ens_pred
 
         # Pool primary and secondary OOF residuals
         # primary_oof covers the later calibration years, secondary_oof the earlier
@@ -1111,29 +1251,47 @@ class SuperLearner:
                 full_coefs[m_idx] = active_coefs[i]
             all_coefs.append(full_coefs)
 
-        # Normalize each per-output coefficient vector to sum to 1 before
-        # averaging so that outputs whose prediction scale is larger do not
-        # dominate the final meta-weights.
+        # Normalize each per-output coefficient vector to sum to 1.
         normed_coefs = []
         for c in all_coefs:
             s = float(np.sum(c))
             normed_coefs.append(c / s if s > 1e-15
                                 else np.ones(len(c)) / len(c))
-        avg_coefs = np.mean(normed_coefs, axis=0)
+        normed_coefs_arr = np.array(normed_coefs)   # (n_outputs, n_models)
 
-        # Normalize to sum to 1
+        # E-04: Group LASSO soft-sharing — borrow strength across correlated
+        # output criteria.  When _meta_group_lasso_lambda > 0, each criterion's
+        # per-output weight vector is nudged toward the cross-output mean.
+        # λ = 0.0 (default) → pure per-output NNLS, backward-compatible.
+        if self._meta_group_lasso_lambda > 1e-15:
+            normed_coefs_arr = self._apply_group_lasso_sharing(
+                normed_coefs_arr, self._meta_group_lasso_lambda
+            )
+
+        # F-02: Store per-output weight matrix.
+        # _meta_weights_per_output_[d, k] = optimal weight for model k on
+        # output criterion d.  This is the authoritative weight source used
+        # by _get_weight(), OOF ensemble caching, and predict().
+        self._meta_weights_per_output_ = normed_coefs_arr          # (n_outputs, n_models)
+        self._meta_weights_col_names_  = list(self.base_models.keys())
+
+        # Backward-compat scalar weights: unweighted mean across outputs so
+        # that all callers of the old _meta_weights dict still work correctly.
+        # These are used ONLY for diagnostics and logging — all ensemble
+        # combination internally goes through _get_weight().
+        avg_coefs = normed_coefs_arr.mean(axis=0)                  # (n_models,)
         if self.normalize_weights:
             coef_sum = avg_coefs.sum()
-            if coef_sum > 0:
-                avg_coefs /= coef_sum
+            if coef_sum > 1e-15:
+                avg_coefs = avg_coefs / coef_sum
             else:
-                avg_coefs = np.ones(len(self.base_models)) / len(self.base_models)
+                avg_coefs = np.ones(n_models) / n_models
 
         self._meta_weights = dict(zip(self.base_models.keys(), avg_coefs))
 
         # E-03: For dirichlet stacking, estimate meta-weight uncertainty via
-        # parametric bootstrap so downstream callers (e.g. predict_with_uncertainty)
-        # can propagate weight variance into forecast variance.
+        # entity-block parametric bootstrap (F-03: entity_indices are stored
+        # at fit() time in self._entity_indices_fit_).
         if self.meta_learner_type == "dirichlet_stacking":
             self._meta_weight_std_ = self._compute_dirichlet_weight_std(oof_X, oof_y)
 
@@ -1187,29 +1345,51 @@ class SuperLearner:
             np.mean((y[:, np.newaxis] - preds) ** 2, axis=0),
             1e-8,
         )  # (K,)
-        log_sigma     = 0.5 * np.log(sigma2)           # (K,)
-        inv_2sigma2   = 0.5 / sigma2                    # (K,)
+        log_sigma   = 0.5 * np.log(sigma2)   # (K,)
+        inv_2sigma2 = 0.5 / sigma2            # (K,)
+        n_inner     = y.shape[0]
 
-        def _neg_log_score(logits: np.ndarray) -> float:
+        # F-04: analytical gradient — avoids 2K finite-difference evals per
+        # iteration (Yao et al. 2018, score-function identity for softmax mix).
+        #
+        # Derivation (kept here for auditability):
+        #   L   = −Σ_n log(Σ_k w_k · p_k(y_n))
+        #   r_nk = w_k · p_k(y_n) / Σ_j w_j·p_j(y_n)   (responsibility)
+        #   ∂L/∂logit_j = n · w_j − Σ_n r_nj
+        #               = n · (w_j − mean_n r_nj)
+        # where w = softmax(logits).
+        def _neg_log_score_and_grad(
+            logits: np.ndarray,
+        ) -> Tuple[float, np.ndarray]:
             w     = _sfx(logits)                        # (K,)  simplex
-            log_w = np.log(w + 1e-30)                   # (K,)
+            log_w = np.log(w + 1e-30)
 
-            # log N(y_n; ŷ_kn, σ_k²) = -0.5*(y_n−ŷ_kn)²/σ_k² − log(σ_k) − const
             diff2  = (y[:, np.newaxis] - preds) ** 2   # (n, K)
-            log_pk = -inv_2sigma2 * diff2 - log_sigma   # (n, K)  [const omitted — same for all w]
+            log_pk = -inv_2sigma2 * diff2 - log_sigma   # (n, K)  Gaussian log-density (const omitted)
 
-            # log mixture: log Σ_k w_k p_k(y_n) via log-sum-exp trick
+            # log-mixture via log-sum-exp for numerical stability
             lse_in  = log_w[np.newaxis, :] + log_pk    # (n, K)
             lse_max = lse_in.max(axis=1, keepdims=True) # (n, 1)
-            log_mix = lse_max[:, 0] + np.log(
-                np.exp(lse_in - lse_max).sum(axis=1) + 1e-30
-            )                                           # (n,)
-            return float(-np.sum(log_mix))
+            exp_in  = np.exp(lse_in - lse_max)          # (n, K) — relative to max
+            mix_sum = exp_in.sum(axis=1, keepdims=True)  # (n, 1)
+            log_mix = lse_max[:, 0] + np.log(mix_sum[:, 0] + 1e-30)  # (n,)
+
+            nll = float(-np.sum(log_mix))
+
+            # Responsibility matrix: r[n, k] = w_k · p_k / Σ_j w_j·p_j
+            responsibility = exp_in / (mix_sum + 1e-30)   # (n, K)
+
+            # Analytical gradient ∂NLL/∂logit_j = n·w_j − Σ_n r_{nj}
+            grad = n_inner * w - responsibility.sum(axis=0)  # (K,)
+
+            return nll, grad.astype(np.float64)
 
         x0  = np.zeros(K)
         res = minimize(
-            _neg_log_score, x0,
+            _neg_log_score_and_grad,
+            x0,
             method='L-BFGS-B',
+            jac=True,                                   # F-04: provide analytical gradient
             options={'maxiter': max_iter, 'ftol': 1e-12, 'gtol': 1e-8},
         )
         return _sfx(res.x)
@@ -1246,8 +1426,35 @@ class SuperLearner:
         rng          = np.random.RandomState(self.random_state)
         boot_weights: list = []   # list of (K_full,) arrays
 
+        # F-03: entity-block bootstrap — resample whole entity time-series
+        # to preserve within-entity temporal dependence and cross-entity
+        # correlation in the panel.  Falls back to i.i.d. row bootstrap when
+        # entity_indices are unavailable (e.g. unit-test path).
+        entity_indices = getattr(self, '_entity_indices_fit_', None)
+        if entity_indices is not None and len(entity_indices) == n_samples:
+            unique_entities = np.unique(entity_indices)
+            # Build lookup: entity → row positions in OOF arrays
+            _ent_rows: Dict[Any, np.ndarray] = {
+                e: np.where(entity_indices == e)[0]
+                for e in unique_entities
+            }
+        else:
+            unique_entities = None
+            _ent_rows = {}
+
         for _ in range(n_boot):
-            idx     = rng.randint(0, n_samples, size=n_samples)
+            if unique_entities is not None and len(unique_entities) >= 2:
+                # Entity-block bootstrap: resample entities with replacement,
+                # then concatenate their row indices.  This preserves within-
+                # entity temporal structure and cross-entity dependence.
+                sampled_ents = rng.choice(
+                    unique_entities, size=len(unique_entities), replace=True
+                )
+                idx = np.concatenate([_ent_rows[e] for e in sampled_ents])
+            else:
+                # Fallback: i.i.d. row resample (no entity info available)
+                idx = rng.randint(0, n_samples, size=n_samples)
+
             b_X     = oof_X[idx]
             b_y     = oof_y[idx]
 
@@ -1278,7 +1485,7 @@ class SuperLearner:
                 s = full.sum()
                 per_out_coefs.append(full / s if s > 1e-12 else full)
 
-            # Average across output columns (mirrors _fit_meta_learner averaging)
+            # Average across output columns (mirrors backward-compat scalar weights)
             avg = np.mean(per_out_coefs, axis=0)
             s   = avg.sum()
             boot_weights.append(avg / s if s > 1e-12 else avg)
@@ -1345,20 +1552,30 @@ class SuperLearner:
         if not all_predictions:
             raise ValueError("No base models produced predictions")
 
-        # Weighted combination (renormalize weights for successful models only)
+        # F-02: per-output weighted combination.
+        # For each output criterion d, use the weight vector for that specific
+        # criterion rather than a single scalar averaged across all criteria.
         n_samples = X.shape[0]
         result = np.zeros((n_samples, self._n_outputs))
 
-        active_weights = {name: self._meta_weights.get(name, 0.0) for name in model_names}
-        weight_sum = sum(active_weights.values())
-        if weight_sum > 0:
-            active_weights = {n: w / weight_sum for n, w in active_weights.items()}
+        for out_col in range(self._n_outputs):
+            # Collect per-output weights for active models; renormalize in
+            # case some models failed prediction on this call.
+            col_weights = {
+                name: self._get_weight(name, out_col)
+                for name in model_names
+            }
+            w_sum = sum(col_weights.values())
+            if w_sum > 1e-15:
+                col_weights = {n: w / w_sum for n, w in col_weights.items()}
+            else:
+                # All weights zero — equal fallback
+                col_weights = {n: 1.0 / len(model_names) for n in model_names}
 
-        for pred, name in zip(all_predictions, model_names):
-            weight = active_weights.get(name, 0.0)
-            for out_col in range(self._n_outputs):
+            for pred, name in zip(all_predictions, model_names):
+                w = col_weights.get(name, 0.0)
                 pred_col = min(out_col, pred.shape[1] - 1)
-                result[:, out_col] += weight * pred[:, pred_col]
+                result[:, out_col] += w * pred[:, pred_col]
 
         if self._n_outputs == 1:
             return result.ravel()
