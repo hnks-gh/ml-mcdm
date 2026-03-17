@@ -686,16 +686,60 @@ class TemporalFeatureEngineer:
                     year_labels_train.append(next_yr)
 
             # ---- Prediction sample ----
-            if ctx_pred_year is not None and entity not in ctx_pred_year.active_provinces:
-                n_skipped_pred += 1
-                continue  # Entity absent from target year → no prediction
+            # Determine the per-entity feature year for the prediction sample.
+            # Normally this equals `last_year` (e.g. 2024 when predicting 2025).
+            #
+            # Special case — future-year prediction where a province is entirely
+            # absent from the most-recent year context (all sub-criteria NaN in
+            # 2024, so DataLoader excluded it from `active_provinces[2024]`):
+            # instead of excluding the province, fall back to the most-recent year
+            # that has at least one valid observation.  This guarantees all
+            # historically-active provinces receive a 2025 prediction.
+            #
+            # For in-sample predictions (target_year already in the panel) the
+            # original hard exclusion is preserved — a missing target year means
+            # there is no ground truth to train against, so we skip it.
+            is_future_prediction = target_year not in years
 
-            if last_year not in entity_data.index:
+            if ctx_pred_year is not None and entity not in ctx_pred_year.active_provinces:
+                if not is_future_prediction:
+                    # In-sample: entity absent from the prediction year → skip.
+                    n_skipped_pred += 1
+                    continue
+
+                # Future-year: scan backwards for the most-recent year that has
+                # at least one non-NaN value for this entity.
+                entity_pred_feature_year: Optional[int] = None
+                for yr in reversed(years):
+                    if yr in entity_data.index:
+                        row_vals = entity_data.loc[yr, components].values.astype(float)
+                        if not np.all(np.isnan(row_vals)):
+                            entity_pred_feature_year = yr
+                            break
+
+                if entity_pred_feature_year is None:
+                    # Entity has no valid data across the entire historical panel.
+                    n_skipped_pred += 1
+                    logger.warning(
+                        f"Forecasting: {entity} excluded from {target_year} prediction"
+                        f" — no valid observations across entire historical panel."
+                    )
+                    continue
+
+                logger.info(
+                    f"Forecasting: {entity} has no {last_year} data; using "
+                    f"{entity_pred_feature_year} features for {target_year} "
+                    f"prediction (most-recent valid year fallback)."
+                )
+            else:
+                entity_pred_feature_year = last_year
+
+            if entity_pred_feature_year not in entity_data.index:
                 n_skipped_pred += 1
                 continue
 
             pred_features = self._create_features_safe(
-                entity_data, entity, years, last_year, entities, panel_data
+                entity_data, entity, years, entity_pred_feature_year, entities, panel_data
             )
             pred_feature_list.append(pred_features)
             pred_entities.append(entity)
@@ -707,8 +751,8 @@ class TemporalFeatureEngineer:
             )
         if n_skipped_pred > 0:
             logger.info(
-                f"Forecasting: {n_skipped_pred} province(s) excluded "
-                f"from prediction (not in target-year active set)"
+                f"Forecasting: {n_skipped_pred} province(s) excluded from prediction"
+                f" (no valid historical data)"
             )
 
         if not X_train_list:

@@ -15,7 +15,14 @@ this module provides a single, tested set of primitives that each phase calls:
     :func:`impute_neutral_score` — fill NaN in a normalized decision matrix
     with 0.5, resulting in a neutral mid-point score that does not bias ranking.
 
-**Forecasting / ML phase** (``forecasting/features.py``)
+**Forecasting / ML phase** (``forecasting/features.py``, ``pipeline.py``)
+    :func:`build_ml_panel_data` — build an imputed copy of :class:`PanelData`
+    exclusively for the ML path.  Performs three-stage temporal imputation
+    (interpolate → ffill/bfill → cross-sectional median) on the subcriteria
+    panel and rebuilds all derived views (criteria, final, year_contexts) so
+    that every province-year cell is NaN-free when entering feature engineering.
+    The original panel_data is never modified; MCDM weighting and ranking
+    continue to use the observed (raw) data.
     :func:`fill_missing_features` — replace NaN feature values with per-column
     training means (not 0.0, which is a valid governance score). Optionally
     returns a missingness indicator mask so models can distinguish imputed
@@ -1627,5 +1634,247 @@ def assess_missing_mechanism(
             print("MICE/MissForest/SoftImpute (max likelihood valid)")
         else:
             print("GAIN/Selection models (MNAR-robust methods)")
-    
+
     return report
+
+
+# ---------------------------------------------------------------------------
+# ML Pipeline: Raw Panel Imputation
+# ---------------------------------------------------------------------------
+
+def _build_ml_year_contexts(
+    imputed_cs: Dict[int, pd.DataFrame],
+    hierarchy,
+    YearContext_cls,
+) -> dict:
+    """Rebuild YearContext objects from an already-imputed subcriteria panel.
+
+    After three-stage temporal imputation every cell should be non-NaN, so
+    the returned YearContexts reflect the clean imputed availability rather
+    than the original observed sparsity.  The logic mirrors
+    ``DataLoader._create_hierarchical_views()`` exactly so the ML path sees
+    consistent context semantics.
+
+    This function is ``_build_ml_year_contexts`` (private leading underscore)
+    because it is only called from :func:`build_ml_panel_data` and should not
+    be used directly by callers outside this module.
+
+    Parameters
+    ----------
+    imputed_cs : dict of {int: pd.DataFrame}
+        Province-indexed subcriteria cross-sections after imputation.
+    hierarchy :
+        ``HierarchyMapping`` from the original ``PanelData``.
+    YearContext_cls :
+        The ``YearContext`` dataclass from ``data.data_loader``.
+
+    Returns
+    -------
+    dict of {int: YearContext}
+    """
+    year_contexts: dict = {}
+
+    for yr, cs in sorted(imputed_cs.items()):
+        all_sc_cols = [c for c in hierarchy.all_subcriteria if c in cs.columns]
+        if not all_sc_cols:
+            continue
+
+        # ---- Province / SC active sets ----------------------------------
+        prov_any_valid = cs[all_sc_cols].notna().any(axis=1)
+        active_provs   = prov_any_valid[prov_any_valid].index.tolist()
+        excluded_provs = prov_any_valid[~prov_any_valid].index.tolist()
+
+        sc_any_valid = cs[all_sc_cols].notna().any(axis=0)
+        active_scs   = sc_any_valid[sc_any_valid].index.tolist()
+        excluded_scs = sc_any_valid[~sc_any_valid].index.tolist()
+
+        # ---- Per-criterion: active SCs + complete-data province sets ----
+        cs_active = cs.loc[[p for p in active_provs if p in cs.index], all_sc_cols]
+        criterion_alts: Dict[str, list] = {}
+        criterion_scs:  Dict[str, list] = {}
+
+        for crit_id in hierarchy.all_criteria:
+            crit_scs = [
+                sc for sc in hierarchy.criteria_to_subcriteria[crit_id]
+                if sc in active_scs
+            ]
+            criterion_scs[crit_id] = crit_scs
+            if not crit_scs:
+                criterion_alts[crit_id] = []
+                continue
+            avail = [sc for sc in crit_scs if sc in cs_active.columns]
+            if not avail:
+                criterion_alts[crit_id] = []
+                continue
+            # Province participates iff it has valid data for ALL active SCs
+            prov_complete = cs_active[avail].notna().all(axis=1)
+            criterion_alts[crit_id] = prov_complete[prov_complete].index.tolist()
+
+        active_criteria   = [c for c in hierarchy.all_criteria if criterion_scs.get(c)]
+        excluded_criteria = [c for c in hierarchy.all_criteria if not criterion_scs.get(c)]
+
+        # ---- Fine-grained valid (province, SC) pairs --------------------
+        valid_pairs: set = set()
+        for prov in active_provs:
+            if prov not in cs.index:
+                continue
+            for sc in active_scs:
+                if sc in cs.columns and pd.notna(cs.loc[prov, sc]):
+                    valid_pairs.add((prov, sc))
+
+        year_contexts[yr] = YearContext_cls(
+            year=yr,
+            active_provinces=active_provs,
+            active_subcriteria=active_scs,
+            active_criteria=active_criteria,
+            excluded_provinces=excluded_provs,
+            excluded_subcriteria=excluded_scs,
+            excluded_criteria=excluded_criteria,
+            criterion_alternatives=criterion_alts,
+            criterion_subcriteria=criterion_scs,
+            valid_pairs=valid_pairs,
+        )
+
+    return year_contexts
+
+
+def build_ml_panel_data(panel_data, max_linear_gap: int = 2):
+    """Build an imputed copy of *panel_data* exclusively for the ML path.
+
+    The MCDM weighting and ranking phases deliberately use the raw observed
+    data (complete-case strategy, no imputation) to avoid introducing synthetic
+    values into MCDM decision matrices.  The ML forecasting phase, however,
+    benefits from a fully-filled panel so that every province-year feature
+    vector is NaN-free.
+
+    This function creates a new :class:`~data.data_loader.PanelData` object
+    whose subcriteria cross-sections have been imputed via three-stage
+    temporal imputation (:func:`impute_panel_temporal`):
+
+    1. **Linear interpolation** for internal gaps ≤ *max_linear_gap* years
+    2. **Forward / backward fill** for boundary (end-of-series) gaps
+    3. **Cross-sectional median** as final fallback
+
+    All derived views (criteria, final scores) and the per-year
+    ``year_contexts`` are rebuilt from the imputed subcriteria so the ML
+    feature engineer sees consistent active-province sets.
+
+    The original *panel_data* is **never modified** — a deep copy of every
+    cross-section DataFrame is made before imputation.
+
+    Parameters
+    ----------
+    panel_data : PanelData
+        The raw panel, as returned by ``DataLoader.load()``.
+    max_linear_gap : int
+        Maximum consecutive-year gap eligible for linear interpolation.
+        Default is 2 years.
+
+    Returns
+    -------
+    PanelData
+        A new PanelData with fully-imputed subcriteria and rebuilt derived
+        views.  Passes to ``UnifiedForecaster.fit_predict()`` in place of
+        the original panel_data.
+    """
+    # Late import to avoid circular dependency at module level:
+    # data/missing_data.py does not import from data/data_loader.py at the
+    # top of the file; only this function needs PanelData / YearContext.
+    from data.data_loader import PanelData, YearContext  # type: ignore[import]
+
+    hierarchy = panel_data.hierarchy
+
+    # ------------------------------------------------------------------
+    # 1. Deep-copy subcriteria cross-sections and run temporal imputation
+    #    (impute_panel_temporal mutates its input dict in place, so we must
+    #    copy every DataFrame first to protect the original panel_data).
+    # ------------------------------------------------------------------
+    imputed_cs: Dict[int, pd.DataFrame] = {
+        yr: df.copy()
+        for yr, df in panel_data.subcriteria_cross_section.items()
+    }
+    imputed_cs = impute_panel_temporal(imputed_cs, max_linear_gap=max_linear_gap)
+
+    # ------------------------------------------------------------------
+    # 2. Rebuild subcriteria_long from imputed cross-sections
+    # ------------------------------------------------------------------
+    sub_frames: list = []
+    for yr, cs in sorted(imputed_cs.items()):
+        df = cs.copy()
+        if df.index.name != 'Province':
+            df.index.name = 'Province'
+        df = df.reset_index()          # Province index → column
+        df.insert(0, 'Year', yr)
+        sub_frames.append(df)
+    new_subcriteria_long = pd.concat(sub_frames, ignore_index=True)
+
+    # ------------------------------------------------------------------
+    # 3. Rebuild criteria_cross_section and criteria_long
+    #    Each criterion value = NaN-skipping row-mean of its active SCs.
+    # ------------------------------------------------------------------
+    new_criteria_cs: Dict[int, pd.DataFrame] = {}
+    crit_frames: list = []
+    for yr, cs in sorted(imputed_cs.items()):
+        crit_vals: Dict[str, pd.Series] = {}
+        for crit_id in hierarchy.all_criteria:
+            sc_list = [
+                sc for sc in hierarchy.criteria_to_subcriteria[crit_id]
+                if sc in cs.columns
+            ]
+            crit_vals[crit_id] = (
+                cs[sc_list].mean(axis=1) if sc_list
+                else pd.Series(np.nan, index=cs.index)
+            )
+        crit_df = pd.DataFrame(crit_vals, index=cs.index)
+        crit_df.index.name = 'Province'
+        new_criteria_cs[yr] = crit_df
+
+        frame = crit_df.reset_index()
+        frame.insert(0, 'Year', yr)
+        crit_frames.append(frame)
+    new_criteria_long = pd.concat(crit_frames, ignore_index=True)
+
+    # ------------------------------------------------------------------
+    # 4. Rebuild final_cross_section and final_long
+    #    Final score = NaN-skipping row-mean across all criteria columns.
+    # ------------------------------------------------------------------
+    new_final_cs: Dict[int, pd.DataFrame] = {}
+    final_frames: list = []
+    for yr, crit_df in sorted(new_criteria_cs.items()):
+        active_crit_cols = [c for c in hierarchy.all_criteria if c in crit_df.columns]
+        final_scores = crit_df[active_crit_cols].mean(axis=1)
+        final_df = pd.DataFrame({'FinalScore': final_scores}, index=crit_df.index)
+        final_df.index.name = 'Province'
+        new_final_cs[yr] = final_df
+
+        frame = final_df.reset_index()
+        frame.insert(0, 'Year', yr)
+        final_frames.append(frame)
+    new_final_long = pd.concat(final_frames, ignore_index=True)
+
+    # ------------------------------------------------------------------
+    # 5. Rebuild year_contexts to reflect the imputed panel
+    #    After full imputation every province with any historical data
+    #    will be in active_provinces for every year — including those
+    #    (e.g. P17, P52) that had all-NaN in the most recent CSV year.
+    # ------------------------------------------------------------------
+    new_year_contexts = _build_ml_year_contexts(imputed_cs, hierarchy, YearContext)
+
+    # ------------------------------------------------------------------
+    # 6. Construct and return new PanelData
+    #    Provinces, years, hierarchy, and availability are the same as the
+    #    original; only the data views and year_contexts differ.
+    # ------------------------------------------------------------------
+    return PanelData(
+        subcriteria_long=new_subcriteria_long,
+        subcriteria_cross_section=imputed_cs,
+        criteria_long=new_criteria_long,
+        criteria_cross_section=new_criteria_cs,
+        final_long=new_final_long,
+        final_cross_section=new_final_cs,
+        provinces=panel_data.provinces,
+        years=panel_data.years,
+        hierarchy=hierarchy,
+        year_contexts=new_year_contexts,
+        availability=panel_data.availability,   # legacy; keyed to original data
+    )

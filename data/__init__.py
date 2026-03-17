@@ -20,9 +20,11 @@ from .missing_data import (
     filter_all_nan_columns,
     impute_column_mean,
     prepare_decision_matrix,
+    impute_panel_temporal,
     impute_neutral_score,
     fill_missing_features,
     has_complete_target,
+    build_ml_panel_data,
 )
 from .data_loader import (
     DataLoader,
@@ -39,9 +41,11 @@ __all__ = [
     "filter_all_nan_columns",
     "impute_column_mean",
     "prepare_decision_matrix",
+    "impute_panel_temporal",
     "impute_neutral_score",
     "fill_missing_features",
     "has_complete_target",
+    "build_ml_panel_data",
     # Data loading
     "DataLoader",
     "PanelData",

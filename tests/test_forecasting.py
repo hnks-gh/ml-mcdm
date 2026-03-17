@@ -168,6 +168,137 @@ class TestFeatureEngineer:
         assert not np.isnan(y_train.values).any()
         assert not np.isnan(X_pred.values).any()
 
+    def test_future_year_all_nan_last_year_province_included(self):
+        """Province with all-NaN in last panel year must appear in X_pred for a
+        future target year, using its most-recent valid year as feature fallback.
+
+        Regression test for the P17/P52 bug where provinces with entirely
+        missing 2024 data were silently dropped from the 2025 prediction set.
+        """
+        import pandas as pd
+        from types import SimpleNamespace
+        from forecasting.features import TemporalFeatureEngineer
+
+        years = list(range(2011, 2016))   # 2011..2015, 5 years
+        provinces = ["P0", "P1", "P2"]
+        components = ["x0", "x1"]
+
+        rng = np.random.RandomState(7)
+        data_store = {}
+        for p in provinces:
+            data_store[p] = pd.DataFrame(
+                rng.rand(len(years), len(components)),
+                index=years,
+                columns=components,
+            )
+        # P2 has all-NaN in 2015 — simulates a province with no 2024 data
+        data_store["P2"].loc[2015, :] = np.nan
+
+        cs = {}
+        for y in years:
+            rows = [{"Province": p, **data_store[p].loc[y].to_dict()} for p in provinces]
+            cs[y] = pd.DataFrame(rows)
+
+        def _make_ctx(yr):
+            ctx = SimpleNamespace()
+            ctx.year = yr
+            # P2 excluded from 2015 active set (all-NaN row)
+            ctx.active_provinces = [p for p in provinces
+                                    if not (p == "P2" and yr == 2015)]
+            ctx.active_subcriteria = list(components)
+            ctx.valid_pairs = {
+                (p, sc) for p in ctx.active_provinces for sc in components
+            }
+            ctx.is_valid = lambda prov, sc, _c=ctx: (prov, sc) in _c.valid_pairs
+            return ctx
+
+        class MockPanel:
+            pass
+
+        panel = MockPanel()
+        panel.provinces = provinces
+        panel.subcriteria_names = components
+        panel.years = years
+        panel.get_province = lambda name: data_store[name]
+        panel.cross_section = cs
+        panel.year_contexts = {yr: _make_ctx(yr) for yr in years}
+
+        eng = TemporalFeatureEngineer(
+            lag_periods=[1], rolling_windows=[2],
+            include_momentum=False, include_cross_entity=False,
+            target_level='subcriteria',
+        )
+        # target_year=2016 is a future year (not in panel years 2011-2015)
+        _, _, X_pred, _, _, _ = eng.fit_transform(panel, target_year=2016)
+
+        # All 3 provinces must receive a prediction despite P2 having no 2015 data
+        assert X_pred.shape[0] == 3, (
+            f"Expected 3 provinces in X_pred, got {X_pred.shape[0]}. "
+            "Province with all-NaN in last panel year should fall back to "
+            "most-recent valid year, not be excluded."
+        )
+        assert set(X_pred.index) == {"P0", "P1", "P2"}
+        assert not np.isnan(X_pred.values).any()
+
+    def test_future_year_truly_no_data_province_excluded(self):
+        """Province with all-NaN across ALL years must be excluded from X_pred."""
+        import pandas as pd
+        from types import SimpleNamespace
+        from forecasting.features import TemporalFeatureEngineer
+
+        years = list(range(2011, 2016))
+        provinces = ["P0", "P1", "P2"]
+        components = ["x0", "x1"]
+
+        rng = np.random.RandomState(13)
+        data_store = {}
+        for p in provinces:
+            data_store[p] = pd.DataFrame(
+                rng.rand(len(years), len(components)),
+                index=years,
+                columns=components,
+            )
+        # P2 has all-NaN in every year — province with zero historical data
+        data_store["P2"][:] = np.nan
+
+        cs = {}
+        for y in years:
+            rows = [{"Province": p, **data_store[p].loc[y].to_dict()} for p in provinces]
+            cs[y] = pd.DataFrame(rows)
+
+        def _make_ctx(yr):
+            ctx = SimpleNamespace()
+            ctx.year = yr
+            ctx.active_provinces = [p for p in provinces if p != "P2"]
+            ctx.active_subcriteria = list(components)
+            ctx.valid_pairs = {
+                (p, sc) for p in ctx.active_provinces for sc in components
+            }
+            ctx.is_valid = lambda prov, sc, _c=ctx: (prov, sc) in _c.valid_pairs
+            return ctx
+
+        class MockPanel:
+            pass
+
+        panel = MockPanel()
+        panel.provinces = provinces
+        panel.subcriteria_names = components
+        panel.years = years
+        panel.get_province = lambda name: data_store[name]
+        panel.cross_section = cs
+        panel.year_contexts = {yr: _make_ctx(yr) for yr in years}
+
+        eng = TemporalFeatureEngineer(
+            lag_periods=[1], rolling_windows=[2],
+            include_momentum=False, include_cross_entity=False,
+            target_level='subcriteria',
+        )
+        _, _, X_pred, _, _, _ = eng.fit_transform(panel, target_year=2016)
+
+        # P2 must be absent — no valid data anywhere in history
+        assert X_pred.shape[0] == 2
+        assert "P2" not in X_pred.index
+
 
 # ---------------------------------------------------------------------------
 # Base Models — fit / predict round-trip

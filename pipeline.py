@@ -766,8 +766,24 @@ class MLMCDMPipeline:
             verbose=self.config.forecast.verbose,
             target_level=self.config.forecast.forecast_level,
         )
-        
-        result = forecaster.fit_predict(panel_data, target_year=target_year)
+
+        # Build a fully-imputed copy of panel_data for the ML path only.
+        # MCDM weighting and ranking (Phases 2-3) continue using the raw
+        # observed panel_data (complete-case strategy).  The forecasting
+        # ensemble requires NaN-free feature matrices, so we apply three-
+        # stage temporal imputation (linear interp → ffill/bfill → median)
+        # on a deep copy and rebuild all derived views + year_contexts.
+        try:
+            from .data.missing_data import build_ml_panel_data
+        except ImportError:
+            from data.missing_data import build_ml_panel_data
+
+        ml_panel_data = build_ml_panel_data(panel_data)
+        self.logger.info(
+            "ML panel imputation complete: all subcriteria cross-sections are NaN-free"
+        )
+
+        result = forecaster.fit_predict(ml_panel_data, target_year=target_year)
         
         # Log results
         if hasattr(result, 'model_contributions'):
