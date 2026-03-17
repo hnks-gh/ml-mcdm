@@ -5,19 +5,17 @@
 This framework implements a **statistically-principled 3-tier ensemble learning system** optimized for small-to-medium panel data (N < 1000). It combines 6 diverse machine learning models with Super Learner meta-learning and distribution-free conformal prediction to forecast future criterion values.
 
 **Key Design Principles:**
-- **Model diversity over quantity**: 5 diverse models outperform 11+ correlated models
-- **Statistical appropriateness**: Optimized for N < 1000 (your dataset: N=819)
+- **Model diversity over quantity**: 6 diverse models outperform 11+ correlated models
+- **Statistical appropriateness**: Optimized for N < 1000 (your dataset: ~756 training rows)
 - **Automatic optimal weighting**: Super Learner learns best combination
 - **Guaranteed coverage**: Conformal prediction provides 95% valid intervals
 - **No redundancy**: Each model captures different patterns (tree, linear, panel, Bayesian)
 
 **Key Features:**
-- **6 Model Types**: CatBoost (joint multi-output) + LightGBM (leaf-wise), Bayesian linear, and advanced panel models
+- **6 Model Types**: CatBoost (joint multi-output) + LightGBM (leaf-wise), Bayesian linear, and kernel methods
 - **Super Learner**: Automatic optimal weighting via meta-learning (`PanelWalkForwardCV`)
 - **Conformal Prediction**: Distribution-free 95% prediction intervals
 - **Distributional Forecasting**: Full predictive distributions via quantile forests
-- **Panel Data Methods**: VAR with fixed effects
-- **Interpretable Non-Linearity**: Neural Additive Models with shape functions
 - **Enhanced Feature Engineering**: 12 feature blocks — lag, rolling, stationarity, EWMA, diversity, region dummies (Phase 1)
 - **Target Transformation**: Logit/Yeo-Johnson reversible transform for improved Gaussianity (Phase 5)
 - **HP Optimisation**: Optional Optuna one-time search for both GB models (Phase 4)
@@ -60,10 +58,12 @@ Base Model Training (DIVERSE MODEL TYPES)
   ├── Bayesian Linear (1 model)
   │   └── Bayesian Ridge (posterior uncertainty, PLS-compressed features)
   │
-  └── Advanced Panel Models (3 models)
-      ├── Quantile Random Forest (distributional forecasts)
-      ├── Panel VAR (LSDV fixed effects + autoregressive)
-      └── Neural Additive Models (interpretable non-linearity)
+  ├── Kernel Methods (2 models)
+  │   ├── Kernel Ridge Regression (RBF kernel, L2 regularised)
+  │   └── Support Vector Regression (ε-insensitive tube)
+  │
+  ├── Distributional (1 model)
+  │   └── Quantile Random Forest (distributional forecasts)
   ↓
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 TIER 2: SUPER LEARNER META-ENSEMBLE
@@ -104,11 +104,13 @@ Output: Predictions + Calibrated Intervals + Diagnostics
 
 The system uses a **single optimized configuration** designed for small-to-medium panel data (N < 1000):
 
-**Base Models (6):**
+**Base Models (6, always-on):**
 - CatBoost Gradient Boosting (oblivious trees, joint multi-output `MultiRMSE`)
 - LightGBM (leaf-wise growth, `MultiOutputRegressor`, complementary inductive bias)
 - Bayesian Ridge (linear with posterior uncertainty, PLS-compressed features)
-- Quantile RF + Panel VAR + NAM (panel-specific)
+- Quantile RF (distributional forecasts, QRF quantile intervals)
+- Kernel Ridge Regression (RBF kernel, L2 regularised)
+- Support Vector Regression (ε-insensitive tube, RBF kernel)
 
 **Meta-Ensemble:** Super Learner (`PanelWalkForwardCV` panel-aware CV, NNLS meta-weights)
 
@@ -120,7 +122,7 @@ The system uses a **single optimized configuration** designed for small-to-mediu
 
 **HP Optimisation:** One-time Optuna TPE search for both GB models when `auto_tune_gb=True` (Phase 4)
 
-**Rationale:** For N=882 (63 provinces × 14 year pairs, 2011–2024), 6 diverse models with Super Learner meta-learning provides optimal bias-variance tradeoff and model diversity.
+**Rationale:** For ~756 training rows (63 provinces × ~12 usable year pairs, 2011–2024 with missingness), 6 diverse models with Super Learner meta-learning and per-output weights provides optimal bias-variance tradeoff and model diversity.
 
 ---
 
@@ -136,7 +138,7 @@ The system uses a **single optimized configuration** designed for small-to-mediu
 **Key Parameters:**
 ```python
 n_estimators = 200        # Number of boosting stages
-max_depth = 5             # Tree depth: 32 leaves ≈ 24 samples/leaf at n=819
+max_depth = 5             # Tree depth: 32 leaves ≈ ~24 samples/leaf at n≈756
                           # (principled mid-point; tunable via ForecastConfig.gb_max_depth)
 loss = 'MultiRMSE'        # Joint multi-output loss exploiting cross-criterion correlations
 allow_writing_files = False  # No on-disk catboost_info/ directories
@@ -154,7 +156,7 @@ For small-to-medium panel data (N < 1000), training one shared tree model outper
 
 - **Cross-criterion coupling**: provinces that rank high on one criterion tend to rank high on related criteria; shared split points exploit this automatically
 - **Sample efficiency**: joint training uses all 8 output signals to guide each split, rather than fitting each criterion in isolation
-- **Low correlation with other ensemble members**: CatBoost + Panel models + Bayes covers tree, linear, and panel modelling families without redundancy
+- **Low correlation with other ensemble members**: CatBoost + Kernel methods + Bayes covers tree, linear, and kernel modelling families without redundancy
 
 ---
 
@@ -233,16 +235,40 @@ $$
 
 ---
 
-### 1.3 Advanced Panel Models
+### 1.3 Kernel Methods
 
-These state-of-the-art models are specifically designed for panel data.
+These models complement the tree-based and linear tracks with non-parametric kernel-based regression.
 
-**Why Advanced Panel Models?**
+#### Kernel Ridge Regression Forecaster
 
-For panel data (entities × time periods × components), these specialized models outperform generic ML:
-- **Panel VAR**: Captures entity heterogeneity + temporal autocorrelation
-- **Quantile RF**: Full predictive distributions, not just point estimates
-- **Neural Additive Models**: Interpretable non-linearity with visualizable shape functions
+**Algorithm:** Kernelized L2 regression via the RBF kernel
+**File:** `forecasting/kernel_ridge.py`
+**Key Parameters:**
+```python
+alpha = 1.0     # L2 regularisation strength (ForecastConfig.krr_alpha)
+gamma = 'scale' # RBF kernel bandwidth (ForecastConfig.krr_gamma)
+```
+
+**Notes:** Wrapped in `MultiOutputRegressor`; features are PLS-compressed (same track as Bayesian Ridge) before fitting to avoid the $O(n^3)$ Gram matrix when feature count is large.
+
+---
+
+#### SVR Forecaster
+
+**Algorithm:** Support Vector Regression with ε-insensitive loss and RBF kernel
+**File:** `forecasting/svr.py`
+**Key Parameters:**
+```python
+C       = 1.0   # Regularisation strength (ForecastConfig.svr_C)
+epsilon = 0.1   # ε-tube half-width (ForecastConfig.svr_epsilon)
+gamma   = 'scale' # RBF bandwidth (ForecastConfig.svr_gamma)
+```
+
+**Notes:** Wrapped in `MultiOutputRegressor`; uses the same PLS-compressed feature track as Bayesian Ridge and Kernel Ridge. SVR provides an ε-insensitive margin that ignores small residuals, adding complementary robustness to the ensemble.
+
+---
+
+### 1.3 Distributional Models
 
 #### Quantile Random Forest Forecaster
 
@@ -296,138 +322,6 @@ quantiles = [0.025, 0.5, 0.975]  # Default quantiles
 
 ---
 
-#### Panel VAR Forecaster
-
-**Algorithm:** Panel Vector Autoregression with fixed effects (LSDV)  
-**Library:** Custom implementation on `sklearn.linear_model.Ridge/ElasticNet`
-
-**Description:**  
-Combines panel fixed effects (entity-specific intercepts) with vector autoregressive dynamics. Captures both entity heterogeneity and temporal dependencies.
-
-**Model:**
-$$
-y_{it} = \alpha_i + \sum_{l=1}^p \mathbf{B}_l y_{i,t-l} + \epsilon_{it}
-$$
-
-Where:
-- $y_{it}$ = vector of components for entity $i$ at time $t$
-- $\alpha_i$ = entity fixed effect (LSDV dummy variables)
-- $\mathbf{B}_l$ = lag-$l$ coefficient matrix (cross-component dynamics)
-- $p$ = number of lags (selected via BIC/AIC)
-
-**Fixed Effects (LSDV):**
-Entity dummies are added to feature matrix:
-$$
-X_{it} = [\mathbf{D}_i, y_{i,t-1}, y_{i,t-2}, \ldots, y_{i,t-p}]
-$$
-
-Where $\mathbf{D}_i$ is a one-hot encoded entity indicator.
-
-**Regularization:**  
-Ridge or ElasticNet regularization prevents overfitting due to high dimensionality:
-$$
-\min_{\alpha, \mathbf{B}} \sum_{i,t} ||y_{it} - \alpha_i - \sum_l \mathbf{B}_l y_{i,t-l}||^2 + \lambda ||\mathbf{B}||_2^2
-$$
-
-**Lag Selection:**  
-Optimal lag order (1–3) is selected using hold-out CV MSE (`pvar_lag_selection_method = "cv"`). Classic penalised-likelihood information criteria (BIC, AIC) are not valid under Ridge regularisation because the effective degrees-of-freedom `tr(X(X'X+λI)⁻¹X') ≪ raw parameter count`.
-
-$$
-\text{CV-MSE}(p) = \frac{1}{|\text{val}|} \sum_{(i,t) \in \text{val}} ||y_{it} - \hat{y}_{it}^{(p)}||^2
-$$
-
-**Advantages:**
-- Captures entity heterogeneity (fixed effects)
-- Models cross-component dynamics (VAR)
-- Data-driven lag selection via CV
-- Regularization handles high dimensionality
-- Interpretable coefficients
-
-**Key Parameters:**
-```python
-n_lags = 2                # Lag order (or 'auto' for CV selection)
-alpha = 1.0               # Regularization strength
-l1_ratio = 0.0            # ElasticNet mixing (0=Ridge, 1=Lasso)
-use_fixed_effects = True  # Include entity dummies
-lag_selection_method = 'cv'  # Hold-out CV MSE (only valid method under Ridge)
-```
-
----
-
-#### Neural Additive Model Forecaster
-
-**Algorithm:** Neural Additive Models via Random Kitchen Sinks  
-**Paper:** Agarwal et al. (2021), "Neural Additive Models"
-
-**Description:**  
-Learns **interpretable non-linear** relationships while maintaining additive structure. Each feature gets its own neural network (shape function), and predictions are additive:
-
-$$
-\hat{y} = \beta_0 + \sum_{j=1}^p f_j(x_j)
-$$
-
-Where $f_j$ is a neural network for feature $j$ only.
-
-**Architecture:**
-1. **Feature Networks**: Separate network per feature
-2. **Random Kitchen Sinks (RKS)**: Random Fourier Features for approximation
-3. **Backfitting Algorithm**: Cyclic coordinate descent for training
-
-**Random Fourier Features (RKS):**
-Approximates kernel methods using random projections:
-$$
-\phi(x) = \sqrt{\frac{2}{M}} \cos(\omega_1 x + b_1, \ldots, \omega_M x + b_M)
-$$
-
-Where $\omega_i \sim \mathcal{N}(0, \sigma^2)$, $b_i \sim \text{Uniform}(0, 2\pi)$.
-
-**Backfitting Algorithm:**
-```
-Initialize: f_j(x) = 0 for all j
-Repeat until convergence:
-  For j = 1 to p:
-    r = y - Σ_{k≠j} f_k(x_k)     # Partial residuals
-    f_j ← Train(x_j, r)           # Fit f_j to residuals
-```
-
-**Shape Function Extraction:**
-After training, each $f_j(x_j)$ can be visualized as an interpretable curve showing the feature's effect.
-
-**Extended Model (NAM² with pairwise interactions):**
-
-When `include_interactions=True`, optional pairwise shape functions are fitted
-on the top-$K$ most important features:
-
-$$
-\hat{y} = \beta_0 + \sum_{j=1}^p f_j(x_j) + \sum_{j < k}^K g_{jk}(x_j, x_k)
-$$
-
-Each $g_{jk}$ is a separate `_PairwiseFeatureNetwork` mapping $(x_j, x_k)$ through
-a 2D Random Fourier basis + Ridge regression onto the additive residual.
-
-**Advantages:**
-- Interpretable: Each feature's effect is visualized
-- Non-linear: Learns complex shape functions per feature
-- Optional interactions: NAM² captures pairwise effects without losing interpretability
-- Suitable for small data: RKS reduces parameters
-- No optimization difficulties: Backfitting is stable
-
-**Key Parameters:**
-```python
-n_basis_per_feature = 50    # RKS basis functions
-n_iterations = 10           # Backfitting iterations
-learning_rate = 0.8         # Step size damping
-include_interactions = False # Enable NAM² pairwise g_{jk} terms
-max_interaction_features = 5 # Top-K features for pairwise terms
-```
-
-**Methods:**
-- `predict()`: Standard predictions
-- `get_shape_functions(feature_names)`: Extract $f_j$ for visualization
-- `get_feature_contributions(X)`: Individual feature effects per sample
-
----
-
 ## Part II: Meta-Ensemble Methods
 
 ### 2.1 Super Learner (Stacked Generalization)
@@ -474,11 +368,16 @@ Final prediction: ŷ = Σ α_i × ŷ_i
    $$
    \min_\alpha ||y - Z\alpha||^2 + \lambda_1 ||\alpha||_1 + \lambda_2 ||\alpha||^2
    $$
-   
-3. **Bayesian Stacking**
-   $$
-   \alpha \sim \text{Dirichlet}(\mathbf{1})
-   $$
+
+3. **Dirichlet Stacking** (`dirichlet_stacking`)
+   Optimizes the Dirichlet negative log-likelihood over logit-parameterized weights
+   using analytical gradients ($\partial\text{NLL}/\partial\text{logit}_j = n w_j - \sum_n r_{nj}$).
+   Per-output weights (`_meta_weights_per_output_`) are stored so each criterion gets
+   its own optimal combination. Entity-block bootstrap provides UQ on those weights.
+
+4. **Bayesian Stacking** (`bayesian_stacking`)
+   Softmax-of-R² temperature-scaled weighting; simpler than full Dirichlet posterior but
+   fast and useful as a baseline.
 
 **Advantages:**
 - Optimal weights (oracle inequality guarantees)
@@ -489,7 +388,7 @@ Final prediction: ŷ = Σ α_i × ŷ_i
 **Cross-Validation Strategy:**
 Uses `PanelWalkForwardCV` (public alias of `_WalkForwardYearlySplit`) — a panel-aware
 walk-forward splitter that creates annual validation folds in sorted year order.
-`min_train_years` (default 7) ensures every fold has a minimum number of training
+`min_train_years` (default 8) ensures every fold has a minimum number of training
 years before validation; `max_folds` (default 5) caps the total number of folds to
 prevent excessive runtime on long panels.  Each entity contributes its rows for each
 year-fold independently; entities absent from a fold's validation year simply
@@ -508,11 +407,8 @@ List[List[float]]]`).  Stage 6 exposes these as `per_criterion_rmse_mean` and
 
 **Key Parameters:**
 ```python
-meta_learner_type = 'ridge'     # 'ridge', 'elasticnet', 'bayesian_stacking'
-                                # Note: 'bayesian_stacking' is a softmax-of-R²
-                                # weighting scheme (temperature-scaled); it is
-                                # NOT a full Dirichlet posterior (Yao et al.,
-                                # 2018).  The name is kept for backward compat.
+meta_learner_type = 'ridge'     # 'ridge', 'elasticnet', 'dirichlet_stacking',
+                                # 'bayesian_stacking'
 n_cv_folds = 5                  # OOF folds
 positive_weights = True         # α ≥ 0 constraint
 normalize_weights = True        # Σα = 1 constraint
@@ -729,7 +625,7 @@ After feature engineering, two separate tracks feed model classes differently:
 | Track | Reducer | Models | Notes |
 | :--- | :--- | :--- | :--- |
 | **PLS** (`reducer_pca_`) | `PLSRegression(n_components=20)` with MI pre-filter | BayesianRidge | Supervised compression maximises covariance with all 8 criterion targets simultaneously; `n_components = min(n//10, 20)` |
-| **Threshold-only** (`reducer_tree_`) | Variance threshold filter (no scaling) | CatBoost, LightGBM, QuantileRF, PanelVAR, NAM | Preserves original feature structure; StandardScaler removed — CatBoost is scale-invariant and QRF applies its own RobustScaler |
+| **Threshold-only** (`reducer_tree_`) | Variance threshold filter (no scaling) | CatBoost, LightGBM, QuantileRF | Preserves original feature structure; StandardScaler removed — CatBoost is scale-invariant and QRF applies its own RobustScaler |
 
 #### Example Generated Features (8-criterion dataset)
 
@@ -848,15 +744,14 @@ pip install -e .[forecasting]
 ### 6.1 State-of-the-Art Advantages
 
 1. **Multi-Tier Architecture**
-   - 6 diverse base models capturing different patterns (tree ×2, linear, panel ×3)
+   - 6 diverse base models capturing different patterns (tree ×2, kernel ×2, linear ×1, distributional ×1)
    - Super Learner meta-learning with automatic optimal weighting
    - Distribution-free calibrated uncertainty (conformal prediction)
    - Full 3-tier pipeline optimized for small-to-medium panel data (N < 1000)
 
-2. **Advanced Panel Data Methods**
-   - **Panel VAR**: Fixed effects + cross-component dynamics
+2. **Distributional & Kernel Methods**
    - **Quantile RF**: Full distributional forecasts (not just point estimates)
-   - **Neural Additive Models**: Interpretable non-linearity with shape functions
+   - **Kernel Ridge / SVR**: Non-parametric kernel regression complementing linear track
 
 3. **Optimal Ensemble Learning**
    - **Super Learner**: Walk-forward meta-learning (`PanelWalkForwardCV`, panel-aware)
@@ -885,7 +780,6 @@ pip install -e .[forecasting]
 
 7. **Interpretability**
    - Feature importance (aggregated across models)
-   - Neural Additive Models (visualizable shape functions)
    - Meta-weights show model contributions
 
 ### 6.2 Limitations
@@ -897,9 +791,8 @@ pip install -e .[forecasting]
    - For large-scale production (N > 10,000), consider simplified configurations
 
 2. **Data Requirements**
-   - Panel VAR requires ≥3-4 time periods for lag estimation
    - Conformal calibration needs ≥30 calibration samples (guideline)
-   - For N < 1000: 5 diverse models optimal (confirmed by statistical theory)
+   - For N < 1000: 6 diverse models (tree×2, kernel×2, linear, distributional) is optimal (confirmed by statistical theory)
 
 3. **Optional Dependency Requirements**
    - **Mapie** optional for alternative conformal implementation
@@ -920,23 +813,26 @@ pip install -e .[forecasting]
    - Super Learner needs ≥3 base models for meaningful weights
    - Model diversity more important than quantity (5-6 diverse > 11+ correlated)
    - Very high correlation between base models reduces ensemble gains
-   - For N=819: Removed RF/ET to reduce redundancy with CatBoost GB
+   - For N≈756: 6 diverse models (tree×2, kernel×2, linear, distributional) without redundancy
 
 ### 6.3 Current Capabilities vs. Future Enhancements
 
 #### ✅ Currently Implemented
 
-- ✅ Panel VAR with fixed effects and lag selection
 - ✅ Quantile Random Forest (distributional forecasts)
-- ✅ Neural Additive Models (interpretable non-linearity)
-- ✅ Super Learner (stacked generalization, `PanelWalkForwardCV`)
-- ✅ Conformal Prediction (split, CV+, adaptive; OOF residuals, no model re-fit)
+- ✅ Kernel Ridge Regression (RBF kernel, L2 regularised)
+- ✅ Support Vector Regression (ε-insensitive tube, RBF kernel)
+- ✅ Super Learner (stacked generalization, `PanelWalkForwardCV`, per-output meta-weights `_meta_weights_per_output_`)
+- ✅ Conformal Prediction (split, CV+, adaptive; OOF residuals, per-column masks `_oof_valid_mask_per_col_`)
 - ✅ Comprehensive evaluation suite (7 metrics, per-criterion RMSE tracking)
 - ✅ **Phase 1**: 12-block temporal & panel feature engineering (D-01/02/03 fixes, G-01–G-08 new features)
 - ✅ **Phase 2**: PLS-supervised compression for linear models, threshold-only track for trees
 - ✅ **Phase 3**: LightGBM as independent ensemble member alongside CatBoost
 - ✅ **Phase 4**: Per-criterion RMSE CV tracking; optional Optuna one-time HP search for both GB models
 - ✅ **Phase 5**: Reversible target transformation (logit/Yeo-Johnson); inverse-transform of all pipeline outputs
+- ✅ **Phase I (correctness)**: F-01 per-column OOF masks; F-02 per-output meta-weights + `_get_weight()`; F-03 entity-block bootstrap; F-04 analytical Dirichlet gradient; F-05 `cv_min_train_years=8`; F-06 PCA Bonferroni + QRF lower-q floor; F-07 conformal n_cal warning
+- ✅ **ML panel imputation**: `build_ml_panel_data()` supplies a 3-stage imputed copy to the forecaster; MCDM phases remain on raw observed data
+- ✅ **Province fallback**: provinces absent from last-year active set fall back to most-recent valid year for prediction
 
 #### 🔄 Planned Future Enhancements
    - Temporal Convolutional Networks (TCN)

@@ -265,21 +265,6 @@ class ForecastConfig:
         trade-off.  ``n_estimators=200`` aligns the ensemble build with
         the standalone class default (previously hardcoded to 100 in
         ``_create_models``).
-
-    nam_n_basis / nam_n_iterations
-        NeuralAdditiveForecaster Random Fourier Feature (RFF) basis count
-        and backfitting iterations.  With 60 PCA components in the reduced
-        space, a basis of 10 yields only 20 effective parameters per shape
-        function; 30 gives 60 effective parameters (parity with the PCA
-        dimensionality) while remaining computationally fast.
-
-    pvar_lag_selection_method
-        PanelVARForecaster lag-order selection.  The only valid value is
-        ``"cv"`` (hold-out CV MSE).  Passing ``"bic"`` or ``"aic"`` raises
-        a ``DeprecationWarning`` inside ``PanelVARForecaster`` and maps
-        silently to ``"cv"``; classic penalised-likelihood criteria are
-        invalid under Ridge regularisation because the effective
-        degrees-of-freedom ``tr(X(X'X+λI)⁻¹X') ≪ raw parameter count``.
     """
     enabled: bool = True
     target_year: Optional[int] = None  # Auto-set to latest_year + 1
@@ -523,25 +508,6 @@ class ForecastConfig:
     'subcriteria' — predict all 29 raw sub-criterion values (SC11–SC83).
     """
 
-    # ── NeuralAdditiveModel hyperparameters ──────────────────────────────
-    nam_n_basis: int = 30
-    """RFF basis functions per shape function (30 → 60 effective params)."""
-    nam_n_iterations: int = 10
-    """Backfitting passes; 5 is insufficient for 60 threshold-only features."""
-    nam_skip_pca: bool = True
-    """Documentation flag: NAM operates on threshold-only features (no PCA).
-
-    This is enforced structurally in ``UnifiedForecaster`` Stage 2b where
-    NAM is assigned to the ``reducer_tree_`` (threshold-only) track.
-    Setting ``True`` here records that decision explicitly so configuration
-    reviews are auditable.  There is no runtime enforcement in NAM itself;
-    the routing is handled in ``unified.py``.
-    """
-
-    # ── PanelVAR lag selection ────────────────────────────────────────────
-    pvar_lag_selection_method: str = "cv"
-    """Hold-out CV MSE lag selection. Only valid method for Ridge-regularised VAR."""
-
     # ── SAW target normalization & true holdout ───────────────────────────
     use_saw_targets: bool = True
     """Predict per-year SAW-normalized [0,1] criteria scores instead of raw
@@ -700,22 +666,6 @@ class ForecastConfig:
     """
 
     # ── Model toggles (T-02) ─────────────────────────────────────────────
-    use_nam: bool = False
-    """Enable NeuralAdditiveForecaster in the ensemble (T-02).
-
-    NAM is computationally expensive (O(n × p × basis × iter) per
-    backfitting pass).  Default False keeps the ensemble fast; set True
-    for runs where interpretable RFF shape functions are desired.
-    """
-
-    use_panel_var: bool = False
-    """Enable PanelVARForecaster in the ensemble (T-02).
-
-    PanelVAR requires ≥ n_lags + 2 training years per entity and is
-    expensive for large p (O(n³) Ridge solve per lag order).  Default
-    False keeps the ensemble lean; set True when autoregressive dynamics
-    are suspected to be a key signal driver.
-    """
 
     # ── Kernel Ridge Regression hyperparameters (T-03a) ──────────────────
     krr_alpha: float = 1.0
@@ -778,14 +728,13 @@ class RankingConfig:
     Hierarchical ranking configuration.
 
     use_evidential_reasoning
-        When True, the ranking pipeline uses the full two-stage Evidential
-        Reasoning aggregation (Yang & Xu, 2002) with belief distributions
-        and utility intervals.  When False, ER is skipped entirely — the
-        pipeline runs the 5 MCDM methods per criterion and stores their
-        scores/ranks, but does not aggregate them into a single composite.
-        No fallback aggregation is applied; the 5 MCDM methods (TOPSIS,
-        VIKOR, PROMETHEE, COPRAS, EDAS) and Base remain as separate
-        independent outputs in criterion_method_scores.
+        **Disabled by default** (= False).  When True, the ranking pipeline
+        uses the full two-stage Evidential Reasoning aggregation (Yang & Xu,
+        2002) with belief distributions and utility intervals.  When False
+        (current default), ER is skipped entirely — the pipeline runs the
+        6 MCDM methods per criterion (TOPSIS, VIKOR, PROMETHEE II, COPRAS,
+        EDAS, SAW) and stores their scores/ranks as separate independent
+        outputs in criterion_method_scores.  No ER fusion is applied.
 
     run_all_years
         When True, the ranking pipeline is executed for every year in the
@@ -802,7 +751,7 @@ class RankingConfig:
         (mean_rank, std_rank, prob_top1, prob_topK) are carried through
         the details dict so CSV writers can persist them.
     """
-    use_evidential_reasoning: bool = True
+    use_evidential_reasoning: bool = False
     run_all_years: bool = True
     max_parallel_years: Optional[int] = None   # None → auto (cpu_count)
     expose_mc_province_stats: bool = True

@@ -61,9 +61,7 @@ from .kernel_ridge import KernelRidgeForecaster
 from .svr import SVRForecaster
 
 # State-of-the-art advanced models
-from .panel_var import PanelVARForecaster
 from .quantile_forest import QuantileRandomForestForecaster
-from .neural_additive import NeuralAdditiveForecaster
 from .super_learner import SuperLearner, _WalkForwardYearlySplit as PanelWalkForwardCV
 from .conformal import ConformalPredictor
 from .preprocessing import PanelFeatureReducer
@@ -368,32 +366,8 @@ def _get_per_output_importance(
         imp[:length, col] = np.abs(raw[:length])
 
     # ------------------------------------------------------------------
-    # 1. NeuralAdditiveForecaster — stores (n_outputs, n_features) matrix
-    # ------------------------------------------------------------------
-    if (
-        hasattr(model, "_per_output_importance_")
-        and model._per_output_importance_ is not None
-    ):
-        poi = np.asarray(model._per_output_importance_)
-        if poi.ndim == 2 and poi.shape == (n_outputs, n_features):
-            return _normalise(poi.T)  # (n_features, n_outputs)
-
-    # ------------------------------------------------------------------
-    # 2. PanelVARForecaster — models_[col] is a Ridge on lagged features
-    # ------------------------------------------------------------------
-    if hasattr(model, "models_") and hasattr(model, "_n_base_features"):
-        n_base = int(model._n_base_features)
-        for col in range(n_outputs):
-            try:
-                coef = model.models_[col].coef_
-                _safe_vec(coef[:n_base], col)
-            except Exception:
-                pass
-        return _normalise(imp)
-
-    # ------------------------------------------------------------------
-    # 3. MultiOutputRegressor wrapper (BayesianForecaster)
-    #    model.model.estimators_[col]  (CatBoostForecaster uses path 4)
+    # 1. MultiOutputRegressor wrapper (BayesianForecaster)
+    #    model.model.estimators_[col]  (CatBoostForecaster uses path 2 fallback)
     # ------------------------------------------------------------------
     inner = getattr(model, "model", None)
     if inner is not None and hasattr(inner, "estimators_"):
@@ -409,7 +383,7 @@ def _get_per_output_importance(
         return _normalise(imp)
 
     # ------------------------------------------------------------------
-    # 4. Fallback: broadcast global importance across all outputs
+    # 2. Fallback: broadcast global importance across all outputs
     # ------------------------------------------------------------------
     try:
         global_imp = np.abs(np.asarray(model.get_feature_importance(), dtype=float))
@@ -700,7 +674,7 @@ class UnifiedForecaster:
         self.verbose = verbose
         self.target_level = target_level
         # ForecastConfig instance for model-level hyperparameters (gb_max_depth,
-        # gb_n_estimators, nam_n_basis, nam_n_iterations, pvar_lag_selection_method).
+        # gb_n_estimators).
         # When None, _create_models() falls back to hardened production defaults.
         self._config: Optional[ForecastConfig] = config
 
@@ -935,25 +909,16 @@ class UnifiedForecaster:
             LightGBM         : max_depth=5, n_estimators=200 — same scale as
                                CatBoost; leaf-wise growth provides complementary
                                inductive bias as independent ensemble member
-            NAM              : n_basis=30 (60 effective params ≈ PLS dims),
-                               n_iterations=10 (sufficient backfitting)
-            PanelVAR         : lag_selection_method='cv' (hold-out MSE;
-                               only correct method for Ridge-regularised VAR)
         """
         # Resolve hyperparameters: config takes priority, else use defaults
         cfg = self._config
         gb_n_est    = cfg.gb_n_estimators           if cfg is not None else 200
         gb_depth    = cfg.gb_max_depth              if cfg is not None else 5
-        nam_n_basis = cfg.nam_n_basis               if cfg is not None else 30
-        nam_n_iter  = cfg.nam_n_iterations          if cfg is not None else 10
-        pvar_method = cfg.pvar_lag_selection_method if cfg is not None else "cv"
         krr_alpha   = getattr(cfg, 'krr_alpha',   1.0)   if cfg is not None else 1.0
         krr_gamma   = getattr(cfg, 'krr_gamma',   "scale") if cfg is not None else "scale"
         svr_C       = getattr(cfg, 'svr_C',       1.0)   if cfg is not None else 1.0
         svr_eps     = getattr(cfg, 'svr_epsilon',  0.1)   if cfg is not None else 0.1
         svr_gamma   = getattr(cfg, 'svr_gamma',   "scale") if cfg is not None else "scale"
-        use_pvar    = getattr(cfg, 'use_panel_var', False) if cfg is not None else False
-        use_nam     = getattr(cfg, 'use_nam',      False) if cfg is not None else False
 
         models = {}
 
@@ -992,19 +957,6 @@ class UnifiedForecaster:
         models['QuantileRF'] = QuantileRandomForestForecaster(
             n_estimators=100, random_state=self.random_state
         )
-
-        # --- Optional models (T-02 toggles) -------------------------------
-        if use_pvar:
-            models['PanelVAR'] = PanelVARForecaster(
-                n_lags=1, alpha=0.5, use_fixed_effects=True,
-                lag_selection_method=pvar_method,
-                random_state=self.random_state
-            )
-        if use_nam:
-            models['NAM'] = NeuralAdditiveForecaster(
-                n_basis_per_feature=nam_n_basis, n_iterations=nam_n_iter,
-                random_state=self.random_state
-            )
 
         return models
 
@@ -1274,21 +1226,8 @@ class UnifiedForecaster:
             if 'year_label' in entity_info.columns else None
         )
 
-        # Compute prediction entity indices (for PanelVAR fixed effects).
+        # Compute prediction entity indices for panel-aware models.
         _ent_to_idx = {e: i for i, e in enumerate(panel_data.provinces)}
-        if _ent_to_idx:
-            _missing = [e for e in X_pred.index if e not in _ent_to_idx]
-            if _missing:
-                warnings.warn(
-                    f"UnifiedForecaster: {len(_missing)} prediction province(s)"
-                    f" are absent from the training entity map and will use the"
-                    f" reference entity's fixed effects in PanelVARForecaster."
-                    f"  Affected: {_missing[:5]}"
-                    f"{'...' if len(_missing) > 5 else ''}."
-                    " Verify TemporalFeatureEngineer exclusion logic.",
-                    RuntimeWarning,
-                    stacklevel=2,
-                )
         self._pred_entity_indices_ = (
             np.array([_ent_to_idx.get(e, 0) for e in X_pred.index], dtype=int)
             if _ent_to_idx else None
@@ -1310,11 +1249,10 @@ class UnifiedForecaster:
 
         * **Threshold-only track** (``reducer_tree_``) — removes near-zero-
           variance features only, no scaling, no compression.  Used by all
-          non-linear models (CatBoost, QRF, PanelVAR, NAM); preserves the
-          original feature structure so tree splits and NAM shape functions
-          capture the real interactions.  StandardScaler removed to prevent
-          double-scaling with QRF's internal RobustScaler and CatBoost's
-          scale-invariant trees.
+          non-linear models (CatBoost, QRF); preserves the
+          original feature structure so tree splits capture the real interactions.
+          StandardScaler removed to prevent double-scaling with QRF's internal
+          RobustScaler and CatBoost's scale-invariant trees.
 
         Pre-requisite: :meth:`stage1_engineer_features` must have been called.
 
@@ -1412,7 +1350,7 @@ class UnifiedForecaster:
 
         # Per-model routing: PCA track (linear/kernel) → PLS; tree track → threshold.
         # PCA track: BayesianRidge, KernelRidge, SVR (smooth/kernel methods)
-        # Tree track: CatBoost, LightGBM, QuantileRF, [PanelVAR], [NAM]
+        # Tree track: CatBoost, LightGBM, QuantileRF
         self._per_model_X_train_ = {
             'BayesianRidge':    self.X_train_pca_,
             'KernelRidge':      self.X_train_pca_,
@@ -1429,14 +1367,6 @@ class UnifiedForecaster:
             'LightGBM':         self.X_pred_tree_,
             'QuantileRF':       self.X_pred_tree_,
         }
-        # Conditionally add optional models (T-02)
-        if getattr(self._config, 'use_panel_var', False):
-            self._per_model_X_train_['PanelVAR'] = self.X_train_tree_
-            self._per_model_X_pred_['PanelVAR']  = self.X_pred_tree_
-        if getattr(self._config, 'use_nam', False):
-            self._per_model_X_train_['NAM'] = self.X_train_tree_
-            self._per_model_X_pred_['NAM']  = self.X_pred_tree_
-
         logger.info(
             f"  PLS track:      {self.reducer_pca_.get_summary()}"
         )
@@ -1545,16 +1475,12 @@ class UnifiedForecaster:
         self._per_model_X_train_['CatBoost'] = self.X_train_tree_
         self._per_model_X_train_['LightGBM']         = self.X_train_tree_
         self._per_model_X_train_['QuantileRF']        = self.X_train_tree_
-        # Update optional tree-track models only when they exist (T-02)
-        for _opt in ('PanelVAR', 'NAM'):
-            if _opt in self._per_model_X_train_:
-                self._per_model_X_train_[_opt] = self.X_train_tree_
 
     def stage3_fit_base_models(self) -> None:
         """Stage 3: Create base models and train the Super Learner ensemble.
 
         Creates the six base forecasters (CatBoost, LightGBM, BayesianRidge,
-        QuantileRF, PanelVAR, NAM) and delegates training to
+        KernelRidge, SVR, QuantileRF) and delegates training to
         ``SuperLearner.fit()``, which
         executes three sub-steps atomically:
 
@@ -1753,8 +1679,6 @@ class UnifiedForecaster:
           rounds at ``lr × 0.5``).
         * **LightGBM** — warm-start via ``warm_start=True`` and
           ``n_estimators += increment``.
-        * **PanelVAR (Ridge)** — Recursive Least Squares update with
-          forgetting factor λ (default 0.95) — tracks structural shifts.
         * **All other models** — full retrain on ``X_all / y_all`` (or
           ``X_new / y_new`` if historical data is not supplied).
 

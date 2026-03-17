@@ -12,7 +12,7 @@ LeaveOneEntityOutCV
     Leave-one-entity-out cross-validation for measuring cross-entity
     generalisability of the Super Learner ensemble.  Identifies provinces
     that are consistently hard to predict (potential outliers / atypical
-    provinces) and validates PanelVAR fixed-effect design choices.
+    provinces).
 
 Usage Example
 -------------
@@ -52,7 +52,7 @@ class LeaveOneEntityOutCV:
     * ``LOEO_R² ≈ CV_R²``  → good generalisation; model learns
       cross-provincial structure rather than memorising entity FE.
     * ``LOEO_R² << CV_R²`` → entity-specific overfitting; consider
-      weaker fixed-effect regularisation in PanelVAR.
+      weaker fixed-effect regularisation.
     * Per-entity R² map     → identifies outlier / structurally atypical
       provinces that warrant individual treatment.
 
@@ -308,7 +308,7 @@ class LeaveOneEntityOutCV:
 
         A mean LOEO R² below -0.10 indicates systematic entity-specific
         overfitting that warrants architectural changes (e.g. weaker
-        fixed effects in PanelVAR, or smaller entity embedding dims).
+        fixed effects, or smaller entity embedding dims).
         """
         if self.summary_ is None:
             raise RuntimeError("Call run() before generalization_flag().")

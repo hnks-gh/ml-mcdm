@@ -16,10 +16,9 @@ LINEAR TRACK — mode='pls'
 
 TREE TRACK — mode='threshold_only'
     VarianceThreshold(0.005) → raw features (no scaling, no compression).
-    Tree-based models (CatBoost, QRF, NAM) are scale-invariant.  StandardScaler
+    Tree-based models (CatBoost, QRF) are scale-invariant.  StandardScaler
     has been removed to prevent double-scaling with models that apply their own
-    internal scaling (QRF: RobustScaler; PanelVAR: per-column StandardScaler;
-    CatBoost: scale-invariant by design).
+    internal scaling (QRF: RobustScaler; CatBoost: scale-invariant by design).
 
 LEGACY — mode='pca'
     VarianceThreshold → StandardScaler → PCA.
@@ -89,7 +88,7 @@ class PanelFeatureReducer:
         Reduction mode.
         ``'pls'``: Supervised PLS compression — use for linear models.
         ``'threshold_only'``: Variance filter only, no scaling/compression —
-            use for tree-based models (CatBoost, QRF, NAM, PanelVAR).
+            use for tree-based models (CatBoost, QRF).
         ``'pca'``: Legacy PCA compression — retained for backward compatibility.
     """
 
@@ -210,7 +209,7 @@ class PanelFeatureReducer:
             # No scaling, no compression.  Trees are scale-invariant; adding
             # StandardScaler here caused double-scaling with QRF's RobustScaler
             # (destroying its robust statistics) and was pure overhead for
-            # scale-invariant CatBoost and PanelVAR (which scales per-column).
+            # scale-invariant CatBoost.
             self._scaler = None
             self._pls = None
             self._pca = None

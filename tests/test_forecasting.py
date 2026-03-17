@@ -482,113 +482,6 @@ class TestQuantileRandomForest:
         assert len(imp) == X.shape[1]
 
 
-class TestPanelVAR:
-    def test_fit_predict_with_entities(self, small_dataset, entity_indices):
-        from forecasting.panel_var import PanelVARForecaster
-
-        X, y = small_dataset
-        model = PanelVARForecaster(n_lags=1, use_fixed_effects=True, random_state=42)
-        model.fit(X, y, entity_indices=entity_indices)
-        pred = model.predict(X, entity_indices=entity_indices)
-        assert pred.shape == y.shape
-
-    def test_predict_without_entities(self, small_dataset, entity_indices):
-        from forecasting.panel_var import PanelVARForecaster
-
-        X, y = small_dataset
-        model = PanelVARForecaster(n_lags=1, use_fixed_effects=True, random_state=42)
-        model.fit(X, y, entity_indices=entity_indices)
-        # predict without entities: population-level (reference entity)
-        pred = model.predict(X)
-        assert pred.shape == y.shape
-
-    def test_lag_matrix_shape(self):
-        from forecasting.panel_var import PanelVARForecaster
-
-        X = np.random.randn(20, 4)
-        lag2 = PanelVARForecaster._build_lag_matrix(X, 2)
-        assert lag2.shape == (18, 12)  # (20-2, 4*(1+2))
-
-    def test_lag_matrix_values(self):
-        from forecasting.panel_var import PanelVARForecaster
-
-        X = np.arange(15, dtype=float).reshape(5, 3)
-        lag1 = PanelVARForecaster._build_lag_matrix(X, 1)
-        # Row 0: [X[1], X[0]]
-        np.testing.assert_array_equal(lag1[0, :3], X[1])
-        np.testing.assert_array_equal(lag1[0, 3:], X[0])
-
-    def test_lag_selection_bic(self, small_dataset):
-        from forecasting.panel_var import PanelVARForecaster
-
-        X, y = small_dataset
-        model = PanelVARForecaster(lag_selection="bic", max_lags=3, random_state=42)
-        model.fit(X, y)
-        assert model.selected_lags_ in (1, 2, 3)
-
-    def test_feature_importance_size(self, small_dataset, entity_indices):
-        from forecasting.panel_var import PanelVARForecaster
-
-        X, y = small_dataset
-        model = PanelVARForecaster(use_fixed_effects=True, random_state=42)
-        model.fit(X, y, entity_indices=entity_indices)
-        imp = model.get_feature_importance()
-        assert len(imp) == X.shape[1]  # trimmed to original features
-
-
-class TestNeuralAdditive:
-    def test_fit_predict(self, small_dataset):
-        from forecasting.neural_additive import NeuralAdditiveForecaster
-
-        X, y = small_dataset
-        model = NeuralAdditiveForecaster(
-            n_basis_per_feature=10, n_iterations=3, random_state=42
-        )
-        model.fit(X, y)
-        pred = model.predict(X)
-        assert pred.shape == y.shape
-
-    def test_multi_output_shape(self, small_dataset):
-        """NAM handles multi-output targets with correct prediction shape."""
-        from forecasting.neural_additive import NeuralAdditiveForecaster
-
-        X, y = small_dataset
-        assert y.ndim == 2 and y.shape[1] > 1, "fixture must be multi-output"
-        model = NeuralAdditiveForecaster(
-            n_basis_per_feature=8, n_iterations=2, random_state=42
-        )
-        model.fit(X, y)
-        pred = model.predict(X)
-        assert pred.shape == y.shape
-
-    def test_get_shape_functions_returns_dict(self, small_dataset):
-        """get_shape_functions() returns one array per input feature."""
-        from forecasting.neural_additive import NeuralAdditiveForecaster
-
-        X, y = small_dataset
-        model = NeuralAdditiveForecaster(
-            n_basis_per_feature=8, n_iterations=2, random_state=42
-        )
-        model.fit(X, y)
-        shapes = model.get_shape_functions(X)
-        assert len(shapes) == X.shape[1]
-        for j, arr in shapes.items():
-            assert arr.shape == (X.shape[0],), f"shape function {j} bad shape"
-
-    def test_feature_importance_non_negative_and_length(self, small_dataset):
-        """NAM feature importances are non-negative and have length n_features."""
-        from forecasting.neural_additive import NeuralAdditiveForecaster
-
-        X, y = small_dataset
-        model = NeuralAdditiveForecaster(
-            n_basis_per_feature=8, n_iterations=2, random_state=42
-        )
-        model.fit(X, y)
-        imp = model.get_feature_importance()
-        assert len(imp) == X.shape[1]
-        assert np.all(imp >= 0)
-
-
 # ---------------------------------------------------------------------------
 # Super Learner
 # ---------------------------------------------------------------------------
@@ -655,25 +548,6 @@ class TestSuperLearner:
             random_state=42, verbose=False,
         )
         sl.fit(X, y)
-        pred = sl.predict(X)
-        assert pred.shape == y.shape
-
-    def test_entity_indices_forwarded(self, small_dataset, entity_indices):
-        from forecasting.super_learner import SuperLearner
-        from forecasting.panel_var import PanelVARForecaster
-        from forecasting.bayesian import BayesianForecaster
-
-        X, y = small_dataset
-        models = {
-            "pvar": PanelVARForecaster(n_lags=1, random_state=42),
-            "bay": BayesianForecaster(),
-        }
-        sl = SuperLearner(
-            base_models=models, n_cv_folds=3,
-            random_state=42, verbose=False,
-        )
-        # Should not raise
-        sl.fit(X, y, entity_indices=entity_indices)
         pred = sl.predict(X)
         assert pred.shape == y.shape
 
@@ -856,15 +730,6 @@ class TestPhaseRegression:
         # CatBoost writes no files and emits no per-iteration console output
         assert cb.model is None  # not yet fitted
 
-    def test_phase2_lag_matrix(self):
-        from forecasting.panel_var import PanelVARForecaster
-
-        X = np.arange(20, dtype=float).reshape(5, 4)
-        lag1 = PanelVARForecaster._build_lag_matrix(X, 1)
-        assert lag1.shape == (4, 8)
-        np.testing.assert_array_equal(lag1[0, :4], X[1])
-        np.testing.assert_array_equal(lag1[0, 4:], X[0])
-
 
 # ---------------------------------------------------------------------------
 # Known-answer numerical test  (P4-28)
@@ -936,108 +801,6 @@ class TestAuditRegressions:
     """
 
     # -----------------------------------------------------------------------
-    # B-2  PanelVAR lag_selection deprecation (Phase 3)
-    # -----------------------------------------------------------------------
-
-    def test_b2_lag_selection_deprecated_bic_warns(self):
-        """Bug B-2: lag_selection='bic' must emit DeprecationWarning and map to 'cv'."""
-        from forecasting.panel_var import PanelVARForecaster
-
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
-            m = PanelVARForecaster(lag_selection="bic")
-
-        dep_warns = [w for w in caught if issubclass(w.category, DeprecationWarning)]
-        assert len(dep_warns) >= 1, "Expected DeprecationWarning for lag_selection='bic'"
-        assert "lag_selection_method" in str(dep_warns[0].message)
-        assert m.lag_selection_method == "cv"
-
-    def test_b2_lag_selection_deprecated_aic_warns(self):
-        """Bug B-2: lag_selection='aic' must also warn and map to 'cv'."""
-        from forecasting.panel_var import PanelVARForecaster
-
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
-            m = PanelVARForecaster(lag_selection="aic")
-
-        dep_warns = [w for w in caught if issubclass(w.category, DeprecationWarning)]
-        assert len(dep_warns) >= 1
-        assert m.lag_selection_method == "cv"
-
-    def test_b2_new_api_no_warning(self):
-        """Bug B-2: new lag_selection_method='cv' raises no DeprecationWarning."""
-        from forecasting.panel_var import PanelVARForecaster
-
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
-            m = PanelVARForecaster(lag_selection_method="cv")
-
-        dep_warns = [w for w in caught if issubclass(w.category, DeprecationWarning)]
-        assert len(dep_warns) == 0, "No DeprecationWarning expected for new API"
-        assert m.lag_selection_method == "cv"
-
-    # -----------------------------------------------------------------------
-    # B-4  NAM² identifiability — training-data mean centering (Phase 6)
-    # -----------------------------------------------------------------------
-
-    def test_b4_nam2_interaction_centered_on_training_data(self):
-        """Bug B-4: each interaction term g_jk must have E_train[g_jk]=0 (machine eps)."""
-        from forecasting.neural_additive import NeuralAdditiveForecaster
-
-        rng = np.random.RandomState(7)
-        X = rng.randn(80, 6)
-        y = rng.randn(80)
-
-        nam = NeuralAdditiveForecaster(
-            n_basis_per_feature=20, n_iterations=5,
-            include_interactions=True, max_interaction_features=3,
-            random_state=42,
-        )
-        nam.fit(X, y)
-
-        X_sc = nam._scaler.transform(X)
-        centers = nam._multi_output_interaction_centers.get(0, {})
-        assert len(centers) > 0, "Expected at least one interaction term with max_interaction_features=3"
-
-        for (j, k), net in nam._multi_output_interaction_shapes[0].items():
-            raw = net.predict(X_sc[:, [j, k]])
-            stored = centers[(j, k)]
-            bias = abs(float(np.mean(raw - stored)))
-            assert bias < 1e-9, (
-                f"E_train[g_{j}{k} - center] = {bias:.2e} (expected < 1e-9). "
-                "NAM\u00b2 identifiability constraint violated."
-            )
-
-    def test_b4_nam2_predict_is_stable_across_batches(self):
-        """Bug B-4: predict() on different test batches must NOT recompute centers."""
-        from forecasting.neural_additive import NeuralAdditiveForecaster
-
-        rng = np.random.RandomState(8)
-        X_tr = rng.randn(80, 6)
-        y_tr = rng.randn(80)
-
-        nam = NeuralAdditiveForecaster(
-            n_basis_per_feature=20, n_iterations=5,
-            include_interactions=True, max_interaction_features=3,
-            random_state=42,
-        )
-        nam.fit(X_tr, y_tr)
-
-        X_a = rng.randn(10, 6)
-        X_b = rng.randn(10, 6)
-
-        # Concatenated prediction must equal predictions done separately
-        pred_ab = nam.predict(np.vstack([X_a, X_b]))
-        pred_a  = nam.predict(X_a)
-        pred_b  = nam.predict(X_b)
-
-        np.testing.assert_allclose(
-            pred_ab, np.concatenate([pred_a, pred_b]),
-            atol=1e-12,
-            err_msg="NAM\u00b2 predict() result must be batch-invariant (no test-data recentering).",
-        )
-
-    # -----------------------------------------------------------------------
     # B-6  sklearn_quantile graceful ImportError (Phase 5)
     # -----------------------------------------------------------------------
 
@@ -1067,42 +830,34 @@ class TestAuditRegressions:
     # -----------------------------------------------------------------------
 
     def test_config_forecast_fields_present_and_correct(self):
-        """Bug B-1 / Phase 1: ForecastConfig must expose all 5 new hyperparameter fields."""
+        """Bug B-1 / Phase 1: ForecastConfig must expose the GB hyperparameter fields."""
         from config import ForecastConfig
 
         cfg = ForecastConfig()
         assert cfg.gb_max_depth == 5,        f"gb_max_depth={cfg.gb_max_depth}"
         assert cfg.gb_n_estimators == 200,   f"gb_n_estimators={cfg.gb_n_estimators}"
-        assert cfg.nam_n_basis == 30,        f"nam_n_basis={cfg.nam_n_basis}"
-        assert cfg.nam_n_iterations == 10,   f"nam_n_iterations={cfg.nam_n_iterations}"
-        assert cfg.pvar_lag_selection_method == "cv"
 
     def test_config_forecast_custom_values_round_trip(self):
         """Phase 1: ForecastConfig custom values survive to_dict() serialisation."""
         from config import Config, ForecastConfig
 
-        cfg = ForecastConfig(gb_max_depth=6, nam_n_basis=50)
+        cfg = ForecastConfig(gb_max_depth=6)
         # Embed in master Config to exercise to_dict()
         master = Config(forecast=cfg)
         d = master.to_dict()
         assert d["forecast"]["gb_max_depth"] == 6
-        assert d["forecast"]["nam_n_basis"] == 50
 
     def test_config_wires_into_unified_create_models(self):
         """Phase 2: UnifiedForecaster._create_models() reads from ForecastConfig."""
         from forecasting.unified import UnifiedForecaster
         from config import ForecastConfig
 
-        cfg = ForecastConfig(gb_max_depth=3, gb_n_estimators=50,
-                             nam_n_basis=15, nam_n_iterations=3,
-                             use_nam=True)
+        cfg = ForecastConfig(gb_max_depth=3, gb_n_estimators=50)
         uf = UnifiedForecaster(config=cfg)
         models = uf._create_models()
 
         assert models["CatBoost"].depth == 3
         assert models["CatBoost"].iterations == 50
-        assert models["NAM"].n_basis_per_feature == 15
-        assert models["NAM"].n_iterations == 3
 
     # -----------------------------------------------------------------------
     # B-10  CatBoost class default max_depth=5 (Phase 10)
@@ -1322,8 +1077,7 @@ class TestPipelineDecoupling:
     def test_stage2_per_model_dicts_populated(self):
         """_per_model_X_train_ and _per_model_X_pred_ must cover all 6 default base models.
 
-        Default ensemble (use_nam=False, use_panel_var=False):
-        BayesianRidge, CatBoost, LightGBM, QuantileRF, KernelRidge, SVR.
+        Default ensemble: BayesianRidge, CatBoost, LightGBM, QuantileRF, KernelRidge, SVR.
         """
         panel = self._make_mock_panel()
         uf    = self._make_uf()

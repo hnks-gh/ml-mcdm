@@ -68,7 +68,7 @@ class ModelComparisonResult:
     ----------
     model_name : str
         Human-readable model identifier: 'BayesianRidge', 'CatBoost',
-        'QuantileRF', 'PanelVAR', 'NAM', or 'Ensemble'.
+        'QuantileRF', or 'Ensemble'.
     holdout_r2 : float
         Global R² computed across all output dimensions on the withheld year.
         Positive values indicate the model outperforms the naive mean predictor.

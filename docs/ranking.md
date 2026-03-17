@@ -2,13 +2,14 @@
 
 ## Overview
 
+> **Note:** Evidential Reasoning (ER) aggregation is **disabled** in the current pipeline configuration (`use_evidential_reasoning = False`). The ranking phase runs 6 MCDM methods (TOPSIS, VIKOR, PROMETHEE II, COPRAS, EDAS, SAW) and reports their individual scores. The ER fusion into belief distributions is not performed.
+
 This framework implements a **two-stage hierarchical ranking system** that combines:
 
 1. **Six Traditional MCDM Methods** - TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS, SAW - applied
    independently within each criterion group to generate per-method scores.
 2. **Evidential Reasoning (ER)** - Yang & Xu (2002) analytical algorithm for rigorous
-   belief-based aggregation of the six method scores into a single ranking per criterion,
-   and then across all eight criteria into a final global ranking.
+   belief-based aggregation — **available but disabled by default** (`use_evidential_reasoning = False`).
 
 **Application:** Vietnam PAPI - 63 provinces, 8 criteria (C01-C08), 29 sub-criteria
 (SC11-SC83), 14 years (2011-2024).

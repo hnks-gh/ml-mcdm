@@ -41,9 +41,7 @@ ml-mcdm/
 │   ├── conformal.py       # Conformal prediction intervals
 │   ├── gradient_boosting.py
 │   ├── bayesian.py
-│   ├── quantile_forest.py
-│   ├── panel_var.py
-│   └── neural_additive.py
+│   └── quantile_forest.py
 │
 ├── analysis/           # Validation & sensitivity
 │   ├── sensitivity.py  # Monte Carlo sensitivity analysis

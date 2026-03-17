@@ -846,8 +846,6 @@ class ForecastPlotter(BasePlotter):
             'KernelRidge':  ('Kernel\nRidge', 'RBF L2'),
             'SVR':          ('SVR',          'ε-insensitive'),
             'QuantileRF':   ('Quantile\nRF', 'Distributional'),
-            'PanelVAR':     ('Panel\nVAR',   'Fixed Effects'),
-            'NAM':          ('Neural\nAdditive', 'Interpretable'),
         }
         if model_names is not None:
             _active = list(model_names)

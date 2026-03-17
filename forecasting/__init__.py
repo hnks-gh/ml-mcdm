@@ -10,9 +10,7 @@ Architecture:
     Tier 1 - Base Models (6 diverse models):
         - gradient_boosting: CatBoost (oblivious trees) + LightGBM (leaf-wise)
         - bayesian: Bayesian Ridge regression (uncertainty quantification)
-        - panel_var: Panel Vector Autoregression with fixed effects
         - quantile_forest: Distributional forecasting via quantile RF
-        - neural_additive: Neural Additive Models (interpretable)
 
     Tier 2 - Meta-Ensemble:
         - super_learner: Stacked generalization with automatic weighting
@@ -58,10 +56,7 @@ from .bayesian import BayesianForecaster
 from .kernel_ridge import KernelRidgeForecaster
 from .svr import SVRForecaster
 
-# Advanced models (state-of-the-art)
-from .panel_var import PanelVARForecaster
 from .quantile_forest import QuantileRandomForestForecaster
-from .neural_additive import NeuralAdditiveForecaster
 
 # Meta-ensemble methods
 from .super_learner import SuperLearner
@@ -98,9 +93,7 @@ __all__ = [
     'KernelRidgeForecaster',
     'SVRForecaster',
     # Advanced models (SOTA)
-    'PanelVARForecaster',
     'QuantileRandomForestForecaster',
-    'NeuralAdditiveForecaster',
     # Meta-ensemble
     'SuperLearner',
     # Calibration and evaluation

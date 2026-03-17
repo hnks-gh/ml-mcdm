@@ -20,9 +20,6 @@ Strategies
       ``n_estimators_increment`` additional rounds on new data.
     * **BayesianForecaster / others**: full retrain on all available data
       when ``X_all`` is supplied, otherwise fine-tune on new data.
-    * **PanelVAR**: Recursive Least Squares (RLS) closed-form update with
-      forgetting factor λ (default 0.95), or full retrain if insufficient
-      per-entity data for RLS.
 
 ``'full_retrain'``
     All base models refitted on ``(X_all, y_all)`` if provided; falls back
@@ -75,11 +72,8 @@ class IncrementalEnsembleUpdater:
         over-fitting to the new year, default 0.5).
     lgbm_extra_iter : int
         Additional LightGBM estimators during warm-start update.
-    rls_lambda : float
-        Forgetting factor for PanelVAR RLS update (0 < λ ≤ 1, default 0.95).
-        λ=1 → no forgetting (equal weight to all observations).
     min_rls_obs : int
-        Minimum observations per entity for RLS; uses full retrain otherwise.
+        Minimum observations for RLS fallback threshold.
     verbose : bool
     """
 
@@ -90,8 +84,6 @@ class IncrementalEnsembleUpdater:
         catboost_extra_iter: int = 50,
         catboost_lr_factor: float = 0.5,
         lgbm_extra_iter: int = 50,
-        rls_lambda: float = 0.95,
-        min_rls_obs: int = 5,
         verbose: bool = True,
     ):
         self.strategy            = strategy
@@ -99,8 +91,6 @@ class IncrementalEnsembleUpdater:
         self.catboost_extra_iter = catboost_extra_iter
         self.catboost_lr_factor  = catboost_lr_factor
         self.lgbm_extra_iter     = lgbm_extra_iter
-        self.rls_lambda          = rls_lambda
-        self.min_rls_obs         = min_rls_obs
         self.verbose             = verbose
 
         # Diagnostics populated after update()
@@ -190,10 +180,6 @@ class IncrementalEnsembleUpdater:
                     self._lgbm_warmstart(model, X_m_new, y_new,
                                          X_m_all, y_all,
                                          entity_indices=entity_indices_new)
-                elif strat == 'panel_var_rls':
-                    self._panel_var_rls(model, X_m_new, y_new,
-                                        entity_indices_new, X_m_all,
-                                        y_all, entity_indices_all)
                 else:  # 'full_retrain' or fallback
                     self._full_retrain(model, X_m_new, y_new,
                                        entity_indices_new,
@@ -226,9 +212,7 @@ class IncrementalEnsembleUpdater:
             return 'catboost_continuation'
         if 'lightgbm' in name_lo or 'lgbm' in name_lo:
             return 'lgbm_warmstart'
-        if 'panelvar' in name_lo or 'panel_var' in name_lo:
-            return 'panel_var_rls'
-        return 'full_retrain'     # BayesianRidge, QuantileRF, NAM, others
+        return 'full_retrain'     # BayesianRidge, QuantileRF, others
 
     def _catboost_continuation(
         self,
@@ -328,79 +312,6 @@ class IncrementalEnsembleUpdater:
         except Exception:
             self._full_retrain(model, X_new, y_new, entity_indices,
                                X_all, y_all, None)
-
-    def _panel_var_rls(
-        self,
-        model,
-        X_new:               np.ndarray,
-        y_new:               np.ndarray,
-        entity_indices_new:  Optional[np.ndarray],
-        X_all:               Optional[np.ndarray],
-        y_all:               Optional[np.ndarray],
-        entity_indices_all:  Optional[np.ndarray],
-    ) -> None:
-        """PanelVAR per-output Recursive Least Squares update.
-
-        For each output column col, updates the fitted Ridge/ElasticNet
-        model's coefficients via the RLS recursion:
-
-            Θ_{t+1} = Θ_t + K_{t+1} (y_{t+1} − X_{t+1} Θ_t)
-            K_{t+1} = P_t X_{t+1}^T (λ + X_{t+1} P_t X_{t+1}^T)^{-1}
-            P_{t+1} = (I − K_{t+1} X_{t+1}) P_t / λ
-
-        Requires Ridge models to have ``coef_`` and ``intercept_`` attributes.
-        Falls back to full retrain when conditions are not met.
-        """
-        models_dict = getattr(model, 'models_', None)
-        scalers_dict = getattr(model, 'scalers_', None)
-
-        if models_dict is None:
-            self._full_retrain(model, X_new, y_new, entity_indices_new,
-                               X_all, y_all, entity_indices_all)
-            return
-
-        n_obs  = len(X_new)
-        if n_obs < self.min_rls_obs:
-            self._full_retrain(model, X_new, y_new, entity_indices_new,
-                               X_all, y_all, entity_indices_all)
-            return
-
-        lam = self.rls_lambda
-
-        for col, ridge in list(models_dict.items()):
-            if not hasattr(ridge, 'coef_'):
-                continue
-            # Transform X_new with the column's scaler if available
-            scaler = scalers_dict.get(col) if scalers_dict else None
-            try:
-                X_s = scaler.transform(X_new) if scaler else X_new
-                # Augment with intercept column
-                X_aug = np.column_stack([X_s, np.ones(n_obs)])
-                theta  = np.append(ridge.coef_.ravel(), ridge.intercept_.ravel())
-                n_feat = len(theta)
-
-                # Approximate P_0 from ridge regularisation (P ∝ α^{-1} I)
-                alpha_reg = getattr(ridge, 'alpha', 1.0)
-                P = (1.0 / max(alpha_reg, 1e-6)) * np.eye(n_feat)
-
-                # RLS sweep over new observations
-                for i in range(n_obs):
-                    xi   = X_aug[i:i+1, :]               # (1, p)
-                    yi   = float(y_new[i, col] if y_new.ndim > 1
-                                 else y_new[i])
-                    if np.isnan(yi):
-                        continue
-                    Pxi  = P @ xi.T                       # (p, 1)
-                    denom = lam + float(xi @ Pxi)          # scalar
-                    K    = Pxi / denom                     # (p, 1)
-                    e    = yi - float(xi @ theta)          # prediction error
-                    theta = theta + (K * e).ravel()
-                    P    = (P - K @ xi @ P) / lam
-
-                ridge.coef_       = theta[:-1].reshape(ridge.coef_.shape)
-                ridge.intercept_  = np.atleast_1d(theta[-1])
-            except Exception:
-                continue  # leave this output's model unchanged
 
     def _full_retrain(
         self,

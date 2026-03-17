@@ -59,18 +59,18 @@ The ML-MCDM pipeline analyzes panel data (entities × time periods × criteria) 
 │  │ Stage 1: Within-criterion (per 8 criteria)              │           │
 │  │   • 6 MCDM methods (TOPSIS, VIKOR, PROMETHEE, COPRAS,   │           │
 │  │     EDAS, SAW) with adaptive zero-handling               │           │
-│  │   • ER belief aggregation                               │           │
+│  │   • ER belief aggregation (disabled by default)         │           │
 │  │                                                          │           │
 │  │ Stage 2: Global aggregation                             │           │
-│  │   • Weighted ER across 8 criterion beliefs              │           │
+│  │   • Weighted ER across 8 criterion beliefs (disabled)  │           │
 │  │   • Final ranking with uncertainty (Kendall's W)        │           │
 │  └────────────────────────┬─────────────────────────────────┘           │
 │                           │                                              │
 │  Phase 4: ML Forecasting (State-of-the-Art Ensemble)                   │
 │  ┌──────────────────────────────────────────────────────────┐           │
-│  │ 5 Models: CatBoost + Bayesian + QuantileRF + PanelVAR + NAM  │           │
-│  │ → Super Learner meta-ensemble + Conformal Prediction    │           │
-│  │ → Aggregated feature importance across all models       │           │
+│  │ 6 Models: CatBoost + LightGBM + Bayesian + QRF + KRR + SVR │       │
+│  │ Impute panel → Super Learner meta-ensemble              │           │
+│  │ → Conformal Prediction intervals                        │           │
 │  └────────────────────────┬─────────────────────────────────┘           │
 │                           │                                              │
 │  Phase 5: Sensitivity Analysis                                          │
@@ -195,12 +195,12 @@ For **each of 8 criteria** (C01 through C08):
 4. **Construct belief structure:**
    - Convert 6 method scores → 5-grade belief distribution
    - Grades: {Excellent, Good, Fair, Poor, Bad}
-5. **ER combination** → single criterion belief per entity
+5. **ER combination** (**disabled by default**) → single criterion belief per entity
 
 #### Stage 2: Global Aggregation
 
 1. **Inputs:** 8 criterion beliefs (one per C01-C08) + ensemble weights
-2. **Weighted ER aggregation** using Yang & Xu (2002) algorithm:
+2. **Weighted ER aggregation** (**disabled by default**) using Yang & Xu (2002) algorithm:
    $$
    \beta_n = K \left[\beta_{1,n}\beta_{2,n} + \beta_{1,n}\beta_{2,H} + \beta_{1,H}\beta_{2,n}\right]
    $$
@@ -226,30 +226,31 @@ For **each of 8 criteria** (C01 through C08):
 
 **Purpose:** Forecast future criterion values using state-of-the-art ensemble learning. Feature importance is computed as a by-product.
 
-**Ensemble Architecture:**
-- **5 Base Models:**
-  1. **CatBoost Gradient Boosting** — Joint multi-output tree-based model (MultiRMSE loss)
-  2. **Bayesian Ridge** — Probabilistic linear model
-  3. **Quantile Random Forest** — Distributional forecasting
-  4. **Panel VAR** — Panel-specific dynamics
-  5. **Neural Additive Models (NAM)** — Interpretable non-linearity
+**Pre-processing:** A fully ML-imputed copy of the panel (`build_ml_panel_data` — 3-stage: linear interpolation → ffill/bfill → median) is passed to the forecaster. The raw `panel_data` used by MCDM phases is never mutated.
 
-- **Meta-Ensemble:** Super Learner (Ridge regression for optimal model weighting)
+**Ensemble Architecture:**
+- **6 Always-On Base Models:**
+  1. **CatBoost Gradient Boosting** — Joint multi-output tree-based model (MultiRMSE loss)
+  2. **LightGBM** — Leaf-wise gradient boosting (MultiOutputRegressor)
+  3. **Bayesian Ridge** — Probabilistic linear model (PLS-compressed features)
+  4. **Quantile Random Forest** — Distributional forecasting (QRF quantile intervals)
+  5. **Kernel Ridge Regression** — RBF kernel, L2 regularised
+  6. **Support Vector Regression** — ε-insensitive tube, RBF kernel
+
+- **Meta-Ensemble:** Super Learner (per-output meta-weights via `PanelWalkForwardCV`)
 - **Uncertainty Quantification:** Conformal Prediction (distribution-free 95% intervals)
 
 **Cross-Validation:**
-- **Method:** TimeSeriesSplit (3 folds)
+- **Method:** `PanelWalkForwardCV` — panel-aware walk-forward splitter (annual folds)
+- **`min_train_years=8`**: first fold trains on 2011–2018, validates on 2019
+- **`cv_folds=5`** (default): up to 5 walk-forward folds
 - **Respects temporal ordering** (no data leakage)
-- **Metrics:** R², MAE, RMSE per fold per model
-- **Expected performance:** Ensemble CV R² > 0.70
 
 **Feature Importance (By-Product):**
 - Each model computes its own feature importance:
   - GB: Gini importance
   - Bayesian: Absolute coefficients
-  - Panel VAR: Coefficient magnitudes
-  - NAM: Shape function variances
-- **Aggregated** across all 5 models (averaged)
+- **Aggregated** across all 6 models (averaged)
 - Saved for exploratory analysis
 
 **Output Files:**
@@ -333,7 +334,7 @@ output/result/
 │   │   ├── final_rankings.csv         # Main output: rank + ER utility + province
 │   │   └── prediction_uncertainty_er.csv  # Belief hesitancy degrees (π)
 │   ├── mcdm/
-│   │   ├── mcdm_scores_C01.csv        # 12-method scores for C_01
+│   │   ├── mcdm_scores_C01.csv        # 6-method scores for C_01
 │   │   ├── ...                        # one file per criterion
 │   │   ├── mcdm_scores_C08.csv
 │   │   └── mcdm_rank_comparison.csv   # Cross-method rank comparison matrix
@@ -400,7 +401,8 @@ print(f"Robustness: {result.analysis['sensitivity'].overall_robustness:.4f}")
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `stability_threshold` | 0.95 | Minimum cosine similarity for temporal stability pass |
-| `cv_folds` | 3 | Time-series CV folds for forecasting |
+| `cv_folds` | 5 | Walk-forward CV folds for forecasting |
+| `cv_min_train_years` | 8 | Minimum annual training cohorts before first val fold |
 | `n_simulations` | 1000 | Monte Carlo sensitivity simulations |
 | `random_state` | 42 | Reproducibility seed |
 | `n_splits` | 5 | Time-series CV folds |
@@ -415,7 +417,7 @@ print(f"Robustness: {result.analysis['sensitivity'].overall_robustness:.4f}")
 |-----------|------|-------|
 | Weighting | ~2s | Deterministic CRITIC (two levels) |
 | Ranking | ~10s | 6 MCDM + 2-stage ER |
-| ML Forecasting | ~15s | 5 models + Super Learner |
+| ML Forecasting | ~15-30s | 6 models + Super Learner + Conformal |
 | Sensitivity Analysis | ~20s | Monte Carlo (1000 sims) |
 | Visualization + Export | ~5s | 5 figures + results |
 
@@ -469,7 +471,7 @@ print(f"Robustness: {result.analysis['sensitivity'].overall_robustness:.4f}")
   ✓ Completed in 7.02s
 
 ▶ Phase 4/7: ML Forecasting
-  Ensemble: 5 models (CatBoost, Bayesian, QRF, PanelVAR, NAM)
+  Ensemble: 6 models (CatBoost, LightGBM, Bayesian, QRF, KRR, SVR)
   Super Learner CV R²: 0.7355 ± 0.084
   Top feature: SC01 (importance = 0.082)
   ✓ Completed in 14.50s
@@ -504,7 +506,7 @@ The ML-MCDM pipeline provides:
 1. **Rigorous Methodology**: Two-stage ER with adaptive zero-handling
 2. **Objective Weighting**: CRITIC Two-Level deterministic pipeline
 3. **Multi-Method Consensus**: 6 MCDM methods (TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS, SAW)
-4. **ML Forecasting**: 6-model ensemble (optional) with Super Learner
+4. **ML Forecasting**: 6-model ensemble (CatBoost, LightGBM, Bayesian, QRF, KRR, SVR) + Super Learner
 5. **Hierarchical Sensitivity**: Multi-level robustness analysis (1000 simulations)
 6. **Comprehensive Outputs**: 5 high-resolution figures + 17+ data files + detailed report
 7. **Production-Ready**: Single-command execution with scientifically validated defaults

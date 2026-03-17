@@ -723,9 +723,9 @@ class MLMCDMPipeline:
     ) -> Any:
         """
         Run state-of-the-art forecasting using UnifiedForecaster.
-        
+
         Architecture:
-        - 6 diverse base models (GB, BayesianRidge, QuantileRF, PanelVAR, HierarchBayes, NAM)
+        - 6 diverse base models (GB, BayesianRidge, QuantileRF, KernelRidge, SVR)
         - Meta-Learner ensemble (automatic optimal weighting)
         - Conformal Prediction (distribution-free 95% intervals)
         """
@@ -747,10 +747,6 @@ class MLMCDMPipeline:
         # Build the log-time model list to mirror _create_models() logic
         _base_model_names = ["CatBoost", "LightGBM", "BayesianRidge", "QuantileRF",
                              "KernelRidge", "SVR"]
-        if getattr(self.config.forecast, 'use_panel_var', False):
-            _base_model_names.append("PanelVAR")
-        if getattr(self.config.forecast, 'use_nam', False):
-            _base_model_names.append("NAM")
         self.logger.info(
             f"Base models: {len(_base_model_names)} ({', '.join(_base_model_names)})"
         )

@@ -11,9 +11,9 @@ Architecture:
     Base Models → Out-of-Fold Predictions → Meta-Learner → Final Prediction
          ├─ Gradient Boosting  (ŷ₁)           ↓
          ├─ Random Forest      (ŷ₂)      ElasticNet / Ridge
-         ├─ Bayesian Ridge     (ŷ₃)      (learns α₁...αₙ)
-         ├─ Panel VAR          (ŷ₄)           ↓
-         └─ NAM                (ŷ₅)      ŷ_final = Σ αᵢŷᵢ
+         └─ Bayesian Ridge     (ŷ₃)      (learns α₁...αₙ)
+                                              ↓
+                                         ŷ_final = Σ αᵢŷᵢ
 
 Key Properties:
     1. Oracle inequality: Super Learner performs asymptotically
@@ -713,7 +713,7 @@ class SuperLearner:
                                     sample_weight=_sw)
 
                     # S-1 fix: forward val entity_indices so panel models
-                    # (PanelVAR) use the correct fixed effects for each
+                    # use the correct fixed effects for each
                     # validation entity rather than the reference entity.
                     _val_ent = (
                         entity_indices[val_idx]
@@ -802,7 +802,7 @@ class SuperLearner:
         # ============================================================
         # Check if ANY model produced enough valid OOF rows (per-model,
         # not joint).  The old joint mask excluded every row when a
-        # single model (e.g. QuantileRF or PanelVAR) failed, poisoning
+        # single model (e.g. QuantileRF) failed, poisoning
         # all rows even for models that succeeded.
         max_valid_per_model = max(
             (~np.isnan(
@@ -954,7 +954,7 @@ class SuperLearner:
             Feature matrix and targets.
         entity_indices : ndarray, optional
             Panel entity IDs forwarded to models that accept ``entity_indices``
-            or ``group_indices`` (e.g. PanelVARForecaster).
+            or ``group_indices``.
         sample_weight : ndarray of shape (n_train,), optional
             Per-sample importance weights from E-08
             ``PanelCovariateShiftDetector``.  Forwarded only when the model's
@@ -1596,7 +1596,7 @@ class SuperLearner:
             X: Feature matrix. Default for all models unless overridden by
                 ``per_model_X_pred``.
             entity_indices: Optional entity group IDs, forwarded to panel-aware
-                base models (``PanelVARForecaster``).
+                base models.
                 When *None*, panel models fall back to population-level (zero-dummy)
                 predictions, making the uncertainty estimate entity-wrong.
                 Always pass the same ``entity_indices`` used during ``predict()``.
@@ -1615,8 +1615,7 @@ class SuperLearner:
                 # Use _predict_model so that panel-aware models receive
                 # entity_indices (fixing audit issue S-1: the previous
                 # model.predict(X) call omitted entity_indices, causing
-                # PanelVAR to predict at the reference
-                # entity level for ALL entities, producing wrong uncertainty).
+                # wrong uncertainty for entity-level predictions).
                 pred = self._predict_model(model, X_m, entity_indices)
                 if pred.ndim == 1:
                     pred = pred.reshape(-1, 1)
