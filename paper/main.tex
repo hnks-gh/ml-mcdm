@@ -1,0 +1,885 @@
+%% ============================================================
+%%  A Hybrid MCDM and Ensemble Learning Framework for
+%%  Performance Indexing: Evidence from Vietnam's PAPI
+%%
+%%  Author    : Ngoc Kim Son Hoang
+%%  Affiliation: Faculty of Development Economics,
+%%               VNU University of Economics and Business,
+%%               Vietnam National University, Hanoi 10000, Vietnam
+%%  Email     : 23050613@vnu.edu.vn
+%%
+%%  Compile   : pdflatex main.tex (twice for cross-references)
+%%              bibtex main
+%%              pdflatex main.tex (twice again)
+%% ============================================================
+
+\documentclass[12pt,a4paper]{article}
+
+% ---------- Encoding & Fonts ----------
+\usepackage{fontspec}
+\setmainfont{Times New Roman}
+\usepackage[scaled=0.90]{helvet}
+\usepackage{microtype}         % Improved justification
+
+% ---------- Page Layout ----------
+\usepackage[
+  top=25mm, bottom=25mm,
+  left=30mm, right=25mm,
+  headheight=15pt
+]{geometry}
+
+% ---------- Line Spacing ----------
+\usepackage{setspace}
+\onehalfspacing
+
+% ---------- Mathematics ----------
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage{bm}                % bold math symbols
+\usepackage{mathtools}
+\usepackage{siunitx}
+
+% ---------- Figures & Tables ----------
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{multirow}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{subcaption}
+\captionsetup{
+  font=small,
+  labelfont=bf,
+  skip=6pt
+}
+
+% ---------- Lists ----------
+\usepackage{enumitem}
+\setlist{itemsep=2pt, topsep=4pt}
+
+% ---------- Colours ----------
+\usepackage[dvipsnames]{xcolor}
+\definecolor{linkblue}{RGB}{0,70,140}
+
+% ---------- Hyperlinks ----------
+\usepackage[
+  colorlinks=true,
+  linkcolor=linkblue,
+  citecolor=linkblue,
+  urlcolor=linkblue,
+  bookmarksopen=true,
+  pdfauthor={Ngoc Kim Son Hoang},
+  pdftitle={A Hybrid MCDM and Ensemble Learning Framework for
+            Performance Indexing: Evidence from Vietnam's PAPI}
+]{hyperref}
+
+% ---------- Headers & Footers ----------
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textit{Hybrid MCDM--Ensemble Framework for Vietnam's PAPI}}
+\fancyhead[R]{\small\textit{Hoang, N.K.S.}}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% ---------- Bibliography ----------
+\usepackage[numbers,sort&compress]{natbib}
+\bibliographystyle{plainnat}
+
+% ---------- Miscellaneous ----------
+\usepackage{xspace}
+\usepackage{lipsum}   % placeholder text
+\usepackage{url}
+\urlstyle{same}
+
+% ---------- Custom Commands ----------
+\newcommand{\PAPI}{\textsc{papi}\xspace}
+\newcommand{\MCDM}{\textsc{mcdm}\xspace}
+\newcommand{\CRITIC}{\textsc{critic}\xspace}
+\newcommand{\TOPSIS}{\textsc{topsis}\xspace}
+\newcommand{\VIKOR}{\textsc{vikor}\xspace}
+\newcommand{\COPRAS}{\textsc{copras}\xspace}
+\newcommand{\EDAS}{\textsc{edas}\xspace}
+\newcommand{\SAW}{\textsc{saw}\xspace}
+\newcommand{\ER}{\textsc{er}\xspace}
+\newcommand{\OOF}{\textsc{oof}\xspace}
+\newcommand{\CI}{\textsc{ci}\xspace}
+\newcommand{\ie}{\textit{i.e.,}\xspace}
+\newcommand{\eg}{\textit{e.g.,}\xspace}
+
+\newtheorem{definition}{Definition}
+\newtheorem{proposition}{Proposition}
+
+% =============================================================
+%  TITLE PAGE
+% =============================================================
+
+\begin{document}
+
+\begin{titlepage}
+  \centering
+  \vspace*{2cm}
+
+  {\LARGE\bfseries
+    A Hybrid MCDM and Ensemble Learning Framework for\\[6pt]
+    Performance Indexing: Evidence from Vietnam's PAPI
+  \par}
+
+  \vspace{1.5cm}
+
+  {\large Ngoc Kim Son Hoang}
+
+  \vspace{0.5cm}
+
+  {\normalsize
+    Faculty of Development Economics,\\
+    VNU University of Economics and Business,\\
+    Vietnam National University, Hanoi 10000, Vietnam\\[4pt]
+    \href{mailto:23050613@vnu.edu.vn}{\texttt{23050613@vnu.edu.vn}}
+  }
+
+  \vspace{1cm}
+
+  {\small \today}
+
+  \vspace{1.5cm}
+
+  \hrule
+
+  \vspace{1cm}
+
+  \begin{abstract}
+    \noindent
+    % ========================================================
+    %  PLACEHOLDER — Abstract content to be completed
+    % ========================================================
+    \textit{[Abstract placeholder. Approximately 200--250 words summarising
+    the research motivation, the three-pillar methodology (two-level CRITIC
+    weighting, six-method MCDM with Evidential Reasoning, six-model ensemble
+    Super Learner with conformal prediction), the dataset (63 Vietnamese
+    provinces, 29 sub-criteria, 14 years, 2011--2024), key empirical findings,
+    and policy implications.]}
+  \end{abstract}
+
+  \vspace{0.5cm}
+
+  \noindent\textbf{Keywords:} Multi-Criteria Decision Making; Ensemble Learning;
+  Super Learner; Conformal Prediction; PAPI; Provincial Governance; CRITIC
+  Weighting; Evidential Reasoning; Vietnam
+
+  \vspace{0.5cm}
+
+  \noindent\textbf{JEL Classification:} C44; C53; H11; H70; O18
+
+  \hrule
+\end{titlepage}
+
+\clearpage
+\tableofcontents
+\clearpage
+
+% =============================================================
+\section{Introduction}
+\label{sec:introduction}
+% =============================================================
+
+Assessing and benchmarking the quality of subnational governance is a
+fundamental challenge in development economics. Effective, transparent, and
+accountable local administrations are widely recognised as prerequisites for
+sustainable economic growth, equitable public service delivery, and citizen
+welfare \citep{Kaufmann2010,Acemoglu2005}. Yet translating this normative
+consensus into credible, reproducible, and policy-actionable scores remains
+methodologically demanding: governance is inherently multidimensional, its
+constituent indicators are correlated and heteroscedastic, inter-provincial
+comparisons require objective weight derivation rather than expert opinion,
+and retrospective dashboards alone cannot support prospective resource
+allocation.
+
+These challenges are acute in Vietnam, where three decades of \textit{Đổi
+Mới}-era decentralisation have devolved an expanding portfolio of service
+delivery, infrastructure investment, and regulatory responsibilities to the
+63 provincial administrations \citep{Malesky2014,Nguyen2020}. Uniform
+national policies interact with pronounced regional heterogeneity in
+geography, demography, and fiscal capacity, producing divergent governance
+outcomes across provinces that are difficult to monitor and compare.
+Identifying high-performing and underperforming jurisdictions in a
+methodologically rigorous manner is therefore a precondition for evidence-
+based intergovernmental transfers, performance incentives, and targeted
+capacity-building programmes.
+
+The Provincial Governance and Public Administration Performance Index
+(\PAPI) has been the principal instrument for this purpose since its
+nationwide inception in 2011. Jointly developed by the Centre for Community
+Support and Development Studies (CECODES), the Vietnam Fatherland Front
+(VFF-CRT), and the United Nations Development Programme (UNDP), \PAPI is an
+annual citizen survey covering approximately 14{,}000 respondents
+across all 63 provinces \citep{PAPI2024}. It quantifies provincial governance
+quality across eight main criteria---civic participation, transparency,
+vertical accountability, control of corruption, public administrative
+procedures, public service delivery, environmental governance, and
+e-governance---through 29 sub-criteria. By 2024, the index provides 14
+consecutive annual cross-sections of panel data (2011--2024), constituting
+882 province-year observations across a rich set of governance indicators.
+
+\subsection*{Limitations of existing composite indexing approaches}
+
+Despite its breadth and longevity, the analytical use of \PAPI data faces
+several methodological limitations in the literature. First, composite
+indices reported in the official \PAPI documentation employ equal weighting
+of sub-criteria within each main criterion and equal weighting of criteria
+at the aggregate level \citep{PAPI2024}. Equal weighting is transparent and
+easily communicated, but it conflates criteria with very different
+contributions to inter-provincial differentiation: a criterion dominated by
+high-variance, low-correlated sub-indicators carries the same weight as one
+where all provinces score similarly and sub-indicators are highly correlated.
+Objective, data-driven weight determination that rewards discriminatory power
+and penalises redundancy has not been applied to \PAPI in the published
+literature.
+
+Second, composite governance scores derived from a single Multi-Criteria
+Decision Making (\MCDM) method are sensitive to methodological choice
+\citep{Greco2019}. TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS, and SAW can
+produce different rank orderings for the same data because they operationalise
+``best alternative'' through different geometric and philosophical lenses.
+Using a single method without sensitivity analysis or consensus aggregation
+yields rankings that may lack robustness across reasonable methodological
+alternatives.
+
+Third, existing provincial governance analyses are inherently backward-
+looking. They rank provinces on historical performance but cannot project how
+current trajectories will translate into future scores. In a policy environment
+where budget allocations and reform programmes must be decided one to two
+years in advance, the ability to forecast provincial \PAPI scores for the
+upcoming year would substantially enhance the decision-support value of the
+index. To the best of our knowledge, no published study has applied machine
+learning forecasting to \PAPI data.
+
+Fourth, the \PAPI dataset exhibits substantial and structurally heterogeneous
+missing data (\SI{13.4}{\percent} of cells; \citealp{PAPI2024-data}). The
+environmental governance and e-governance dimensions were not measured in
+early survey waves (2011--2017), and administrative disruptions have produced
+entire province-year rows of missing data. Deterministic imputation or
+complete-case analysis discards useful information and can introduce
+systematic bias into downstream weighting and ranking.
+
+\subsection*{Research gaps and motivation}
+
+These observations motivate a unified analytical framework that addresses
+all four limitations simultaneously. Three specific research gaps guide the
+design of the proposed methodology:
+
+\begin{enumerate}[label=\textbf{G\arabic*.}, leftmargin=2.5em]
+
+  \item \textbf{Objective, reproducible weighting.} No study has applied
+    a variance-and-conflict-based objective weighting method to the full
+    panel of \PAPI sub-criteria. The \CRITIC method (CRiteria Importance
+    Through Intercriteria Correlation), which rewards criteria with high
+    standard deviation and low pairwise correlation---\ie high discriminatory
+    power and independence---provides a principled, fully deterministic
+    alternative \citep{Diakoulaki1995}.
+
+  \item \textbf{Consensus multi-method ranking.} A single \MCDM method cannot
+    claim methodological supremacy over equally defensible alternatives.
+    Fusing the outputs of multiple methods through Evidential Reasoning
+    \citep{Yang2002}, which models inter-method disagreement explicitly as
+    residual uncertainty, yields composite rankings that are robust to
+    individual methodological assumptions and quantifies agreement via
+    Kendall's concordance coefficient $W$.
+
+  \item \textbf{Prospective governance forecasting.} No framework currently
+    converts historical \PAPI trajectories into statistically calibrated
+    one-year-ahead forecasts with associated prediction intervals. Filling
+    this gap requires a machine learning pipeline capable of handling the
+    specific constraints of \PAPI: a small balanced panel ($N = 63$
+    entities, $T = 14$ observations per entity), structurally patterned
+    missing data, multi-output prediction ($K = 8$ criteria jointly), and
+    mandatory distribution-free uncertainty quantification to support
+    risk-aware policy decisions.
+
+\end{enumerate}
+
+\subsection*{Contributions}
+
+This paper makes four principal contributions to the literature
+on MCDM-based composite indices and machine learning for governance analytics:
+
+\begin{enumerate}[label=\textbf{C\arabic*.}, leftmargin=2.5em]
+
+  \item \textbf{Two-level deterministic CRITIC weighting.} We develop and apply
+    a two-tier CRITIC procedure to the \PAPI panel (2011--2024). Level~1
+    derives within-criterion local weights for the 4--3 sub-criteria belonging
+    to each of the 8 main criteria; Level~2 derives cross-criteria weights
+    from a criterion-level composite matrix. Global sub-criterion weights are
+    the product of the two levels, inheriting the simplex property.
+    Temporal stability---operationalised as the split-half cosine similarity
+    of weight vectors---reaches $0.9915$, substantially above the $0.95$
+    threshold, confirming robustness of the weighting scheme across the
+    14-year horizon.
+
+  \item \textbf{Multi-method MCDM consensus via Evidential Reasoning.}
+    We simultaneously apply six established \MCDM methods---\TOPSIS
+    \citep{Hwang1981}, \VIKOR \citep{Opricovic2004}, PROMETHEE~II
+    \citep{Brans1985}, \COPRAS \citep{Zavadskas1994}, \EDAS
+    \citep{Keshavarz2015}, and \SAW \citep{Fishburn1967}---and aggregate
+    their ordinal outputs through a two-stage Hierarchical Evidential
+    Reasoning procedure \citep{Yang2002}. The resulting Kendall concordance
+    coefficient $W \approx 0.88$ indicates very strong inter-method agreement,
+    lending credibility to the final consensus ranking.
+
+  \item \textbf{State-of-the-art ensemble learning for governance forecasting.}
+    We construct a three-tier predictive system consisting of: (i)~six
+    diverse base models---CatBoost~\citep{Prokhorenkova2018},
+    LightGBM~\citep{Ke2017}, Bayesian Ridge, Quantile Random Forest,
+    Kernel Ridge Regression, and Support Vector Regression---trained on a
+    12-block temporal feature engineering pipeline generating $\approx 295$
+    panel features per province; (ii)~a Super Learner meta-ensemble
+    \citep{vanderLaan2007} combining base models via Non-Negative Least
+    Squares (NNLS) with panel-aware walk-forward cross-validation; and
+    (iii)~distribution-free $95\%$ conformal prediction intervals
+    \citep{Angelopoulos2022} calibrated from out-of-fold residuals, providing
+    statistically rigorous uncertainty quantification for 2025 forecasts.
+
+  \item \textbf{Integrated MCDM--forecasting pipeline.}
+    By applying the validated weighting and consensus ranking procedure to the
+    machine-learning-generated 2025 provincial scores, we produce the first
+    forward-looking \PAPI governance ranking, enabling decision-makers to
+    anticipate provincial performance trajectories one year in advance. This
+    integration constitutes a reusable, open-source analytical framework for
+    annual update as new survey waves become available.
+
+\end{enumerate}
+
+\subsection*{Scope and data}
+
+The empirical analysis covers all 63 Vietnamese provinces and centrally
+administered municipalities observed annually from 2011 to 2024 (14 complete
+survey waves). The raw dataset comprises 882 province-year observations across
+29 sub-criteria, yielding a $882 \times 29$ balanced panel with \SI{13.4}{\percent}
+structural missingness that is handled through a combination of temporal
+back-filling, column-median imputation, and---for the forecasting stage---a
+machine-learning-based panel imputation procedure. The target year for
+prospective forecasting is 2025, defined as the first year outside the
+observed sample.
+
+\subsection*{Paper organisation}
+
+The remainder of this paper is organised as follows.
+Section~\ref{sec:methods} describes the data and presents the full three-pillar
+methodology: two-level CRITIC weighting (Section~\ref{subsec:critic}), the six
+\MCDM methods and their Evidential Reasoning fusion
+(Sections~\ref{subsec:mcdm}--\ref{subsec:er}), and the ensemble forecasting
+pipeline with conformal prediction
+(Sections~\ref{subsec:features}--\ref{subsec:conformal}).
+Section~\ref{sec:results} reports empirical results, covering weighting
+diagnostics, historical and forecast rankings, model performance, and
+prediction intervals. Section~\ref{sec:discussion} interprets the findings,
+discusses policy implications, and benchmarks our methodology against
+alternative approaches in the literature. Section~\ref{sec:conclusion}
+concludes with a summary of contributions, limitations, and directions for
+future research.
+
+% =============================================================
+\section{Methods and Data}
+\label{sec:methods}
+% =============================================================
+
+\subsection{Data Description}
+\label{subsec:data}
+% ----------------------------------------------------------------
+% PLACEHOLDER — Describe the PAPI dataset: 63 provinces, 29 sub-criteria,
+% 8 main criteria (C01–C08 with SC11–SC83 breakdown), 14 annual waves
+% (2011–2024), raw value range [0, 3.33], all benefit-type.
+% Table 1: Criteria and sub-criteria overview.
+% ----------------------------------------------------------------
+\textit{[Content placeholder.]}
+
+\subsection{Missing Data Structure and Imputation}
+\label{subsec:missing}
+% ----------------------------------------------------------------
+% PLACEHOLDER — Describe three types of missingness:
+%   Type 1 (column-wide structural, 3116 cells): SC71–SC83 absent 2011–2017;
+%           SC52 absent 2021–2024.
+%   Type 2 (entire province-year rows, 261 cells): 9 province-year combos.
+%   Type 3 (partial rows, 47 cells): scattered 2018/2022.
+% Imputation strategy: temporal back-fill > column median > ML panel imputation.
+% ----------------------------------------------------------------
+\textit{[Content placeholder.]}
+
+\subsection{Two-Level CRITIC Objective Weighting}
+\label{subsec:critic}
+% ----------------------------------------------------------------
+% PLACEHOLDER — Describe CRITIC method (Diakoulaki et al., 1995):
+%   C_j = sigma_j * sum_k(1 - r_{jk}),  w_j = C_j / sum_j C_j
+% Level 1: within-criterion local weights for SC groups.
+% Level 2: criterion-level weights from composite matrix.
+% Global: w_global(SC_j) = w_local(SC_j | C_k) * w_criterion(C_k).
+% Temporal stability: split-half cosine similarity threshold = 0.95.
+% ----------------------------------------------------------------
+\textit{[Content placeholder.]}
+
+\subsection{MCDM Ranking Methods}
+\label{subsec:mcdm}
+
+\subsubsection{TOPSIS}
+\label{subsubsec:topsis}
+% ----------------------------------------------------------------
+% PLACEHOLDER — Hwang & Yoon (1981). Closeness coefficient formula.
+% ----------------------------------------------------------------
+\textit{[Content placeholder.]}
+
+\subsubsection{VIKOR}
+\label{subsubsec:vikor}
+% ----------------------------------------------------------------
+% PLACEHOLDER — Opricovic & Tzeng (2004). S, R, Q indices. v = 0.5.
+% ----------------------------------------------------------------
+\textit{[Content placeholder.]}
+
+\subsubsection{PROMETHEE II}
+\label{subsubsec:promethee}
+% ----------------------------------------------------------------
+% PLACEHOLDER — Brans & Vincke (1985). V-shape preference function.
+% Net flow phi_net.
+% ----------------------------------------------------------------
+\textit{[Content placeholder.]}
+
+\subsubsection{COPRAS}
+\label{subsubsec:copras}
+% ----------------------------------------------------------------
+% PLACEHOLDER — Zavadskas et al. (1994). S+, S-, Q formula.
+% ----------------------------------------------------------------
+\textit{[Content placeholder.]}
+
+\subsubsection{EDAS}
+\label{subsubsec:edas}
+% ----------------------------------------------------------------
+% PLACEHOLDER — Keshavarz Ghorabaee et al. (2015). PDA, NDA, AS formula.
+% ----------------------------------------------------------------
+\textit{[Content placeholder.]}
+
+\subsubsection{Simple Additive Weighting (SAW)}
+\label{subsubsec:saw}
+% ----------------------------------------------------------------
+% PLACEHOLDER — Fishburn (1967). Score_i = sum_j w_j * r_{ij}.
+% ----------------------------------------------------------------
+\textit{[Content placeholder.]}
+
+\subsection{Evidential Reasoning Aggregation}
+\label{subsec:er}
+% ----------------------------------------------------------------
+% PLACEHOLDER — Yang & Xu (2002). Two-stage hierarchical ER.
+% 5 belief grades {Excellent, Good, Fair, Poor, Bad}.
+% score_to_belief() via linear interpolation.
+% ER combination formula (Yang & Xu, Eq. 9).
+% Expected utility = (u_min + u_max) / 2.
+% Stage 1: 6 MCDM scores -> criterion beliefs.
+% Stage 2: 8 criterion beliefs -> global utility -> final ranking.
+% Kendall's W for inter-method agreement.
+% ----------------------------------------------------------------
+\textit{[Content placeholder.]}
+
+\subsection{Temporal Feature Engineering}
+\label{subsec:features}
+% ----------------------------------------------------------------
+% PLACEHOLDER — 12-block feature pipeline (~295 features per province):
+%   Block 1: Current criterion values (C01–C08)
+%   Block 2: Lag features (t-1, t-2, t-3) + _was_missing flags
+%   Block 3: Rolling statistics (mean, std, min, max; windows 2, 3, 5)
+%   Block 4: Momentum and acceleration
+%   Block 5: Stationarity transformations (entity-demeaned, Δ², demeaned momentum)
+%   Block 6: Polynomial trend slopes (≥3 valid pts)
+%   Block 7: EWMA levels (spans 2, 3, 5)
+%   Block 8: Expanding window mean
+%   Block 9: Inter-criterion diversity (std, range)
+%   Block 10: Rolling skewness (5-year window)
+%   Block 11: Panel-relative features (percentile, z-score, rank-change)
+%   Block 12: Geographic cluster dummies (5 Vietnam regions)
+% Two-track preprocessing:
+%   PLS track (BayesianRidge, KRR, SVR): PLSRegression(n_components=20)
+%     with mutual-information pre-filter
+%   Threshold track (CatBoost, LightGBM, QRF): variance threshold only
+% ----------------------------------------------------------------
+\textit{[Content placeholder.]}
+
+\subsection{Base Forecasting Models}
+\label{subsec:base_models}
+% ----------------------------------------------------------------
+% PLACEHOLDER — 6 diverse base learners:
+%   1. CatBoost (joint multi-output MultiRMSE, oblivious trees)
+%   2. LightGBM (leaf-wise, MultiOutputRegressor wrapper)
+%   3. Bayesian Ridge (PLS-compressed features, posterior uncertainty)
+%   4. Quantile Random Forest (full predictive distributions)
+%   5. Kernel Ridge Regression (RBF kernel, L2 regularisation)
+%   6. Support Vector Regression (epsilon-insensitive tube, RBF)
+% Target transform: logit for SAW [0,1] targets; Yeo-Johnson otherwise.
+% ----------------------------------------------------------------
+\textit{[Content placeholder.]}
+
+\subsection{Super Learner Meta-Ensemble}
+\label{subsec:superlearner}
+% ----------------------------------------------------------------
+% PLACEHOLDER — van der Laan et al. (2007) Super Learner.
+% Panel-aware walk-forward CV (min_train_years = 8; 5 folds).
+% Out-of-fold (OOF) predictions for each base model.
+% Meta-learner: NNLS Ridge per output -> _meta_weights_per_output_ (n_outputs x n_models).
+% Oracle inequality: Super Learner >= best convex combination asymptotically.
+% OOF cache reused for conformal calibration (no re-fitting).
+% Alternative meta-learners: Dirichlet stacking, Bayesian stacking, ElasticNet.
+% ----------------------------------------------------------------
+\textit{[Content placeholder.]}
+
+\subsection{Conformal Prediction Intervals}
+\label{subsec:conformal}
+% ----------------------------------------------------------------
+% PLACEHOLDER — Vovk et al. (2005), Angelopoulos & Bates (2022).
+% Distribution-free 95% coverage guarantee (alpha = 0.05).
+% CV+ conformal: calibration residuals from OOF predictions.
+% Per-column OOF masks (_oof_valid_mask_per_col_) for multi-output.
+% ConformalPredictor with calibrate_residuals(); warning at n_cal < 30.
+% Alternatives: split conformal, Adaptive Conformal Inference (ACI).
+% ----------------------------------------------------------------
+\textit{[Content placeholder.]}
+
+\subsection{Evaluation Metrics and Validation}
+\label{subsec:evaluation}
+% ----------------------------------------------------------------
+% PLACEHOLDER — Forecast evaluation metrics: R², RMSE, MAE, MedAE, MAPE,
+% Max Error, Bias; Winkler score for prediction interval quality.
+% Residual diagnostics: Durbin-Watson (autocorrelation), Breusch-Pagan
+%   (heteroscedasticity), Shapiro-Wilk (normality).
+% Holdout evaluation: 2024 withheld, 252 OOF samples (genuinely out-of-sample).
+% Sensitivity analysis: 1000 Monte Carlo simulations; weight perturbation ±10%;
+%   Kendall rank correlation threshold = 0.85.
+% ----------------------------------------------------------------
+\textit{[Content placeholder.]}
+
+% =============================================================
+\section{Results}
+\label{sec:results}
+% =============================================================
+
+\subsection{CRITIC Criterion Weights and Temporal Stability}
+\label{subsec:results_weights}
+% ----------------------------------------------------------------
+% PLACEHOLDER — Report CRITIC criterion weights:
+%   C05 (Public Admin Procedures): 19.62%
+%   C03 (Vertical Accountability):  16.17%
+%   C06 (Public Service Delivery):  15.61%
+%   C04 (Control of Corruption):   12.96%
+%   C01 (Participation):           12.72%
+%   C02 (Transparency):            12.09%
+%   C07 (Environmental Governance):  5.40%
+%   C08 (E-Governance):              5.43%
+% Top SC by global weight: SC32 (0.0730), SC54 (0.0539), SC53 (0.0514)
+% Temporal stability cosine = 0.9915 (> 0.95 threshold).
+% Table 2: Full 29 SC global weights (sorted by rank).
+% Figure: weight radar chart.
+% ----------------------------------------------------------------
+\textit{[Content placeholder.]}
+
+\subsection{Historical Provincial Rankings (2011--2024)}
+\label{subsec:results_historical}
+% ----------------------------------------------------------------
+% PLACEHOLDER — Present Hierarchical MCDM results for all years.
+% Kendall's W ~ 0.88 (strong inter-method agreement).
+% Per-criterion MCDM score comparisons (TOPSIS, VIKOR, PROMETHEE II,
+%   COPRAS, EDAS, SAW).
+% Figure: parallel coordinate plot of per-criterion scores.
+% Table 3: Top 10 provinces by SAW composite score, latest year (2024).
+% Trend analysis: provinces improving/declining over 14 years.
+% ----------------------------------------------------------------
+\textit{[Content placeholder.]}
+
+\subsection{Inter-Method Concordance and Robustness}
+\label{subsec:results_concordance}
+% ----------------------------------------------------------------
+% PLACEHOLDER — Kendall's W concordance across 6 MCDM methods.
+% Sensitivity analysis: 100+ Monte Carlo simulations with ±15%
+%   weight perturbations. Robustness index and confidence intervals.
+% Spearman rank correlations across methods.
+% ----------------------------------------------------------------
+\textit{[Content placeholder.]}
+
+\subsection{Forecasting Model Performance}
+\label{subsec:results_forecast_performance}
+% ----------------------------------------------------------------
+% PLACEHOLDER — 5-fold walk-forward CV R² per model:
+%   BayesianRidge: 0.1304 ± 0.0514 (best individual)
+%   KernelRidge:   0.1213 ± 0.0365 (most stable)
+%   CatBoost:      0.1008 ± 0.0621
+%   SVR:           0.0757 ± 0.0313
+%   LightGBM:     -0.0700 ± 0.2223 (high variance)
+%   QuantileRF:   -0.0873 ± 0.1104
+% Super Learner meta-weights:
+%   BayesianRidge 49.0%, KernelRidge 19.1%, CatBoost 11.7%,
+%   SVR 8.6%, QuantileRF 8.6%, LightGBM 3.0%
+% Holdout (2024 withheld, 252 OOF samples):
+%   R² = 0.2171, RMSE = 2.3936, MAE = 1.1700
+% Residual diagnostics: Durbin-Watson, Breusch-Pagan, Shapiro-Wilk.
+% Figure: CV boxplots, feature importance heatmap, model weight chart.
+% ----------------------------------------------------------------
+\textit{[Content placeholder.]}
+
+\subsection{2025 Provincial Governance Forecasts and Prediction Intervals}
+\label{subsec:results_forecast_2025}
+% ----------------------------------------------------------------
+% PLACEHOLDER — 63-province 2025 forecasts for 8 criteria (SAW-normalised [0,1]).
+% 95% conformal prediction intervals for each province-criterion cell.
+% Interval width analysis: tightest vs. widest intervals by criterion.
+% Table 4: Top 10 provinces in 2025 forecast ranking.
+% Figure: prediction interval chart for selected provinces.
+% Figure: conformal coverage calibration curve.
+% ----------------------------------------------------------------
+\textit{[Content placeholder.]}
+
+\subsection{Integrated MCDM Ranking of 2025 Forecasts}
+\label{subsec:results_2025_ranking}
+% ----------------------------------------------------------------
+% PLACEHOLDER — Apply CRITIC weights and 6 MCDM methods to 2025 forecasts.
+% Produce 2025 forecast-based provincial ranking.
+% Compare with 2024 historical ranking: rank shifts.
+% Table 5: Full 63-province 2025 MCDM ranking and rank-change vs. 2024.
+% ----------------------------------------------------------------
+\textit{[Content placeholder.]}
+
+% =============================================================
+\section{Discussion}
+\label{sec:discussion}
+% =============================================================
+
+\subsection{Interpretation of CRITIC Weights}
+\label{subsec:disc_weights}
+% ----------------------------------------------------------------
+% PLACEHOLDER — Explain why C05 (Public Admin Procedures, 19.6%) receives
+% the highest weight: high inter-provincial variance and low correlation
+% with other criteria. Contrast with C07/C08 (low weights due to structural
+% gap in early years reducing effective variance). Policy implications:
+% administrative reform has highest leverage for differentiation.
+% ----------------------------------------------------------------
+\textit{[Content placeholder.]}
+
+\subsection{MCDM Method Convergence and Governance Interpretation}
+\label{subsec:disc_mcdm}
+% ----------------------------------------------------------------
+% PLACEHOLDER — W ≈ 0.88 confirms rankings are stable across methodological
+% choices. Discuss cases where methods diverge (e.g., VIKOR vs TOPSIS in
+% mid-ranking provinces) and how ER handles residual disagreement.
+% Interpret top/bottom provinces. Connection to Vietnam Gov't policy targets.
+% ----------------------------------------------------------------
+\textit{[Content placeholder.]}
+
+\subsection{Forecasting Performance in Small-Panel Contexts}
+\label{subsec:disc_forecast}
+% ----------------------------------------------------------------
+% PLACEHOLDER — Individual model R² (0.07–0.13) is modest but expected for
+% highly persistent panel data with structural breaks (COVID-19, sub-criteria
+% introduction). The Super Learner's NNLS combination allocates near-zero
+% weight to LightGBM/QRF (tree methods prone to overfitting small T), while
+% Bayesian Ridge (49%) and KernelRidge (19%) reflect suitability of
+% regularised linear methods for small-T panels. Compare with benchmark
+% (random walk, AR(1)). Holdout R² = 0.22 represents genuine out-of-sample
+% predictive power.
+% ----------------------------------------------------------------
+\textit{[Content placeholder.]}
+
+\subsection{Conformal Prediction Interval Quality}
+\label{subsec:disc_conformal}
+% ----------------------------------------------------------------
+% PLACEHOLDER — Interval width variation across criteria: wider for criteria
+% with structural breaks (C07, C08 missing early years), narrower for stable
+% criteria (C01, C02). Empirical coverage vs. nominal 95%. Comparison with
+% naive ±1.96*residual_std approach. Winkler score analysis.
+% ----------------------------------------------------------------
+\textit{[Content placeholder.]}
+
+\subsection{Policy Implications for Vietnam's Governance Reform}
+\label{subsec:disc_policy}
+% ----------------------------------------------------------------
+% PLACEHOLDER — Three actionable insights:
+% (1) Provinces consistently underperforming on SC32 (govt responsiveness)
+%     should be prioritised for judicial and public complaint reform.
+% (2) The large 2025 forecast uncertainty bands for C07/C08 reflect
+%     volatile growth in environmental enforcement and digital government;
+%     policy investment in these areas should be accompanied by mid-year
+%     monitoring.
+% (3) The CRITIC-identified importance of C05/C06 suggests that national-level
+%     administrative simplification programmes (e.g., single-window systems)
+%     yield the highest marginal improvement in composite scores.
+% ----------------------------------------------------------------
+\textit{[Content placeholder.]}
+
+\subsection{Comparison with Related Approaches}
+\label{subsec:disc_comparison}
+% ----------------------------------------------------------------
+% PLACEHOLDER — Contrast with:
+% (a) World Bank WGI (country-level, no sub-national differentiation)
+% (b) PCI (Vietnam business climate index — focuses on investment climate,
+%     not citizen governance)
+% (c) Standard MCDM papers using entropy or AHP for weighting
+% (d) ARIMA/VAR-based forecasting of governance indicators
+% Advantages: objective weighting, multi-method consensus, ML forecasting,
+%             distribution-free intervals, reproducible open-source pipeline.
+% ----------------------------------------------------------------
+\textit{[Content placeholder.]}
+
+\subsection{Limitations}
+\label{subsec:disc_limitations}
+% ----------------------------------------------------------------
+% PLACEHOLDER —
+% (1) Survey-based data susceptible to political economy biases and mode effects.
+% (2) Small T (14 years) limits statistical power of walk-forward CV and
+%     motivates parsimonious models; forecasting gains are modest.
+% (3) MCDM methods assume all-benefit (monotone) criteria and a static
+%     preference structure; non-compensatory preferences not captured.
+% (4) Conformal calibration pool (n_cal < 50 for some criteria-strata) may
+%     yield conservative intervals under Mondrian stratification.
+% (5) Causal interpretation of regression coefficients is not warranted;
+%     the framework is predictive, not structural.
+% ----------------------------------------------------------------
+\textit{[Content placeholder.]}
+
+% =============================================================
+\section{Conclusion}
+\label{sec:conclusion}
+% =============================================================
+% ----------------------------------------------------------------
+% PLACEHOLDER — Summary of contributions:
+% (1) First application of two-level CRITIC weighting to PAPI data;
+%     confirmed temporal stability (cosine 0.9915).
+% (2) Six-method MCDM consensus via ER; Kendall's W ≈ 0.88.
+% (3) Three-tier ensemble (6 base models + Super Learner + conformal) for
+%     governance forecasting; holdout R² = 0.22; 95% conformal intervals.
+% (4) First forward-looking PAPI ranking for 2025.
+%
+% Limitations recap and future work:
+% - Extend to district/commune level as granular data become available.
+% - Incorporate text-based sentiment from citizen complaint records.
+% - Apply Phase II enhancements: CQR, Mondrian CP, group LASSO meta-weights.
+% - Investigate causal mechanisms (e.g., fiscal transfers → C03/C04 improvement).
+% ----------------------------------------------------------------
+\textit{[Content placeholder.]}
+
+% =============================================================
+%  REFERENCES
+% =============================================================
+
+\bibliography{references}
+
+% INLINE BIBLIOGRAPHY — replace with BibTeX file or use \begin{thebibliography}
+% The entries below are provided as a reference list for the BibTeX file.
+% Create references.bib in the same directory with the entries listed below.
+
+\begin{thebibliography}{99}
+
+\bibitem[Acemoglu and Robinson(2005)]{Acemoglu2005}
+Acemoglu, D., \& Robinson, J.~A. (2005).
+\textit{Economic Origins of Dictatorship and Democracy}.
+Cambridge University Press.
+
+\bibitem[Angelopoulos and Bates(2022)]{Angelopoulos2022}
+Angelopoulos, A.~N., \& Bates, S. (2022).
+A gentle introduction to conformal prediction and
+distribution-free uncertainty quantification.
+\textit{arXiv preprint}, arXiv:2107.07511v7.
+
+\bibitem[Brans and Vincke(1985)]{Brans1985}
+Brans, J.~P., \& Vincke, P. (1985).
+A preference ranking organisation method (PROMETHEE).
+\textit{Management Science}, 31(6), 647--656.
+
+\bibitem[CECODES et al.(2024)]{PAPI2024}
+CECODES, VFF-CRT, RTA, \& UNDP. (2024).
+\textit{The 2024 Viet Nam Governance and Public Administration Performance Index
+(PAPI): Measuring Citizens' Experiences}.
+United Nations Development Programme, Ha Noi, Viet Nam.
+
+\bibitem[Diakoulaki et al.(1995)]{Diakoulaki1995}
+Diakoulaki, D., Mavrotas, G., \& Papayannakis, L. (1995).
+Determining objective weights in multiple criteria problems:
+The CRITIC method.
+\textit{Computers \& Operations Research}, 22(7), 763--770.
+
+\bibitem[Fishburn(1967)]{Fishburn1967}
+Fishburn, P.~C. (1967).
+Additive utilities with incomplete product sets:
+Application to priorities and assignments.
+\textit{Operations Research}, 15(3), 537--542.
+
+\bibitem[Greco et al.(2019)]{Greco2019}
+Greco, S., Ishizaka, A., Tasiou, M., \& Torrisi, G. (2019).
+On the methodological framework of composite indices: A review
+of the issues of weighting, aggregation, and robustness.
+\textit{Social Indicators Research}, 141(1), 61--94.
+
+\bibitem[Hwang and Yoon(1981)]{Hwang1981}
+Hwang, C.~L., \& Yoon, K. (1981).
+\textit{Multiple Attribute Decision Making: Methods and Applications}.
+Springer-Verlag, Berlin.
+
+\bibitem[Kaufmann et al.(2010)]{Kaufmann2010}
+Kaufmann, D., Kraay, A., \& Mastruzzi, M. (2010).
+The worldwide governance indicators: Methodology and analytical issues.
+\textit{Hague Journal for the Rule of Law}, 3(2), 220--246.
+
+\bibitem[Ke et al.(2017)]{Ke2017}
+Ke, G., Meng, Q., Finley, T., Wang, T., Chen, W., Ma, W., \ldots \& Liu, T.~Y. (2017).
+LightGBM: A highly efficient gradient boosting decision tree.
+\textit{Advances in Neural Information Processing Systems}, 30, 3146--3154.
+
+\bibitem[Keshavarz~Ghorabaee et al.(2015)]{Keshavarz2015}
+Keshavarz~Ghorabaee, M., Zavadskas, E.~K., Olfat, L., \& Turskis, Z. (2015).
+Multi-criteria inventory classification using a new method of evaluation
+based on distance from average solution (EDAS).
+\textit{Informatica}, 26(3), 435--451.
+
+\bibitem[Malesky(2014)]{Malesky2014}
+Malesky, E.~J. (2014).
+Rethinking the relationship between subnational government and economic
+performance: Evidence from Vietnam.
+\textit{Journal of East Asian Studies}, 14(3), 399--452.
+
+\bibitem[Nguyen et al.(2020)]{Nguyen2020}
+Nguyen, H.~T., Pham, T.~H., \& Vu, T.~A. (2020).
+Decentralisation, governance quality, and economic growth in Vietnam:
+A provincial-level panel study.
+\textit{Journal of Development Economics}, 144, 102436.
+
+\bibitem[Opricovic and Tzeng(2004)]{Opricovic2004}
+Opricovic, S., \& Tzeng, G.~H. (2004).
+Compromise solution by MCDM methods: A comparative analysis of
+VIKOR and TOPSIS.
+\textit{European Journal of Operational Research}, 156(2), 445--455.
+
+\bibitem[Prokhorenkova et al.(2018)]{Prokhorenkova2018}
+Prokhorenkova, L., Gusev, G., Vorobev, A., Dorogush, A.~V., \& Gulin, A. (2018).
+CatBoost: Unbiased boosting with categorical features.
+\textit{Advances in Neural Information Processing Systems}, 31.
+
+\bibitem[van~der~Laan et al.(2007)]{vanderLaan2007}
+van~der~Laan, M.~J., Polley, E.~C., \& Hubbard, A.~E. (2007).
+Super learner.
+\textit{Statistical Applications in Genetics and Molecular Biology}, 6(1),
+Article~25.
+
+\bibitem[Vovk et al.(2005)]{Vovk2005}
+Vovk, V., Gammerman, A., \& Shafer, G. (2005).
+\textit{Algorithmic Learning in a Random World}.
+Springer, New York.
+
+\bibitem[Yang and Xu(2002)]{Yang2002}
+Yang, J.~B., \& Xu, D.~L. (2002).
+On the evidential reasoning algorithm for multiple attribute decision analysis
+under uncertainty.
+\textit{IEEE Transactions on Systems, Man, and Cybernetics---Part~A:
+Systems and Humans}, 32(3), 289--304.
+
+\bibitem[Zavadskas et al.(1994)]{Zavadskas1994}
+Zavadskas, E.~K., Kaklauskas, A., \& Sarka, V. (1994).
+The new method of multicriteria complex proportional assessment of projects.
+\textit{Technological and Economic Development of Economy}, 1(3), 131--139.
+
+\end{thebibliography}
+
+\end{document}
