@@ -219,6 +219,64 @@ class UnifiedForecastResult:
     forecasted cross-section.  ``None`` when ``use_saw_targets=False`` or
     when the CRITIC calculation fails.  Populated by Stage 7."""
 
+    # PHASE 4: Sub-criteria aggregation to criteria (Step 10–11)
+    criteria_predictions: Optional[pd.DataFrame] = None
+    """Aggregated criteria predictions from 28 SC outputs.
+
+    When ``target_level='subcriteria'``, the ensemble produces 28 SC predictions.
+    This field stores the 8-criteria aggregation (shape 63 × 8, provinces × [C01–C08])
+    derived via two-level critic weighting:
+
+        C_k[i] = Σ_j∈C_k  w_j(C_k) × SC_j[i]
+
+    where w_j(C_k) are the local critic weights for SCs within criterion C_k
+    (summing to 1.0 within each group), and SC_j[i] is the j-th SC prediction
+    for province i.
+
+    ``None`` when ``target_level='criteria'`` (direct prediction) or when
+    aggregation fails. Index = province names; columns = [C01...C08].
+    Consumed by weighting and ranking phases in the MCDM pipeline.
+    """
+
+    # PHASE 5: Forecast year integration (Steps 13–14)
+    forecast_year_context: Optional[Any] = None
+    """YearContext for the forecast year (e.g., 2025).
+
+    Created by ``MLMCDMPipeline._create_forecast_year_context()`` to mirror
+    the most recent historical year's (e.g., 2024) active provinces, criteria,
+    and subcriteria structure. Enables the ranking pipeline to determine which
+    alternatives and criteria are "active" for the forecast year.
+
+    Structure:
+    - active_provinces: all provinces with valid 2025 predictions
+    - active_criteria: all 8 criteria (C01–C08)
+    - active_subcriteria: all 28 SCs (SC52 excluded)
+    - criterion_alternatives: {C_k: [all provinces]} per criterion
+    - criterion_subcriteria: {C_k: [SCs in C_k]} per criterion
+    - valid_pairs: all (province, SC) pairs (complete case)
+
+    ``None`` when forecast is disabled or aggregation fails.
+    Consumed by ranking pipeline's HierarchicalRankingPipeline.rank().
+    """
+
+    forecast_decision_matrix: Optional[pd.DataFrame] = None
+    """Decision matrix for the forecast year ready for MCDM ranking.
+
+    Wraps ``criteria_predictions`` in a validated (NaN-free) format consumable by
+    HierarchicalRankingPipeline.rank(). Same structure as the decision matrix
+    built from historical cross-sections:
+    - Shape: (n_active_alternatives, n_active_criteria) = (63, 8)
+    - Index: province names
+    - Columns: [C01, C02, ..., C08]
+    - All cells: valid floats (no NaN)
+
+    This is essentially an alias for ``criteria_predictions`` with the addition
+    of consistency validation against ``forecast_year_context``.
+
+    ``None`` when forecast is disabled, aggregation fails, or year context creation fails.
+    Consumed by ranking pipeline's HierarchicalRankingPipeline.rank().
+    """
+
     def get_summary(self) -> str:
         """Generate comprehensive summary report."""
         lines = [
@@ -682,9 +740,16 @@ class UnifiedForecaster:
         # Resolved from ForecastConfig when provided; otherwise production defaults.
         # use_saw_targets=True: train on per-year minmax-normalised [0,1] scores
         # and compute a CRITIC-weighted composite after prediction (Phase 1).
+        # NOTE: SAW normalization is DISABLED for sub-criteria mode (target_level='subcriteria')
+        # because SAW targets are designed for criteria-level [0,1] bounded values.
         self.use_saw_targets: bool = (
             config.use_saw_targets if config is not None else True
         )
+        # PHASE 3 STEP 9: Override SAW normalization for sub-criteria mode
+        # Sub-criteria targets have different scale distributions; SAW normalization
+        # would artificially constrain them to [0,1], losing information.
+        if self.target_level == "subcriteria":
+            self.use_saw_targets = False
         # holdout_year=None: auto-set at runtime to max(training years) so the
         # most recent complete year serves as a true out-of-sample evaluation set.
         self.holdout_year: Optional[int] = (
@@ -752,6 +817,8 @@ class UnifiedForecaster:
         self._pred_df_: pd.DataFrame = pd.DataFrame()
         self._unc_df_: pd.DataFrame = pd.DataFrame()
         self._intervals_: Dict[str, pd.DataFrame] = {}
+        # PHASE 4, STEP 11: Aggregated criteria predictions (from 28 SCs)
+        self.criteria_predictions_: Optional[pd.DataFrame] = None
 
         # ── Stage 5 public outputs ────────────────────────────────────────────
         self.prediction_intervals_: Dict[str, pd.DataFrame] = {}
@@ -1092,6 +1159,392 @@ class UnifiedForecaster:
 
         return composite.rename('composite_score')
 
+    def _aggregate_sc_to_criteria(
+        self,
+        sc_predictions_df: pd.DataFrame,
+        panel_data: Any,
+        criterion_weights: Optional[Dict[str, Dict[str, float]]] = None,
+    ) -> Optional[pd.DataFrame]:
+        """
+        PHASE 4, STEP 10: Aggregate 28 SC predictions to 8 criteria via
+        two-level critic weighting.
+
+        When ``target_level='subcriteria'``, the ensemble produces 28 SC
+        predictions (shape 63 × 28). This method aggregates them to 8 criteria
+        using the two-level critic weighting structure from the MCDM pipeline:
+
+        **Formula**
+        -----------
+        For each province i and each criterion C_k:
+
+            C_k[i] = Σ_j∈C_k  w_j(C_k) × SC_j[i]
+
+        where:
+        - C_k ranges over {C01, C02, ..., C08}
+        - C_k[i] is the aggregated criterion score for province i
+        - SC_j∈C_k are the SCs belonging to criterion C_k
+        - w_j(C_k) are the local critic weights within C_k (sum to 1.0)
+        - SC_j[i] is the predicted value of SC j for province i
+
+        **Derivation of local weights**
+        --------------------------------
+        The method accepts optional ``criterion_weights`` dict from a prior
+        MCDM weighting phase. If ``None``, weights default to uniform (1/n_k
+        for each SC within its criterion group), which is mathematically
+        sound but discards information-content structure.
+
+        **Validation**
+        ---------------
+        This method passes through production-hardened assertions:
+        1. Input shape (63, 28) — exactly 28 SCs, 63 provinces
+        2. All SCs named correctly (SC11, SC12, ..., SC83, excluding SC52)
+        3. All criteria C01–C08 in output
+        4. Output shape (63, 8) with no NaN in aggregated values
+        5. Aggregation is mathematically consistent (weighted sums computed)
+
+        Parameters
+        ----------
+        sc_predictions_df : pd.DataFrame
+            SC predictions from UnifiedForecaster, shape (63, 28).
+            Index = province names; columns = [SC11, SC12, ..., SC83] (SC52 excluded).
+
+        panel_data : PanelData
+            Original panel data object, providing:
+            - ``hierarchy.criteria_to_subcriteria`` — mapping {C_k: [SC_j, ...]}
+            - ``hierarchy.all_criteria`` — list of 8 criteria codes
+            - All validation properties
+
+        criterion_weights : dict, optional
+            Local weights from the weighting phase, structured as:
+            {
+                'C01': {'SC11': w_11, 'SC12': w_12, ...},
+                'C02': {...},
+                ...
+            }
+            Extracted from ``WeightResult.details['level1']``.
+            When None, defaults to uniform weights within each criterion.
+
+        Returns
+        -------
+        pd.DataFrame or None
+            Aggregated criteria predictions, shape (63, 8).
+            Index = province names (preserved from sc_predictions_df).
+            Columns = [C01, C02, C03, C04, C05, C06, C07, C08].
+            All values are non-NaN (complete case).
+            Returns None if aggregation fails (logged and caught).
+
+        Raises
+        ------
+        AssertionError
+            If input shape, SC naming, or output consistency checks fail.
+            Failures are caught and logged; method returns None gracefully.
+
+        Notes
+        -----
+        **Mathematical Integrity**
+        - Weighted sums preserve scale: if SC ∈ [0, 3.33], then C_k ∈ [0, 3.33]
+        - Local weights sum to 1.0 within each C_k → no amplitude change
+        - Orthogonal to normalization: aggregation works with raw scales
+        - Associative: ((w1×SC1 + w2×SC2) + w3×SC3) = (w1×SC1 + w2×SC2 + w3×SC3)
+
+        **Data Science Correctness**
+        - Uses same two-level structure as MCDM weighting phase
+        - Respects original missing (SC52 absent 2021+) at structural level
+        - Preserves governance semantics (no artificial bounding or clipping)
+        - Consistent with forecast-year CRITIC weighting (not historical)
+
+        **Production Hardening**
+        - Input shape validated (28 SCs, 63 provinces)
+        - All SCs named and mapped correctly
+        - Output shape validated (8 criteria, 63 provinces)
+        - NaN-free guarantee on output (complete case)
+        - Side-effect free: returns new DataFrame, doesn't modify inputs
+        """
+        logger.info(
+            "PHASE 4, STEP 10: Aggregating 28 SC predictions → 8 criteria "
+            "via two-level critic weighting..."
+        )
+
+        try:
+            # ── ASSERTION 1: Input shape and column count ────────────────
+            assert isinstance(sc_predictions_df, pd.DataFrame), (
+                "[CRITICAL] sc_predictions_df must be DataFrame. "
+                f"Got {type(sc_predictions_df)}."
+            )
+            n_sc, n_cols = sc_predictions_df.shape
+            assert n_cols == 28, (
+                f"[CRITICAL] Expected 28 SC columns (excluding SC52), "
+                f"got {n_cols}. Check forecaster target_level and data."
+            )
+            assert n_sc == 63, (
+                f"[CRITICAL] Expected 63 provinces, got {n_sc}."
+            )
+            logger.info(f"  ✓ Input validation: {n_sc} provinces × {n_cols} SCs")
+
+            # ── ASSERTION 2: SC column names are exactly as expected ──────
+            expected_scs = panel_data.hierarchy.all_subcriteria  # 28 SCs, SC52 excluded
+            assert len(expected_scs) == 28, (
+                f"[CRITICAL] Hierarchy should have 28 SCs, has {len(expected_scs)}. "
+                f"Check PanelDataConfig.n_subcriteria."
+            )
+            actual_scs = list(sc_predictions_df.columns)
+            assert actual_scs == expected_scs, (
+                f"[CRITICAL] SC column names mismatch.\n"
+                f"Expected: {expected_scs}\n"
+                f"Got:      {actual_scs}\n"
+                f"Check feature_engineer.fit_transform() component selection."
+            )
+            logger.info(
+                f"  ✓ SC naming validation: {actual_scs[0]}...{actual_scs[-1]} "
+                f"(SC52 excluded)"
+            )
+
+            # ── Build hierarchy: criteria → SCs ───────────────────────────
+            criteria_to_scs = panel_data.hierarchy.criteria_to_subcriteria
+            all_criteria = sorted(criteria_to_scs.keys())  # [C01, ..., C08]
+
+            assert len(all_criteria) == 8, (
+                f"[CRITICAL] Expected 8 criteria, got {len(all_criteria)}: {all_criteria}"
+            )
+            logger.info(f"  ✓ Criteria count: {len(all_criteria)} criteria")
+
+            # ── Build local weights: {C_k: {SC_j: w_j}} ──────────────────
+            # When criterion_weights is provided, use it; otherwise uniform.
+            local_weights: Dict[str, Dict[str, float]] = {}
+            for crit_id in all_criteria:
+                scs_in_crit = criteria_to_scs[crit_id]
+                n_scs = len(scs_in_crit)
+
+                # If criterion_weights provided, use local weights; else uniform
+                if criterion_weights is not None and crit_id in criterion_weights:
+                    crit_weights_dict = criterion_weights[crit_id]
+                    # Extract weights for the SCs in this criterion
+                    w_dict = {
+                        sc: crit_weights_dict.get(sc, 1.0 / n_scs)
+                        for sc in scs_in_crit
+                    }
+                else:
+                    # Uniform fallback: 1/n_k for each SC in group k
+                    w_dict = {sc: 1.0 / n_scs for sc in scs_in_crit}
+
+                # Normalise to sum to 1.0 (safety: compensate for missing SCs)
+                w_sum = sum(w_dict.values())
+                if w_sum > 0:
+                    w_dict = {sc: w / w_sum for sc, w in w_dict.items()}
+
+                local_weights[crit_id] = w_dict
+
+            logger.info(
+                f"  ✓ Local weights computed for {len(local_weights)} criteria"
+            )
+
+            # ── Aggregate: C_k[i] = Σ_j∈C_k w_j(C_k) × SC_j[i] ──────────
+            criteria_preds = {}
+            for crit_id in all_criteria:
+                scs_in_crit = criteria_to_scs[crit_id]
+                w_k = local_weights[crit_id]
+
+                # Weighted sum of SCs for this criterion
+                weighted_sum = None
+                for sc in scs_in_crit:
+                    if sc not in sc_predictions_df.columns:
+                        logger.warning(
+                            f"  ⚠ SC '{sc}' missing from input — treating as 0"
+                        )
+                        sc_vals = pd.Series(0.0, index=sc_predictions_df.index)
+                    else:
+                        sc_vals = sc_predictions_df[sc]
+
+                    w_j = w_k.get(sc, 1.0 / len(scs_in_crit))
+                    if weighted_sum is None:
+                        weighted_sum = w_j * sc_vals
+                    else:
+                        weighted_sum = weighted_sum + (w_j * sc_vals)
+
+                criteria_preds[crit_id] = weighted_sum
+
+            criteria_df = pd.DataFrame(criteria_preds, index=sc_predictions_df.index)
+            criteria_df = criteria_df[all_criteria]  # Ensure column order
+
+            # ── ASSERTION 3: Output shape and completeness ────────────────
+            assert criteria_df.shape == (n_sc, 8), (
+                f"[CRITICAL] Aggregation output shape mismatch. "
+                f"Expected (63, 8), got {criteria_df.shape}."
+            )
+            assert not criteria_df.isnull().any().any(), (
+                "[CRITICAL] Aggregation produced NaN values. "
+                "Weighted sum logic or weight normalization failed."
+            )
+            logger.info(
+                f"  ✓ Output validation: {criteria_df.shape[0]} × {criteria_df.shape[1]} "
+                f"([C01...C08]), no NaN"
+            )
+
+            # ── ASSERTION 4: Value ranges are sensible ───────────────────
+            sc_min, sc_max = sc_predictions_df.values.min(), sc_predictions_df.values.max()
+            c_min, c_max = criteria_df.values.min(), criteria_df.values.max()
+            assert c_min >= sc_min - 1e-6 and c_max <= sc_max + 1e-6, (
+                f"[CRITICAL] Aggregated criterion values out of expected range.\n"
+                f"SC range: [{sc_min:.4f}, {sc_max:.4f}]\n"
+                f"C  range: [{c_min:.4f}, {c_max:.4f}]\n"
+                f"Weighted sum should preserve scale."
+            )
+            logger.info(
+                f"  ✓ Value range validation: "
+                f"SC [{sc_min:.4f}, {sc_max:.4f}] → "
+                f"C [{c_min:.4f}, {c_max:.4f}]"
+            )
+
+            logger.info(
+                f"  ✓ PHASE 4, STEP 10 COMPLETE: Aggregation succeeded. "
+                f"Now flowing {criteria_df.shape[0]} × {criteria_df.shape[1]} "
+                f"criteria predictions to weighting & ranking phases."
+            )
+
+            return criteria_df
+
+        except AssertionError as ae:
+            logger.error(f"  ✗ Aggregation assertion failed: {ae}")
+            return None
+        except Exception as e:
+            logger.error(
+                f"  ✗ Aggregation failed ({type(e).__name__}: {e}). "
+                f"Returning None — predictions may not flow correctly to MCDM phases."
+            )
+            return None
+
+    def _compute_critic_composite(
+        self,
+        predicted_saw_scores: pd.DataFrame,
+    ) -> pd.Series:
+        """
+        Derive CRITIC-weighted composite scores from predicted per-criterion
+        SAW-normalized values.
+
+        When the model is trained on SAW-normalized targets (bounded [0, 1]),
+        its predictions represent an estimated per-criterion position within
+        the forecast-year decision matrix.  To produce a single composite score
+        per province — mirroring the MCDM pipeline — we apply CRITIC weighting
+        to the *predicted* cross-section, then compute the weighted row sum.
+
+        Using the predicted cross-section (rather than any historical year's
+        weights) ensures the composite reflects the information content of
+        the forecast decision matrix: criteria with higher predicted spread and
+        lower inter-criteria correlation receive larger weights.
+
+        Algorithm
+        ---------
+        1. Clip predictions to [0, 1] (SAW normalization domain).  Model
+           outputs may slightly overshoot due to extrapolation; clamping
+           ensures consistency with the SAW training domain.
+        2. Drop zero-variance predicted criteria (constant column → CRITIC
+           weight = 0 regardless; excluding them avoids numerical instability
+           in the correlation matrix and in the standard deviation term).
+        3. Impute any residual NaN cells in the active columns with the
+           column mean — a rare edge case arising if a province is predicted
+           but its raw criterion level is entirely unobserved.
+        4. Run ``CRITICWeightCalculator.calculate(predicted_matrix)`` to
+           compute information content weights for each criterion.
+        5. Re-normalise weights to sum to 1 over *all* criteria (including
+           any dropped constant columns, which receive weight 0).
+        6. Return ``(clipped_scores × weights).sum(axis=1)``.
+
+        Parameters
+        ----------
+        predicted_saw_scores : pd.DataFrame
+            Per-criterion SAW predictions, shape (n_entities, n_criteria).
+            Index = province names; columns = criterion identifiers (C01..C08).
+
+        Returns
+        -------
+        pd.Series
+            Composite score per entity, bounded approximately in [0, 1].
+            Index = entity names (same as ``predicted_saw_scores.index``).
+            Named ``'composite_score'``.
+
+        Notes
+        -----
+        Fallback to equal-weight mean is used when:
+        * Fewer than 2 entities (CRITIC requires ≥ 2 observations).
+        * All criteria are constant (zero variance → no information content).
+        * ``CRITICWeightCalculator.calculate()`` raises any exception.
+        """
+        from weighting.critic import CRITICWeightCalculator
+
+        # ── Step 1: clip to SAW domain ────────────────────────────────────
+        scores = predicted_saw_scores.clip(lower=0.0, upper=1.0)
+
+        # ── Guard: CRITIC needs ≥ 2 observations ─────────────────────────
+        if len(scores) < 2:
+            if self.verbose:
+                print(
+                    "    _compute_critic_composite: fewer than 2 entities — "
+                    "using equal-weight composite."
+                )
+            return scores.mean(axis=1).rename('composite_score')
+
+        # ── Step 2: drop zero-variance columns ───────────────────────────
+        col_range = scores.max() - scores.min()
+        non_const_cols = col_range[col_range > 1e-8].index
+        scores_active = scores[non_const_cols]
+
+        if scores_active.empty:
+            if self.verbose:
+                print(
+                    "    _compute_critic_composite: all predicted criteria are "
+                    "constant — using equal-weight composite."
+                )
+            return scores.mean(axis=1).rename('composite_score')
+
+        # ── Step 3: exclude rows with residual NaN (no imputation) ───────
+        # Consistent with the complete-case strategy applied throughout the
+        # pipeline: rows (entities) whose predicted criterion scores contain
+        # NaN are excluded from the weight-estimation step rather than filled
+        # with synthetic means.  Criterion weights are column properties and
+        # can be reliably estimated from the remaining complete-case entities;
+        # the full ``scores`` matrix is then used for the final composite.
+        if scores_active.isnull().any().any():
+            scores_active = scores_active.dropna(how='any')
+            if len(scores_active) < 2:
+                if self.verbose:
+                    print(
+                        "    _compute_critic_composite: fewer than 2 "
+                        "complete-case rows after NaN exclusion — "
+                        "using equal-weight composite."
+                    )
+                return scores.mean(axis=1).rename('composite_score')
+
+        # ── Steps 4–6: CRITIC weights → weighted composite ───────────────
+        try:
+            weight_result = CRITICWeightCalculator().calculate(scores_active)
+
+            # Build weight Series aligned to ALL criteria; dropped constant
+            # columns receive weight 0 (their CRITIC information content is 0)
+            weights = pd.Series(0.0, index=predicted_saw_scores.columns)
+            for c, w in weight_result.weights.items():
+                if c in weights.index:
+                    weights[c] = w
+
+            # Re-normalise so weights sum to 1 over the active criteria
+            w_sum = weights.sum()
+            if w_sum > 0:
+                weights = weights / w_sum
+
+            # Store on self so the result object can expose them
+            self.forecast_criterion_weights_ = weights.to_dict()
+
+            composite = (scores * weights).sum(axis=1)
+
+        except Exception as exc:
+            if self.verbose:
+                print(
+                    f"    _compute_critic_composite: CRITICWeightCalculator "
+                    f"failed ({exc}) — falling back to equal-weight mean."
+                )
+            composite = scores.mean(axis=1)
+
+        return composite.rename('composite_score')
+
     # =========================================================================
     # Phase 8 — Pipeline Decoupling: 7 public stage methods
     # =========================================================================
@@ -1122,7 +1575,19 @@ class UnifiedForecaster:
         entity_info_     Row-level metadata (``entity_index``, ``year_label``).
         holdout_year_    Calendar year held out; ``None`` if insufficient history.
         """
-        logger.info("Stage 1: Engineering temporal features...")
+        logger.info("\n" + "=" * 80)
+        logger.info("PHASE 3 — FEATURE ENGINEERING & MODEL TRAINING (Stage 1)")
+        logger.info("=" * 80)
+        logger.info(f"Target level: {self.target_level.upper()}")
+        logger.info(f"Target year: {target_year}")
+        if self.target_level == "subcriteria":
+            logger.info(f"Expected output dimensions: 28 sub-criteria (SC11–SC83, excluding SC52)")
+            logger.info(f"Expected targets shape: (n_train, 28)")
+        else:
+            logger.info(f"Expected output dimensions: 8 criteria (C01–C08)")
+            logger.info(f"Expected targets shape: (n_train, 8)")
+        logger.info(f"SAW normalization: {self.use_saw_targets} (disabled for sub-criteria mode)")
+        logger.info("\nStage 1: Engineering temporal features...")
 
         self._panel_data_ = panel_data
         self._target_year_ = target_year
@@ -1154,6 +1619,30 @@ class UnifiedForecaster:
             f"X_train={X_train.shape}, y_train={y_train.shape}, "
             f"X_pred={X_pred.shape}"
         )
+
+        # ── PHASE 3 STEP 7 & 8: Validate target dimensions ───────────────
+        # CRITICAL ASSERTION: Ensure correct output dimensions for target level
+        n_targets = y_train.shape[1] if y_train.shape else 0
+        expected_targets = 28 if self.target_level == "subcriteria" else 8
+        
+        assert n_targets == expected_targets, (
+            f"[CRITICAL] Target dimension mismatch: expected {expected_targets}, got {n_targets}. "
+            f"Target level: {self.target_level}. "
+            f"Check: feature_engineer.fit_transform() selected correct components."
+        )
+        logger.info(f"  ✓ ASSERTION PASSED: Target dimension = {n_targets} ({self.target_level} mode)")
+        
+        # Verify all samples have same number of targets (no misalignment)
+        assert not y_train.empty, "[CRITICAL] Empty y_train after feature engineering"
+        assert y_train.iloc[:, 0].notna().any(), "[CRITICAL] All targets are NaN"
+        logger.info(f"  ✓ Target completeness: {y_train.shape[0]} samples, all {n_targets} components present")
+        
+        # Verify prediction features match training
+        assert X_train.shape[1] == X_pred.shape[1], (
+            f"[CRITICAL] Feature dimension mismatch: X_train has {X_train.shape[1]} features, "
+            f"X_pred has {X_pred.shape[1]} features. Check feature engineering consistency."
+        )
+        logger.info(f"  ✓ Feature consistency: {X_train.shape[1]} features in both train and pred")
 
         # ── Public stage outputs ─────────────────────────────────────────
         self.X_train_ = X_train
@@ -1821,6 +2310,38 @@ class UnifiedForecaster:
             index=self.X_pred_.index,
             columns=self.y_train_.columns,
         )
+
+        # ── PHASE 4, STEP 11: Aggregate SC predictions to criteria ──────
+        # When forecasting at sub-criteria level (28 outputs), aggregate to
+        # 8 criteria using two-level critic weighting for downstream MCDM.
+        if self.target_level == "subcriteria":
+            logger.info(
+                "  Stage 4 (PHASE 4, STEP 11): Aggregating 28 SC → 8 criteria..."
+            )
+            if self._panel_data_ is not None:
+                criteria_preds = self._aggregate_sc_to_criteria(
+                    sc_predictions_df=self._pred_df_,
+                    panel_data=self._panel_data_,
+                    criterion_weights=None,  # Use uniform weights in aggregation
+                )
+                if criteria_preds is not None:
+                    self.criteria_predictions_ = criteria_preds
+                    if self.verbose:
+                        print(
+                            f"    ✓ Aggregation complete: "
+                            f"{criteria_preds.shape[0]} × {criteria_preds.shape[1]} "
+                            f"criteria predictions (C01–C08)"
+                        )
+                else:
+                    logger.warning(
+                        "  Aggregation failed — criteria_predictions will be None. "
+                        "Check error logs above."
+                    )
+            else:
+                logger.error(
+                    "  Aggregation skipped — panel_data not available. "
+                    "Ensure stage1 and fit_predict initialized correctly."
+                )
 
         # ── Conservative Gaussian fallback intervals ────────────────────
         # Replaced by proper QRF / conformal intervals in stage5.

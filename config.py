@@ -125,7 +125,9 @@ class PanelDataConfig:
     year_col: str = "Year"
 
     # Hierarchy
-    n_subcriteria: int = 29
+    # NOTE: n_subcriteria = 28 (SC52 is permanently excluded as of 2021)
+    # C01:4, C02:4, C03:3, C04:4, C05:3 (was 4, excluding SC52), C06:4, C07:3, C08:3  → 28 total
+    n_subcriteria: int = 28
     n_criteria: int = 8
     subcriteria_prefix: str = "SC"
     criteria_prefix: str = "C"
@@ -139,20 +141,31 @@ class PanelDataConfig:
         return self.n_provinces * self.n_years
 
     # Number of sub-criteria per criterion, in C01..C08 order.
-    # C01:4, C02:4, C03:3, C04:4, C05:4, C06:4, C07:3, C08:3  → 29 total
+    # C01:4, C02:4, C03:3, C04:4, C05:3, C06:4, C07:3, C08:3  → 28 total
+    # NOTE: C05 reduced from 4 to 3 because SC52 is excluded globally
     _subcriteria_per_criterion: List[int] = field(
-        default_factory=lambda: [4, 4, 3, 4, 4, 4, 3, 3],
+        default_factory=lambda: [4, 4, 3, 4, 3, 4, 3, 3],
         init=False,
         repr=False,
     )
 
     @property
     def subcriteria_cols(self) -> List[str]:
-        """Return SC codes in dataset order: SC11–SC14, SC21–SC24, …, SC81–SC83."""
+        """Return SC codes in dataset order: SC11–SC14, SC21–SC24, …, SC81–SC83.
+        
+        Permanently excludes SC52 (discontinued from 2021 onward).
+        For C05: returns [SC51, SC53, SC54] (skips SC52).
+        """
         codes: List[str] = []
         for crit_idx, n_sub in enumerate(self._subcriteria_per_criterion, start=1):
             for sub_idx in range(1, n_sub + 1):
-                codes.append(f"{self.subcriteria_prefix}{crit_idx}{sub_idx}")
+                # Special handling for C05: skip SC52
+                if crit_idx == 5:  # C05
+                    # Map sub_idx 1→1, 2→3, 3→4 (to align with codebook)
+                    actual_sub_idx = sub_idx if sub_idx < 2 else sub_idx + 1
+                    codes.append(f"{self.subcriteria_prefix}{crit_idx}{actual_sub_idx}")
+                else:
+                    codes.append(f"{self.subcriteria_prefix}{crit_idx}{sub_idx}")
         return codes
 
     @property
@@ -502,18 +515,28 @@ class ForecastConfig:
     """
 
     # ── Forecast target level ─────────────────────────────────────────────
-    forecast_level: str = "criteria"
+    forecast_level: str = "subcriteria"
     """Forecast target granularity.
-    'criteria'    — predict 8 aggregated criterion composites (C01–C08).
-    'subcriteria' — predict all 29 raw sub-criterion values (SC11–SC83).
+    'subcriteria' — predict all 28 raw sub-criterion values (SC11–SC83, excluding SC52). [DEFAULT]
+    'criteria'    — predict 8 aggregated criterion composites (C01–C08). [DEPRECATED - see note below]
+    
+    DEPRECATION NOTICE (v2025.01):
+    'criteria' mode is deprecated. Sub-criteria forecasting is required for
+    end-to-end integrity. Forecasting at the sub-criteria level, then aggregating
+    via CRITIC weighting, preserves information density and ensures consistency
+    with the MCDM weighting and ranking phases.
     """
 
     # ── SAW target normalization & true holdout ───────────────────────────
-    use_saw_targets: bool = True
+    use_saw_targets: bool = False
     """Predict per-year SAW-normalized [0,1] criteria scores instead of raw
     composite means.
 
-    When True:
+    DEPRECATED for sub-criteria forecasting: SAW normalization was designed
+    for criteria-level targets bounded [0, 1]. Sub-criteria have different
+    scale distributions and should use raw values.
+
+    When True (legacy, criteria mode only):
     * Targets are per-year column-wise minmax-normalized over the full
       provincial cross-section (same formula as SAWCalculator._normalize
       with normalization='minmax', benefit criteria only).

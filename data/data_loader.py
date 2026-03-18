@@ -387,7 +387,11 @@ class DataLoader:
     # ------------------------------------------------------------------
 
     def _load_hierarchy_mapping(self, data_dir: Path) -> HierarchyMapping:
-        """Load hierarchy mapping from codebook files."""
+        """Load hierarchy mapping from codebook files.
+        
+        NOTE: Permanently excludes SC52 (discontinued from 2021 onward) to ensure
+        consistent 28-SC structure across all analysis phases.
+        """
         codebook_dir = data_dir / "codebook"
 
         subcriteria_file = codebook_dir / "codebook_subcriteria.csv"
@@ -436,6 +440,19 @@ class DataLoader:
             zip(crit_df['Variable_Code'], crit_df['Variable_Name'])
         )
 
+        # ── CRITICAL FIX (Phase 1): Exclude SC52 globally from hierarchy ──
+        # SC52 was discontinued as of 2021. For end-to-end integrity,
+        # we permanently exclude it from the hierarchy structure.
+        # This ensures all analysis phases (MCDM, forecasting) work with a
+        # consistent 28-SC structure, not 29.
+        if "SC52" in subcriteria_to_criteria:
+            self.logger.info(
+                f"[PHASE 1] Excluding SC52 from hierarchy (discontinued from 2021)"
+            )
+            del subcriteria_to_criteria["SC52"]
+            if "SC52" in subcriteria_names:
+                del subcriteria_names["SC52"]
+
         criteria_to_subcriteria: Dict[str, List[str]] = {}
         for sc, c in subcriteria_to_criteria.items():
             if not sc or not c:
@@ -444,9 +461,17 @@ class DataLoader:
         for c in criteria_to_subcriteria:
             criteria_to_subcriteria[c] = sorted(criteria_to_subcriteria[c])
 
+        # Validate: C05 should have 3 SCs (SC51, SC53, SC54), not 4
+        c05_scs = criteria_to_subcriteria.get("C05", [])
+        if len(c05_scs) != 3 or "SC52" in c05_scs:
+            raise ValueError(
+                f"[PHASE 1 VALIDATION FAILED] C05 should have 3 SCs (excluding SC52), "
+                f"but got {len(c05_scs)}: {c05_scs}"
+            )
+
         self.logger.info(
             f"[OK] Loaded hierarchy: {len(criteria_to_subcriteria)} criteria, "
-            f"{len(subcriteria_to_criteria)} subcriteria"
+            f"{len(subcriteria_to_criteria)} subcriteria (SC52 excluded)"
         )
 
         return HierarchyMapping(
@@ -789,6 +814,146 @@ class DataLoader:
             year_contexts=year_contexts,
             availability=availability,
         )
+
+    def create_forecast_year_context(
+        self,
+        panel_data: PanelData,
+        forecast_year: int,
+    ) -> None:
+        """Create a YearContext for a future forecast year (e.g., 2025).
+        
+        Creates a YearContext for the forecast year that:
+        - **Mirrors sub-criteria and criteria structure** from the latest year (e.g., 2024)
+          → 28 active SCs (SC52 excluded), 8 active criteria
+        - **Uses ALL 63 global provinces** for prediction (not limited to latest year's available data)
+        
+        This ensures ML forecasting has a complete, consistent scope:
+        **28 SCs × 8 criteria × 63 provinces** for all forecast year predictions.
+        
+        **PHASE 1 (2025 Planning)**: Used for 2025 forecast context creation.
+        
+        Parameters
+        ----------
+        panel_data : PanelData
+            The loaded panel (2011–2024 or latest available).
+        forecast_year : int
+            The target future year (e.g., 2025).
+        
+        Side Effect:
+            Adds ``panel_data.year_contexts[forecast_year]`` with structure mirrored
+            from latest year but province scope set to ALL global provinces.
+        
+        Notes
+        -----
+        - Sub-criteria active set is copied from the latest year.
+        - Criteria active set is copied from the latest year.
+        - Province set is the GLOBAL province list (all 63 from the panel).
+        - Per-criterion alternatives are built for all 63 provinces.
+        - Valid pairs are constructed for all (province, SC) combinations.
+        """
+        latest_year = max(panel_data.years)
+        ctx_latest = panel_data.year_contexts.get(latest_year)
+        
+        if ctx_latest is None:
+            raise ValueError(
+                f"YearContext for latest year {latest_year} not found. "
+                f"Cannot create forecast context for {forecast_year}."
+            )
+        
+        # ────────────────────────────────────────────────────────────────────
+        # Mirror sub-criteria and criteria structure from latest year
+        # ────────────────────────────────────────────────────────────────────
+        active_scs = ctx_latest.active_subcriteria.copy()  # 28 SCs
+        active_criteria = ctx_latest.active_criteria.copy()  # 8 criteria
+        
+        # ────────────────────────────────────────────────────────────────────
+        # Use ALL 63 global provinces for forecast year
+        # ────────────────────────────────────────────────────────────────────
+        all_global_provinces = panel_data.provinces  # All 63
+        active_provinces = all_global_provinces.copy()  # Use all for prediction
+        excluded_provinces = []  # No provinces excluded for forecast year
+        
+        # ────────────────────────────────────────────────────────────────────
+        # Build per-criterion alternatives: all 63 provinces for each criterion
+        # ────────────────────────────────────────────────────────────────────
+        criterion_alternatives_map: Dict[str, List[str]] = {}
+        criterion_scs_map: Dict[str, List[str]] = {}
+        
+        for crit_id in active_criteria:
+            # All provinces participate in each criterion for forecast
+            criterion_alternatives_map[crit_id] = active_provinces.copy()
+            # SCs per criterion mirrored from latest year
+            criterion_scs_map[crit_id] = (
+                ctx_latest.criterion_subcriteria.get(crit_id, []).copy()
+            )
+        
+        # ────────────────────────────────────────────────────────────────────
+        # Build valid pairs: all (province, SC) combinations for 28 active SCs
+        # ────────────────────────────────────────────────────────────────────
+        valid_pairs: Set[Tuple[str, str]] = set()
+        for prov in active_provinces:
+            for sc in active_scs:
+                valid_pairs.add((prov, sc))
+        
+        # ────────────────────────────────────────────────────────────────────
+        # Create forecast YearContext
+        # ────────────────────────────────────────────────────────────────────
+        ctx_forecast = YearContext(
+            year=forecast_year,
+            active_provinces=active_provinces,
+            active_subcriteria=active_scs,
+            active_criteria=active_criteria,
+            excluded_provinces=excluded_provinces,
+            excluded_subcriteria=[],  # No SCs excluded (28 active)
+            excluded_criteria=[],  # No criteria excluded (8 active)
+            criterion_alternatives=criterion_alternatives_map,
+            criterion_subcriteria=criterion_scs_map,
+            valid_pairs=valid_pairs,
+        )
+        
+        panel_data.year_contexts[forecast_year] = ctx_forecast
+        
+        self.logger.info(
+            f"[PHASE 1] Created YearContext for forecast year {forecast_year}:\n"
+            f"  Structure mirrored from {latest_year}\n"
+            f"  Active: {len(ctx_forecast.active_provinces)} provinces [ALL GLOBAL],\n"
+            f"          {len(ctx_forecast.active_subcriteria)} subcriteria,\n"
+            f"          {len(ctx_forecast.active_criteria)} criteria\n"
+            f"  ✓ Scope: 28 SCs × 8 criteria × 63 provinces"
+        )
+        
+        # ────────────────────────────────────────────────────────────────────
+        # Validation: enforce 28 SCs, 8 criteria, 63 provinces
+        # ────────────────────────────────────────────────────────────────────
+        if len(ctx_forecast.active_subcriteria) != 28:
+            raise ValueError(
+                f"[PHASE 1 VALIDATION FAILED] Forecast year {forecast_year} "
+                f"should have 28 active subcriteria, "
+                f"but got {len(ctx_forecast.active_subcriteria)}: "
+                f"{ctx_forecast.active_subcriteria}"
+            )
+        
+        if len(ctx_forecast.active_criteria) != 8:
+            raise ValueError(
+                f"[PHASE 1 VALIDATION FAILED] Forecast year {forecast_year} "
+                f"should have 8 active criteria, "
+                f"but got {len(ctx_forecast.active_criteria)}: "
+                f"{ctx_forecast.active_criteria}"
+            )
+        
+        if len(ctx_forecast.active_provinces) != 63:
+            raise ValueError(
+                f"[PHASE 1 VALIDATION FAILED] Forecast year {forecast_year} "
+                f"should have 63 active provinces (ALL GLOBAL), "
+                f"but got {len(ctx_forecast.active_provinces)}"
+            )
+        
+        if len(ctx_forecast.valid_pairs) != 28 * 63:
+            raise ValueError(
+                f"[PHASE 1 VALIDATION FAILED] Forecast year {forecast_year} "
+                f"should have 28×63=1764 valid pairs, "
+                f"but got {len(ctx_forecast.valid_pairs)}"
+            )
 
 
 def load_data() -> PanelData:
