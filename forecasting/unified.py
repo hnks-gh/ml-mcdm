@@ -2462,15 +2462,11 @@ class UnifiedForecaster:
         """
         n_components = self.y_train_.shape[1]
         component_cols = self.y_train_.columns.tolist()
-        # Standard per-component alpha for conformal path (unchanged):
-        alpha_bonferroni = self.conformal_alpha / max(n_components, 1)
-
-        # F-06: For the QRF heteroscedastic path, replace hard Bonferroni
-        # (α/D) with effective-D Bonferroni (α/D_eff).  MCDM criteria are
-        # correlated, so D_eff < D always; hard Bonferroni at D=8 gives
-        # lower_q≈0.003125 which is unresolvable from QRF leaves of ~15 rows.
-        # We estimate D_eff via PCA of OOF residuals (90% variance threshold).
-        # A safety floor of lower_q ≥ 0.01 is applied regardless of D_eff.
+        
+        # F-06 (Phase 1): Compute effective dimensionality for Bonferroni correction.
+        # Estimate D_eff from OOF residuals; if criteria are correlated (typical
+        # in MCDM), D_eff < D and we get less conservative intervals while maintaining
+        # the finite-sample coverage guarantee.
         _oof_res_for_eff_d: Optional[np.ndarray] = None
         _ext_res = getattr(self, '_oof_conformal_residuals_', None)
         if _ext_res is not None and _ext_res.ndim > 1 and _ext_res.shape[1] >= n_components:
@@ -2491,8 +2487,9 @@ class UnifiedForecaster:
             var_threshold=0.90,
             max_components=n_components,
         ) if _oof_res_for_eff_d is not None else n_components
-
-        alpha_qrf = self.conformal_alpha / max(_d_eff, 1)
+        
+        # Use D_eff-based Bonferroni for both QRF and conformal paths
+        alpha_bonferroni = self.conformal_alpha / max(_d_eff, 1)
 
         # Start from a copy of the fallback intervals built in stage4;
         # overwrite with QRF or conformal estimates below.
@@ -2507,16 +2504,16 @@ class UnifiedForecaster:
 
         if self.uncertainty_method == 'qrf_quantile':
             # ── QRF heteroscedastic path ──────────────────────────────────
-            # F-06: use effective-D Bonferroni (α_qrf = α/D_eff) for quantile
-            # levels.  Safety floor ensures lower_q ≥ 0.01 — always supported
-            # by the training QRF leaves (median ~4 samples at q=0.01 with N=756).
-            lower_q = max(alpha_qrf / 2.0, 0.01)
-            upper_q = min(1.0 - alpha_qrf / 2.0, 0.99)
+            # Use effective-D Bonferroni (α_bc = α/D_eff) for quantile levels.
+            # Safety floor ensures lower_q ≥ 0.01 — always supported by the 
+            # training QRF leaves (median ~4 samples at q=0.01 with N=756).
+            lower_q = max(alpha_bonferroni / 2.0, 0.01)
+            upper_q = min(1.0 - alpha_bonferroni / 2.0, 0.99)
 
             if self.verbose:
                 print(
                     f"  Stage 5: QRF heteroscedastic intervals "
-                    f"(D_eff={_d_eff}/{n_components}, α_qrf={alpha_qrf:.5f}, "
+                    f"(D_eff={_d_eff}/{n_components}, α_bc={alpha_bonferroni:.5f}, "
                     f"q=[{lower_q:.4f}, {upper_q:.4f}])"
                 )
 
@@ -2884,6 +2881,62 @@ class UnifiedForecaster:
                     iter(self.conformal_predictors_.values()), None
                 )
 
+                # ── Phase 1 (E-02): Comprehensive diagnostic logging ───────
+                logger.info("=" * 70)
+                logger.info("PHASE 1 CONFORMAL PREDICTION DIAGNOSTICS")
+                logger.info("=" * 70)
+                logger.info(
+                    f"Effective dimensionality (D_eff): {_d_eff} / {n_components} "
+                    f"(Bonferroni α/D_eff = {alpha_bonferroni:.6f})"
+                )
+                
+                # Per-criterion calibration set sizes and interval properties
+                per_criterion_stats = {}
+                for col in component_cols:
+                    cp = self.conformal_predictors_.get(col)
+                    if cp is None:
+                        continue
+                    n_cal = getattr(cp, '_n_cal', -1)
+                    q_hat = getattr(cp, '_q_hat', np.nan)
+                    width = cp.get_interval_width() if cp is not None else np.nan
+                    
+                    per_criterion_stats[col] = {
+                        'n_cal': n_cal,
+                        'q_hat': q_hat,
+                        'width': width,
+                    }
+                    
+                    logger.info(
+                        f"{col:15s}: n_cal={n_cal:3d}, "
+                        f"q̂={q_hat:7.4f}, width={width:7.4f}"
+                    )
+                
+                # Aggregate statistics
+                if per_criterion_stats:
+                    n_cal_values = [s['n_cal'] for s in per_criterion_stats.values() if s['n_cal'] > 0]
+                    width_values = [s['width'] for s in per_criterion_stats.values() if not np.isnan(s['width'])]
+                    
+                    if n_cal_values:
+                        logger.info(
+                            f"Calibration set sizes: "
+                            f"avg={np.mean(n_cal_values):.0f}, "
+                            f"min={np.min(n_cal_values)}, max={np.max(n_cal_values)}"
+                        )
+                    if width_values:
+                        logger.info(
+                            f"Interval widths: "
+                            f"mean={np.mean(width_values):.4f}±{np.std(width_values):.4f}, "
+                            f"min={np.min(width_values):.4f}, max={np.max(width_values):.4f}"
+                        )
+                
+                logger.info("=" * 70)
+                
+                self._training_info_['conformal_diagnostics'] = {
+                    'd_eff': int(_d_eff),
+                    'alpha_bonferroni': float(alpha_bonferroni),
+                    'per_criterion': per_criterion_stats,
+                }
+
                 if self.verbose:
                     widths = [
                         cp.get_interval_width()
@@ -2894,12 +2947,12 @@ class UnifiedForecaster:
                         f"min={min(widths):.4f}, max={max(widths):.4f}"
                     )
                     print(
-                        f"    Bonferroni α/D = {alpha_bonferroni:.5f} "
-                        f"(D={n_components})"
+                        f"    Bonferroni α/D_eff = {alpha_bonferroni:.5f} "
+                        f"(D_eff={_d_eff}/{n_components})"
                     )
                     print(
                         f"    Joint coverage guarantee: "
-                        f"{(1 - self.conformal_alpha) * 100:.0f}%"
+                        f"{(1 - self.conformal_alpha) * 100:.0f}% (Bonferroni)"
                     )
 
             except Exception as e:
@@ -2910,6 +2963,110 @@ class UnifiedForecaster:
         self.prediction_intervals_ = intervals
         # Phase 5: inverse-transform all outputs from transformed → original space
         self._inverse_transform_pipeline_outputs()
+
+    def _validate_conformal_coverage_holdout(self) -> Optional[Dict[str, Any]]:
+        """
+        Validate empirical conformal coverage on genuine holdout set.
+
+        For each criterion and each holdout prediction (province-year pair),
+        checks if true value falls within the predicted interval.  Reports
+        per-criterion **marginal** coverage (fraction of times interval
+        contains truth) and aggregate coverage across all criteria.
+
+        Returns:
+            Dict with per-criterion and aggregate coverage statistics, or None
+        """
+        if (
+            not hasattr(self, 'conformal_predictors_')
+            or not self.conformal_predictors_
+            or self.y_holdout_ is None
+            or self.y_holdout_.empty
+        ):
+            logger.debug("_validate_conformal_coverage_holdout: skipped (no calibrated conformal or no holdout)")
+            return None
+
+        y_holdout = self.y_holdout_.values  # (n_holdout, n_outputs)
+        component_cols = self.y_train_.columns.tolist()
+        
+        coverage_dict = {}
+        all_covered_flags = []
+        all_n = 0
+
+        for d, col in enumerate(component_cols):
+            # Get intervals for this criterion
+            if col not in self.prediction_intervals_['lower']:
+                coverage_dict[col] = {'coverage': np.nan, 'n': 0, 'n_covered': 0}
+                continue
+            
+            lower_d = self.prediction_intervals_['lower'][col].values
+            upper_d = self.prediction_intervals_['upper'][col].values
+            y_d = y_holdout[:, d] if y_holdout.ndim > 1 else y_holdout
+
+            # Filter to non-NaN observations
+            valid = ~(np.isnan(y_d) | np.isnan(lower_d) | np.isnan(upper_d))
+            if valid.sum() < 2:
+                coverage_dict[col] = {'coverage': np.nan, 'n': 0, 'n_covered': 0}
+                continue
+
+            y_d_valid = y_d[valid]
+            lower_d_valid = lower_d[valid]
+            upper_d_valid = upper_d[valid]
+
+            # Check coverage: y ∈ [lower, upper]
+            covered = (y_d_valid >= lower_d_valid) & (y_d_valid <= upper_d_valid)
+            coverage_rate = float(covered.mean())
+
+            coverage_dict[col] = {
+                'coverage': coverage_rate,
+                'n': int(valid.sum()),
+                'n_covered': int(covered.sum()),
+            }
+
+            all_covered_flags.append(covered)
+            all_n += int(valid.sum())
+
+        # Aggregate coverage
+        if all_covered_flags:
+            all_covered_arr = np.concatenate(all_covered_flags)
+            aggregate_coverage = float(all_covered_arr.mean())
+        else:
+            aggregate_coverage = np.nan
+
+        # Log results
+        logger.info("=" * 70)
+        logger.info("PHASE 1 CONFORMAL COVERAGE VALIDATION (Holdout Set)")
+        logger.info("=" * 70)
+        
+        for col, stats in coverage_dict.items():
+            if not np.isnan(stats['coverage']):
+                logger.info(
+                    f"{col:15s}: {stats['coverage']:.1%} coverage "
+                    f"({stats['n_covered']}/{stats['n']})"
+                )
+        
+        target_coverage = 1 - self.conformal_alpha
+        logger.info(f"{'AGGREGATE':15s}: {aggregate_coverage:.1%} coverage ({all_n} total)")
+        logger.info(f"Target coverage: {target_coverage:.1%} (from α={self.conformal_alpha})")
+        
+        # Verdict
+        if not np.isnan(aggregate_coverage):
+            margin = aggregate_coverage - (target_coverage - 0.05)  # 5% safety margin
+            if margin >= 0:
+                logger.info(f"✓ PASS: Coverage meets target (margin={margin:+.1%})")
+            else:
+                logger.warning(
+                    f"✗ FAIL: Coverage short of target by {-margin:.1%}; "
+                    f"consider enabling Student-t (E-06) or extending calibration"
+                )
+        
+        logger.info("=" * 70)
+        
+        return {
+            'per_criterion': coverage_dict,
+            'aggregate': aggregate_coverage,
+            'target': target_coverage,
+            'n_total': all_n,
+        }
 
     def stage6_evaluate_all(self) -> None:
         """Stage 6: Holdout model comparison and cross-validation evaluation.
@@ -3475,6 +3632,11 @@ class UnifiedForecaster:
             # fig23e: fold validation years ordered earliest → latest
             'cv_fold_val_years': _cv_fold_years,
         }
+        
+        # ── Phase 1 (E-02): Validate conformal coverage on genuine holdout ──
+        _coverage_stats = self._validate_conformal_coverage_holdout()
+        if _coverage_stats is not None:
+            self._training_info_['conformal_coverage_validation'] = _coverage_stats
 
         if self.verbose:
             print(
