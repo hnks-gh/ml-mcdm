@@ -44,14 +44,19 @@ References
 
 import numpy as np
 from typing import List, Literal, Optional, Union
+import logging
 
 from sklearn.cross_decomposition import PLSRegression
 from sklearn.decomposition import PCA
-from sklearn.ensemble import RandomForestRegressor
+from sklearn.ensemble import RandomForestRegressor, ExtraTreesRegressor
 from sklearn.experimental import enable_iterative_imputer  # noqa: F401 — required before IterativeImputer
 from sklearn.feature_selection import SelectKBest, VarianceThreshold, mutual_info_regression
 from sklearn.impute import IterativeImputer
 from sklearn.preprocessing import StandardScaler
+
+from data.imputation import ImputationConfig
+
+logger = logging.getLogger('ml_mcdm')
 
 
 class PanelFeatureReducer:
@@ -101,6 +106,7 @@ class PanelFeatureReducer:
         mi_prefilter: bool = True,
         mi_k: Union[int, str] = 'half',
         use_mice_imputation: bool = True,  # M-02: Activated by default
+        imputation_config: Optional[ImputationConfig] = None,  # PHASE A: Tier 1 MICE config
         random_state: int = 42,
         mode: Literal['pls', 'threshold_only', 'pca'] = 'pca',
     ):
@@ -111,6 +117,7 @@ class PanelFeatureReducer:
         self.mi_prefilter = mi_prefilter
         self.mi_k = mi_k
         self.use_mice_imputation = use_mice_imputation
+        self.imputation_config = imputation_config or ImputationConfig()  # PHASE A
         self.random_state = random_state
         self.mode = mode
 
@@ -119,12 +126,14 @@ class PanelFeatureReducer:
         self._pls: Optional[PLSRegression] = None
         self._pca: Optional[PCA] = None
         self._imputer: Optional[IterativeImputer] = None
+        self._mice_imputer: Optional[IterativeImputer] = None  # PHASE A: Tier 1 MICE
         self._mi_mask: Optional[np.ndarray] = None   # bool (n_kept_after_var,)
         self._pls_evr_: float = 0.0                  # estimated X-variance ratio for PLS
         self._original_feature_names: Optional[List[str]] = None
         self._kept_feature_mask: Optional[np.ndarray] = None
         self._n_components_fitted: int = 0
         self._selected_feature_names_: Optional[List[str]] = None  # E-01
+        self._mice_fitted: bool = False  # PHASE A: Track MICE imputer state
         self._fitted: bool = False
 
     # ------------------------------------------------------------------
@@ -203,6 +212,51 @@ class PanelFeatureReducer:
         # it is leakage-free because only training statistics are used.
         _col_means = np.nanmean(X_var, axis=0)
         self._var_col_means_ = np.where(np.isnan(_col_means), 0.0, _col_means)
+
+        # ===== PHASE A Enhancement: Tier 1 MICE Imputation (M-12) =====
+        # Apply advanced MICE imputation if enabled and residual NaN remains
+        if self.imputation_config.use_advanced_feature_imputation:
+            residual_nan_count = np.isnan(X_var).sum()
+            if residual_nan_count > 0:
+                logger.info(
+                    f"Tier 1 MICE imputation: {residual_nan_count} residual NaN detected. "
+                    f"Fitting MICE with {self.imputation_config.mice_estimator}..."
+                )
+                
+                estimator_model = ExtraTreesRegressor(
+                    n_estimators=100,
+                    max_features='sqrt',
+                    min_samples_leaf=3,
+                    bootstrap=True,
+                    random_state=self.imputation_config.random_state,
+                ) if self.imputation_config.mice_estimator == 'extra_trees' else RandomForestRegressor(
+                    n_estimators=100,
+                    min_samples_leaf=3,
+                    random_state=self.imputation_config.random_state,
+                )
+                
+                self._mice_imputer = IterativeImputer(
+                    estimator=estimator_model,
+                    max_iter=self.imputation_config.mice_max_iter,
+                    initial_strategy='median',
+                    n_nearest_features=min(self.imputation_config.mice_n_nearest_features, X_var.shape[1]),
+                    add_indicator=self.imputation_config.mice_add_indicator,
+                    random_state=self.imputation_config.random_state,
+                    tol=1e-3,
+                    imputation_order='roman'
+                )
+                X_var = self._mice_imputer.fit_transform(X_var)
+                self._mice_fitted = True
+                
+                logger.info(
+                    f"Tier 1 MICE imputation complete. "
+                    f"Indicators appended: {self.imputation_config.mice_add_indicator}"
+                )
+        else:
+            self._mice_imputer = None
+            self._mice_fitted = False
+
+        # ========================= End Tier 1 ==========================
 
         # ── TREE TRACK ────────────────────────────────────────────────────
         if self.mode == 'threshold_only':
@@ -358,6 +412,10 @@ class PanelFeatureReducer:
             X = self._imputer.transform(X)
 
         X_var = self._var_selector.transform(X)
+
+        # ===== PHASE A: Tier 1 MICE Transform (M-12) =====
+        if self._mice_fitted and self._mice_imputer is not None and np.isnan(X_var).any():
+            X_var = self._mice_imputer.transform(X_var)
 
         # Fallback NaN fill with training column means when no MICE imputer
         # was fitted (training data was NaN-free) but holdout / prediction

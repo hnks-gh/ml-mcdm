@@ -27,6 +27,8 @@ from typing import List, Dict, Optional, Literal
 from enum import Enum
 import json
 
+from data.imputation import ImputationConfig
+
 
 # =========================================================================
 # Enumerations
@@ -281,6 +283,21 @@ class ForecastConfig:
     """
     enabled: bool = True
     target_year: Optional[int] = None  # Auto-set to latest_year + 1
+
+    # ===== PHASE A Enhancement: Advanced Imputation Configuration (M-12) =====
+    imputation_config: Optional[ImputationConfig] = field(default_factory=ImputationConfig)
+    """Configuration for multi-tier imputation strategy (Tiers 1-4).
+    
+    Tier 1 (MICE):        ExtraTreesRegressor-based multivariate imputation
+    Tier 2 (Temporal):    Per-entity annual medians for time-series features
+    Tier 3 (Sectional):   Cross-sectional medians for cross-entity features
+    Tier 4 (Fallback):    Training means cache with 0.0 emergency sentinel
+    
+    Default: enabled (use_advanced_feature_imputation=True).
+    Set to None or .use_advanced_feature_imputation=False to disable.
+    """
+
+    # ────────────────────────────────────────────────────────────────────────
 
     # ── Conformal prediction ─────────────────────────────────────────────
     conformal_method: str = 'cv_plus'  # 'split', 'cv_plus', 'adaptive'

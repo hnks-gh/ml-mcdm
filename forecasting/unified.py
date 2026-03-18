@@ -66,6 +66,7 @@ from .super_learner import SuperLearner, _WalkForwardYearlySplit as PanelWalkFor
 from .conformal import ConformalPredictor
 from .preprocessing import PanelFeatureReducer
 from .evaluation import ForecastEvaluator, AblationStudy, ModelComparisonResult, compare_all_models
+from .persistence import PersistenceForecaster
 # Phase 3 — SOTA modules (E-05, E-06, E-08, E-10)
 from .panel_mice import PanelSequentialMICE
 from .augmentation import ConditionalPanelAugmenter
@@ -765,6 +766,14 @@ class UnifiedForecaster:
         self.y_holdout_raw_: Optional[pd.DataFrame] = None
         # Phase 4: tuned GB hyperparameters (populated by _tune_gb_hyperparameters)
         self._tuned_gb_params_: Dict[str, Dict] = {}
+
+        # ── PHASE A: Imputation Configuration (M-12) ───────────────────────
+        # Advanced tiered imputation config from ForecastConfig
+        # Falls back to default ImputationConfig if not provided
+        from data.imputation import ImputationConfig
+        self.imputation_config_: ImputationConfig = (
+            config.imputation_config if config and config.imputation_config else ImputationConfig()
+        )
 
         self.models_: Dict[str, BaseForecaster] = {}
         self.model_weights_: Dict[str, float] = {}
@@ -1611,6 +1620,7 @@ class UnifiedForecaster:
                 target_year,
                 use_saw_normalization=self.use_saw_targets,
                 holdout_year=_holdout_year,
+                imputation_config=self.imputation_config_,
             )
         )
 
@@ -1823,9 +1833,16 @@ class UnifiedForecaster:
                 )
 
         # PLS track for linear models: supervised compression with MI pre-filter
-        self.reducer_pca_ = PanelFeatureReducer(mode='pls', mi_prefilter=True)
+        self.reducer_pca_ = PanelFeatureReducer(
+            mode='pls', 
+            mi_prefilter=True,
+            imputation_config=self.imputation_config_
+        )
         # Threshold-only track for tree models: variance filter, no scaling
-        self.reducer_tree_ = PanelFeatureReducer(mode='threshold_only')
+        self.reducer_tree_ = PanelFeatureReducer(
+            mode='threshold_only',
+            imputation_config=self.imputation_config_
+        )
 
         self.X_train_pca_ = self.reducer_pca_.fit_transform(
             X_arr, y=y_arr, feature_names=feature_names
@@ -2975,6 +2992,99 @@ class UnifiedForecaster:
                     target_entities=list(self.X_pred_.index),
                 )
 
+                # ── PHASE A TASK 1: Persistence baseline holdout evaluation ──
+                # Fit naive "carry-forward last value" baseline on full training data
+                # and evaluate on genuine holdout set for skill score calculation.
+                logger.info("  Stage 6a (PHASE A TASK 1): Evaluating persistence baseline...")
+                try:
+                    # Fit PersistenceForecaster on full training data (X_train_tree_, y_train)
+                    persist_model = PersistenceForecaster(verbose=False)
+                    persist_model.fit(self.X_train_tree_, y_arr)
+                    
+                    # Predict on holdout set
+                    persist_preds_holdout = persist_model.predict(_X_ho_tree)
+                    if persist_preds_holdout.ndim == 1:
+                        persist_preds_holdout = persist_preds_holdout.reshape(-1, 1)
+                    
+                    # Compute metrics on holdout set (matching compare_all_models pattern)
+                    y_holdout = self.y_holdout_.values
+                    persist_r2_scores = []
+                    persist_rmse_scores = []
+                    persist_mae_scores = []
+                    
+                    for col_idx in range(min(persist_preds_holdout.shape[1], y_holdout.shape[1])):
+                        y_col = y_holdout[:, col_idx] if y_holdout.ndim > 1 else y_holdout
+                        pred_col = persist_preds_holdout[:, col_idx]
+                        valid_mask = ~np.isnan(y_col) & ~np.isnan(pred_col)
+                        
+                        if valid_mask.sum() >= 2:
+                            persist_r2_scores.append(
+                                float(r2_score(y_col[valid_mask], pred_col[valid_mask]))
+                            )
+                            persist_rmse_scores.append(
+                                float(np.sqrt(mean_squared_error(y_col[valid_mask], pred_col[valid_mask])))
+                            )
+                            persist_mae_scores.append(
+                                float(mean_absolute_error(y_col[valid_mask], pred_col[valid_mask]))
+                            )
+                    
+                    persist_r2 = float(np.mean(persist_r2_scores)) if persist_r2_scores else np.nan
+                    persist_rmse = float(np.mean(persist_rmse_scores)) if persist_rmse_scores else np.nan
+                    persist_mae = float(np.mean(persist_mae_scores)) if persist_mae_scores else np.nan
+                    
+                    # Predict on target year for consistency with model_comparison structure
+                    persist_preds_target = persist_model.predict(self.X_pred_tree_)
+                    if persist_preds_target.ndim == 1:
+                        persist_preds_target = persist_preds_target.reshape(-1, 1)
+                    
+                    # Create DataFrame for predictions (required by ModelComparisonResult)
+                    persist_preds_df = pd.DataFrame(
+                        persist_preds_target[:, :n_comps],
+                        index=self.X_pred_.index,
+                        columns=self.y_train_.columns,
+                    )
+                    
+                    # Create ModelComparisonResult for persistence baseline
+                    persist_result = ModelComparisonResult(
+                        model_name='Persistence',
+                        holdout_r2=persist_r2,
+                        holdout_rmse=persist_rmse,
+                        holdout_mae=persist_mae,
+                        is_best=False,  # Set to False initially; re-determined below
+                        predictions=persist_preds_df,
+                    )
+                    
+                    # Prepend persistence to model_comparison_ and re-determine is_best
+                    if self.model_comparison_:
+                        self.model_comparison_.insert(0, persist_result)
+                        # Re-determine best model considering persistence baseline
+                        best_r2 = -np.inf
+                        for result in self.model_comparison_:
+                            if not np.isnan(result.holdout_r2):
+                                if result.holdout_r2 > best_r2:
+                                    best_r2 = result.holdout_r2
+                                result.is_best = False
+                        # Mark best as True
+                        for result in self.model_comparison_:
+                            if not np.isnan(result.holdout_r2) and np.isclose(result.holdout_r2, best_r2):
+                                result.is_best = True
+                                break
+                    
+                    logger.info(
+                        f"    Persistence baseline holdout: "
+                        f"R²={persist_r2:.4f}, RMSE={persist_rmse:.4f}, MAE={persist_mae:.4f}"
+                    )
+                    
+                    # Store persistence metrics for skill score calculation
+                    self._training_info_['persistence_r2_holdout'] = persist_r2
+                    _per_model_ho_preds['Persistence'] = persist_preds_holdout
+                    
+                except Exception as _persist_exc:
+                    logger.warning(
+                        f"Persistence baseline evaluation failed: "
+                        f"{type(_persist_exc).__name__}: {_persist_exc}"
+                    )
+
                 # ── F-05c C3: per-model holdout predictions ───────────────
                 # Predict each fitted base model on the holdout feature matrix
                 # so downstream visualisation can show per-model scatter plots.
@@ -3177,6 +3287,71 @@ class UnifiedForecaster:
             _oof_entity_names = (
                 list(self._ho_entity_names_fallback_)
                 if self._ho_entity_names_fallback_ is not None else []
+            )
+
+        # ── PHASE A TASK 1: Compute skill score metric ─────────────────────
+        # Skill Score = (R²_ensemble - R²_persistence) / (1 - R²_persistence)
+        # Quantifies ensemble learning beyond naive temporal inertia baseline.
+        # Success criterion: Skill Score > 0.10 (ensemble is >10% better than persistence)
+        logger.info("  Stage 6: Computing skill score metric...")
+        try:
+            if self.model_comparison_:
+                _ens_result = next(
+                    (r for r in self.model_comparison_ if r.model_name == 'Ensemble'),
+                    None
+                )
+                _persist_result = next(
+                    (r for r in self.model_comparison_ if r.model_name == 'Persistence'),
+                    None
+                )
+                
+                if (_ens_result is not None and _persist_result is not None 
+                    and not np.isnan(_ens_result.holdout_r2) 
+                    and not np.isnan(_persist_result.holdout_r2)):
+                    
+                    r2_ens = float(_ens_result.holdout_r2)
+                    r2_pers = float(_persist_result.holdout_r2)
+                    
+                    # Safe denominator handling: avoid division by 1 if r2_pers ≈ 1
+                    denom = 1.0 - r2_pers
+                    if abs(denom) < 1e-8:
+                        # r2_pers ≈ 1: perfect persistence baseline (extremely rare)
+                        skill_score = 0.0 if r2_ens < r2_pers else np.inf
+                    else:
+                        skill_score = (r2_ens - r2_pers) / denom
+                    
+                    self._training_info_['skill_score'] = float(skill_score)
+                    
+                    # Evaluate success criterion: skill score > 0.10
+                    skill_passed = skill_score > 0.10
+                    criterion_symbol = "✓" if skill_passed else "✗"
+                    
+                    logger.info(
+                        f"    {criterion_symbol} Skill Score: {skill_score:.4f} "
+                        f"(criterion: > 0.10) "
+                        f"[R²_ens={r2_ens:.4f}, R²_pers={r2_pers:.4f}]"
+                    )
+                    if skill_passed:
+                        logger.info(
+                            f"    Ensemble learning VALIDATED: ensemble outperforms "
+                            f"persistence by {(skill_score * 100):.1f}%"
+                        )
+                    else:
+                        logger.warning(
+                            f"    Ensemble learning WEAK: ensemble improvement over "
+                            f"persistence is only {(skill_score * 100):.1f}% "
+                            f"(target: > 10%). Consider additional features or "
+                            f"model tuning."
+                        )
+                else:
+                    logger.warning(
+                        "    Skill score computation skipped: "
+                        "Ensemble and/or Persistence R² values not available"
+                    )
+        except Exception as _skill_exc:
+            logger.warning(
+                f"    Skill score computation failed: "
+                f"{type(_skill_exc).__name__}: {_skill_exc}"
             )
 
         # ── Feature importance ────────────────────────────────────────────

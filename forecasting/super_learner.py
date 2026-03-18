@@ -58,6 +58,7 @@ import warnings
 import functools
 
 from .base import BaseForecaster
+from .persistence import PersistenceForecaster
 
 
 def _silence_warnings(func):
@@ -796,6 +797,102 @@ class SuperLearner:
                 self._oof_r2[name] = float(np.mean(r2_vals))
             else:
                 self._oof_r2[name] = -1.0
+
+        # ────────────────────────────────────────────────────────────
+        # Persistence baseline: Naive carry-forward for benchmarking (Phase A)
+        # ────────────────────────────────────────────────────────────
+        # Run the persistence forecaster through the same CV loop to compute
+        # CV R² scores comparable to base models. This enables skill score
+        # calculation: SS = (R²_ensemble - R²_persistence) / (1 - R²_persistence)
+        if self.verbose:
+            logger.info("  Evaluating persistence baseline...")
+
+        persistence_model = PersistenceForecaster(verbose=False)
+        persistence_cv_scores = []
+        persistence_oof_preds = np.full((n_samples, self._n_outputs), np.nan)
+
+        # Re-iterate through CV folds to evaluate persistence
+        if year_labels is not None:
+            tscv_persist = _WalkForwardYearlySplit(
+                min_train_years=self.cv_min_train_years,
+                max_folds=self.n_cv_folds,
+            )
+            cv_iter_persist = tscv_persist.split(X, year_labels)
+        else:
+            tscv_persist = _PanelTemporalSplit(n_splits=self.n_cv_folds)
+            cv_iter_persist = tscv_persist.split(X, entity_indices=entity_indices)
+
+        for fold_idx, (train_idx, val_idx) in enumerate(cv_iter_persist):
+            y_train_persist = y[train_idx]
+            y_val_persist = y[val_idx]
+
+            try:
+                # Fit persistence on training fold
+                persistence_model.fit(X[train_idx], y_train_persist)
+                pred_persist = persistence_model.predict(X[val_idx])
+
+                if pred_persist.ndim == 1:
+                    pred_persist = pred_persist.reshape(-1, 1)
+
+                # Compute per-fold R² (match base model logic: mean across outputs)
+                fold_r2s_persist = []
+                for out_col in range(y_val_persist.shape[1]):
+                    y_col = y_val_persist[:, out_col]
+                    p_col = pred_persist[:, out_col]
+                    _valid = ~np.isnan(y_col)
+                    if _valid.sum() >= 2:
+                        fold_r2s_persist.append(
+                            float(r2_score(y_col[_valid], p_col[_valid]))
+                        )
+                    else:
+                        fold_r2s_persist.append(np.nan)
+
+                mean_r2_persist = (
+                    float(np.nanmean(fold_r2s_persist))
+                    if not all(np.isnan(r) for r in fold_r2s_persist)
+                    else np.nan
+                )
+                persistence_cv_scores.append(mean_r2_persist)
+
+                # Store OOF predictions for conformal calibration (optional)
+                persistence_oof_preds[val_idx, :] = pred_persist[:, :self._n_outputs]
+
+            except Exception as e:
+                logger.warning(
+                    f"Persistence baseline failed on fold {fold_idx}: {e}"
+                )
+                persistence_cv_scores.append(np.nan)
+
+        # Store persistence CV scores and OOF predictions
+        self._cv_scores['Persistence'] = persistence_cv_scores
+        self._cv_scores_per_criterion_['Persistence'] = [
+            [np.nan] * self._n_outputs
+        ] * len(persistence_cv_scores)  # Per-criterion breakdown not available
+
+        # Compute persistence OOF R² (global across all outputs)
+        valid_persist = ~np.isnan(persistence_oof_preds).any(axis=1)
+        if valid_persist.sum() > 0:
+            r2_vals_persist = []
+            for out_col in range(self._n_outputs):
+                y_col = y[valid_persist, out_col]
+                p_col = persistence_oof_preds[valid_persist, out_col]
+                _y_ok = ~np.isnan(y_col)
+                if _y_ok.sum() >= 2:
+                    r2_vals_persist.append(
+                        r2_score(y_col[_y_ok], p_col[_y_ok])
+                    )
+                else:
+                    r2_vals_persist.append(-1.0)
+            self._oof_r2['Persistence'] = float(np.mean(r2_vals_persist))
+        else:
+            self._oof_r2['Persistence'] = -1.0
+
+        if self.verbose:
+            pers_mean_r2 = float(np.nanmean(persistence_cv_scores))
+            logger.info(
+                f"  Persistence baseline CV R²: {pers_mean_r2:.4f} "
+                f"(OOF: {self._oof_r2['Persistence']:.4f})"
+            )
 
         # ============================================================
         # Stage 2: Train meta-learner on OOF predictions
