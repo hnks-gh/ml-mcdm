@@ -505,23 +505,22 @@ class ForecastConfig:
     gb_n_estimators: int = 200
     """Number of boosting stages; aligned with CatBoostForecaster/LightGBMForecaster defaults."""
 
-    # ── Hyperparameter auto-tuning (Phase 4) ─────────────────────────────
+    # ── Hyperparameter auto-tuning (Phase 3) ─────────────────────────────
     auto_tune_gb: bool = False
-    """When True, ``stage3_fit_base_models()`` runs a one-time optuna TPE search
-    to find optimal hyperparameters for CatBoostForecaster and LightGBMForecaster
-    before ensemble training.  Requires ``optuna`` to be installed; falls back
-    gracefully to configured HPs if optuna is unavailable.
+    """When True, runs a one-time optuna TPE search to find optimal hyperparameters
+    for CatBoostForecaster and LightGBMForecaster before ensemble training."""
+    
+    auto_tune_kernel: bool = False
+    """When True, runs optuna TPE search for KernelRidge and SVR models."""
+    
+    auto_tune_qrf: bool = False
+    """When True, runs optuna TPE search for QuantileRandomForest."""
 
-    Default False: production default uses configured HPs (faster, reproducible).
-    Set True for exploratory runs where raw accuracy matters more than speed.
-    """
-    gb_tune_n_trials: int = 40
-    """Number of optuna TPE trials per model during hyperparameter search.
-    40 trials ≈ 10–20 min per model on CPU (E-09 expanded search space);
-    reduce for faster runs.  MedianPruner eliminates ~40% of trials early,
-    so net wall time is ~22–24 completed evaluations.
-    Only used when ``auto_tune_gb=True``.
-    """
+    hp_tune_n_trials: int = 40
+    """Number of optuna TPE trials per model during hyperparameter search."""
+    
+    hp_tune_timeout_seconds: int = 3600
+    """Maximum timeout in seconds for tuning a single model."""
 
     # ── Phase 2: Early Stopping for Gradient Boosting (Phase 2.1) ────────
     gb_early_stopping_rounds: int = 20

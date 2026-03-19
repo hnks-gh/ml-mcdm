@@ -104,6 +104,9 @@ class PipelineResult:
 
     def get_final_ranking_df(self) -> pd.DataFrame:
         """Sorted DataFrame with province, rank, score."""
+        if self.ranking_result is None or getattr(self.ranking_result, 'final_ranking', None) is None:
+            return pd.DataFrame(columns=['Province', 'Score', 'Rank'])
+            
         return pd.DataFrame({
             'Province': self.ranking_result.final_ranking.index,
             'Score': self.ranking_result.final_scores.values,
@@ -1138,11 +1141,43 @@ class MLMCDMPipeline:
                 
                 ml_panel_data = build_ml_panel_data(panel_data)
                 
+                try:
+                    from .weighting import CRITICWeightingCalculator
+                except ImportError:
+                    from weighting import CRITICWeightingCalculator
+
+                pred_df = result.predictions.copy()
+                pred_df.index.name = 'Province'
+                pred_df = pred_df.reset_index()
+                pred_df['Year'] = target_year
+
+                active_groups = {}
+                for crit_id, sc_list in ml_panel_data.hierarchy.criteria_to_subcriteria.items():
+                    active = [sc for sc in sc_list if sc in result.predictions.columns]
+                    if active:
+                        active_groups[crit_id] = active
+
+                calc = CRITICWeightingCalculator(config=self.config.weighting)
+                forecast_weight_result = calc.calculate(
+                    panel_df=pred_df,
+                    criteria_groups=active_groups,
+                    entity_col='Province',
+                    time_col='Year',
+                )
+
+                result.forecast_criterion_weights_ = forecast_weight_result.details['level2']['criterion_weights']
+                local_sc_weights = forecast_weight_result.details['level1']
+                forecast_weights_dict = {
+                    'global_sc_weights': forecast_weight_result.weights,
+                    'criterion_weights': result.forecast_criterion_weights_
+                }
+
                 # Get the panel's hierarchy for SC-to-criteria mapping
                 criteria_predictions = self._aggregate_sc_to_criteria(
                     result.predictions,
                     ml_panel_data.hierarchy,
                     target_year,
+                    local_weights=local_sc_weights,
                 )
                 
                 # Attach aggregated criteria predictions to result
@@ -1185,6 +1220,26 @@ class MLMCDMPipeline:
                 result.forecast_year_context = ctx_2025
                 result.forecast_decision_matrix = decision_matrix_2025
                 
+                self.logger.info("  Running MCDM Ranking on 2025 Forecast...")
+                import copy
+                forecast_panel = copy.deepcopy(ml_panel_data)
+                if target_year not in forecast_panel.years:
+                    forecast_panel.years.append(target_year)
+                    forecast_panel.years.sort()
+                
+                forecast_panel.subcriteria_cross_section[target_year] = result.predictions.copy()
+                forecast_panel.year_contexts[target_year] = ctx_2025
+                
+                try:
+                    forecast_ranking_result = self._run_hierarchical_ranking(
+                        panel_data=forecast_panel,
+                        weights=forecast_weights_dict,
+                    )
+                    result.forecast_ranking_result = forecast_ranking_result
+                    self.logger.info("  ✓ MCDM Ranking for 2025 Forecast completed")
+                except Exception as rank_e:
+                    self.logger.warning(f"  ⚠ Forecast MCDM Ranking failed: {rank_e}")
+                
                 self.logger.info(
                     f"\n[2025 INTEGRATION COMPLETE]")
                 self.logger.info(
@@ -1215,6 +1270,7 @@ class MLMCDMPipeline:
         sc_predictions: pd.DataFrame,
         hierarchy: HierarchyMapping,
         target_year: int,
+        local_weights: Optional[Dict[str, Dict[str, float]]] = None,
     ) -> pd.DataFrame:
         """
         Aggregate 28 sub-criteria predictions to 8 criteria using critic weights.
@@ -1313,9 +1369,16 @@ class MLMCDMPipeline:
             active_scs = [sc for sc in sc_list if sc in sc_predictions.columns]
             
             if active_scs:
-                # Simple averaging: each SC contributes equally within its criterion
-                # This can be replaced with actual critic weights if desired
-                crit_values = sc_predictions[active_scs].mean(axis=1)
+                if local_weights and crit_id in local_weights and 'local_sc_weights' in local_weights[crit_id]:
+                    weights_series = pd.Series(local_weights[crit_id]['local_sc_weights'])
+                    w = weights_series.reindex(active_scs).fillna(0)
+                    if w.sum() > 0:
+                        w = w / w.sum()
+                    else:
+                        w = pd.Series(1.0 / len(active_scs), index=active_scs)
+                    crit_values = (sc_predictions[active_scs] * w).sum(axis=1)
+                else:
+                    crit_values = sc_predictions[active_scs].mean(axis=1)
                 criteria_pred[crit_id] = crit_values
             else:
                 # Should not occur given validated hierarchy above

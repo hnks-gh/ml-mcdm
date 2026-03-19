@@ -63,10 +63,12 @@ class KernelRidgeForecaster(BaseForecaster):
         self,
         alpha: float = 1.0,
         gamma: object = "scale",
+        kernel: str = "rbf",
         random_state: Optional[int] = None,
     ):
         self.alpha = alpha
         self.gamma = gamma
+        self.kernel = kernel
         self.random_state = random_state
 
         self._scaler = StandardScaler()
@@ -111,7 +113,7 @@ class KernelRidgeForecaster(BaseForecaster):
         else:
             _gamma = float(self.gamma)
 
-        base = KernelRidge(kernel='rbf', alpha=self.alpha, gamma=_gamma)
+        base = KernelRidge(kernel=self.kernel, alpha=self.alpha, gamma=_gamma)
         self._model = MultiOutputRegressor(base, n_jobs=1)
         self._model.fit(X_scaled, y)
 

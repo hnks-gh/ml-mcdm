@@ -764,8 +764,8 @@ class UnifiedForecaster:
         self.target_transformer_: Optional[_TargetTransformer] = None
         self.y_train_raw_: Optional[pd.DataFrame] = None
         self.y_holdout_raw_: Optional[pd.DataFrame] = None
-        # Phase 4: tuned GB hyperparameters (populated by _tune_gb_hyperparameters)
-        self._tuned_gb_params_: Dict[str, Dict] = {}
+        # Phase 3: tuned base model hyperparameters
+        self._tuned_params_: Dict[str, Dict] = {}
 
         # ── PHASE A: Imputation Configuration (M-12) ───────────────────────
         # Advanced tiered imputation config from ForecastConfig
@@ -844,6 +844,7 @@ class UnifiedForecaster:
 
         # ── Stage 7 public outputs ────────────────────────────────────────────
         self.composite_predictions_: Optional[pd.Series] = None
+        self.forecast_criterion_weights_: Optional[Dict[str, float]] = None
 
         # ── Phase 3 — SOTA module instances (E-05, E-06, E-08, E-10) ─────────
         self._panel_mice_:       Optional[PanelSequentialMICE]        = None
@@ -851,124 +852,44 @@ class UnifiedForecaster:
         self._shift_detector_:   Optional[PanelCovariateShiftDetector] = None
         self._incremental_updater_: Optional[IncrementalEnsembleUpdater] = None
 
-    def _tune_gb_hyperparameters(self) -> None:
-        """Phase 4: Panel-safe Optuna HP search for CatBoost and LightGBM (E-09).
-
-        Runs a single TPE study per GB model over the full training set using
-        ``PanelWalkForwardCV(min_train_years=7, max_folds=4)``.  Skipped
-        silently when optuna is not installed.  Results stored in
-        ``self._tuned_gb_params_`` and consumed by ``_create_models()``.
-        Only called when ``config.auto_tune_gb=True``.
-
-        Improvements over the original (E-09):
-        - Expanded search space covering subsample, colsample, min_child,
-          l1 regularisation, and deeper/longer tree budgets.
-        - MedianPruner: intermediate per-fold RMSE values are reported so
-          that Optuna can prune unpromising trials early (saves ~40% wall time).
-        - Default n_trials increased to 40 for better Pareto coverage; still
-          controllable via ``config.gb_tune_n_trials``.
-        - Panel-safe CV: ``PanelWalkForwardCV`` ensures fold boundaries align
-          with calendar years so no holdout-year leakage occurs during search.
-
-        Note on entity_indices: CatBoost and LightGBM are tree models that do
-        not use entity-level random effects; the panel structure is handled
-        purely by the walk-forward CV splitter.
-        """
-        try:
-            import optuna
-            optuna.logging.set_verbosity(optuna.logging.WARNING)
-        except ImportError:
-            logger.warning("HP tuning skipped (optuna not installed).")
+    def _tune_hyperparameters(self) -> None:
+        """Phase 3: Optuna HP search for base models."""
+        from forecasting.hyperparameter_tuning import EnsembleHyperparameterOptimizer
+        cfg = self._config
+        if cfg is None:
             return
 
-        n_trials = (
-            getattr(self._config, 'gb_tune_n_trials', 40)
-            if self._config is not None else 40
-        )
-        X_tree      = self.X_train_tree_
-        y           = self.y_train_.values
+        X_tree = self.X_train_tree_
+        X_pca = self.X_train_pca_
+        y = self.y_train_.values
         year_labels = self._year_labels_arr_
-        logger.info(
-            f"Phase 4 (E-09): Panel-safe Optuna HP search "
-            f"({n_trials} trials × 2 models, MedianPruner)..."
+        
+        cv_splitter = PanelWalkForwardCV(min_train_years=self.cv_min_train_years, max_folds=4)
+        optimizer = EnsembleHyperparameterOptimizer(
+            config=cfg, cv_splitter=cv_splitter, random_state=self.random_state
         )
 
-        def _cv_objective(trial, forecaster_class, model_key):
-            """Build params from trial, run walk-forward CV, report per-fold RMSE."""
-            params: Dict[str, Any] = {}
+        params_file = "output/hp_tuning_best_params.json"
+        tuned_params = optimizer.load_best_params(params_file)
 
-            if model_key == 'CatBoost':
-                params['iterations']         = trial.suggest_int('iterations', 50, 600, step=50)
-                params['depth']              = trial.suggest_int('depth', 3, 8)
-                params['learning_rate']      = trial.suggest_float('learning_rate', 5e-3, 0.3, log=True)
-                params['l2_leaf_reg']        = trial.suggest_float('l2_leaf_reg', 0.05, 50.0, log=True)
-                params['subsample']          = trial.suggest_float('subsample', 0.6, 1.0)
-                params['colsample_bylevel']  = trial.suggest_float('colsample_bylevel', 0.6, 1.0)
-                params['min_data_in_leaf']   = trial.suggest_int('min_data_in_leaf', 2, 20)
-            else:  # LightGBM
-                params['n_estimators']       = trial.suggest_int('n_estimators', 50, 600, step=50)
-                params['max_depth']          = trial.suggest_int('max_depth', 3, 8)
-                params['learning_rate']      = trial.suggest_float('learning_rate', 5e-3, 0.3, log=True)
-                params['num_leaves']         = trial.suggest_int('num_leaves', 15, 80)
-                params['l2_reg']             = trial.suggest_float('l2_reg', 0.05, 50.0, log=True)
-                params['l1_reg']             = trial.suggest_float('l1_reg', 1e-4, 10.0, log=True)
-                params['min_child_samples']  = trial.suggest_int('min_child_samples', 5, 50)
-                params['subsample']          = trial.suggest_float('subsample', 0.6, 1.0)
-                params['colsample_bytree']   = trial.suggest_float('colsample_bytree', 0.6, 1.0)
+        if getattr(cfg, 'auto_tune_gb', False):
+            logger.info("Tuning Gradient Boosting models...")
+            tuned_params['CatBoost'] = optimizer.optimize_catboost(X_tree, y, year_labels)
+            tuned_params['LightGBM'] = optimizer.optimize_lightgbm(X_tree, y, year_labels)
 
-            inner_cv = PanelWalkForwardCV(min_train_years=7, max_folds=4)
-            rmse_list: List[float] = []
-            try:
-                model = forecaster_class(
-                    **params, random_state=self.random_state
-                )
-                for step, (tr, va) in enumerate(inner_cv.split(X_tree, year_labels)):
-                    m = copy.deepcopy(model)
-                    m.fit(X_tree[tr], y[tr])
-                    pred = m.predict(X_tree[va])
-                    if pred.ndim == 1:
-                        pred = pred.reshape(-1, 1)
-                    fold_rmse = float(np.sqrt(mean_squared_error(y[va], pred)))
-                    rmse_list.append(fold_rmse)
-                    # Report intermediate value for MedianPruner
-                    trial.report(float(np.mean(rmse_list)), step)
-                    if trial.should_prune():
-                        raise optuna.exceptions.TrialPruned()
-            except optuna.exceptions.TrialPruned:
-                raise
-            except Exception:
-                return float('inf')
-            return float(np.mean(rmse_list)) if rmse_list else float('inf')
+        if getattr(cfg, 'auto_tune_kernel', False):
+            logger.info("Tuning Kernel models...")
+            tuned_params['KernelRidge'] = optimizer.optimize_kernel_ridge(X_pca, y, year_labels)
+            tuned_params['SVR'] = optimizer.optimize_svr(X_pca, y, year_labels)
 
-        pruner = optuna.pruners.MedianPruner(
-            n_startup_trials=5,    # don't prune until 5 completed trials
-            n_warmup_steps=1,      # don't prune before fold 1 result
-            interval_steps=1,
-        )
-        for name, cls, model_key in [
-            ('CatBoost', CatBoostForecaster,  'CatBoost'),
-            ('LightGBM',         LightGBMForecaster,  'LightGBM'),
-        ]:
-            study = optuna.create_study(
-                direction='minimize',
-                sampler=optuna.samplers.TPESampler(
-                    seed=self.random_state, multivariate=True
-                ),
-                pruner=pruner,
-            )
-            study.optimize(
-                lambda t, c=cls, k=model_key: _cv_objective(t, c, k),
-                n_trials=n_trials,
-                show_progress_bar=False,
-            )
-            self._tuned_gb_params_[name] = study.best_params
-            pruned = len([t for t in study.trials
-                          if t.state == optuna.trial.TrialState.PRUNED])
-            logger.info(
-                f"  {name} best HPs: {study.best_params} "
-                f"(best RMSE={study.best_value:.4f}, "
-                f"{pruned}/{n_trials} trials pruned)"
-            )
+        if getattr(cfg, 'auto_tune_qrf', False):
+            logger.info("Tuning Quantile Random Forest...")
+            tuned_params['QuantileRF'] = optimizer.optimize_quantilerf(X_tree, y, year_labels)
+
+        if any([getattr(cfg, 'auto_tune_gb', False), getattr(cfg, 'auto_tune_kernel', False), getattr(cfg, 'auto_tune_qrf', False)]):
+            optimizer.save_best_params(tuned_params, params_file)
+            
+        self._tuned_params_ = tuned_params
 
     def _create_models(self) -> Dict[str, BaseForecaster]:
         """
@@ -1003,9 +924,18 @@ class UnifiedForecaster:
 
         models = {}
 
-        # ── Phase 4: merge tuned HPs with config defaults (tuned take priority)
-        _gb_params   = self._tuned_gb_params_.get('CatBoost', {})
-        _lgbm_params = self._tuned_gb_params_.get('LightGBM', {})
+        # ── Phase 3: merge tuned HPs with config defaults (tuned take priority)
+        _gb_params   = self._tuned_params_.get('CatBoost', {})
+        _lgbm_params = self._tuned_params_.get('LightGBM', {})
+        _krr_params  = self._tuned_params_.get('KernelRidge', {})
+        _svr_params  = self._tuned_params_.get('SVR', {})
+        _qrf_params  = self._tuned_params_.get('QuantileRF', {})
+
+        # Override config variables if tuned
+        krr_alpha = _krr_params.get('alpha', krr_alpha)
+        svr_C = _svr_params.get('C', svr_C)
+        svr_eps = _svr_params.get('epsilon', svr_eps)
+        qrf_n_est = _qrf_params.get('n_estimators', qrf_n_est)
 
         # --- Tier 1a: Tree-based (two independent GB members) --------------
         models['CatBoost'] = CatBoostForecaster(
@@ -1044,7 +974,9 @@ class UnifiedForecaster:
         # Phase 2.4 FIX: was hardcoded n_estimators=100 (ignored class default
         # of 200 and config field qrf_n_estimators=300). Now reads from config.
         models['QuantileRF'] = QuantileRandomForestForecaster(
-            n_estimators=qrf_n_est, random_state=self.random_state
+            n_estimators=qrf_n_est, 
+            min_samples_leaf=_qrf_params.get('min_samples_leaf', 1),
+            random_state=self.random_state
         )
 
         return models
@@ -2029,9 +1961,8 @@ class UnifiedForecaster:
         """
         logger.info("Stage 3: Training Meta-Learner ensemble...")
 
-        # Phase 4: conditionally run one-time Optuna HP search for GB models
-        if self._config is not None and getattr(self._config, 'auto_tune_gb', False):
-            self._tune_gb_hyperparameters()
+        # Phase 3: run one-time Optuna HP search for base models if enabled
+        self._tune_hyperparameters()
 
         self.models_ = self._create_models()
         logger.info(f"  {len(self.models_)} base models created:")
