@@ -557,6 +557,133 @@ class TestSuperLearner:
         pred = sl.predict(X)
         assert pred.shape == y.shape
 
+    def test_predict_with_uncertainty_mean_matches_predict_per_output_weights(self):
+        """Regression: mean from predict_with_uncertainty must match predict()."""
+        from forecasting.super_learner import SuperLearner
+
+        class _FixedModel:
+            def __init__(self, pred):
+                self._pred = np.asarray(pred, dtype=float)
+
+            def predict(self, X):
+                return self._pred[: len(X)]
+
+        X = np.zeros((3, 2))
+        m1 = _FixedModel([[10.0, 1.0], [10.0, 1.0], [10.0, 1.0]])
+        m2 = _FixedModel([[2.0, 20.0], [2.0, 20.0], [2.0, 20.0]])
+
+        sl = SuperLearner(base_models={"m1": m1, "m2": m2}, verbose=False)
+        sl._fitted = True
+        sl._n_outputs = 2
+        sl._fitted_base_models = {"m1": m1, "m2": m2}
+        sl._meta_weights = {"m1": 0.5, "m2": 0.5}
+        sl._meta_weights_col_names_ = ["m1", "m2"]
+        sl._meta_weights_per_output_ = np.array([
+            [1.0, 0.0],
+            [0.0, 1.0],
+        ])
+
+        pred_direct = sl.predict(X)
+        pred_mean, pred_std = sl.predict_with_uncertainty(X)
+
+        assert np.allclose(pred_mean, pred_direct), (
+            "predict_with_uncertainty mean must match predict() output "
+            "when per-output meta-weights are defined"
+        )
+        assert pred_std.shape == pred_direct.shape
+
+
+class TestEvaluationRegressions:
+    def test_compare_all_models_forwards_holdout_entity_indices(self):
+        """Regression: holdout evaluation must pass entity IDs to panel models."""
+        from forecasting.evaluation import compare_all_models
+
+        class _EntityAwareModel:
+            def predict(self, X, entity_indices=None):
+                if entity_indices is None:
+                    raise ValueError("entity_indices required")
+                return np.asarray(entity_indices, dtype=float).reshape(-1, 1)
+
+        X_ho = np.zeros((4, 2))
+        y_ho = np.array([[0.0], [1.0], [0.0], [1.0]])
+        ent_ho = np.array([0, 1, 0, 1], dtype=int)
+
+        results = compare_all_models(
+            fitted_base_models={"PanelModel": _EntityAwareModel()},
+            super_learner=None,
+            X_holdout_per_model={"PanelModel": X_ho},
+            y_holdout=y_ho,
+            ensemble_preds_holdout=np.zeros((len(X_ho), 1)),
+            entity_indices_holdout=ent_ho,
+        )
+
+        panel_result = next(r for r in results if r.model_name == "PanelModel")
+        assert not np.isnan(panel_result.holdout_r2), (
+            "Panel model holdout metrics should be finite when entity indices "
+            "are forwarded"
+        )
+
+
+class TestUnifiedForecasterRegressions:
+    def test_stage5_cqr_path_executes_when_enabled(self, monkeypatch):
+        """Regression: CQR calibration path must execute without NameError."""
+        import pandas as pd
+        import forecasting.conformal as conformal_mod
+        from types import SimpleNamespace
+        from forecasting.unified import UnifiedForecaster
+        from config import ForecastConfig
+
+        class _MockQRF:
+            def predict_intervals(self, X, lower_q, upper_q):
+                n = len(X)
+                d = 2
+                return np.zeros((n, d)), np.ones((n, d))
+
+        class _MockCQR:
+            calls = 0
+
+            def __init__(self, alpha):
+                self.alpha = alpha
+
+            def calibrate(self, lower, upper, y):
+                _MockCQR.calls += 1
+
+            def predict_intervals(self, lower, upper):
+                return lower - 0.25, upper + 0.25
+
+        monkeypatch.setattr(conformal_mod, "CQRConformalPredictor", _MockCQR)
+
+        cfg = ForecastConfig(
+            uncertainty_method="qrf_quantile",
+            use_cqr_calibration=True,
+            use_saw_targets=False,
+        )
+        uf = UnifiedForecaster(config=cfg, verbose=False, target_level="subcriteria")
+
+        rng = np.random.RandomState(123)
+        idx = [f"P{i}" for i in range(4)]
+        cols = ["c1", "c2"]
+
+        uf.super_learner_ = SimpleNamespace(
+            _fitted_base_models={"QuantileRF": _MockQRF()}
+        )
+        uf.X_train_tree_ = rng.rand(6, 3)
+        uf.X_pred_tree_ = rng.rand(4, 3)
+        uf.X_pred_ = pd.DataFrame(index=idx)
+        uf.y_train_ = pd.DataFrame(rng.rand(6, 2), columns=cols)
+        uf._pred_df_ = pd.DataFrame(rng.rand(4, 2), index=idx, columns=cols)
+        uf._intervals_ = {
+            "lower": pd.DataFrame(np.zeros((4, 2)), index=idx, columns=cols),
+            "upper": pd.DataFrame(np.ones((4, 2)), index=idx, columns=cols),
+        }
+
+        uf.stage5_compute_intervals()
+
+        assert _MockCQR.calls > 0, (
+            "CQR calibrator should be instantiated and used when enabled"
+        )
+        assert np.min(uf.prediction_intervals_["lower"].values) < 0.0
+
 
 # ---------------------------------------------------------------------------
 # Conformal Prediction

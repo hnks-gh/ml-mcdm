@@ -1704,7 +1704,7 @@ class SuperLearner:
             Tuple of (mean prediction, standard deviation)
         """
         all_predictions = []
-        all_weights = []
+        model_names = []
 
         for name, model in self._fitted_base_models.items():
             X_m = per_model_X_pred[name] if (per_model_X_pred and name in per_model_X_pred) else X
@@ -1717,16 +1717,12 @@ class SuperLearner:
                 if pred.ndim == 1:
                     pred = pred.reshape(-1, 1)
                 all_predictions.append(pred)
-                all_weights.append(self._meta_weights.get(name, 0.0))
+                model_names.append(name)
             except Exception:
                 continue
 
         if not all_predictions:
             raise ValueError("No base models produced predictions")
-
-        # Weighted mean
-        weights = np.array(all_weights)
-        weights /= weights.sum() + 1e-10
 
         pred_stack = np.stack(
             [p[:, :self._n_outputs] if p.shape[1] >= self._n_outputs
@@ -1735,12 +1731,31 @@ class SuperLearner:
             axis=0,
         )
 
-        mean_pred = np.average(pred_stack, weights=weights, axis=0)
+        # Keep the predictive mean consistent with predict(): use per-output
+        # meta-weights, then compute model-disagreement uncertainty on top.
+        n_samples = pred_stack.shape[1]
+        mean_pred = np.zeros((n_samples, self._n_outputs))
+        std_pred = np.zeros((n_samples, self._n_outputs))
 
-        # Weighted standard deviation (model disagreement)
-        diff = pred_stack - mean_pred[np.newaxis, :, :]
-        weighted_var = np.average(diff ** 2, weights=weights, axis=0)
-        std_pred = np.sqrt(weighted_var)
+        for out_col in range(self._n_outputs):
+            col_weights = np.array([
+                self._get_weight(name, out_col)
+                for name in model_names
+            ], dtype=float)
+            w_sum = float(col_weights.sum())
+            if w_sum > 1e-15:
+                col_weights = col_weights / w_sum
+            else:
+                col_weights = np.ones(len(model_names), dtype=float) / len(model_names)
+
+            mean_pred[:, out_col] = np.average(
+                pred_stack[:, :, out_col],
+                weights=col_weights,
+                axis=0,
+            )
+            diff_col = pred_stack[:, :, out_col] - mean_pred[:, out_col][np.newaxis, :]
+            var_col = np.average(diff_col ** 2, weights=col_weights, axis=0)
+            std_pred[:, out_col] = np.sqrt(var_col)
 
         if self._n_outputs == 1:
             return mean_pred.ravel(), std_pred.ravel()

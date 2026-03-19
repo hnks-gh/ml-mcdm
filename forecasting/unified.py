@@ -2518,7 +2518,7 @@ class UnifiedForecaster:
                                         _y_tr[:, _d_cqr] if _y_tr.ndim > 1
                                         else _y_tr
                                     )
-                                    _cqr = _CQRCP(alpha=alpha_qrf)
+                                    _cqr = _CQRCP(alpha=alpha_bonferroni)
                                     _cqr.calibrate(
                                         _lower_tr[:, _d_cqr],
                                         _upper_tr[:, _d_cqr],
@@ -3065,6 +3065,13 @@ class UnifiedForecaster:
                 _X_ho_arr  = self.X_holdout_.values
                 _X_ho_pca  = self.reducer_pca_.transform(_X_ho_arr)
                 _X_ho_tree = self.reducer_tree_.transform(_X_ho_arr)
+                _ent_to_idx_ho = {
+                    e: i for i, e in enumerate(self._panel_data_.provinces)
+                }
+                _ho_entity_idx = np.array(
+                    [_ent_to_idx_ho.get(e, 0) for e in self.X_holdout_.index],
+                    dtype=int,
+                )
                 _pca_ho_track = {'BayesianRidge', 'KernelRidge', 'SVR'}
                 _per_model_X_holdout = {
                     name: (_X_ho_pca if name in _pca_ho_track else _X_ho_tree)
@@ -3073,6 +3080,7 @@ class UnifiedForecaster:
                 try:
                     _ens_ho_arr, _ = self.super_learner_.predict_with_uncertainty(
                         _X_ho_tree,
+                        entity_indices=_ho_entity_idx,
                         per_model_X_pred=_per_model_X_holdout,
                     )
                 except Exception as _ens_ho_exc:
@@ -3088,6 +3096,7 @@ class UnifiedForecaster:
                     X_holdout_per_model=_per_model_X_holdout,
                     y_holdout=self.y_holdout_.values,
                     ensemble_preds_holdout=_ens_ho_arr,
+                    entity_indices_holdout=_ho_entity_idx,
                     X_target_per_model=self._per_model_X_pred_,
                     ensemble_preds_target=self._predictions_arr_,
                     component_names=self.y_train_.columns.tolist(),

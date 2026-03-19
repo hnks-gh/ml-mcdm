@@ -45,6 +45,7 @@ from .super_learner import _WalkForwardYearlySplit
 import copy
 import warnings
 import functools
+import inspect
 
 logger = logging.getLogger('ml_mcdm')
 
@@ -104,6 +105,7 @@ def compare_all_models(
     X_holdout_per_model: Dict[str, np.ndarray],
     y_holdout: np.ndarray,
     ensemble_preds_holdout: np.ndarray,
+    entity_indices_holdout: Optional[np.ndarray] = None,
     X_target_per_model: Optional[Dict[str, np.ndarray]] = None,
     ensemble_preds_target: Optional[np.ndarray] = None,
     component_names: Optional[List[str]] = None,
@@ -138,6 +140,11 @@ def compare_all_models(
         Pre-computed SuperLearner point predictions for the holdout set.
         Must be generated externally via ``super_learner.predict_with_uncertainty``
         **after** fitting — never by re-fitting inside this function.
+    entity_indices_holdout : ndarray, optional
+        Entity IDs for holdout rows.  Forwarded to base models whose
+        ``predict`` signature accepts ``entity_indices`` (or
+        ``group_indices``) so panel-aware models evaluate with the correct
+        entity context.
     X_target_per_model : dict, optional
         Per-model feature matrices for the **target (forecast) year**.
         When provided, target-year predictions are stored in
@@ -242,7 +249,23 @@ def compare_all_models(
             ))
             continue
         try:
-            ho_preds = model.predict(X_ho)
+            _sig = inspect.signature(model.predict)
+            if (
+                entity_indices_holdout is not None
+                and 'entity_indices' in _sig.parameters
+            ):
+                ho_preds = model.predict(
+                    X_ho, entity_indices=entity_indices_holdout
+                )
+            elif (
+                entity_indices_holdout is not None
+                and 'group_indices' in _sig.parameters
+            ):
+                ho_preds = model.predict(
+                    X_ho, group_indices=entity_indices_holdout
+                )
+            else:
+                ho_preds = model.predict(X_ho)
             if ho_preds.ndim == 1:
                 ho_preds = ho_preds.reshape(-1, 1)
             r2, rmse, mae = _compute_metrics(y_holdout, ho_preds)
