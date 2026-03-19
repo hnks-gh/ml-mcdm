@@ -289,15 +289,15 @@ class TemporalFeatureEngineer:
 
     def __init__(self,
                  lag_periods: List[int] = [1, 2, 3],
-                 rolling_windows: List[int] = [2, 3, 5],
+                 rolling_windows: List[int] = [3, 5],
                  include_momentum: bool = True,
                  include_cross_entity: bool = True,
                  include_ewma: bool = True,
-                 include_expanding: bool = True,
+                 include_expanding: bool = False,
                  include_diversity: bool = True,
                  include_rank_change: bool = True,
                  include_region_dummies: bool = True,
-                 include_rolling_skewness: bool = True,
+                 include_rolling_skewness: bool = False,
                  target_level: str = "criteria"):
         self.lag_periods = lag_periods
         self.rolling_windows = rolling_windows
@@ -1272,14 +1272,14 @@ class TemporalFeatureEngineer:
                 features.extend(window_data.max().values)
                 feature_names.extend([f"{c}_roll{window}_max" for c in components])
             else:
-                # Insufficient history: pad with current-value placeholders.
-                features.extend(current_values)
+                # Insufficient history: padding with NaN triggers Tiered Median Imputation (Phase 4.5)
+                features.extend(np.full(len(components), np.nan))
                 feature_names.extend([f"{c}_roll{window}_mean" for c in components])
-                features.extend(np.zeros(len(components)))
+                features.extend(np.full(len(components), np.nan))
                 feature_names.extend([f"{c}_roll{window}_std" for c in components])
-                features.extend(current_values)
+                features.extend(np.full(len(components), np.nan))
                 feature_names.extend([f"{c}_roll{window}_min" for c in components])
-                features.extend(current_values)
+                features.extend(np.full(len(components), np.nan))
                 feature_names.extend([f"{c}_roll{window}_max" for c in components])
 
         # ==================================================================
@@ -1300,12 +1300,12 @@ class TemporalFeatureEngineer:
                 features.extend(acceleration)
                 feature_names.extend([f"{c}_acceleration" for c in components])
             else:
-                features.extend(np.zeros(len(components)))
+                features.extend(np.full(len(components), np.nan))
                 feature_names.extend([f"{c}_acceleration" for c in components])
         else:
-            features.extend(np.zeros(len(components)))
+            features.extend(np.full(len(components), np.nan))
             feature_names.extend([f"{c}_momentum" for c in components])
-            features.extend(np.zeros(len(components)))
+            features.extend(np.full(len(components), np.nan))
             feature_names.extend([f"{c}_acceleration" for c in components])
 
         # ==================================================================
@@ -1372,11 +1372,11 @@ class TemporalFeatureEngineer:
                         x_vals_raw[valid_mask], y_vals_raw[valid_mask], 1
                     )[0]
                 else:
-                    slope = 0.0
+                    slope = np.nan
                 features.append(slope)
                 feature_names.append(f"{c}_trend")
         else:
-            features.extend(np.zeros(len(components)))
+            features.extend(np.full(len(components), np.nan))
             feature_names.extend([f"{c}_trend" for c in components])
 
         # ==================================================================
@@ -1432,8 +1432,8 @@ class TemporalFeatureEngineer:
         # ==================================================================
         if self.include_diversity:
             valid_curr = current_values[~np.isnan(current_values)]
-            diversity_std = float(np.std(valid_curr)) if len(valid_curr) >= 2 else 0.0
-            diversity_rng = float(np.ptp(valid_curr)) if len(valid_curr) >= 2 else 0.0
+            diversity_std = float(np.std(valid_curr)) if len(valid_curr) >= 2 else np.nan
+            diversity_rng = float(np.ptp(valid_curr)) if len(valid_curr) >= 2 else np.nan
             features.extend([diversity_std, diversity_rng])
             feature_names.extend(["component_diversity_std", "component_diversity_range"])
 
@@ -1451,9 +1451,9 @@ class TemporalFeatureEngineer:
                     window_years_sk = available_years[-5:]
                     sk_vals = entity_data.loc[window_years_sk, c].values.astype(float)
                     valid_sk = sk_vals[~np.isnan(sk_vals)]
-                    sk = float(_scipy_stats.skew(valid_sk)) if len(valid_sk) >= 3 else 0.0
+                    sk = float(_scipy_stats.skew(valid_sk)) if len(valid_sk) >= 3 else np.nan
                 else:
-                    sk = 0.0
+                    sk = np.nan
                 features.append(sk)
                 feature_names.append(f"{c}_roll5_skewness")
 
@@ -1487,7 +1487,13 @@ class TemporalFeatureEngineer:
                         not year_cross_section.empty
                         and c in year_cross_section.columns
                     ):
-                        col_clean = year_cross_section[c].dropna()
+                        _active_cols = [col for col in components if col in year_cross_section.columns and not year_cross_section[col].isna().all()]
+                        _valid_cohort = year_cross_section.dropna(subset=_active_cols).index
+                        if entity in _valid_cohort:
+                            col_clean = year_cross_section.loc[_valid_cohort, c]
+                        else:
+                            col_clean = year_cross_section[c].dropna()
+                            
                         if len(col_clean) > 0 and not np.isnan(entity_value):
                             percentile = float((col_clean < entity_value).mean())
                             mean_val   = float(col_clean.mean())
@@ -1514,7 +1520,13 @@ class TemporalFeatureEngineer:
                             if prev_year_rk in entity_data.index
                             else np.nan
                         )
-                        prev_col_clean = prev_cross_section[c].dropna()
+                        _prev_active_cols = [col for col in components if col in prev_cross_section.columns and not prev_cross_section[col].isna().all()]
+                        _prev_valid_cohort = prev_cross_section.dropna(subset=_prev_active_cols).index
+                        if entity in _prev_valid_cohort:
+                            prev_col_clean = prev_cross_section.loc[_prev_valid_cohort, c]
+                        else:
+                            prev_col_clean = prev_cross_section[c].dropna()
+
                         if len(prev_col_clean) > 0 and not np.isnan(prev_entity_val):
                             # Recompute current percentile if cross_entity off
                             if not self.include_cross_entity:
@@ -1522,7 +1534,12 @@ class TemporalFeatureEngineer:
                                     not year_cross_section.empty
                                     and c in year_cross_section.columns
                                 ):
-                                    _curr_col = year_cross_section[c].dropna()
+                                    _curr_active_cols = [col for col in components if col in year_cross_section.columns and not year_cross_section[col].isna().all()]
+                                    _curr_valid_cohort = year_cross_section.dropna(subset=_curr_active_cols).index
+                                    if entity in _curr_valid_cohort:
+                                        _curr_col = year_cross_section.loc[_curr_valid_cohort, c]
+                                    else:
+                                        _curr_col = year_cross_section[c].dropna()
                                     percentile = (
                                         float((_curr_col < entity_value).mean())
                                         if len(_curr_col) > 0

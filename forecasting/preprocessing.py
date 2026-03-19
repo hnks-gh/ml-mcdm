@@ -107,6 +107,7 @@ class PanelFeatureReducer:
         mi_k: Union[int, str] = 'half',
         use_mice_imputation: bool = True,  # M-02: Activated by default
         imputation_config: Optional[ImputationConfig] = None,  # PHASE A: Tier 1 MICE config
+        max_vif_threshold: Optional[float] = None,  # Phase 4.3 VIF filter
         random_state: int = 42,
         mode: Literal['pls', 'threshold_only', 'pca'] = 'pca',
     ):
@@ -118,6 +119,7 @@ class PanelFeatureReducer:
         self.mi_k = mi_k
         self.use_mice_imputation = use_mice_imputation
         self.imputation_config = imputation_config or ImputationConfig()  # PHASE A
+        self.max_vif_threshold = max_vif_threshold
         self.random_state = random_state
         self.mode = mode
 
@@ -127,6 +129,7 @@ class PanelFeatureReducer:
         self._pca: Optional[PCA] = None
         self._imputer: Optional[IterativeImputer] = None
         self._mice_imputer: Optional[IterativeImputer] = None  # PHASE A: Tier 1 MICE
+        self._vif_drop_mask: Optional[np.ndarray] = None       # Phase 4.3
         self._mi_mask: Optional[np.ndarray] = None   # bool (n_kept_after_var,)
         self._pls_evr_: float = 0.0                  # estimated X-variance ratio for PLS
         self._original_feature_names: Optional[List[str]] = None
@@ -257,6 +260,54 @@ class PanelFeatureReducer:
             self._mice_fitted = False
 
         # ========================= End Tier 1 ==========================
+
+        # ===== PHASE 4.3 Enhancement: VIF Filter =====
+        self._vif_drop_mask = np.zeros(X_var.shape[1], dtype=bool)
+        if self.max_vif_threshold is not None and X_var.shape[1] > 1:
+            logger.info(f"Applying VIF filter (threshold={self.max_vif_threshold}). Initial features={X_var.shape[1]}")
+            
+            # 1. Drop perfectly collinear (r > 0.98) to ensure invertibility
+            # For 1000 features, np.corrcoef is fast
+            corr = np.corrcoef(X_var, rowvar=False)
+            upper = np.triu(np.abs(corr), k=1)
+            drop_corr = [i for i in range(upper.shape[1]) if np.any(upper[:, i] > 0.98)]
+            kept = [i for i in range(X_var.shape[1]) if i not in drop_corr]
+            
+            # 2. Iterative VIF computation over remaining using inverse correlation
+            X_s = StandardScaler().fit_transform(X_var)
+            drop_vif = []
+            
+            while len(kept) > 2:
+                c = np.corrcoef(X_s[:, kept], rowvar=False)
+                c += np.eye(c.shape[0]) * 1e-4  # Marginal ridge for stability
+                try:
+                    vif = np.diag(np.linalg.inv(c))
+                except np.linalg.LinAlgError:
+                    break
+                
+                # Identify items exceeding threshold
+                exceed_indices = np.where(vif > self.max_vif_threshold)[0]
+                if len(exceed_indices) == 0:
+                    break
+                    
+                exceed_sorted = sorted([(vif[i], i) for i in exceed_indices], reverse=True)
+                # Drop batch of top 5 highest VIF to speed up convergence
+                batch_drop = min(5, len(exceed_sorted))
+                indices_to_drop = sorted([exceed_sorted[k][1] for k in range(batch_drop)], reverse=True)
+                for idx in indices_to_drop:
+                    drop_vif.append(kept.pop(idx))
+            
+            all_dropped = drop_corr + drop_vif
+            self._vif_drop_mask[all_dropped] = True
+            
+            # Update working array and the permanent feature mask
+            X_var = X_var[:, ~self._vif_drop_mask]
+            kept_indices = np.where(self._kept_feature_mask)[0]
+            self._kept_feature_mask[kept_indices[all_dropped]] = False
+            
+            logger.info(f"VIF filter removed {len(drop_corr)} collinear, {len(drop_vif)} high-VIF. "
+                        f"Remaining features={X_var.shape[1]}")
+        # ========================= End VIF =============================
 
         # ── TREE TRACK ────────────────────────────────────────────────────
         if self.mode == 'threshold_only':
@@ -423,7 +474,14 @@ class PanelFeatureReducer:
         # raises "Input contains NaN" crashing stage2/stage3 transforms.
         if np.isnan(X_var).any():
             _means = getattr(self, '_var_col_means_', np.zeros(X_var.shape[1]))
+            # Handle dimension mismatch if VIF filtering dropped some means
+            if self._vif_drop_mask is not None:
+                _means = _means[~self._vif_drop_mask]
             X_var = np.where(np.isnan(X_var), _means[np.newaxis, :], X_var)
+            
+        # Phase 4.3 VIF Drop
+        if self._vif_drop_mask is not None:
+            X_var = X_var[:, ~self._vif_drop_mask]
 
         if self.mode == 'threshold_only':
             # Raw variance-filtered features — no scaling for tree models

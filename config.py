@@ -284,6 +284,10 @@ class ForecastConfig:
     enabled: bool = True
     target_year: Optional[int] = None  # Auto-set to latest_year + 1
 
+    # ===== PHASE 4: Feature Selection & Multicollinearity =====
+    max_vif_threshold: float = 10.0
+    target_max_features: int = 80
+
     # ===== PHASE A Enhancement: Advanced Imputation Configuration (M-12) =====
     imputation_config: Optional[ImputationConfig] = field(default_factory=ImputationConfig)
     """Configuration for multi-tier imputation strategy (Tiers 1-4).
