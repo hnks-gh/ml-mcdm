@@ -210,6 +210,21 @@ class PanelData:
         """Alias for subcriteria_cross_section (used by MCDM/forecasting)."""
         return self.subcriteria_cross_section
 
+    @property
+    def subcriteria(self) -> pd.DataFrame:
+        """Alias for subcriteria_long (used by forecasting features)."""
+        return self.subcriteria_long
+
+    @property
+    def criteria(self) -> pd.DataFrame:
+        """Alias for criteria_long (used by forecasting features)."""
+        return self.criteria_long
+
+    @property
+    def final(self) -> pd.DataFrame:
+        """Alias for final_long (used by forecasting features)."""
+        return self.final_long
+
     # ------------------------------------------------------------------
     # Convenience accessors
     # ------------------------------------------------------------------
