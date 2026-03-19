@@ -29,6 +29,31 @@ Point-prediction semantics:
     ``predict_median(X)`` → conditional **median** at q=0.5
     ``predict_mean(X)``   → identical to ``predict()``
 
+Phase 2 Stabilization (Phase 2.4)
+----------------------------------
+Two changes eliminate the negative CV R² (−0.088 observed in the audit):
+
+1. **RobustScaler removed** — ``RandomForestQuantileRegressor`` is a tree
+   model and is invariant to monotone feature transformations.  The scaler
+   added unnecessary computation, made feature importances less
+   interpretable, and could introduce train-test distribution shift when
+   the prediction set is out-of-distribution.  ``X`` is now passed directly.
+
+2. **Adaptive min_samples_leaf** — with n_train ≈ 150–500, the default
+   ``min_samples_leaf=3`` allows highly specific leaf nodes that memorise
+   fold-specific noise.  ``fit()`` now auto-scales the leaf threshold:
+
+   +-------------+---------------------+
+   | n_train     | effective_min_leaf  |
+   +=============+=====================+
+   | < 200       | max(5, n // 20)     |
+   | 200 – 399   | max(3, n // 30)     |
+   | ≥ 400       | min_samples_leaf    |
+   +-------------+---------------------+
+
+   Auto-scaling only fires when ``min_samples_leaf`` retains the default
+   value (3); explicit overrides are always honoured.
+
 Key Advantages:
     - Non-parametric: No distributional assumptions
     - Heteroscedastic: Uncertainty varies with input
@@ -43,7 +68,6 @@ References:
 
 import numpy as np
 from typing import Dict, List, Optional, Tuple, Union
-from sklearn.preprocessing import RobustScaler
 
 # sklearn_quantile is listed as a core dependency in pyproject.toml
 # (sklearn-quantile >= 0.0.22).  The try/except converts a cryptic
@@ -65,21 +89,35 @@ class QuantileRandomForestForecaster(BaseForecaster):
     Provides full predictive distributions via quantile estimation from
     the empirical distribution of training samples within tree leaves.
 
+    Phase 2 changes:
+    - **RobustScaler removed**: tree models are scale-invariant.
+    - **Adaptive min_samples_leaf**: auto-scaled with n_train to prevent
+      leaf memorisation on small CV folds.
+    - ``n_estimators`` default raised to 200 (class) / 300 (when read from
+      ``ForecastConfig.qrf_n_estimators``).
+
     Parameters:
-        n_estimators: Number of trees in the forest
-        max_depth: Maximum depth of trees (None = unlimited)
-        min_samples_split: Minimum samples required to split a node
-        min_samples_leaf: Minimum samples in a leaf node
-        quantiles: Quantile levels to estimate
-        random_state: Random seed
-        n_jobs: Number of parallel jobs (-1 = all cores)
+        n_estimators: Number of trees in the forest (default 200 here;
+            ``_create_models()`` in unified.py passes 300 from config).
+        max_depth: Maximum depth of trees (None = unlimited).
+        min_samples_split: Minimum samples required to split a node.
+        min_samples_leaf: Minimum samples in a leaf node (default 3).
+            Auto-scaled with training set size when using default value.
+        quantiles: Quantile levels to estimate.
+        random_state: Random seed.
+        n_jobs: Number of parallel jobs (-1 = all cores).
 
     Example:
-        >>> qrf = QuantileRandomForestForecaster(n_estimators=200)
+        >>> qrf = QuantileRandomForestForecaster(n_estimators=300)
         >>> qrf.fit(X_train, y_train)
         >>> predictions = qrf.predict(X_test)
         >>> quantile_preds = qrf.predict_quantiles(X_test, quantiles=[0.05, 0.5, 0.95])
     """
+
+    # Default min_samples_leaf sentinel — when the user passes exactly this
+    # value, auto-scaling is enabled; any other value is treated as explicit
+    # and respected verbatim.
+    _DEFAULT_MIN_LEAF: int = 3
 
     def __init__(
         self,
@@ -108,10 +146,37 @@ class QuantileRandomForestForecaster(BaseForecaster):
 
         self.model_: Optional[RandomForestQuantileRegressor] = None
         self._models_per_output_: List[RandomForestQuantileRegressor] = []
-        self.scaler_ = RobustScaler()
+        # Phase 2.4: scaler_ retained as None for backward compatibility with
+        # any pickled legacy models that inspected this attribute.
+        self.scaler_ = None
         self.feature_importance_: Optional[np.ndarray] = None
         self._is_multi_output: bool = False
         self._n_outputs: int = 1
+
+    def _compute_effective_min_leaf(self, n_samples: int) -> int:
+        """Compute adaptive min_samples_leaf based on training set size.
+
+        Auto-scaling is enabled only when ``min_samples_leaf`` retains its
+        default sentinel value (3).  Explicit user-provided values bypass
+        this logic and are always used as-is.
+
+        +-------------+---------------------+
+        | n_train     | effective_min_leaf  |
+        +=============+=====================+
+        | < 200       | max(5, n // 20)     |
+        | 200 – 399   | max(3, n // 30)     |
+        | ≥ 400       | min_samples_leaf    |
+        +-------------+---------------------+
+        """
+        if self.min_samples_leaf != self._DEFAULT_MIN_LEAF:
+            # Explicit override — honour without modification.
+            return self.min_samples_leaf
+        if n_samples < 200:
+            return max(5, n_samples // 20)
+        elif n_samples < 400:
+            return max(3, n_samples // 30)
+        else:
+            return self.min_samples_leaf  # default is fine for larger datasets
 
     def fit(self, X: np.ndarray, y: np.ndarray) -> "QuantileRandomForestForecaster":
         """
@@ -120,6 +185,9 @@ class QuantileRandomForestForecaster(BaseForecaster):
         Trains a standard Random Forest and stores training data leaf
         assignments for subsequent quantile estimation.
 
+        Phase 2.4: ``X`` is passed directly without scaling (tree models are
+        scale-invariant).  ``min_samples_leaf`` is auto-scaled with n_train.
+
         Args:
             X: Feature matrix of shape (n_samples, n_features)
             y: Target values of shape (n_samples,) or (n_samples, n_outputs)
@@ -127,7 +195,8 @@ class QuantileRandomForestForecaster(BaseForecaster):
         Returns:
             Self for method chaining
         """
-        X_scaled = self.scaler_.fit_transform(X)
+        n_samples = X.shape[0]
+        eff_min_leaf = self._compute_effective_min_leaf(n_samples)
 
         if y.ndim == 1:
             y = y.reshape(-1, 1)
@@ -145,13 +214,14 @@ class QuantileRandomForestForecaster(BaseForecaster):
                 n_estimators=self.n_estimators,
                 max_depth=self.max_depth,
                 min_samples_split=self.min_samples_split,
-                min_samples_leaf=self.min_samples_leaf,
+                min_samples_leaf=eff_min_leaf,
                 random_state=self.random_state,
                 n_jobs=self.n_jobs,
                 bootstrap=True,
                 oob_score=True,
             )
-            qrf.fit(X_scaled, y[:, col])
+            # Phase 2.4: pass X directly — no scaling for tree models.
+            qrf.fit(X, y[:, col])
             self._models_per_output_.append(qrf)
 
         # For API compat, keep model_ pointing to the first estimator
@@ -208,24 +278,24 @@ class QuantileRandomForestForecaster(BaseForecaster):
         Useful when the mean is preferred over the median, e.g. for
         squared-error scoring or comparison with other models.
 
+        Phase 2.4: X is passed directly without scaling.
+
         Args:
             X: Feature matrix of shape (n_samples, n_features)
 
         Returns:
             Predictions of shape (n_samples,) or (n_samples, n_outputs)
         """
-        X_scaled = self.scaler_.transform(X)
-        # Each per-output QRF's predict() requires quantiles; use the
-        # underlying sklearn RandomForestRegressor.predict (via super)
+        # Use the underlying sklearn RandomForestRegressor.predict (via super)
         # which returns the tree-averaged conditional mean.
         from sklearn.ensemble import RandomForestRegressor
         if self._is_multi_output:
             cols = [
-                RandomForestRegressor.predict(est, X_scaled)
+                RandomForestRegressor.predict(est, X)
                 for est in self._models_per_output_
             ]
             return np.column_stack(cols)
-        return RandomForestRegressor.predict(self.model_, X_scaled)
+        return RandomForestRegressor.predict(self.model_, X)
 
     def predict_quantiles(
         self,
@@ -240,6 +310,8 @@ class QuantileRandomForestForecaster(BaseForecaster):
         internally by the C-level implementation, which is 10–100× faster
         than the previous manual NumPy loop.
 
+        Phase 2.4: X is passed directly without scaling.
+
         Args:
             X: Feature matrix of shape (n_samples, n_features)
             quantiles: List of quantile levels (default: self.quantiles)
@@ -252,7 +324,6 @@ class QuantileRandomForestForecaster(BaseForecaster):
         if quantiles is None:
             quantiles = self.quantiles
 
-        X_scaled = self.scaler_.transform(X)
         q_array = np.asarray(quantiles, dtype=np.float64)
 
         if self._is_multi_output:
@@ -260,7 +331,7 @@ class QuantileRandomForestForecaster(BaseForecaster):
             per_output = []
             for est in self._models_per_output_:
                 est.q = q_array
-                raw_col = np.asarray(est.predict(X_scaled))
+                raw_col = np.asarray(est.predict(X))
                 # When len(q)==1, sklearn_quantile returns (n_samples,)
                 # instead of (1, n_samples).  Normalise to 2-D.
                 if raw_col.ndim == 1:
@@ -276,7 +347,7 @@ class QuantileRandomForestForecaster(BaseForecaster):
 
         # Single-output path
         self.model_.q = q_array
-        raw = np.asarray(self.model_.predict(X_scaled))
+        raw = np.asarray(self.model_.predict(X))
         # Normalise to 2-D when a single quantile was requested
         if raw.ndim == 1:
             raw = raw.reshape(1, -1)

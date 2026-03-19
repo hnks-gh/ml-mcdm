@@ -79,6 +79,8 @@ class TestFeatureEngineer:
         panel.provinces = provinces
         panel.subcriteria_names = components
         panel.years = years
+        panel.criteria = pd.DataFrame(columns=components)
+        panel.subcriteria = pd.DataFrame(columns=components)
 
         rng = np.random.RandomState(0)
         data_store: Dict[str, "pd.DataFrame"] = {}
@@ -219,6 +221,8 @@ class TestFeatureEngineer:
         panel.provinces = provinces
         panel.subcriteria_names = components
         panel.years = years
+        panel.criteria = pd.DataFrame(columns=components)
+        panel.subcriteria = pd.DataFrame(columns=components)
         panel.get_province = lambda name: data_store[name]
         panel.cross_section = cs
         panel.year_contexts = {yr: _make_ctx(yr) for yr in years}
@@ -284,6 +288,8 @@ class TestFeatureEngineer:
         panel.provinces = provinces
         panel.subcriteria_names = components
         panel.years = years
+        panel.criteria = pd.DataFrame(columns=components)
+        panel.subcriteria = pd.DataFrame(columns=components)
         panel.get_province = lambda name: data_store[name]
         panel.cross_section = cs
         panel.year_contexts = {yr: _make_ctx(yr) for yr in years}
@@ -914,6 +920,8 @@ class TestPipelineDecoupling:
         panel.provinces          = provinces
         panel.subcriteria_names  = components
         panel.years              = years
+        panel.criteria           = pd.DataFrame(columns=components)
+        panel.subcriteria        = pd.DataFrame(columns=components)
 
         rng = np.random.RandomState(7)
         data_store: dict = {}

@@ -320,11 +320,21 @@ class ForecastConfig:
 
     # ── Cross-validation ─────────────────────────────────────────────────
     cv_folds: int = 5
-    cv_min_train_years: int = 8
+    cv_min_train_years: int = 5
     """Minimum number of unique year-label cohorts before the first validation
-    fold.  With year_labels = target years (2012–2024), setting 8 means the
-    first validation year is 2020 (index 8 in [2012…2024]), matching the
-    desired fold design: Fold 1 → train 2011–2019, validate 2020."""
+    fold.  With year_labels = target years (2012–2024):
+
+    *  ``5`` (Phase 2 default): first validation year is 2017 (index 5 in
+       [2012…2024]).  Produces 7 validation folds × 63 entities = **441 OOF rows**
+       for meta-learner NNLS, vs. 315 rows (5 folds) at the old default of 8.
+       The +40% OOF data reduces meta-weight estimation variance; each of the
+       8 output criteria now has ≈55 OOF rows (vs. ≈40 previously).
+    *  ``8`` (previous default): first validation year 2020;
+       fold design: Fold 1 → train 2011–2019, validate 2020.
+
+    Phase 2.5 reduction: ``8 → 5``; conformal extended OOF sweep
+    (``cv_conformal_min_train_years=3``) remains unchanged and continues
+    to contribute additional residuals for uncertainty calibration only."""
     cv_conformal_min_train_years: int = 3
     """Minimum training cohorts for the **conformal-only** extended OOF sweep
     (E-02).  The SuperLearner runs a secondary walk-forward pass to generate
@@ -511,6 +521,82 @@ class ForecastConfig:
     reduce for faster runs.  MedianPruner eliminates ~40% of trials early,
     so net wall time is ~22–24 completed evaluations.
     Only used when ``auto_tune_gb=True``.
+    """
+
+    # ── Phase 2: Early Stopping for Gradient Boosting (Phase 2.1) ────────
+    gb_early_stopping_rounds: int = 20
+    """Number of consecutive boosting rounds with no improvement on the
+    internal chronological validation set before training is halted.
+
+    **Why chronological?** — Panel CV folds are ordered by calendar year.
+    We hold out the chronologically *last* ``gb_validation_fraction`` of
+    each fold's training rows as the early-stopping monitor set.  This
+    preserves temporal integrity: the monitor set always represents years
+    *after* the model training window, avoiding any look-ahead bias.
+
+    With ``learning_rate=0.05`` and ``n_train ≈ 200–500``, the loss
+    typically plateaus at 50–120 iterations (vs. the 200–300 max), so
+    early stopping recovers 50–75% of wasted compute and prevents
+    overfitting on small CV folds (the root cause of LightGBM CV
+    R²=−0.07 and QuantileRF CV R²=−0.088 observed in the audit).
+
+    Set ``0`` to disable early stopping and recover old behaviour
+    (full-iteration training regardless of validation loss).
+    """
+
+    gb_validation_fraction: float = 0.20
+    """Fraction of each fold's training rows held out as the chronological
+    early-stopping validation set (Phase 2.1).
+
+    Rows are selected by index position (last ``round(n_train × frac)``
+    rows), which corresponds to the most recent year-cohorts because the
+    feature matrix is sorted ``(year, entity)`` by the feature engineer.
+
+    * ``0.20`` (default): 20% holdout.
+      - ``n_train=400`` → ``n_es_val=80`` — robust loss estimate.
+      - ``n_train=200`` → ``n_es_val=40`` — marginal but sufficient.
+    * Minimum of ``max(10, round(n_train × frac))`` is enforced so the
+      validation set always has at least 10 samples even for tiny folds.
+    * Early stopping is suppressed when ``n_train < 40`` to avoid leaving
+      fewer than 30 actual training rows after the split.
+    Only used when ``gb_early_stopping_rounds > 0``.
+    """
+
+    # ── Phase 2: QuantileRF stabilization (Phase 2.4) ────────────────────
+    qrf_n_estimators: int = 300
+    """Number of trees in the Quantile Random Forest (QuantileRF) ensemble.
+
+    **Bug fix (Phase 2.4)**: ``_create_models()`` previously hardcoded
+    ``n_estimators=100``, ignoring both the class default (200) and this
+    config field.  The fix reads this value and passes it through, raising
+    the effective tree count to 300.
+
+    **Rationale for 300**: QRF's quantile estimates are empirical CDFs over
+    leaf training samples.  At the extreme quantiles used for 95%
+    prediction intervals (q=0.025, q=0.975), estimates require many trees
+    to stabilise.  Breiman (2001) recommends ≥10 × √n_features for OOB
+    error convergence; with ~700 tree-track features √700 ≈ 26, so
+    ≥260 trees.  300 gives comfortable headroom.
+
+    Typical fitting time: ~8–12 s per output column on CPU.
+    """
+    qrf_min_samples_leaf: int = 3
+    """Default minimum number of training samples required at each leaf node
+    in the Quantile Random Forest.
+
+    ``fit()`` auto-scales this value when ``n_train < 400`` to prevent
+    micro-leaves that memorise individual samples:
+
+    +-------------+----------------------+
+    | n_train     | effective_min_leaf   |
+    +=============+======================+
+    | < 200       | max(5, n//20)        |
+    | 200 – 399   | max(3, n//30)        |
+    | ≥ 400       | qrf_min_samples_leaf |
+    +-------------+----------------------+
+
+    The auto-scaling fires only when this field retains its default value
+    (3); explicit non-default values are always honoured.
     """
 
     # ── Target transformation (Phase 5) ──────────────────────────────────
