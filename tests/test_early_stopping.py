@@ -17,6 +17,7 @@ Run with:
 
 import numpy as np
 import pytest
+import warnings
 
 
 # ---------------------------------------------------------------------------
@@ -265,6 +266,28 @@ class TestLightGBMEarlyStopping:
         model.fit(X, y)
         pred = model.predict(X[:10])
         assert pred.shape == (10, y.shape[1])
+
+    def test_lightgbm_no_feature_name_warning_on_ndarray_predict(self, medium_dataset):
+        """Predicting ndarray after DataFrame fit must not trigger schema warning."""
+        pd = pytest.importorskip("pandas")
+        from forecasting.gradient_boosting import LightGBMForecaster
+
+        X, y = medium_dataset
+        X_df = pd.DataFrame(X, columns=[f"f{i}" for i in range(X.shape[1])])
+
+        model = LightGBMForecaster(
+            n_estimators=50, early_stopping_rounds=10, random_state=42,
+        )
+        model.fit(X_df, y)
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            pred = model.predict(X)
+
+        assert pred.shape == y.shape
+        assert not any(
+            "valid feature names" in str(w.message) for w in caught
+        ), "LightGBM emitted a feature-name mismatch warning during predict()."
 
     def test_lightgbm_feature_importance_after_es(self, medium_dataset):
         """Feature importance vector length == n_features after per-output ES."""

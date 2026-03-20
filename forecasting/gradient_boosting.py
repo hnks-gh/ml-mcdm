@@ -77,6 +77,11 @@ import logging
 import numpy as np
 from typing import List, Optional
 
+try:
+    import pandas as pd  # type: ignore[import]
+except ImportError:
+    pd = None  # type: ignore[assignment]
+
 logger = logging.getLogger(__name__)
 
 # ── Backend availability checks ──────────────────────────────────────────────
@@ -122,10 +127,10 @@ from .base import BaseForecaster
 # ---------------------------------------------------------------------------
 
 def _chronological_es_split(
-    X: np.ndarray,
-    y: np.ndarray,
+    X,
+    y,
     validation_fraction: float,
-    sample_weight: Optional[np.ndarray],
+    sample_weight,
     min_n_train: int = 30,
     min_n_val: int = 10,
 ) -> tuple:
@@ -163,9 +168,14 @@ def _chronological_es_split(
     if n_tr < min_n_train or n_val < min_n_val:
         return None
 
-    X_tr, X_va = X[:n_tr], X[n_tr:]
-    y_tr, y_va = y[:n_tr], y[n_tr:]
-    sw_tr = sample_weight[:n_tr] if sample_weight is not None else None
+    def _slice_rows(arr, start: int, end: Optional[int] = None):
+        if hasattr(arr, "iloc"):
+            return arr.iloc[start:end]
+        return arr[start:end]
+
+    X_tr, X_va = _slice_rows(X, 0, n_tr), _slice_rows(X, n_tr, None)
+    y_tr, y_va = _slice_rows(y, 0, n_tr), _slice_rows(y, n_tr, None)
+    sw_tr = _slice_rows(sample_weight, 0, n_tr) if sample_weight is not None else None
     return X_tr, y_tr, sw_tr, X_va, y_va
 
 
@@ -621,6 +631,8 @@ class LightGBMForecaster(BaseForecaster):
         self._const_vals_: Optional[np.ndarray] = None   # per-col fallback val
         # Early stopping diagnostics
         self._best_iterations_: List[int] = []
+        # If fit with a DataFrame, preserve feature names for ndarray inference.
+        self._feature_names_: Optional[List[str]] = None
 
     # ------------------------------------------------------------------
     # Public API  (BaseForecaster interface)
@@ -653,6 +665,10 @@ class LightGBMForecaster(BaseForecaster):
                 "LightGBMForecaster requires LightGBM to be installed.\n"
                 "Install it with: pip install lightgbm>=4.0.0"
             )
+
+        columns = getattr(X, 'columns', None)
+        self._feature_names_ = [str(c) for c in columns] if columns is not None else None
+
         if y.ndim == 1:
             y = y.reshape(-1, 1)
         self._n_outputs = y.shape[1]
@@ -823,7 +839,28 @@ class LightGBMForecaster(BaseForecaster):
         if not self._estimators_:
             return np.tile(self._const_vals_, (n_test, 1))
 
-        cols = [est.predict(X) for est in self._estimators_]
+        X_model = X
+        if not hasattr(X, 'columns') and pd is not None:
+            feature_names = self._feature_names_
+            if feature_names is None and self._estimators_:
+                first_est = self._estimators_[0]
+                est_names = getattr(first_est, 'feature_name_', None)
+                if est_names is None:
+                    booster = getattr(first_est, 'booster_', None)
+                    if booster is not None and hasattr(booster, 'feature_name'):
+                        est_names = booster.feature_name()
+                if est_names is not None:
+                    feature_names = [str(c) for c in est_names]
+
+            if feature_names is not None:
+                if X.shape[1] != len(feature_names):
+                    raise ValueError(
+                        "LightGBMForecaster.predict() received input with "
+                        f"{X.shape[1]} features, expected {len(feature_names)}"
+                    )
+                X_model = pd.DataFrame(X, columns=feature_names)
+
+        cols = [est.predict(X_model) for est in self._estimators_]
         pred = np.column_stack(cols)
 
         if pred.ndim == 1:
