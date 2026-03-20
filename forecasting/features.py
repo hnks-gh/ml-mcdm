@@ -41,12 +41,38 @@ When ``panel_data.year_contexts`` is present, ``fit_transform`` removes:
 * **Prediction rows** limited to entities in the *forecast year*'s
   ``active_provinces`` set; excluded entities are simply absent from output.
 
-NaN values in *feature* (input) vectors — e.g. missing lag values for
-entities with short histories — are filled with the cross-sectional median
-for the missing year, with a binary ``_was_missing`` indicator appended so
-the model can learn to discount imputed inputs (Fix D-01).  Any remaining
-NaN values (non-lag features with insufficient history) are filled with
-``0.0`` ("no prior information") by the safety wrapper.
+Imputation Strategy (Phase B+)
+------------------------------
+**SIMPLIFIED MICE-Only Strategy**: 
+
+NaN values in feature vectors arise from insufficient history:
+- **Lag features**: For entities with short histories (e.g., lag-3 in year 1)
+- **Rolling statistics**: When fewer observations than window size
+- **Momentum & derivatives**: When prior years unavailable
+- **Entity-demeaned features**: For isolated entities with few observations
+
+Rather than applying per-block tiered imputation (PHASE A), the simplified
+architecture uses **single-stage MICE imputation** to fill ALL missing values:
+
+1. **Feature Engineering** (this module): Produces features with NaN
+   for historical gaps. No imputation at this stage.
+
+2. **MICE Imputation** (preprocessing.PanelFeatureReducer): 
+   - IterativeImputer(ExtraTreesRegressor) captures multivariate feature
+     correlations automatically — no per-block tier configuration needed.
+   - Missingness indicators (_was_missing) preserved for model interpretation.
+   - Applied BEFORE dimensionality reduction so imputed values flow into PLS.
+
+3. **Optional Multiple Imputation** (unified.UnifiedForecaster):
+   - M=5 stochastic MICE imputations to quantify uncertainty.
+   - Predictions pooled via Rubin's Rules for total variance estimation.
+   - Recommended for production systems requiring uncertainty quantification.
+
+**Rationale**: MICE with ExtraTreesRegressor elegantly handles:
+✓ Multivariate relationships (respects feature correlations)
+✓ Nonlinear patterns (adaptive tree-based estimation)
+✓ Panel structure (uses entity and temporal information)
+✓ Uncertainty quantification (via multiple imputation)
 
 Phase 1 Enhancement Summary
 ----------------------------
@@ -333,19 +359,6 @@ class TemporalFeatureEngineer:
         # meaningful centre-of-distribution value rather than 0.0 (Fix D-01).
         self._component_year_medians_: Dict = {}
         
-        # ===== PHASE A Enhancement: Tiered Imputation Caches =====
-        # Tier 2: Per-entity-year medians (temporal blocks: 3, 4, 7, 8, 10)
-        # Key: (entity, block_id, component) -> median_value
-        self._temporal_medians_: Dict[Tuple[str, int, str], float] = {}
-        
-        # Tier 3: Cross-sectional medians (sectional blocks: 1, 5, 6, 9, 11)
-        # Key: (year, block_id, component) -> median_value
-        self._crosssectional_medians_: Dict[Tuple[int, int, str], float] = {}
-        
-        # Tier 4: Training means per block (fallback cache)
-        # Key: (block_id, component) -> mean_value
-        self._block_training_means_: Dict[Tuple[int, str], float] = {}
-        
         # Imputation configuration and audit trail
         self._imputation_config: Optional['ImputationConfig'] = None
         self._imputation_audit: 'ImputationAudit' = None
@@ -590,10 +603,8 @@ class TemporalFeatureEngineer:
                     float(np.median(_mvals)) if _mvals else 0.0
                 )
 
-        # ===== PHASE A Enhancement: Compute Imputation Statistics (Tiers 2-4) =====
+        # Store imputation configuration (used for backward compatibility)
         self._imputation_config = imputation_config or ImputationConfig()
-        if self._imputation_config.use_advanced_feature_imputation:
-            self._compute_imputation_statistics(panel_data)
 
         # ------------------------------------------------------------------
         # Pre-compute SAW-normalized cross-sections (one pass per year, O(Y))
@@ -924,234 +935,6 @@ class TemporalFeatureEngineer:
 
         return fold_means, fold_mean_deltas
 
-    def _compute_imputation_statistics(self, panel_data) -> None:
-        """
-        Compute imputation caches for Tiers 2-4 (pre-computed during fit).
-        
-        This ensures:
-        ✓ No test-set leakage (uses training data only)
-        ✓ Consistent imputation across folds
-        ✓ Production stability (statistics cached, not recomputed at inference)
-        
-        PHASE A Enhancement M-12: Advanced tiered imputation strategy.
-        """
-        if not self._imputation_config or not self._imputation_config.use_advanced_feature_imputation:
-            return
-        
-        components = list(panel_data.criteria.columns)
-        
-        # ===== TIER 2: Temporal medians for time-series blocks =====
-        # Blocks: 3 (rolling stats), 4 (momentum), 7 (EWMA), 8 (expanding), 10 (skewness)
-        temporal_blocks = {3, 4, 7, 8, 10}
-        
-        for entity in panel_data.subcriteria.index.get_level_values(0).unique() if hasattr(
-            panel_data.subcriteria.index, 'get_level_values') else panel_data.subcriteria.index:
-            try:
-                if isinstance(panel_data.subcriteria.index, pd.MultiIndex):
-                    entity_rows = panel_data.subcriteria.xs(entity, level=0)
-                else:
-                    entity_rows = panel_data.subcriteria.loc[[entity]]
-                
-                for component in components:
-                    if component in entity_rows.columns:
-                        entity_ts = entity_rows[component].dropna()
-                        if len(entity_ts) >= self._imputation_config.temporal_imputation_min_periods:
-                            temporal_median = entity_ts.median()
-                            for block_id in temporal_blocks:
-                                self._temporal_medians_[(entity, block_id, component)] = temporal_median
-            except (KeyError, IndexError):
-                continue
-        
-        # ===== TIER 3: Cross-sectional medians for feature blocks =====
-        # Blocks: 1 (current), 5 (entity-demeaned), 6 (trend), 9 (diversity), 11 (percentile)
-        sectional_blocks = {1, 5, 6, 9, 11}
-        
-        try:
-            if isinstance(panel_data.final.index, pd.MultiIndex):
-                years = panel_data.final.index.get_level_values(1).unique()
-            else:
-                years = [y for y in panel_data.final.index if isinstance(y, int)]
-            
-            for year in years:
-                try:
-                    if isinstance(panel_data.final.index, pd.MultiIndex):
-                        year_data = panel_data.final.xs(year, level=1)
-                    else:
-                        year_rows = []
-                        for idx in panel_data.final.index:
-                            if isinstance(idx, tuple) and len(idx) > 1 and idx[1] == year:
-                                year_rows.append(idx)
-                        if year_rows:
-                            year_data = panel_data.final.loc[year_rows]
-                        else:
-                            continue
-                    
-                    for component in components:
-                        if component in year_data.columns:
-                            component_vals = year_data[component].dropna()
-                            if len(component_vals) > 0:
-                                cs_median = component_vals.median()
-                                for block_id in sectional_blocks:
-                                    key = (year, block_id, component)
-                                    self._crosssectional_medians_[key] = cs_median
-                except (KeyError, IndexError):
-                    continue
-        except Exception:
-            pass
-        
-        # ===== TIER 4: Training means per block =====
-        try:
-            all_vals = panel_data.final.values.flatten()
-            all_vals_valid = all_vals[~np.isnan(all_vals)]
-            if len(all_vals_valid) > 0:
-                global_mean = float(np.mean(all_vals_valid))
-                for block_id in range(1, 12):
-                    for component in components:
-                        self._block_training_means_[(block_id, component)] = global_mean
-        except Exception:
-            pass
-        
-        logger.info(
-            f"Imputation statistics computed: "
-            f"temporal_medians={len(self._temporal_medians_)}, "
-            f"crosssectional_medians={len(self._crosssectional_medians_)}, "
-            f"training_means={len(self._block_training_means_)}"
-        )
-
-    def _get_imputed_value_for_block(
-        self,
-        block_id: int,
-        entity: str,
-        component: str,
-        current_year: int,
-    ) -> float:
-        """
-        Retrieve imputation value based on block's tier strategy.
-        
-        Logic (fallback chain):
-        1. Tier 2 (Temporal median) if block is temporal
-        2. Tier 3 (Cross-sectional median) if block is sectional
-        3. Tier 4 (Training mean) as universal fallback
-        4. 0.0 as absolute final fallback
-        
-        Returns
-        -------
-        float : imputation value (never NaN, guaranteed scalar)
-        """
-        tier = self._imputation_config.block_imputation_tiers.get(block_id, "training_mean")
-        
-        if tier == "temporal_median":
-            # Tier 2: Per-entity annual median
-            temporal_val = self._temporal_medians_.get((entity, block_id, component))
-            if temporal_val is not None and not np.isnan(temporal_val):
-                return float(temporal_val)
-            
-            # Fallback to Tier 3
-            cs_val = self._crosssectional_medians_.get((current_year, block_id, component))
-            if cs_val is not None and not np.isnan(cs_val):
-                return float(cs_val)
-            
-            # Fallback to Tier 4
-            tm_val = self._block_training_means_.get((block_id, component), 0.0)
-            return float(tm_val) if not np.isnan(tm_val) else 0.0
-        
-        elif tier == "cross_sectional_median":
-            # Tier 3: Cross-sectional median
-            cs_val = self._crosssectional_medians_.get((current_year, block_id, component))
-            if cs_val is not None and not np.isnan(cs_val):
-                return float(cs_val)
-            
-            # Fallback to Tier 4
-            tm_val = self._block_training_means_.get((block_id, component), 0.0)
-            return float(tm_val) if not np.isnan(tm_val) else 0.0
-        
-        else:  # "training_mean" or default
-            # Tier 4: Training means
-            tm_val = self._block_training_means_.get((block_id, component), 0.0)
-            return float(tm_val) if not np.isnan(tm_val) else 0.0
-
-    def _map_feature_index_to_block(self, feature_index: int) -> Tuple[int, str]:
-        """
-        Inverse map: feature index → (block_id, component_name).
-        
-        Uses self.feature_names_ (canonical list built during first _create_features call)
-        to identify which block and component a feature belongs to.
-        
-        Returns
-        -------
-        tuple : (block_id: int, component: str)
-        """
-        if not hasattr(self, 'feature_names_') or feature_index >= len(self.feature_names_):
-            return (1, "unknown")
-        
-        feature_name = self.feature_names_[feature_index]
-        
-        # Parse feature name to extract block and component
-        if "_current" in feature_name:
-            block_id = 1
-        elif "_lag" in feature_name and "_was_missing" not in feature_name:
-            block_id = 2
-        elif "_roll" in feature_name:
-            block_id = 3
-        elif "momentum" in feature_name or "acceleration" in feature_name:
-            block_id = 4
-        elif "_demeaned" in feature_name or "_delta2" in feature_name:
-            block_id = 5
-        elif "_trend" in feature_name:
-            block_id = 6
-        elif "_ewma" in feature_name:
-            block_id = 7
-        elif "_expanding" in feature_name:
-            block_id = 8
-        elif "_diversity" in feature_name or "_range" in feature_name:
-            block_id = 9
-        elif "_skew" in feature_name:
-            block_id = 10
-        elif "_percentile" in feature_name or "_zscore" in feature_name or "_rank" in feature_name:
-            block_id = 11
-        elif "_region" in feature_name:
-            block_id = 12
-        else:
-            block_id = 1
-        
-        # Extract component key (e.g., "C01" from "C01_current")
-        component = feature_name.split("_")[0]
-        
-        return (block_id, component)
-
-    def _apply_tiered_imputation(
-        self,
-        features: np.ndarray,
-        entity: str,
-        current_year: int,
-    ) -> np.ndarray:
-        """
-        Apply tiered imputation to feature array.
-        
-        Replaces NaN values using tier strategy (Temporal → Sectional → Training Mean → 0.0)
-        with fallback chain ensuring no NaN escapes to downstream models.
-        
-        PHASE A Enhancement M-12.
-        """
-        if not self._imputation_config or not self._imputation_config.use_advanced_feature_imputation:
-            return features
-        
-        imputed_count = 0
-        for i, val in enumerate(features):
-            if np.isnan(val):
-                # Map feature index to block and component
-                block_id, component = self._map_feature_index_to_block(i)
-                
-                # Apply tiered logic
-                imputed_val = self._get_imputed_value_for_block(
-                    block_id, entity, component, current_year
-                )
-                
-                features[i] = imputed_val
-                imputed_count += 1
-        
-        return features
-
     def _create_features_safe(
         self,
         entity_data: 'pd.DataFrame',
@@ -1162,29 +945,46 @@ class TemporalFeatureEngineer:
         panel_data,
     ) -> np.ndarray:
         """
-        NaN-safe wrapper around :meth:`_create_features` with tiered imputation support.
+        Wrapper around :meth:`_create_features` with NaN-safe fallback.
         
-        PHASE A Enhancement M-12: Uses multi-tier imputation strategy:
-        - Tier 1 (MICE): Applied in preprocessing.PanelFeatureReducer
-        - Tier 2 (Temporal): Per-entity annual medians (applied here)
-        - Tier 3 (Sectional): Cross-sectional medians (applied here)
-        - Tier 4 (Fallback): Training means from caches (applied here)
-
-        :meth:`_create_features` handles lag-feature NaN internally by filling
-        with the cross-sectional median and appending ``_was_missing`` indicator
-        flags.  Any residual NaN values in non-lag blocks (e.g. ``_delta2`` or
-        ``_demeaned_momentum`` when lag history is absent) are replaced using
-        tiered imputation (if enabled) or per-column means (legacy mode).
+        This method calls _create_features to build the feature vector, then
+        applies a final safety check to handle any residual NaN values that
+        may remain from insufficient historical data (e.g., lag-3 for year 1,
+        rolling statistics for entities with short histories).
+        
+        **Imputation Strategy (Phase B+)**:
+        Features may contain NaN values; these are imputed by the downstream
+        preprocessing stage (PanelFeatureReducer) using MICE imputation before
+        dimensionality reduction and model training.  This approach ensures
+        multivariate feature correlations are properly captured.
+        
+        Parameters
+        ----------
+        entity_data : pd.DataFrame
+            Time series data for a single entity (rows=years, columns=components)
+        entity : str
+            Entity identifier
+        years : List[int]
+            Chronological list of years in the panel
+        current_year : int
+            The year for which to build features (determines lag/lead structure)
+        all_entities : List[str]
+            All entities in the panel (for cross-entity features)
+        panel_data : object
+            Full panel data object with metadata
+        
+        Returns
+        -------
+        np.ndarray
+            Feature vector (1-D, float64). May contain NaN values for brief
+            histories; downstream MICE imputation handles these robustly.
         """
         features = self._create_features(
             entity_data, entity, years, current_year, all_entities, panel_data
         )
         
-        # Apply advanced tiered imputation if enabled
-        if self._imputation_config and self._imputation_config.use_advanced_feature_imputation:
-            features = self._apply_tiered_imputation(features, entity, current_year)
-        
-        # Fallback: any remaining NaN → safety wrapper with training means
+        # Final safety check: fill any residual NaN with 0.0
+        # This is a last-resort fallback for edge cases
         return fill_missing_features(features)
 
     def _create_features(self,

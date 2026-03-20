@@ -1,27 +1,36 @@
 # -*- coding: utf-8 -*-
-"""NaN-aware weighting layer (weighting phase).
+"""NaN-aware adaptive weighting layer (weighting phase).
 
-Delegates all missing-data filtering to :mod:`data.missing_data` and adds
-the weighting-specific result dataclass and calculator on top:
+**Core principle**: Weighting RESPECTS missing data structure. NO IMPUTATION.
+
+Architecture
+-----------
+The weighting phase filters all-NaN rows/columns but PRESERVES partial NaN
+cells, allowing the CRITIC weight calculator to operate on observed data only.
+This complete-case strategy reflects data availability patterns, which are
+themselves information about governance data reliability.
 
 - :class:`AdaptiveWeightResult` — extends :class:`~weighting.base.WeightResult`
-  with metadata about which rows/columns were included or excluded.
-- :class:`AdaptiveWeightCalculator` — filter → impute → CRITIC weight loop.
-- :class:`WeightCalculator` — two-level (subcriteria + criteria) wrapper.
+  with metadata about included/excluded rows and columns.
+- :class:`AdaptiveWeightCalculator` — filter all-NaN → CRITIC (no imputation).
+- :class:`WeightCalculator` — two-level wrapper (subcriteria + criteria).
 - :func:`calculate_adaptive_weights` — convenience entry point.
 
-The underlying base method is:
-- ``'critic'``   — CRITIC (contrast intensity × inter-criteria independence).
+Base Method
+----------
+- ``'critic'`` — CRITIC (contrast intensity × inter-criteria independence).
 
 Notes
 -----
-The dataset uses NaN (not zero) to represent missing observations.  A value of
-exactly 0.0 is a legitimate governance score and is NEVER excluded.
+The dataset uses NaN (not zero) to represent missing observations. A value of
+exactly 0.0 is a legitimate governance score and is NEVER excluded. Partial NaN
+cells in the decision matrix are preserved and passed to CRITIC, which handles
+them via complete-case analysis: variance and mean computed only from observed
+(non-NaN) values in each column.
 
 See Also
 --------
-data.missing_data : centralized NaN-handling primitives shared by
-    weighting, ranking, and forecasting phases.
+data.missing_data : centralized NaN-handling utilities
 """
 
 import numpy as np

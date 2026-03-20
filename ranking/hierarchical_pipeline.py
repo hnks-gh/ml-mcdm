@@ -1,24 +1,35 @@
 # -*- coding: utf-8 -*-
-"""
-Hierarchical Ranking Pipeline
-==============================
+"""Hierarchical Ranking Pipeline
+
+**Core principle**: Ranking RESPECTS missing data structure. NO IMPUTATION.
 
 Two-stage ranking system that runs 5 traditional MCDM methods within each
-criterion group, then aggregates results using Evidential Reasoning.
+criterion group, then aggregates results using Evidential Reasoning. All methods
+handle partial NaN natively on observed (non-missing) values.
 
 Architecture
-------------
-Stage 1 — Within-Criterion Ranking
+-----------
+Stage 1 — Within-Criterion Ranking (NO IMPUTATION)
     For each criterion C_k (k = 1…8):
-        • Extract subcriteria data for C_k.
-        • Build crisp decision matrix → run 5 traditional methods.
-        • Normalize all 5 method scores to [0, 1].
+        • Filter all-NaN rows/columns (preserve partial NaN)
+        • Extract and rank on observed values only
+        • Run 5 MCDM methods (TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS)
+        • Normalize scores to [0, 1]
 
 Stage 2 — Global Aggregation via Evidential Reasoning
-    • Convert method scores to belief distributions (5 grades).
-    • Stage 1 ER: combine 6 methods per criterion.
-    • Stage 2 ER: combine 8 criterion beliefs with criterion weights.
-    • Final ranking from average utility of fused belief.
+    • Convert method scores to belief distributions (5 grades)
+    • ER Stage 1: aggregate 5 methods per criterion (uses rankings only)
+    • ER Stage 2: aggregate 8 criterion beliefs with weights (uses rankings only)
+    • Final ranking from average utility of fused beliefs
+    • Uncertainty naturally encoded from missing data patterns
+
+Missing Data Handling
+---------------------
+As of 2026-03-20, no imputation occurs in the ranking phase. All methods
+(TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS) handle NaN via:
+    • Complete-case distance/preference computations (pairwise on observed)
+    • NaN skipping in dimension-wise calculations
+    • No artificial 0.5 neutral score imputation
 
 References
 ----------

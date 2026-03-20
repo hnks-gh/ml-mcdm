@@ -288,20 +288,57 @@ class ForecastConfig:
     max_vif_threshold: float = 10.0
     target_max_features: int = 80
 
-    # ===== PHASE A Enhancement: Advanced Imputation Configuration (M-12) =====
+    # ===== PHASE B Enhancement: MICE-Only Imputation Configuration =====
     imputation_config: Optional[ImputationConfig] = field(default_factory=ImputationConfig)
-    """Configuration for multi-tier imputation strategy (Tiers 1-4).
+    """Configuration for MICE imputation strategy (Phase B+).
     
-    Tier 1 (MICE):        ExtraTreesRegressor-based multivariate imputation
-    Tier 2 (Temporal):    Per-entity annual medians for time-series features
-    Tier 3 (Sectional):   Cross-sectional medians for cross-entity features
-    Tier 4 (Fallback):    Training means cache with 0.0 emergency sentinel
+    Uses single unified MICE imputation for all missing features (ExtraTreesRegressor).
+    Replaces prior multi-tier block-level imputation (PHASE A) for simplicity and
+    optimality — MICE automatically captures multivariate feature correlations without
+    per-block tier configuration.
     
-    Default: enabled (use_advanced_feature_imputation=True).
-    Set to None or .use_advanced_feature_imputation=False to disable.
+    Key parameters:
+    - use_mice_imputation : bool = True  (enable MICE preprocessing)
+    - n_imputations : int = 5             (multiple imputation for uncertainty)
+    - mice_estimator : str = "extra_trees"
+    - mice_max_iter : int = 20
+    - mice_add_indicator : bool = True    (append _was_missing columns)
+    
+    DEPRECATED (kept for backward compatibility, ignored):
+    - use_advanced_feature_imputation
+    - block_imputation_tiers
+    - temporal_imputation_window
+    
+    See ImputationConfig docstring in data/imputation/__init__.py for details.
+    """
+    
+    use_multiple_imputation: bool = True
+    """Enable multiple imputation with Rubin's Rules (Phase B+).
+    
+    When True, the forecaster wraps base models with MultipleImputationForecaster
+    to generate M = n_imputations stochastic MICE imputations per training fold.
+    Predictions are pooled via Rubin's Rules for:
+    
+    - **Pooled prediction**: (1/M) Σ ŷ^(m)
+    - **Total variance**: Var_within + (1+1/M)·Var_between
+      - Var_within = (1/M) Σ Var^(m)      [average within-imputation variance]
+      - Var_between = (1/(M-1)) Σ (ŷ^(m) − ȳ)²  [between-imputation variance]
+    
+    Benefits:
+    ✓ Prediction intervals reflect missingness-induced uncertainty
+    ✓ FMI (Fraction of Missing Information) quantifies impact
+    ✓ Properly propagates imputation uncertainty into final forecasts
+    
+    When False, uses single-imputation point estimates (faster, no uncertainty).
+    Default True for production systems requiring uncertainty quantification.
+    
+    References:
+    Rubin, D. B. (1987). Multiple Imputation for Nonresponse in Surveys.
+    van Buuren, S., & Groothuis-Oudshoorn, K. (2011).
+        mice: Multivariate Imputation by Chained Equations in R.
     """
 
-    # ────────────────────────────────────────────────────────────────────────
+    # ─────────────────────────────────────────────────────────────────────
 
     # ── Conformal prediction ─────────────────────────────────────────────
     conformal_method: str = 'cv_plus'  # 'split', 'cv_plus', 'adaptive'

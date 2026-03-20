@@ -242,6 +242,15 @@ INPUT C:\Users\hoang\AppData\Local\Programs\MiKTeX\fonts\tfm\public\cm\cmr12.tfm
 INPUT C:\Users\hoang\AppData\Local\Programs\MiKTeX\fonts\tfm\public\cm\cmr8.tfm
 INPUT C:\Users\hoang\AppData\Local\Programs\MiKTeX\fonts\tfm\public\cm\cmr6.tfm
 OUTPUT main.toc
+INPUT C:\Users\hoang\AppData\Local\Programs\MiKTeX\fonts\tfm\public\cm\cmmi10.tfm
+INPUT C:\Users\hoang\AppData\Local\Programs\MiKTeX\fonts\tfm\public\cm\cmsy10.tfm
+INPUT C:\Users\hoang\AppData\Local\Programs\MiKTeX\fonts\tfm\public\cm\cmex10.tfm
+INPUT C:\Users\hoang\AppData\Local\Programs\MiKTeX\fonts\tfm\public\amsfonts\symbols\msam10.tfm
+INPUT C:\Users\hoang\AppData\Local\Programs\MiKTeX\fonts\tfm\public\amsfonts\symbols\msbm10.tfm
+INPUT C:\Users\hoang\AppData\Local\Programs\MiKTeX\fonts\tfm\public\cm\cmbx10.tfm
+INPUT C:\Users\hoang\AppData\Local\Programs\MiKTeX\fonts\tfm\public\cm\cmmib10.tfm
+INPUT C:\Users\hoang\AppData\Local\Programs\MiKTeX\fonts\tfm\public\cm\cmbsy10.tfm
+INPUT C:\Users\hoang\AppData\Local\Programs\MiKTeX\fonts\tfm\public\cm\cmr10.tfm
 INPUT .\main.bbl
 INPUT .\main.bbl
 INPUT main.bbl

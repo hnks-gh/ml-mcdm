@@ -216,9 +216,12 @@ class PanelFeatureReducer:
         _col_means = np.nanmean(X_var, axis=0)
         self._var_col_means_ = np.where(np.isnan(_col_means), 0.0, _col_means)
 
-        # ===== PHASE A Enhancement: Tier 1 MICE Imputation (M-12) =====
-        # Apply advanced MICE imputation if enabled and residual NaN remains
-        if self.imputation_config.use_advanced_feature_imputation:
+        # ===== PHASE B Enhancement: MICE Imputation (Tier 1) =====
+        # Apply MICE imputation if enabled and residual NaN remains after VarianceThreshold.
+        # Note: This is distinct from the Layer 1 IterativeImputer above; this stage
+        # provides more sophisticated imputation via ExtraTreesRegressor after removing
+        # low-variance features, allowing MICE to focus on informative dimensions.
+        if self.imputation_config.use_mice_imputation:
             residual_nan_count = np.isnan(X_var).sum()
             if residual_nan_count > 0:
                 logger.info(
@@ -252,14 +255,14 @@ class PanelFeatureReducer:
                 self._mice_fitted = True
                 
                 logger.info(
-                    f"Tier 1 MICE imputation complete. "
-                    f"Indicators appended: {self.imputation_config.mice_add_indicator}"
+                    f"MICE imputation complete. "
+                    f"Missingness indicators appended: {self.imputation_config.mice_add_indicator}"
                 )
         else:
             self._mice_imputer = None
             self._mice_fitted = False
 
-        # ========================= End Tier 1 ==========================
+        # ========================= End MICE Tier 1 ========================
 
         # ===== PHASE 4.3 Enhancement: VIF Filter =====
         self._vif_drop_mask = np.zeros(X_var.shape[1], dtype=bool)

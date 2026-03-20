@@ -124,6 +124,124 @@ The system uses a **single optimized configuration** designed for small-to-mediu
 
 ---
 
+## Missing Data Strategy: MICE Imputation (Phase B)
+
+### Imputation Architecture
+
+The forecasting pipeline handles missing features through a **unified MICE (Multivariate Imputation by Chained Equations)** strategy:
+
+```
+Input Features (with NaN from insufficient history)
+  ├─ Lag features: early years have lag-3 = NaN when history < 3 years
+  ├─ Rolling stats: short windows have rolling-5 = NaN when history < 5 years
+  ├─ Momentum: unavailable when prior year missing
+  └─ Entity-demeaned: isolated entities with few observations → NaN
+  
+  ↓ [PanelFeatureReducer — IterativeImputer + ExtraTreesRegressor]
+  
+Output Features (complete, no NaN)
+  ├─ All NaN filled via MICE multivariate correlation learning
+  ├─ Binary _was_missing indicators appended (mark which were imputed)
+  └─ Ready for dimensionality reduction and model training
+```
+
+### Why MICE?
+
+**Phase A** used a complex 4-tier fallback hierarchy:
+- Tier 1: MICE (multivariate imputation)
+- Tier 2: Temporal median (per-entity rolling medians)
+- Tier 3: Cross-sectional median (per-year medians)
+- Tier 4: Training mean (global fallback) + 0.0 stub
+
+**Phase B** simplified to **MICE-only** because:
+
+✅ **Multivariate awareness**: MICE respects feature correlations. ExtraTreesRegressor learns which features predict others, unlike univariate fallbacks.
+
+✅ **Nonlinear relationships**: Tree ensembles capture nonlinear patterns (e.g., criteria that plateaued post-2020). Medians cannot.
+
+✅ **Panel structure**: MICE inherently uses available data for each entity. Doesn't require explicit per-block tier configuration.
+
+✅ **Uncertainty quantification**: Via multiple imputation (M=5 stochastic imputations), Rubin's Rules pools predictions to estimate among-imputation variance.
+
+✅ **Simplicity**: Single unified approach replaces 280 lines of tier-specific caching logic.
+
+### MICE Configuration
+
+Located in `data/imputation/__init__.py` (`ImputationConfig` dataclass):
+
+```python
+use_mice_imputation: bool = True
+    # Enable MICE imputation in preprocessing.PanelFeatureReducer
+
+n_imputations: int = 5
+    # Number of stochastic imputations (M) for Rubin's Rules
+    # M=1: single point estimate (faster, no uncertainty)
+    # M=5: standard (recommended) — captures imputation uncertainty
+    # M≥10: for very high missingness (>50%)
+
+mice_max_iter: int = 20
+    # IterativeImputer convergence iterations
+
+mice_estimator: str = "extra_trees"
+    # Regression model: "extra_trees" (fast, adaptive)
+    #                  "random_forest" (stable)
+    #                  "bayesian_ridge" (probabilistic)
+
+mice_add_indicator: bool = True
+    # Append binary _was_missing_{feature} columns
+    # Allow models to learn imputation uncertainty representation
+```
+
+### Multiple Imputation & Rubin's Rules
+
+When `n_imputations > 1` and `ForecastConfig.use_multiple_imputation=True`:
+
+1. **Generate M imputations**: m=1,...,M, generate independent MICE imputations
+2. **Train M models**: For each imputation, fit independent base model
+3. **Pool predictions** via **Rubin's Rules (1987)**:
+
+   $$\hat{\mu}_M = \frac{1}{M} \sum_{m=1}^{M} \hat{\mu}_m \quad \text{(pooled point estimate)}$$
+   
+   $$\text{SE}_M^2 = \overline{V}_m + \left(1 + \frac{1}{M}\right) B_m \quad \text{(total variance)}$$
+   
+   where:
+   - $\overline{V}_m$ = average within-imputation variance
+   - $B_m$ = between-imputation variance (sample variance of $\hat{\mu}_m$ across imputations)
+   - $(1 + 1/M)$ adjustment reflects additional uncertainty from imputation
+
+4. **Fraction of Missing Information (FMI)**:
+   $$\text{FMI} = \frac{(1 + 1/M) B_m}{\text{SE}_M^2}$$
+   
+   Indicates what fraction of variance comes from imputation uncertainty vs. estimation uncertainty.
+
+**Example:** With 30% missing data and M=5:
+- FMI ≈ 0.08–0.12 (8–12% of variance from imputation)
+- Prediction intervals widen accordingly
+
+### Migration from Phase A
+
+If you have old configs with **deprecated** phase A parameters:
+
+```python
+# OLD (Phase A, still works due to backward compatibility)
+ImputationConfig(
+    use_advanced_feature_imputation=True,
+    block_imputation_tiers={1: "training_mean", 3: "temporal_median", ...},
+    temporal_imputation_window=5
+)
+
+# NEW (Phase B, recommended)
+ImputationConfig(
+    use_mice_imputation=True,
+    n_imputations=5,  # Enable uncertainty quantification
+    mice_estimator="extra_trees"
+)
+```
+
+Old configs still work (deprecated parameters ignored); new config is clearer.
+
+---
+
 ## Part I: Model Types
 
 ### 1.1 Tree-Based Ensemble

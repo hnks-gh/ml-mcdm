@@ -1,41 +1,35 @@
 # -*- coding: utf-8 -*-
 """Centralized missing-data (NaN) handling utilities.
 
-All three phases of the pipeline need NaN-aware data preparation.  Rather
-than scattering ad-hoc ``fillna`` / ``notna`` calls throughout the codebase,
-this module provides a single, tested set of primitives that each phase calls:
+Core principle: Missing data is INFORMATION. MCDM methods (weighting, ranking)
+are designed to be robust and respect data structure. Imputation only occurs
+in the forecasting/ML phase where supervised learning requires complete features.
 
 **Weighting phase** (``weighting/adaptive.py``)
-    :func:`prepare_decision_matrix` — filter all-NaN rows/columns; remaining
-    partial NaN cells are preserved (no imputation applied).
-    :func:`impute_panel_temporal` — advanced temporal imputation for panel
-    data using within-entity interpolation before cross-sectional fallback.
+    :func:`prepare_decision_matrix` — filter all-NaN rows/columns only.
+    Partial NaN cells are PRESERVED (no imputation). CRITIC weight
+    calculator operates on observed values only (complete-case analysis).
 
 **Ranking phase** (``ranking/hierarchical_pipeline.py``)
-    :func:`impute_neutral_score` — fill NaN in a normalized decision matrix
-    with 0.5, resulting in a neutral mid-point score that does not bias ranking.
+    NO IMPUTATION. All ranking methods (TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS)
+    handle partial NaN natively. Evidential Reasoning aggregates on method
+    rankings (not raw scores), naturally preserving uncertainty from missing data.
 
 **Forecasting / ML phase** (``forecasting/features.py``, ``pipeline.py``)
-    :func:`build_ml_panel_data` — build an imputed copy of :class:`PanelData`
-    exclusively for the ML path.  Performs three-stage temporal imputation
-    (interpolate → ffill/bfill → cross-sectional median) on the subcriteria
-    panel and rebuilds all derived views (criteria, final, year_contexts) so
-    that every province-year cell is NaN-free when entering feature engineering.
-    The original panel_data is never modified; MCDM weighting and ranking
-    continue to use the observed (raw) data.
+    :func:`build_ml_panel_data` — build dataset for feature engineering.
+    As of 2026-03-20, temporal imputation removed; source values preserved.
     :func:`fill_missing_features` — replace NaN feature values with per-column
     training means (not 0.0, which is a valid governance score). Optionally
-    returns a missingness indicator mask so models can distinguish imputed
-    from observed values.
-    :func:`has_complete_target`   — validate that a target vector is NaN-free
-    before using it as a training label.
+    returns missingness indicator (_was_missing) for model awareness.
+    :func:`has_complete_target` — validate target is NaN-free (required for
+    supervised learning).
+    MICE imputation then applied to feature matrix before model training.
 
 Notes
 -----
-The dataset uses NaN (not zero) to represent missing observations.  A value
-of exactly 0.0 is a legitimate governance score and is NEVER treated as
-missing.  All checks therefore use ``pd.notna`` / ``np.isnan`` rather than
-comparisons against zero.
+The dataset uses NaN (not zero) to represent missing observations. A value of
+exactly 0.0 is a legitimate governance score and is NEVER treated as missing.
+All checks use ``pd.notna`` / ``np.isnan`` rather than zero comparisons.
 """
 
 from __future__ import annotations
@@ -149,131 +143,11 @@ def filter_all_nan_columns(
     return df.loc[:, valid].copy(), df.columns[valid].tolist(), df.columns[~valid].tolist()
 
 
-def impute_column_mean(df: pd.DataFrame) -> pd.DataFrame:
-    """Fill partial NaN cells with the per-column mean.
-
-    Preserves each column's central tendency without artificially reducing its
-    variance.  Rows or columns that are *entirely* NaN should be removed with
-    :func:`filter_all_nan_rows` / :func:`filter_all_nan_columns` first.
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        Matrix that may contain partial NaN cells.
-
-    Returns
-    -------
-    pd.DataFrame
-        Copy of *df* with remaining NaN cells replaced by column means.
-    """
-    col_means = df.mean(skipna=True)
-    return df.fillna(col_means)
 
 
 # ---------------------------------------------------------------------------
 # High-level: weighting / ranking decision-matrix preparation
 # ---------------------------------------------------------------------------
-
-def impute_panel_temporal(
-    panel_tensor: Dict[int, pd.DataFrame],
-    max_linear_gap: int = 2,
-) -> Dict[int, pd.DataFrame]:
-    """Impute a 3-D panel tensor using within-entity temporal interpolation.
-
-    Applies a three-stage hierarchy leveraging the full panel structure:
-
-    1. **Linear interpolation** for internal gaps ≤ max_linear_gap years
-       within each (province, subcriteria) time series.
-    2. **Forward/backward fill** for boundary gaps (end-of-series missing).
-    3. **Cross-sectional median** as final fallback for any remaining NaN.
-
-    This function replaces the single-year column-mean imputation used in
-    ``prepare_decision_matrix`` by exploiting the temporal ordering and
-    provincial trajectories inherent in the panel data structure.
-
-    Parameters
-    ----------
-    panel_tensor : dict of {int: pd.DataFrame}
-        Panel data as a dict mapping year → (provinces × subcriteria) DataFrame.
-        Each DataFrame must have the same index (province names) and columns
-        (subcriteria).
-    max_linear_gap : int
-        Maximum gap size (in years) for linear interpolation. Gaps larger
-        than this are not interpolated linearly. Default is 2 years.
-
-    Returns
-    -------
-    dict of {int: pd.DataFrame}
-        Panel tensor with NaN imputed. Same structure as input.
-
-    Notes
-    -----
-    This strategy preserves provincial governance trajectories and eliminates
-    the variance-suppression artifact from cross-sectional mean imputation.
-    Linear interpolation is appropriate for governance scores which typically
-    evolve smoothly year-over-year.
-
-    Examples
-    --------
-    >>> panel = {2020: df_2020, 2021: df_2021, 2022: df_2022}
-    >>> imputed_panel = impute_panel_temporal(panel, max_linear_gap=2)
-    """
-    if not panel_tensor:
-        return panel_tensor
-
-    years = sorted(panel_tensor.keys())
-    if len(years) < 2:
-        # Single year: can only apply cross-sectional median (Stage 3)
-        for yr in years:
-            col_medians = panel_tensor[yr].median(skipna=True)
-            panel_tensor[yr] = panel_tensor[yr].fillna(col_medians)
-        return panel_tensor
-
-    # Extract consistent structure
-    first_year = years[0]
-    provinces = panel_tensor[first_year].index.tolist()
-    subcriteria = panel_tensor[first_year].columns.tolist()
-
-    # Stage 1 & 2: Temporal interpolation + forward/backward fill
-    # Process each (province, subcriteria) time series independently
-    for prov in provinces:
-        for sc in subcriteria:
-            # Build time series for this (province, sub-criterion) pair
-            series_data = {}
-            for yr in years:
-                if prov in panel_tensor[yr].index and sc in panel_tensor[yr].columns:
-                    series_data[yr] = panel_tensor[yr].loc[prov, sc]
-                else:
-                    series_data[yr] = np.nan
-
-            series = pd.Series(series_data, name=(prov, sc))
-
-            # Stage 1: Linear interpolation for internal gaps
-            # limit=max_linear_gap ensures we don't interpolate across large gaps
-            filled = series.interpolate(
-                method='linear',
-                limit_direction='both',
-                limit=max_linear_gap,
-            )
-
-            # Stage 2: Forward/backward fill for boundary gaps
-            # This handles newly-introduced sub-criteria (e.g., SC71-SC73, SC81-SC83)
-            filled = filled.ffill().bfill()
-
-            # Write back to panel tensor
-            for yr in years:
-                if prov in panel_tensor[yr].index and sc in panel_tensor[yr].columns:
-                    panel_tensor[yr].loc[prov, sc] = filled[yr]
-
-    # Stage 3: Cross-sectional median for any remaining NaN
-    # This is the final safety net for provinces with entirely missing
-    # time series for a particular sub-criterion
-    for yr in years:
-        col_medians = panel_tensor[yr].median(skipna=True)
-        panel_tensor[yr] = panel_tensor[yr].fillna(col_medians)
-
-    return panel_tensor
-
 
 def prepare_decision_matrix(
     df: pd.DataFrame,
@@ -369,43 +243,6 @@ def prepare_decision_matrix(
         excluded_columns=excluded_cols,
     )
     return data, report
-
-
-# ---------------------------------------------------------------------------
-# Ranking phase utilities
-# ---------------------------------------------------------------------------
-
-def impute_neutral_score(
-    df: pd.DataFrame,
-    neutral: float = 0.5,
-) -> pd.DataFrame:
-    """Fill NaN cells with *neutral* (default ``0.5``).
-
-    .. deprecated::
-        This function is **no longer called** by the ranking pipeline.
-        :meth:`HierarchicalRankingPipeline._minmax_normalize` previously
-        called this to fill partial-NaN cells with the neutral mid-point
-        after normalisation.  That call was removed (F-04) because imputing
-        0.5 manufactured ordinal information that was never observed —
-        violating the complete-case strategy applied everywhere else.
-        The function is retained for backward compatibility with any external
-        callers, but should not be used in new MCDM code.
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        Normalised decision matrix (values in ``[0, 1]``) that may contain
-        NaN cells.
-    neutral : float
-        Fill value.  Defaults to ``0.5`` (mid-point of the ``[0, 1]`` scale).
-
-    Returns
-    -------
-    pd.DataFrame
-        Copy of *df* with NaN replaced by *neutral*.
-    """
-    return df.fillna(neutral)
-
 
 # ---------------------------------------------------------------------------
 # Forecasting / ML phase utilities
@@ -690,10 +527,9 @@ def soft_impute_panel(
 
     Notes
     -----
-    - Recommended to apply AFTER :func:`impute_panel_temporal` for best results
-      (temporal interpolation handles obvious gaps; SoftImpute handles complex
-      missing patterns).
-    - Cross-validate λ on held-out observed cells, not on temporal holdout.
+    - This function implements low-rank matrix completion via proximal gradient descent.
+      Use for complex missing patterns (not simple temporal gaps).
+    - Cross-validate λ on held-out observed cells.
 
     Examples
     --------
@@ -1739,41 +1575,36 @@ def _build_ml_year_contexts(
 
 
 def build_ml_panel_data(panel_data, max_linear_gap: int = 2):
-    """Build an imputed copy of *panel_data* exclusively for the ML path.
+    """Build a copy of *panel_data* for the ML forecasting phase.
 
     The MCDM weighting and ranking phases deliberately use the raw observed
     data (complete-case strategy, no imputation) to avoid introducing synthetic
-    values into MCDM decision matrices.  The ML forecasting phase, however,
-    benefits from a fully-filled panel so that every province-year feature
-    vector is NaN-free.
+    values into MCDM decision matrices.  The ML forecasting phase receives
+    a consistent panel view with rebuilt derived attributes.
 
     This function creates a new :class:`~data.data_loader.PanelData` object
-    whose subcriteria cross-sections have been imputed via three-stage
-    temporal imputation (:func:`impute_panel_temporal`):
-
-    1. **Linear interpolation** for internal gaps ≤ *max_linear_gap* years
-    2. **Forward / backward fill** for boundary (end-of-series) gaps
-    3. **Cross-sectional median** as final fallback
+    with subcriteria cross-sections as-is (no imputation). Imputation via
+    MICE occurs downstream in the forecasting feature engineering pipeline
+    (see :func:`~forecasting.features.fill_missing_features`).
 
     All derived views (criteria, final scores) and the per-year
-    ``year_contexts`` are rebuilt from the imputed subcriteria so the ML
+    ``year_contexts`` are rebuilt from the raw subcriteria so the ML
     feature engineer sees consistent active-province sets.
 
     The original *panel_data* is **never modified** — a deep copy of every
-    cross-section DataFrame is made before imputation.
+    cross-section DataFrame is made before processing.
 
     Parameters
     ----------
     panel_data : PanelData
         The raw panel, as returned by ``DataLoader.load()``.
     max_linear_gap : int
-        Maximum consecutive-year gap eligible for linear interpolation.
-        Default is 2 years.
+        Deprecated. No longer used (kept for backward signature compatibility).
 
     Returns
     -------
     PanelData
-        A new PanelData with fully-imputed subcriteria and rebuilt derived
+        A new PanelData with raw (unimputed) subcriteria and rebuilt derived
         views.  Passes to ``UnifiedForecaster.fit_predict()`` in place of
         the original panel_data.
     """
@@ -1785,15 +1616,12 @@ def build_ml_panel_data(panel_data, max_linear_gap: int = 2):
     hierarchy = panel_data.hierarchy
 
     # ------------------------------------------------------------------
-    # 1. Deep-copy subcriteria cross-sections and run temporal imputation
-    #    (impute_panel_temporal mutates its input dict in place, so we must
-    #    copy every DataFrame first to protect the original panel_data).
+    # 1. Deep-copy subcriteria cross-sections (no imputation)
     # ------------------------------------------------------------------
     imputed_cs: Dict[int, pd.DataFrame] = {
         yr: df.copy()
         for yr, df in panel_data.subcriteria_cross_section.items()
     }
-    imputed_cs = impute_panel_temporal(imputed_cs, max_linear_gap=max_linear_gap)
 
     # ------------------------------------------------------------------
     # 2. Rebuild subcriteria_long from imputed cross-sections

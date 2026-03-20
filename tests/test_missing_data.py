@@ -1,18 +1,16 @@
 # -*- coding: utf-8 -*-
-"""
-Unit tests for data/missing_data.py — focused on F-05 changes.
+"""Unit tests for data/missing_data.py — missing data handling.
 
-F-05 removed the `impute_column_mean` call from `prepare_decision_matrix` so
-that partial NaN cells are preserved rather than silently synthesised.  These
-tests verify:
+Tests verify:
+  • Partial NaN cells are preserved (not imputed).
+  • All-NaN rows are excluded (structural filter).
+  • All-NaN columns are excluded (structural filter).
+  • ValueError raised when thresholds not met.
+  • MatrixFilterReport tracks included/excluded metadata.
 
-  • Partial NaN cells survive the call unchanged.
-  • All-NaN rows are still excluded (the key structural filter).
-  • All-NaN columns are still excluded.
-  • ValueError is still raised when min_rows / min_cols thresholds are not met.
-  • MatrixFilterReport.to_dict()['note'] reflects the new strategy.
-  • `impute_neutral_score` is still importable/callable (backward compat).
-  • `impute_column_mean` is still importable/callable (backward compat).
+As of 2026-03-20, backward compatibility tests removed.
+Deprecated functions (impute_neutral_score, impute_panel_temporal,
+impute_column_mean) are no longer available.
 """
 
 import numpy as np
@@ -22,8 +20,6 @@ import pytest
 from data.missing_data import (
     prepare_decision_matrix,
     MatrixFilterReport,
-    impute_neutral_score,
-    impute_column_mean,
 )
 
 
@@ -183,47 +179,6 @@ class TestPrepareDecisionMatrix:
         for key in ('included_rows', 'excluded_rows', 'included_columns',
                     'excluded_columns', 'note'):
             assert key in d, f"Expected key {key!r} in to_dict()"
-
-
-# ---------------------------------------------------------------------------
-# TestImputeNeutralScoreBackwardCompat
-# Verify the function is still importable and functional (F-04 removed its
-# call from the ranking pipeline but did not delete the function).
-# ---------------------------------------------------------------------------
-
-class TestImputeNeutralScoreBackwardCompat:
-
-    def test_function_still_exists_and_fills_nan(self):
-        """impute_neutral_score must still exist and fill NaN with 0.5."""
-        df = pd.DataFrame({'A': [0.2, np.nan, 0.8], 'B': [np.nan, 0.5, 0.3]})
-        result = impute_neutral_score(df)
-
-        assert result.isna().sum().sum() == 0, "All NaN must be filled"
-        assert result.at[1, 'A'] == pytest.approx(0.5)
-        assert result.at[0, 'B'] == pytest.approx(0.5)
-
-    def test_custom_neutral_value(self):
-        """Custom neutral fill value must be honored."""
-        df = pd.DataFrame({'A': [np.nan], 'B': [0.3]})
-        result = impute_neutral_score(df, neutral=0.99)
-        assert result.at[0, 'A'] == pytest.approx(0.99)
-
-    def test_exported_from_data_package(self):
-        """impute_neutral_score must still be importable from the data package."""
-        from data import impute_neutral_score as ins  # noqa: F401
-        assert callable(ins)
-
-    def test_impute_column_mean_still_exported(self):
-        """impute_column_mean must still be importable from the data package."""
-        from data import impute_column_mean as icm  # noqa: F401
-        assert callable(icm)
-
-    def test_impute_column_mean_still_fills_nan(self):
-        """impute_column_mean must still work as documented (backward compat)."""
-        df = pd.DataFrame({'A': [1.0, np.nan, 3.0], 'B': [4.0, 2.0, np.nan]})
-        result = impute_column_mean(df)
-        assert result.at[1, 'A'] == pytest.approx(2.0)   # mean(1, 3) = 2
-        assert result.at[2, 'B'] == pytest.approx(3.0)   # mean(4, 2) = 3
 
 
 # ---------------------------------------------------------------------------

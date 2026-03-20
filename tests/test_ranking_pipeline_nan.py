@@ -1,19 +1,15 @@
 # -*- coding: utf-8 -*-
-"""
-Unit tests for ranking/hierarchical_pipeline.py — focused on F-04 changes.
+"""Unit tests for ranking/hierarchical_pipeline.py — NaN handling.
 
-F-04 removed the `impute_neutral_score(result)` call from `_minmax_normalize`
-so that partial NaN cells are preserved rather than replaced with 0.5.  These
-tests verify:
-
-  • NaN cells survive min-max normalisation unchanged.
-  • Valid cells are correctly normalised to [0, 1].
+Tests verify:
+  • NaN cells survive min-max normalization unchanged.
+  • Valid cells are correctly normalized to [0, 1].
   • Cost-criterion inversion still works.
-  • The degenerate case (constant / all-NaN column) sets the column to 0.5 as
-    an undefined-normalisation fallback — this is intentional behaviour, not
-    imputation, and should be preserved.
-  • Importing HierarchicalRankingPipeline no longer requires impute_neutral_score
-    (the import was removed).
+  • Degenerate case (constant/all-NaN column) sets column to 0.5 fallback
+    (undefined-normalization behavior, intentional, not imputation).
+
+As of 2026-03-20, no imputation occurs in ranking phase.
+Deprecated functions (impute_neutral_score) fully removed.
 """
 
 import numpy as np
@@ -138,22 +134,6 @@ class TestMinMaxNormalizeNaN:
         df = pd.DataFrame({'C1': [np.nan, np.nan, np.nan], 'C2': [1.0, 2.0, 3.0]})
         result = _norm(df)
         assert result['C1'].sub(0.5).abs().max() < 1e-9
-
-    # ── No dependency on impute_neutral_score ─────────────────────────
-
-    def test_hierarchical_pipeline_import_no_longer_requires_impute_neutral_score(self):
-        """
-        Importing HierarchicalRankingPipeline must succeed without importing
-        impute_neutral_score (the import was removed in F-04b).
-        """
-        import importlib, sys
-
-        # If already imported (cached), force a fresh import check by
-        # verifying the module's globals don't contain the removed symbol.
-        import ranking.hierarchical_pipeline as _mod
-        assert 'impute_neutral_score' not in dir(_mod), (
-            "impute_neutral_score should not be in hierarchical_pipeline's namespace"
-        )
 
 
 # ---------------------------------------------------------------------------

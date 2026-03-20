@@ -1,18 +1,18 @@
 # Fdb version 4
-["bibtex main"] 1773997977.91495 "main.aux" "main.bbl" "main" 1773997988.60086 0
+["bibtex main"] 1774027827.40491 "main.aux" "main.bbl" "main" 1774027838.60698 0
   "C:/Users/hoang/AppData/Local/Programs/MiKTeX/bibtex/bib/feupphdteses/references.bib" 1366811700 2206 985e03fb36d872d306e76cfacc160693 ""
   "C:/Users/hoang/AppData/Local/Programs/MiKTeX/bibtex/bst/natbib/plainnat.bst" 1284455456 26816 ffe5423d2019860bad9f54bc402fac15 ""
-  "main.aux" 1773997984 9221 b3804fb5494756164a5be318ac5dec83 "xelatex"
+  "main.aux" 1774027833 17956 fc100aa845b993ab105b4080bb32dd83 "xelatex"
   (generated)
   "main.bbl"
   "main.blg"
   (rewritten before read)
-["xdvipdfmx"] 1773997987.33379 "main.xdv" "main.pdf" "main" 1773997988.6245 0
-  "main.xdv" 1773997984 225636 793fbd1dc372f408841e323d24e3362b "xelatex"
+["xdvipdfmx"] 1774027837.11414 "main.xdv" "main.pdf" "main" 1774027838.63929 0
+  "main.xdv" 1774027833 479940 b79f432fc187ddcbb3ae08aa757b32e2 "xelatex"
   (generated)
   "main.pdf"
   (rewritten before read)
-["xelatex"] 1773997978.81487 "c:/Users/hoang/Documents/ml-mcdm/paper/main.tex" "main.xdv" "main" 1773997988.60153 0
+["xelatex"] 1774027828.03443 "c:/Users/hoang/Documents/ml-mcdm/paper/main.tex" "main.xdv" "main" 1774027838.60774 0
   "C:/Users/hoang/AppData/Local/MiKTeX/miktex/data/le/xetex/xelatex.fmt" 1770539978 27177150 f2d2fea298ef75e28c9bfcc972e18743 ""
   "C:/Users/hoang/AppData/Local/Programs/MiKTeX/fonts/tfm/adobe/zapfding/pzdr.tfm" 1136747054 1528 7e12f4c0fcf5a072cebdcfbfc610f54c ""
   "C:/Users/hoang/AppData/Local/Programs/MiKTeX/fonts/tfm/public/amsfonts/cmextra/cmbsy6.tfm" 1233951848 1124 14ccf5552bc7f77ca02a8a402bea8bfb ""
@@ -26,14 +26,17 @@
   "C:/Users/hoang/AppData/Local/Programs/MiKTeX/fonts/tfm/public/amsfonts/symbols/msbm10.tfm" 1233951854 908 2921f8a10601f252058503cc6570e581 ""
   "C:/Users/hoang/AppData/Local/Programs/MiKTeX/fonts/tfm/public/amsfonts/symbols/msbm7.tfm" 1233951854 940 228d6584342e91276bf566bcf9716b83 ""
   "C:/Users/hoang/AppData/Local/Programs/MiKTeX/fonts/tfm/public/cm/cmbsy10.tfm" 1136765053 1116 4e6ba9d7914baa6482fd69f67d126380 ""
+  "C:/Users/hoang/AppData/Local/Programs/MiKTeX/fonts/tfm/public/cm/cmbx10.tfm" 1136765053 1328 c834bbb027764024c09d3d2bf908b5f0 ""
   "C:/Users/hoang/AppData/Local/Programs/MiKTeX/fonts/tfm/public/cm/cmbx12.tfm" 1136765053 1324 c910af8c371558dc20f2d7822f66fe64 ""
   "C:/Users/hoang/AppData/Local/Programs/MiKTeX/fonts/tfm/public/cm/cmbx6.tfm" 1136765053 1344 8a0be4fe4d376203000810ad4dc81558 ""
   "C:/Users/hoang/AppData/Local/Programs/MiKTeX/fonts/tfm/public/cm/cmbx8.tfm" 1136765053 1332 1fde11373e221473104d6cc5993f046e ""
   "C:/Users/hoang/AppData/Local/Programs/MiKTeX/fonts/tfm/public/cm/cmex10.tfm" 1136765053 992 662f679a0b3d2d53c1b94050fdaa3f50 ""
+  "C:/Users/hoang/AppData/Local/Programs/MiKTeX/fonts/tfm/public/cm/cmmi10.tfm" 1136765053 1528 abec98dbc43e172678c11b3b9031252a ""
   "C:/Users/hoang/AppData/Local/Programs/MiKTeX/fonts/tfm/public/cm/cmmi12.tfm" 1136765053 1524 4414a8315f39513458b80dfc63bff03a ""
   "C:/Users/hoang/AppData/Local/Programs/MiKTeX/fonts/tfm/public/cm/cmmi6.tfm" 1136765053 1512 f21f83efb36853c0b70002322c1ab3ad ""
   "C:/Users/hoang/AppData/Local/Programs/MiKTeX/fonts/tfm/public/cm/cmmi8.tfm" 1136765053 1520 eccf95517727cb11801f4f1aee3a21b4 ""
   "C:/Users/hoang/AppData/Local/Programs/MiKTeX/fonts/tfm/public/cm/cmmib10.tfm" 1136765053 1524 554068197b70979a55370e6c6495f441 ""
+  "C:/Users/hoang/AppData/Local/Programs/MiKTeX/fonts/tfm/public/cm/cmr10.tfm" 1136765053 1296 45809c5a464d5f32c8f98ba97c1bb47f ""
   "C:/Users/hoang/AppData/Local/Programs/MiKTeX/fonts/tfm/public/cm/cmr12.tfm" 1136765053 1288 655e228510b4c2a1abe905c368440826 ""
   "C:/Users/hoang/AppData/Local/Programs/MiKTeX/fonts/tfm/public/cm/cmr6.tfm" 1136765053 1300 b62933e007d01cfd073f79b963c01526 ""
   "C:/Users/hoang/AppData/Local/Programs/MiKTeX/fonts/tfm/public/cm/cmr8.tfm" 1136765053 1292 21c1c5bfeaebccffdb478fd231a0997d ""
@@ -129,12 +132,12 @@
   "C:/Users/hoang/AppData/Local/Programs/MiKTeX/tex/latex/translations/translations.sty" 1644048522 44247 2188b95d0ee74e31eca4d316263c58a7 ""
   "C:/Users/hoang/AppData/Local/Programs/MiKTeX/tex/latex/url/url.sty" 1388490452 12796 8edb7d69a20b857904dd0ea757c14ec9 ""
   "C:/Users/hoang/AppData/Local/Programs/MiKTeX/tex/latex/xcolor/xcolor.sty" 1729265222 55384 b454dec21c2d9f45ec0b793f0995b992 ""
-  "c:/Users/hoang/Documents/ml-mcdm/paper/main.tex" 1773997964 40785 e14b251c8ec1efd7d6bb9aec032b92bd ""
-  "main.aux" 1773997984 9221 b3804fb5494756164a5be318ac5dec83 "xelatex"
-  "main.bbl" 1773997978 283 de5ffaf5b665b622658d80bed97ba2a5 "bibtex main"
-  "main.out" 1773997984 6788 115f2da1e84dc92492c717bc6540ed09 "xelatex"
-  "main.tex" 1773997964 40785 e14b251c8ec1efd7d6bb9aec032b92bd ""
-  "main.toc" 1773997984 3182 7591b6d2220f6a357cef42593ac9dd99 "xelatex"
+  "c:/Users/hoang/Documents/ml-mcdm/paper/main.tex" 1774027804 67262 bc8c44b7ee7b97e40f0f88922d14d7bf ""
+  "main.aux" 1774027833 17956 fc100aa845b993ab105b4080bb32dd83 "xelatex"
+  "main.bbl" 1774027827 283 de5ffaf5b665b622658d80bed97ba2a5 "bibtex main"
+  "main.out" 1774027833 14666 1ad00bddd9f3f1413f8b82e780f69b69 "xelatex"
+  "main.tex" 1774027804 67262 bc8c44b7ee7b97e40f0f88922d14d7bf ""
+  "main.toc" 1774027833 6647 8c024fc4f8196341a7a5c0edfdaab0fb "xelatex"
   (generated)
   "main.aux"
   "main.log"
