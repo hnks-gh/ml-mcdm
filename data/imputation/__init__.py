@@ -128,8 +128,8 @@ class ImputationConfig:
     """
     
     # MICE parameters (ExtraTreesRegressor-based IterativeImputer)
-    mice_max_iter: int = 20
-    """IterativeImputer convergence iterations. Higher = more stable but slower."""
+    mice_max_iter: int = 40
+    """IterativeImputer convergence iterations. Increased from 20→40 for better convergence. Higher = more stable but slower."""
     
     mice_n_nearest_features: int = 30
     """Number of most-correlated features to estimate missing values from."""

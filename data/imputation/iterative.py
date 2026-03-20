@@ -51,7 +51,7 @@ class MICEImputer:
             n_nearest_features=min(self.config.mice_n_nearest_features, X.shape[1]),
             add_indicator=self.config.add_missingness_indicators,
             random_state=self.config.random_state,
-            tol=1e-3,
+            tol=5e-3,                     # relaxed from 1e-3 for achievability
             imputation_order='roman'
         )
         with warnings.catch_warnings():

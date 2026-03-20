@@ -342,12 +342,12 @@ class PanelSequentialMICE:
         """Create Phase 3 IterativeImputer with HistGradientBoosting."""
         return IterativeImputer(
             estimator=HistGradientBoostingRegressor(
-                max_iter=100,
+                max_iter=150,              # increased from 100 for stability
                 max_leaf_nodes=31,
                 random_state=self.random_state,
             ),
             max_iter=self.global_max_iter,
-            tol=1e-3,
+            tol=5e-3,                     # relaxed from 1e-3 for achievability
             initial_strategy='median',
             sample_posterior=self.sample_posterior,
             add_indicator=self.add_indicator,

@@ -185,17 +185,17 @@ class PanelFeatureReducer:
             from sklearn.ensemble import ExtraTreesRegressor
             self._imputer = IterativeImputer(
                 estimator=ExtraTreesRegressor(
-                    n_estimators=100,      # stability: was 50 in original MICE
-                    max_depth=6,           # avoid overfitting on N≈756
-                    min_samples_leaf=3,    # M-08: conservative for N=63 provinces
+                    n_estimators=150,      # increased from 100 for stability
+                    max_depth=8,           # relaxed from 6 to allow deeper fits
+                    min_samples_leaf=2,    # relaxed from 3 for flexibility
                     max_features='sqrt',   # reduces tree correlation
                     bootstrap=True,
                     random_state=self.random_state,
                 ),
-                max_iter=20,               # M-08: convergence-based (was 5, Phase 1: 15)
-                tol=1e-3,                  # convergence tolerance (sklearn default, now explicit)
+                max_iter=40,               # increased from 20 for convergence
+                tol=5e-3,                  # relaxed from 1e-3 to 5e-3 for achievability
                 initial_strategy='median', # robust to outliers
-                n_nearest_features=min(20, n_features),  # efficiency
+                n_nearest_features=min(30, n_features),  # increased from 20 for richer imputation
                 add_indicator=True,        # append missingness flags
                 random_state=self.random_state,
             )

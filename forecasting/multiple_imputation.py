@@ -152,15 +152,15 @@ class MultipleImputationForecaster:
         """
         return IterativeImputer(
             estimator=ExtraTreesRegressor(
-                n_estimators=100,
-                max_depth=6,
-                min_samples_leaf=3,
+                n_estimators=150,          # increased from 100 for stability
+                max_depth=8,               # relaxed from 6 for better fits
+                min_samples_leaf=2,        # relaxed from 3 for flexibility
                 max_features='sqrt',
                 bootstrap=True,
                 random_state=seed,
             ),
             max_iter=self.mice_max_iter,
-            tol=1e-3,
+            tol=5e-3,                     # relaxed from 1e-3 for achievability
             initial_strategy='median',
             n_nearest_features=self.mice_n_nearest,
             sample_posterior=True,  # CRITICAL: stochastic imputation

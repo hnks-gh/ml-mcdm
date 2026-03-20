@@ -1658,12 +1658,13 @@ def build_ml_panel_data(panel_data, max_linear_gap: int = 2):
         if numeric_cols:
             imputer = IterativeImputer(
                 estimator=ExtraTreesRegressor(
-                    n_estimators=100,
+                    n_estimators=150,      # increased from 100 for stability
                     random_state=42,
-                    max_depth=6,
-                    min_samples_leaf=3
+                    max_depth=8,           # relaxed from 6 for better fits
+                    min_samples_leaf=2     # relaxed from 3 for flexibility
                 ),
-                max_iter=20,
+                max_iter=40,               # increased from 20 for convergence
+                tol=5e-3,                  # relaxed from default 1e-3 for achievability
                 verbose=0,
                 random_state=42
             )
