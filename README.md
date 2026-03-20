@@ -25,7 +25,7 @@ This framework combines Multi-Criteria Decision Making (MCDM) with machine learn
 - **Data model**: Yearly panel matrices (63 provinces, 8 criteria, 29 subcriteria) are loaded as `YearContext` objects with explicit missingness semantics (NaN = missing, 0.0 = valid score), dynamic exclusion of all-NaN entities, and optional MICE-based imputation with full audit logs.
 - **Weighting**: Adaptive CRITIC weighting is applied at both subcriteria and criteria levels using contrast intensity and inter-criteria conflict $C_j = \sigma_j \sum_k (1 - r_{jk})$, followed by normalization $w_j = C_j / \sum_k C_k$. NaN-aware preprocessing ensures stable weights in sparse years.
 - **Hierarchical ranking**: Six MCDM methods (TOPSIS, VIKOR, PROMETHEE II, COPRAS, EDAS, SAW) run per criterion; their scores are individually reported with Kendall’s $W$ concordance. The framework supports evidential reasoning (ER) fusion into belief distributions and weighted ER aggregation across criteria, but ER is **disabled by default** (`use_evidential_reasoning = False`).
-- **Forecasting (optional)**: Six-model ensemble (CatBoost, LightGBM, Bayesian Ridge, Quantile Random Forest, Kernel Ridge Regression, Support Vector Regression) with Super Learner meta-ensemble, panel-aware temporal CV, and conformal prediction for distribution-free $1-\alpha$ intervals (default $\alpha=0.05$).
+- **Forecasting (optional)**: Five-model ensemble (CatBoost, Bayesian Ridge, Quantile Random Forest, Kernel Ridge Regression, Support Vector Regression) with Super Learner meta-ensemble, panel-aware temporal CV, and conformal prediction for distribution-free $1-\alpha$ intervals (default $\alpha=0.05$).
 - **Analysis & validation**: Sensitivity analysis on weights, beliefs, and forecasts; bootstrap and perturbation uncertainty; diagnostics for belief completeness, entropy, residual behavior, and temporal stability.
 - **Outputs & visualization**: Phase-scoped CSV/JSON artifacts, 300 DPI figures, and text reports with reproducible directory layout under `output/result/` and full debug logs.
 
@@ -57,7 +57,7 @@ This framework combines Multi-Criteria Decision Making (MCDM) with machine learn
         │ML FORECAST│ │ ANALYSIS  │ │ VISUALISE │
         │ (OPTIONAL)│ │           │ │ & EXPORT  │
         │           │ │• Sensitiv.│ │           │
-        │• 6 Models │ │• Robust.  │ │• 7+ charts│
+        │• 5 Models │ │• Robust.  │ │• 7+ charts│
         │• Super L  │ │• Kendall W│ │• 14 files │
         └───────────┘ └───────────┘ └───────────┘
 ```
@@ -72,7 +72,7 @@ ml-mcdm/
 ├── pyproject.toml          # Package configuration & dependencies
 │
 ├── data/                   # Input data
-│   ├── 2011-2024.csv      # Historical panel data
+│   ├── csv/               # Yearly panel files (2011.csv ... 2024.csv)
 │   ├── codebook/          # Variable descriptions
 │   ├── data_loader.py     # Data I/O and validation
 │   ├── missing_data.py    # ML panel imputation (build_ml_panel_data)
@@ -81,7 +81,6 @@ ml-mcdm/
 ├── pipeline.py            # Main orchestrator
 ├── loggers/               # Structured console + debug logging
 ├── output/                # Results export + report writers
-├── visualization/         # Chart generation (300 DPI)
 │
 ├── weighting/             # Weight calculation
 │   ├── critic.py          # CRITIC weighting
@@ -112,7 +111,7 @@ ml-mcdm/
 │   ├── base.py
 │   ├── features.py        # 12-block temporal feature engineering
 │   ├── preprocessing.py   # Scaling, transforms, splits
-│   ├── gradient_boosting.py # CatBoost + LightGBM
+│   ├── catboost_forecaster.py # CatBoost (joint MultiRMSE boosting)
 │   ├── bayesian.py        # Bayesian Ridge
 │   ├── quantile_forest.py # Quantile RF
 │   ├── kernel_ridge.py    # Kernel Ridge Regression
@@ -125,7 +124,7 @@ ml-mcdm/
 │   ├── conformal.py       # Conformal prediction (split / CV+ / ACI)
 │   └── unified.py         # Ensemble orchestrator (6-stage pipeline)
 │
-├── tests/                 # Test suite (368 tests)
+├── tests/                 # Test suite (400+ tests)
 │   ├── test_mcdm_traditional.py
 │   ├── test_mcdm_textbook.py
 │   ├── test_evidential_reasoning.py
@@ -215,7 +214,7 @@ The weighting module uses the CRITIC method with NaN-aware preprocessing and two
 
 ### ML Forecasting
 
-The pipeline integrates a six-model ensemble (CatBoost, LightGBM, Bayesian Ridge,
+The pipeline integrates a five-model ensemble (CatBoost, Bayesian Ridge,
 Quantile Random Forest, Kernel Ridge Regression, Support Vector Regression). A Super Learner
 meta-ensemble optimizes per-output model weights from out-of-fold predictions, while
 conformal prediction provides distribution-free uncertainty intervals. An ML-imputed

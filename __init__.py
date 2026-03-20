@@ -39,7 +39,7 @@ ml-mcdm/
 │   ├── features.py        # Feature engineering
 │   ├── unified.py         # Super Learner ensemble
 │   ├── conformal.py       # Conformal prediction intervals
-│   ├── gradient_boosting.py
+│   ├── catboost_forecaster.py
 │   ├── bayesian.py
 │   └── quantile_forest.py
 │

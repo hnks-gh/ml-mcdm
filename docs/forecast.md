@@ -2,23 +2,23 @@
 
 ## Overview
 
-This framework implements a **statistically-principled 3-tier ensemble learning system** optimized for small-to-medium panel data (N < 1000). It combines 6 diverse machine learning models with Super Learner meta-learning and distribution-free conformal prediction to forecast future criterion values.
+This framework implements a **statistically-principled 3-tier ensemble learning system** optimized for small-to-medium panel data (N < 1000). It combines 5 diverse machine learning models with Super Learner meta-learning and distribution-free conformal prediction to forecast future criterion values.
 
 **Key Design Principles:**
-- **Model diversity over quantity**: 6 diverse models outperform 11+ correlated models
+- **Model diversity over quantity**: 5 diverse models outperform larger correlated sets
 - **Statistical appropriateness**: Optimized for N < 1000 (your dataset: ~756 training rows)
 - **Automatic optimal weighting**: Super Learner learns best combination
 - **Guaranteed coverage**: Conformal prediction provides 95% valid intervals
 - **No redundancy**: Each model captures different patterns (tree, linear, panel, Bayesian)
 
 **Key Features:**
-- **6 Model Types**: CatBoost (joint multi-output) + LightGBM (leaf-wise), Bayesian linear, and kernel methods
+- **5 Model Types**: CatBoost (joint multi-output), Bayesian linear, kernel methods, and quantile forests
 - **Super Learner**: Automatic optimal weighting via meta-learning (`PanelWalkForwardCV`)
 - **Conformal Prediction**: Distribution-free 95% prediction intervals
 - **Distributional Forecasting**: Full predictive distributions via quantile forests
 - **Enhanced Feature Engineering**: 12 feature blocks — lag, rolling, stationarity, EWMA, diversity, region dummies (Phase 1)
 - **Target Transformation**: Logit/Yeo-Johnson reversible transform for improved Gaussianity (Phase 5)
-- **HP Optimisation**: Optional Optuna one-time search for both GB models (Phase 4)
+- **HP Optimisation**: Optional Optuna one-time search for CatBoost (Phase 4)
 
 ---
 
@@ -30,7 +30,7 @@ This framework implements a **statistically-principled 3-tier ensemble learning 
 Input: Panel Data (N entities × p components × T years)
   ↓
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-TIER 1: BASE MODELS (6 diverse models)
+TIER 1: BASE MODELS (5 diverse models)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   ↓
 Temporal Feature Engineering (12 feature blocks — Phase 1)
@@ -51,9 +51,8 @@ Target Transformation (Phase 5) — logit [SAW] or Yeo-Johnson [raw] → ℝ
   ↓
 Base Model Training (DIVERSE MODEL TYPES)
   │
-  ├── Tree-Based (2 models)
+   ├── Tree-Based (1 model)
   │   ├── CatBoost Gradient Boosting (MultiRMSE joint multi-output loss)
-  │   └── LightGBM (leaf-wise per-output via MultiOutputRegressor)
   │
   ├── Bayesian Linear (1 model)
   │   └── Bayesian Ridge (posterior uncertainty, PLS-compressed features)
@@ -104,9 +103,8 @@ Output: Predictions + Calibrated Intervals + Diagnostics
 
 The system uses a **single optimized configuration** designed for small-to-medium panel data (N < 1000):
 
-**Base Models (6, always-on):**
+**Base Models (5, always-on):**
 - CatBoost Gradient Boosting (oblivious trees, joint multi-output `MultiRMSE`)
-- LightGBM (leaf-wise growth, `MultiOutputRegressor`, complementary inductive bias)
 - Bayesian Ridge (linear with posterior uncertainty, PLS-compressed features)
 - Quantile RF (distributional forecasts, QRF quantile intervals)
 - Kernel Ridge Regression (RBF kernel, L2 regularised)
@@ -120,9 +118,9 @@ The system uses a **single optimized configuration** designed for small-to-mediu
 
 **Target Transformation:** Logit (SAW) / Yeo-Johnson (raw) reversible transform applied before Stage 2 so PLS compression uses the transformed covariance (Phase 5)
 
-**HP Optimisation:** One-time Optuna TPE search for both GB models when `auto_tune_gb=True` (Phase 4)
+**HP Optimisation:** One-time Optuna TPE search for CatBoost when `auto_tune_gb=True` (Phase 4)
 
-**Rationale:** For ~756 training rows (63 provinces × ~12 usable year pairs, 2011–2024 with missingness), 6 diverse models with Super Learner meta-learning and per-output weights provides optimal bias-variance tradeoff and model diversity.
+**Rationale:** For ~756 training rows (63 provinces × ~12 usable year pairs, 2011–2024 with missingness), five complementary models with Super Learner per-output weighting provide a robust bias-variance tradeoff.
 
 ---
 
@@ -133,7 +131,7 @@ The system uses a **single optimized configuration** designed for small-to-mediu
 #### CatBoost Gradient Boosting Forecaster
 
 **Algorithm:** Joint multi-output gradient boosting via CatBoost's `MultiRMSE` loss  
-**Library:** `catboost.CatBoostRegressor` (falls back to LightGBM or sklearn GradientBoostingRegressor if not installed)
+**Library:** `catboost.CatBoostRegressor` (required for this ensemble member)
 
 **Key Parameters:**
 ```python
@@ -148,7 +146,7 @@ allow_writing_files = False  # No on-disk catboost_info/ directories
 - Joint multi-output training: a single tree structure minimizes total RMSE across all 8 criterion outputs simultaneously, exploiting cross-criterion correlations
 - No feature scaling required: CatBoost oblivious trees are invariant to monotone feature transforms
 - Feature importance from oblivious-tree splits
-- Complementary to LightGBM: oblivious-tree splits (single split per depth level) provide different inductive bias to LightGBM's leaf-wise splits
+- Oblivious-tree splits provide strong regularization and stable multi-output learning on small-to-medium panels
 
 **Why joint multi-output?**
 
@@ -157,43 +155,6 @@ For small-to-medium panel data (N < 1000), training one shared tree model outper
 - **Cross-criterion coupling**: provinces that rank high on one criterion tend to rank high on related criteria; shared split points exploit this automatically
 - **Sample efficiency**: joint training uses all 8 output signals to guide each split, rather than fitting each criterion in isolation
 - **Low correlation with other ensemble members**: CatBoost + Kernel methods + Bayes covers tree, linear, and kernel modelling families without redundancy
-
----
-
-#### LightGBM Forecaster (Phase 3 addition)
-
-**Algorithm:** Per-output leaf-wise gradient boosting via `MultiOutputRegressor(LGBMRegressor)`  
-**Library:** `lightgbm.LGBMRegressor` wrapped in `sklearn.multioutput.MultiOutputRegressor`
-
-**Key Parameters:**
-```python
-n_estimators   = 200        # Boosting rounds per output
-max_depth      = 5          # Tree depth (same scale as CatBoost)
-learning_rate  = 0.05       # Step size (identical default)
-l2_reg         = 3.0        # L2 leaf regularisation (analogous to CatBoost l2_leaf_reg)
-subsample      = 0.8        # Row-sampling fraction for variance reduction
-```
-
-**Why LightGBM as an independent member?**
-
-CatBoost and LightGBM share the gradient-boosting family but differ in key inductive biases:
-
-| Property | CatBoost | LightGBM |
-| :--- | :--- | :--- |
-| Tree growth | Symmetric (oblivious) — same split per depth | Leaf-wise (best-first) — asymmetric |
-| Multi-output | Native `MultiRMSE` joint loss | `MultiOutputRegressor` per-criterion |
-| Feature routing | Threshold-only track | Threshold-only track |
-| Typical strength | Correlated outputs, regularised depth | High-gain leaves, single-output precision |
-
-For N < 1000, these complementary biases produce meaningfully different predictions; Super Learner NNLS weights empirically allocate non-zero weight to both, reducing ensemble variance without adding correlated redundancy.
-
-**Phase 4 HP tuning (when `auto_tune_gb=True`):**  
-Optuna TPE study (`gb_tune_n_trials=20`) searches over `{n_estimators, max_depth, learning_rate, l2_reg}` using `PanelWalkForwardCV(min_train_years=7, max_folds=4)`. Tuned parameters override config defaults in `_create_models()`.
-
-**Methods:** Same `BaseForecaster` interface as all other ensemble members:  
-`fit(X, y)`, `predict(X)`, `predict_with_uncertainty(X)`, `get_feature_importance()`
-
----
 
 ### 1.2 Bayesian Linear Model
 
@@ -388,7 +349,7 @@ Final prediction: ŷ = Σ α_i × ŷ_i
 **Cross-Validation Strategy:**
 Uses `PanelWalkForwardCV` (public alias of `_WalkForwardYearlySplit`) — a panel-aware
 walk-forward splitter that creates annual validation folds in sorted year order.
-`min_train_years` (default 8) ensures every fold has a minimum number of training
+`min_train_years` (default 5) ensures every fold has a minimum number of training
 years before validation; `max_folds` (default 5) caps the total number of folds to
 prevent excessive runtime on long panels.  Each entity contributes its rows for each
 year-fold independently; entities absent from a fold's validation year simply
@@ -625,7 +586,7 @@ After feature engineering, two separate tracks feed model classes differently:
 | Track | Reducer | Models | Notes |
 | :--- | :--- | :--- | :--- |
 | **PLS** (`reducer_pca_`) | `PLSRegression(n_components=20)` with MI pre-filter | BayesianRidge | Supervised compression maximises covariance with all 8 criterion targets simultaneously; `n_components = min(n//10, 20)` |
-| **Threshold-only** (`reducer_tree_`) | Variance threshold filter (no scaling) | CatBoost, LightGBM, QuantileRF | Preserves original feature structure; StandardScaler removed — CatBoost is scale-invariant and QRF applies its own RobustScaler |
+| **Threshold-only** (`reducer_tree_`) | Variance threshold filter (no scaling) | CatBoost, QuantileRF | Preserves original feature structure; StandardScaler removed — CatBoost is scale-invariant and QRF applies its own RobustScaler |
 
 #### Example Generated Features (8-criterion dataset)
 
@@ -757,7 +718,7 @@ pip install -e .[forecasting]
    - **Super Learner**: Walk-forward meta-learning (`PanelWalkForwardCV`, panel-aware)
    - **Positive Constraints**: Ensures monotonic relationships and stability
    - **Out-of-Fold Training**: Prevents overfitting in meta-learner
-   - **Diversity-First**: 6 diverse models outperform 11+ correlated models
+   - **Diversity-First**: 5 diverse models outperform larger correlated sets
 
 4. **Calibrated Uncertainty Quantification**
    - **Conformal Prediction**: Guaranteed finite-sample coverage (≥ 1-α)
@@ -772,7 +733,7 @@ pip install -e .[forecasting]
    - **Ablation Studies**: Isolate individual model contributions
 
 6. **Robustness & Flexibility**
-   - Outlier-robust gradient boosting (CatBoost `MultiRMSE`, LightGBM `regression`)
+   - Outlier-robust gradient boosting with CatBoost `MultiRMSE`
    - Statistically-principled design for small-to-medium data (N < 1000)
    - Extensible architecture (easy to add new models)
    - Panel-aware walk-forward CV (`PanelWalkForwardCV`) prevents temporal leakage
@@ -785,14 +746,14 @@ pip install -e .[forecasting]
 ### 6.2 Limitations
 
 1. **Computational Cost**
-   - Trains 6 models + Super Learner + Conformal (moderate speed, ~2–5 min)
-   - Optional Phase 4 HP tuning adds ~1–3 min for 20 Optuna trials × 2 models
+   - Trains 5 models + Super Learner + Conformal (moderate speed, ~2–5 min)
+   - Optional Phase 4 HP tuning adds ~1–2 min for 20 Optuna trials
    - Feature engineering (295 features) increases dimensionality
    - For large-scale production (N > 10,000), consider simplified configurations
 
 2. **Data Requirements**
    - Conformal calibration needs ≥30 calibration samples (guideline)
-   - For N < 1000: 6 diverse models (tree×2, kernel×2, linear, distributional) is optimal (confirmed by statistical theory)
+   - For N < 1000: 5 diverse models (tree, kernel×2, linear, distributional) provide a strong bias-variance tradeoff
 
 3. **Optional Dependency Requirements**
    - **Mapie** optional for alternative conformal implementation
@@ -811,9 +772,9 @@ pip install -e .[forecasting]
 
 6. **Meta-Learning Requirements**
    - Super Learner needs ≥3 base models for meaningful weights
-   - Model diversity more important than quantity (5-6 diverse > 11+ correlated)
+   - Model diversity more important than quantity (5 diverse > many correlated)
    - Very high correlation between base models reduces ensemble gains
-   - For N≈756: 6 diverse models (tree×2, kernel×2, linear, distributional) without redundancy
+   - For N≈756: 5 diverse models (tree, kernel×2, linear, distributional) without redundancy
 
 ### 6.3 Current Capabilities vs. Future Enhancements
 
@@ -827,10 +788,10 @@ pip install -e .[forecasting]
 - ✅ Comprehensive evaluation suite (7 metrics, per-criterion RMSE tracking)
 - ✅ **Phase 1**: 12-block temporal & panel feature engineering (D-01/02/03 fixes, G-01–G-08 new features)
 - ✅ **Phase 2**: PLS-supervised compression for linear models, threshold-only track for trees
-- ✅ **Phase 3**: LightGBM as independent ensemble member alongside CatBoost
-- ✅ **Phase 4**: Per-criterion RMSE CV tracking; optional Optuna one-time HP search for both GB models
+- ✅ **Phase 3**: CatBoost-only gradient boosting track integrated with the ensemble
+- ✅ **Phase 4**: Per-criterion RMSE CV tracking; optional Optuna one-time HP search for CatBoost
 - ✅ **Phase 5**: Reversible target transformation (logit/Yeo-Johnson); inverse-transform of all pipeline outputs
-- ✅ **Phase I (correctness)**: F-01 per-column OOF masks; F-02 per-output meta-weights + `_get_weight()`; F-03 entity-block bootstrap; F-04 analytical Dirichlet gradient; F-05 `cv_min_train_years=8`; F-06 PCA Bonferroni + QRF lower-q floor; F-07 conformal n_cal warning
+- ✅ **Phase I (correctness)**: F-01 per-column OOF masks; F-02 per-output meta-weights + `_get_weight()`; F-03 entity-block bootstrap; F-04 analytical Dirichlet gradient; F-05 `cv_min_train_years=5`; F-06 PCA Bonferroni + QRF lower-q floor; F-07 conformal n_cal warning
 - ✅ **ML panel imputation**: `build_ml_panel_data()` supplies a 3-stage imputed copy to the forecaster; MCDM phases remain on raw observed data
 - ✅ **Province fallback**: provinces absent from last-year active set fall back to most-recent valid year for prediction
 

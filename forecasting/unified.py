@@ -7,10 +7,9 @@ State-of-the-art ensemble forecasting system optimised for small-to-medium
 panel data (N < 1000).  Orchestrates all forecasting sub-components through
 a clean single-entry-point API.
 
-Model ensemble (6 diverse types)
+Model ensemble (5 diverse types)
 ---------------------------------
 - Gradient Boosting (CatBoost)  — joint multi-output oblivious trees (MultiRMSE)
-- LightGBM                      — leaf-wise per-output trees (MultiOutputRegressor)
 - Bayesian Ridge                — linear model with posterior uncertainty
 - Quantile RF                   — full predictive distributions via leaf quantiles
 - Panel VAR                     — LSDV fixed effects + autoregressive dynamics
@@ -53,7 +52,7 @@ import copy
 logger = logging.getLogger('ml_mcdm')
 
 from .base import BaseForecaster
-from .gradient_boosting import CatBoostForecaster, LightGBMForecaster
+from .catboost_forecaster import CatBoostForecaster
 from .bayesian import BayesianForecaster
 from .features import TemporalFeatureEngineer
 # Kernel methods (T-03a, T-03b)
@@ -664,13 +663,12 @@ class UnifiedForecaster:
     Optimized for small-to-medium panel data (N < 1000) with statistically-principled
     ensemble design emphasizing model diversity over quantity.
 
-    Tier 1 - Base Models (6 diverse models):
+    Tier 1 - Base Models (5 diverse models):
         1. Gradient Boosting / CatBoost (joint multi-output oblivious trees)
-        2. LightGBM (leaf-wise per-output trees, complementary inductive bias)
-        3. Bayesian Ridge (linear with uncertainty quantification)
-        4. Quantile Random Forest (distributional forecasting)
-        5. Panel VAR (panel fixed effects + autoregressive)
-        6. Neural Additive Models (interpretable non-linearity)
+        2. Bayesian Ridge (linear with uncertainty quantification)
+        3. Quantile Random Forest (distributional forecasting)
+        4. Panel VAR (panel fixed effects + autoregressive)
+        5. Neural Additive Models (interpretable non-linearity)
 
     Tier 2 - Meta-Ensemble:
         - Super Learner: Trains meta-learner on out-of-fold predictions
@@ -875,7 +873,6 @@ class UnifiedForecaster:
         if getattr(cfg, 'auto_tune_gb', False):
             logger.info("Tuning Gradient Boosting models...")
             tuned_params['CatBoost'] = optimizer.optimize_catboost(X_tree, y, year_labels)
-            tuned_params['LightGBM'] = optimizer.optimize_lightgbm(X_tree, y, year_labels)
 
         if getattr(cfg, 'auto_tune_kernel', False):
             logger.info("Tuning Kernel models...")
@@ -893,7 +890,7 @@ class UnifiedForecaster:
 
     def _create_models(self) -> Dict[str, BaseForecaster]:
         """
-        Create all base model instances (6 diverse models).
+        Create all base model instances (5 diverse models).
 
         Hyperparameters are resolved from the ForecastConfig passed to
         ``__init__`` (if provided), otherwise production defaults are used.
@@ -903,9 +900,6 @@ class UnifiedForecaster:
         Default decisions:
             CatBoost         : max_depth=5 (32 leaves ≈ 24 samples/leaf at
                                n=756), n_estimators=200 (class default)
-            LightGBM         : max_depth=5, n_estimators=200 — same scale as
-                               CatBoost; leaf-wise growth provides complementary
-                               inductive bias as independent ensemble member
         """
         # Resolve hyperparameters: config takes priority, else use defaults
         cfg = self._config
@@ -926,7 +920,6 @@ class UnifiedForecaster:
 
         # ── Phase 3: merge tuned HPs with config defaults (tuned take priority)
         _gb_params   = self._tuned_params_.get('CatBoost', {})
-        _lgbm_params = self._tuned_params_.get('LightGBM', {})
         _krr_params  = self._tuned_params_.get('KernelRidge', {})
         _svr_params  = self._tuned_params_.get('SVR', {})
         _qrf_params  = self._tuned_params_.get('QuantileRF', {})
@@ -937,22 +930,12 @@ class UnifiedForecaster:
         svr_eps = _svr_params.get('epsilon', svr_eps)
         qrf_n_est = _qrf_params.get('n_estimators', qrf_n_est)
 
-        # --- Tier 1a: Tree-based (two independent GB members) --------------
+        # --- Tier 1a: Tree-based gradient boosting -------------------------
         models['CatBoost'] = CatBoostForecaster(
             iterations=_gb_params.get('iterations', gb_n_est),
             depth=_gb_params.get('depth', gb_depth),
             learning_rate=_gb_params.get('learning_rate', 0.05),
             l2_leaf_reg=_gb_params.get('l2_leaf_reg', 3.0),
-            # Phase 2.1: wire early stopping
-            early_stopping_rounds=es_rounds,
-            validation_fraction=es_val_frac,
-            random_state=self.random_state,
-        )
-        models['LightGBM'] = LightGBMForecaster(
-            n_estimators=_lgbm_params.get('n_estimators', gb_n_est),
-            max_depth=_lgbm_params.get('max_depth', gb_depth),
-            learning_rate=_lgbm_params.get('learning_rate', 0.05),
-            l2_reg=_lgbm_params.get('l2_reg', 3.0),
             # Phase 2.1: wire early stopping
             early_stopping_rounds=es_rounds,
             validation_fraction=es_val_frac,
@@ -1802,13 +1785,12 @@ class UnifiedForecaster:
 
         # Per-model routing: PCA track (linear/kernel) → PLS; tree track → threshold.
         # PCA track: BayesianRidge, KernelRidge, SVR (smooth/kernel methods)
-        # Tree track: CatBoost, LightGBM, QuantileRF
+        # Tree track: CatBoost, QuantileRF
         self._per_model_X_train_ = {
             'BayesianRidge':    self.X_train_pca_,
             'KernelRidge':      self.X_train_pca_,
             'SVR':              self.X_train_pca_,
             'CatBoost':         self.X_train_tree_,
-            'LightGBM':         self.X_train_tree_,
             'QuantileRF':       self.X_train_tree_,
         }
         self._per_model_X_pred_ = {
@@ -1816,7 +1798,6 @@ class UnifiedForecaster:
             'KernelRidge':      self.X_pred_pca_,
             'SVR':              self.X_pred_pca_,
             'CatBoost':         self.X_pred_tree_,
-            'LightGBM':         self.X_pred_tree_,
             'QuantileRF':       self.X_pred_tree_,
         }
         logger.info(
@@ -1925,13 +1906,12 @@ class UnifiedForecaster:
         # NOTE: Only tree models use the extended data; PLS models continue
         # to use their own unreduced per_model_X_train_ entry.
         self._per_model_X_train_['CatBoost'] = self.X_train_tree_
-        self._per_model_X_train_['LightGBM']         = self.X_train_tree_
-        self._per_model_X_train_['QuantileRF']        = self.X_train_tree_
+        self._per_model_X_train_['QuantileRF'] = self.X_train_tree_
 
     def stage3_fit_base_models(self) -> None:
         """Stage 3: Create base models and train the Super Learner ensemble.
 
-        Creates the six base forecasters (CatBoost, LightGBM, BayesianRidge,
+        Creates the five base forecasters (CatBoost, BayesianRidge,
         KernelRidge, SVR, QuantileRF) and delegates training to
         ``SuperLearner.fit()``, which
         executes three sub-steps atomically:
@@ -2128,8 +2108,6 @@ class UnifiedForecaster:
 
         * **CatBoost** — gradient continuation via ``init_model=`` (50 extra
           rounds at ``lr × 0.5``).
-        * **LightGBM** — warm-start via ``warm_start=True`` and
-          ``n_estimators += increment``.
         * **All other models** — full retrain on ``X_all / y_all`` (or
           ``X_new / y_new`` if historical data is not supplied).
 

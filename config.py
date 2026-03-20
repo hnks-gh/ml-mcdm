@@ -507,12 +507,12 @@ class ForecastConfig:
     gb_max_depth: int = 5
     """Tree depth. 5 ≈ 32 leaves → ~24 samples/leaf at n=756."""
     gb_n_estimators: int = 200
-    """Number of boosting stages; aligned with CatBoostForecaster/LightGBMForecaster defaults."""
+    """Number of boosting stages; aligned with CatBoostForecaster defaults."""
 
     # ── Hyperparameter auto-tuning (Phase 3) ─────────────────────────────
     auto_tune_gb: bool = False
     """When True, runs a one-time optuna TPE search to find optimal hyperparameters
-    for CatBoostForecaster and LightGBMForecaster before ensemble training."""
+    for CatBoostForecaster before ensemble training."""
     
     auto_tune_kernel: bool = False
     """When True, runs optuna TPE search for KernelRidge and SVR models."""
@@ -540,8 +540,8 @@ class ForecastConfig:
     With ``learning_rate=0.05`` and ``n_train ≈ 200–500``, the loss
     typically plateaus at 50–120 iterations (vs. the 200–300 max), so
     early stopping recovers 50–75% of wasted compute and prevents
-    overfitting on small CV folds (the root cause of LightGBM CV
-    R²=−0.07 and QuantileRF CV R²=−0.088 observed in the audit).
+    overfitting on small CV folds (a known root cause of unstable
+    negative CV R² episodes observed in audit runs).
 
     Set ``0`` to disable early stopping and recover old behaviour
     (full-iteration training regardless of validation loss).
@@ -764,8 +764,8 @@ class ForecastConfig:
 
     When True and ``stage3b_incremental_update()`` is called with
     ``(X_new, y_new)``, each base model is updated using its most
-    efficient strategy (CatBoost gradient continuation, LightGBM warm-
-    start, Ridge RLS, full retrain for others) and the meta-weights are
+    efficient strategy (CatBoost gradient continuation, full retrain for
+    non-CatBoost members) and the meta-weights are
     re-calibrated via γ-blending with the new data.
 
     Default False: the standard workflow re-runs the full pipeline when
@@ -777,7 +777,7 @@ class ForecastConfig:
     """Strategy for ``IncrementalEnsembleUpdater`` (E-10).
 
     ``'auto'`` — use the most efficient per-model strategy (CatBoost
-        continuation, LightGBM warm-start, Ridge RLS, full retrain fallback).
+        continuation with full retrain fallback for non-CatBoost models).
     ``'full_retrain'`` — always retrain every base model from scratch on the
         combined (historical + new) data.
     """

@@ -4,7 +4,7 @@ Hyperparameter Tuning Module
 =============================
 
 Provides the `EnsembleHyperparameterOptimizer` class to run Optuna TPE search
-for base models: CatBoost, LightGBM, KernelRidge, SVR, and QuantileRF.
+for base models: CatBoost, KernelRidge, SVR, and QuantileRF.
 """
 
 import json
@@ -58,7 +58,7 @@ class EnsembleHyperparameterOptimizer:
             return {}
 
         def objective(trial: optuna.Trial) -> float:
-            from forecasting.gradient_boosting import CatBoostForecaster
+            from forecasting.catboost_forecaster import CatBoostForecaster
             # SOTA expanded search space
             params = {
                 'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.2, log=True),
@@ -98,52 +98,6 @@ class EnsembleHyperparameterOptimizer:
             timeout=self.config.hp_tune_timeout_seconds
         )
         logger.info(f"CatBoost tuned: best R2={study.best_value:.4f}, params={study.best_params}")
-        return study.best_params
-
-    def optimize_lightgbm(self, X: np.ndarray, y: np.ndarray, year_labels: Optional[np.ndarray] = None) -> Dict[str, Any]:
-        """Tuning for LightGBMForecaster."""
-        if not _OPTUNA_AVAILABLE:
-            return {}
-
-        def objective(trial: optuna.Trial) -> float:
-            from forecasting.gradient_boosting import LightGBMForecaster
-            params = {
-                'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.3, log=True),
-                'max_depth': trial.suggest_int('max_depth', 3, 8),
-                'l2_reg': trial.suggest_float('l2_reg', 0.1, 10.0, log=True),
-                'subsample': trial.suggest_float('subsample', 0.5, 1.0),
-                'n_estimators': 300,
-                'early_stopping_rounds': 20
-            }
-
-            scores = []
-            for fold_idx, (train_idx, val_idx) in enumerate(self.cv_splitter.split(X, y)):
-                X_train, y_train = X[train_idx], y[train_idx]
-                X_val, y_val = X[val_idx], y[val_idx]
-                
-                model = LightGBMForecaster(**params)
-                model.fit(X_train, y_train)
-                preds = model.predict(X_val)
-                score = self._compute_r2(y_val, preds)
-                scores.append(score)
-                
-                trial.report(score, fold_idx)
-                if trial.should_prune():
-                    raise optuna.TrialPruned()
-
-            return float(np.mean(scores))
-
-        study = optuna.create_study(
-            direction="maximize",
-            sampler=TPESampler(seed=self.random_state),
-            pruner=MedianPruner(n_warmup_steps=1)
-        )
-        study.optimize(
-            objective, 
-            n_trials=self.config.hp_tune_n_trials,
-            timeout=self.config.hp_tune_timeout_seconds
-        )
-        logger.info(f"LightGBM tuned: best R2={study.best_value:.4f}, params={study.best_params}")
         return study.best_params
 
     def optimize_kernel_ridge(self, X: np.ndarray, y: np.ndarray, year_labels: Optional[np.ndarray] = None) -> Dict[str, Any]:

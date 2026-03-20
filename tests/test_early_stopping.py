@@ -4,7 +4,7 @@ Phase 2: Tree Model Stabilization — Test Suite
 ===============================================
 
 Validates all Phase 2 fixes:
-  2.1 — Chronological early stopping for CatBoost and LightGBM
+    2.1 — Chronological early stopping for CatBoost
   2.4 — QuantileRF stabilization (n_estimators fix, adaptive leaf, no scaler)
   2.5 — cv_min_train_years=5 gives more OOF data
 
@@ -71,10 +71,10 @@ class TestCatBoostEarlyStopping:
         With n=300 and large noise, early stopping should halt before max
         iterations.  ``_best_iteration_`` should be < eff_iter (adaptive=150).
 
-        Root cause guarded: before Phase 2.1, LightGBM / CatBoost trained all
+        Root cause guarded: before Phase 2.1, CatBoost trained all
         200–300 iterations even on tiny validation folds, memorising noise.
         """
-        from forecasting.gradient_boosting import CatBoostForecaster
+        from forecasting.catboost_forecaster import CatBoostForecaster
 
         X, y = medium_dataset
         # Use a high max to guarantee ES fires before the limit
@@ -107,7 +107,7 @@ class TestCatBoostEarlyStopping:
         validation_fraction=0.20 would leave only 20 training samples,
         causing CatBoost to fail with 'not enough data'.
         """
-        from forecasting.gradient_boosting import CatBoostForecaster
+        from forecasting.catboost_forecaster import CatBoostForecaster
 
         X, y = tiny_dataset
         model = CatBoostForecaster(
@@ -126,7 +126,7 @@ class TestCatBoostEarlyStopping:
         Setting early_stopping_rounds=0 must disable ES entirely.
         _best_iteration_ should remain None.
         """
-        from forecasting.gradient_boosting import CatBoostForecaster
+        from forecasting.catboost_forecaster import CatBoostForecaster
 
         X, y = medium_dataset
         model = CatBoostForecaster(
@@ -142,7 +142,7 @@ class TestCatBoostEarlyStopping:
 
     def test_catboost_predict_shape_multioutput(self, medium_dataset):
         """CatBoost with ES still returns correct (n_test, n_outputs) shape."""
-        from forecasting.gradient_boosting import CatBoostForecaster
+        from forecasting.catboost_forecaster import CatBoostForecaster
 
         X, y = medium_dataset
         model = CatBoostForecaster(
@@ -154,7 +154,7 @@ class TestCatBoostEarlyStopping:
 
     def test_catboost_feature_importance_after_es(self, medium_dataset):
         """Feature importance vector must have length n_features after ES fit."""
-        from forecasting.gradient_boosting import CatBoostForecaster
+        from forecasting.catboost_forecaster import CatBoostForecaster
 
         X, y = medium_dataset
         model = CatBoostForecaster(
@@ -169,141 +169,6 @@ class TestCatBoostEarlyStopping:
 
 
 # ---------------------------------------------------------------------------
-# 2.1.B — LightGBM Early Stopping
-# ---------------------------------------------------------------------------
-
-class TestLightGBMEarlyStopping:
-    """Phase 2.1.B: LightGBM per-output chronological early stopping."""
-
-    def test_early_stopping_activates_on_medium_fold(self, medium_dataset):
-        """
-        With n=300 and large noise, at least one per-output LightGBM model
-        should stop before max iterations.  Check _best_iterations_ list.
-        """
-        from forecasting.gradient_boosting import LightGBMForecaster
-
-        X, y = medium_dataset
-        model = LightGBMForecaster(
-            n_estimators=300, learning_rate=0.05,
-            early_stopping_rounds=10, validation_fraction=0.20,
-            random_state=42,
-        )
-        model.fit(X, y)
-
-        assert len(model._best_iterations_) == y.shape[1], (
-            f"_best_iterations_ length {len(model._best_iterations_)} "
-            f"should equal n_outputs {y.shape[1]}."
-        )
-        # At least one output should stop early (given pure-noise targets)
-        # The adaptive table sets eff_iter=150 for n=300 (200–399 bucket).
-        best_max = max(model._best_iterations_)
-        assert best_max < 300, (
-            f"LightGBM max best_iteration={best_max} expected < 300. "
-            "Early stopping may not be functioning on large max_iterations."
-        )
-
-    def test_lightgbm_bypass_on_tiny_fold(self, tiny_dataset):
-        """No crash for n=25 (ES disabled automatically)."""
-        from forecasting.gradient_boosting import LightGBMForecaster
-
-        X, y = tiny_dataset
-        model = LightGBMForecaster(
-            n_estimators=50, early_stopping_rounds=10, random_state=42,
-        )
-        model.fit(X, y)
-        pred = model.predict(X)
-        assert pred.shape == y.shape
-
-    def test_lightgbm_estimators_list_length(self, medium_dataset):
-        """
-        Per-output estimator list should have exactly n_outputs LGBMRegressors.
-
-        Root cause guarded: the switch from MultiOutputRegressor to a direct
-        per-output loop could silently produce wrong-length _estimators_.
-        """
-        from forecasting.gradient_boosting import LightGBMForecaster
-
-        X, y = medium_dataset
-        model = LightGBMForecaster(
-            n_estimators=50, early_stopping_rounds=10, random_state=42,
-        )
-        model.fit(X, y)
-        assert len(model._estimators_) == y.shape[1], (
-            f"_estimators_ has {len(model._estimators_)} elements, "
-            f"expected {y.shape[1]} (one per output)."
-        )
-
-    def test_lightgbm_compat_wrapper_estimators_attr(self, medium_dataset):
-        """
-        ``model.model.estimators_`` must be accessible for _get_per_output_importance
-        in unified.py (API compatibility with old MultiOutputRegressor interface).
-
-        Root cause guarded: switching to direct per-output fitting broke the
-        .model.estimators_ attribute used by unified.py feature importance cascade.
-        """
-        from forecasting.gradient_boosting import LightGBMForecaster
-
-        X, y = medium_dataset
-        lgbm = LightGBMForecaster(
-            n_estimators=30, early_stopping_rounds=10, random_state=42,
-        )
-        lgbm.fit(X, y)
-        # model must be the _LGBMCompatWrapper
-        assert lgbm.model is not None
-        assert hasattr(lgbm.model, 'estimators_'), (
-            "model.estimators_ attribute missing — breaks _get_per_output_importance."
-        )
-        assert len(lgbm.model.estimators_) == y.shape[1]
-
-    def test_lightgbm_predict_shape_multioutput(self, medium_dataset):
-        """LightGBM with ES returns correct (n_test, n_outputs) shape."""
-        from forecasting.gradient_boosting import LightGBMForecaster
-
-        X, y = medium_dataset
-        model = LightGBMForecaster(
-            n_estimators=50, early_stopping_rounds=10, random_state=42,
-        )
-        model.fit(X, y)
-        pred = model.predict(X[:10])
-        assert pred.shape == (10, y.shape[1])
-
-    def test_lightgbm_no_feature_name_warning_on_ndarray_predict(self, medium_dataset):
-        """Predicting ndarray after DataFrame fit must not trigger schema warning."""
-        pd = pytest.importorskip("pandas")
-        from forecasting.gradient_boosting import LightGBMForecaster
-
-        X, y = medium_dataset
-        X_df = pd.DataFrame(X, columns=[f"f{i}" for i in range(X.shape[1])])
-
-        model = LightGBMForecaster(
-            n_estimators=50, early_stopping_rounds=10, random_state=42,
-        )
-        model.fit(X_df, y)
-
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
-            pred = model.predict(X)
-
-        assert pred.shape == y.shape
-        assert not any(
-            "valid feature names" in str(w.message) for w in caught
-        ), "LightGBM emitted a feature-name mismatch warning during predict()."
-
-    def test_lightgbm_feature_importance_after_es(self, medium_dataset):
-        """Feature importance vector length == n_features after per-output ES."""
-        from forecasting.gradient_boosting import LightGBMForecaster
-
-        X, y = medium_dataset
-        model = LightGBMForecaster(
-            n_estimators=50, early_stopping_rounds=10, random_state=42,
-        )
-        model.fit(X, y)
-        imp = model.get_feature_importance()
-        assert len(imp) == X.shape[1]
-        assert np.all(imp >= 0)
-
-
-# ---------------------------------------------------------------------------
 # 2.1 Helper: ChronologicalSplit
 # ---------------------------------------------------------------------------
 
@@ -312,7 +177,7 @@ class TestChronologicalSplit:
 
     def test_split_sizes_correct(self, rng):
         """Split produces correct train/val row counts."""
-        from forecasting.gradient_boosting import _chronological_es_split
+        from forecasting.catboost_forecaster import _chronological_es_split
 
         n, p, k = 100, 5, 2
         X = rng.randn(n, p)
@@ -326,7 +191,7 @@ class TestChronologicalSplit:
 
     def test_split_returns_none_for_tiny_dataset(self, rng):
         """Datasets with < 40 training rows after split get None (bypass ES)."""
-        from forecasting.gradient_boosting import _chronological_es_split
+        from forecasting.catboost_forecaster import _chronological_es_split
 
         n, p, k = 20, 3, 2
         X = rng.randn(n, p)
@@ -342,7 +207,7 @@ class TestChronologicalSplit:
 
     def test_split_preserves_chronological_order(self, rng):
         """Last n_val rows go to validation — chronological ordering preserved."""
-        from forecasting.gradient_boosting import _chronological_es_split
+        from forecasting.catboost_forecaster import _chronological_es_split
 
         n, p, k = 100, 3, 1
         X = np.arange(n).reshape(-1, 1).repeat(p, axis=1).astype(float)
@@ -499,7 +364,7 @@ class TestCreateModelsQRFBugFix:
 
     def test_gb_models_receive_early_stopping_config(self):
         """
-        CatBoost and LightGBM models created by _create_models() must have
+        CatBoost model created by _create_models() must have
         early_stopping_rounds=20 and validation_fraction=0.20 (Phase 2.1 config).
         """
         from forecasting.unified import UnifiedForecaster
@@ -517,10 +382,6 @@ class TestCreateModelsQRFBugFix:
             f"CatBoost.early_stopping_rounds={cb.early_stopping_rounds}, expected 20."
         )
         assert abs(cb.validation_fraction - 0.20) < 1e-9
-
-        lgbm = models['LightGBM']
-        assert lgbm.early_stopping_rounds == 20
-        assert abs(lgbm.validation_fraction - 0.20) < 1e-9
 
 
 # ---------------------------------------------------------------------------
@@ -589,3 +450,4 @@ class TestOOFExpansion:
             f"but min_train_years=8 gives {len(splits_8)} folds. "
             "Expected more folds with min_train_years=5."
         )
+

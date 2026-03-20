@@ -332,11 +332,11 @@ class SuperLearner:
         verbose: Print progress messages
 
     Example:
-        >>> from forecasting.gradient_boosting import GradientBoostingForecaster
+        >>> from forecasting.catboost_forecaster import CatBoostForecaster
         >>> from forecasting.bayesian import BayesianForecaster
         >>>
         >>> base = {
-        ...     'gb': GradientBoostingForecaster(),
+        ...     'catboost': CatBoostForecaster(),
         ...     'bayesian': BayesianForecaster(),
         ... }
         >>> sl = SuperLearner(base_models=base)

@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 from typing import List
 from sklearn.inspection import permutation_importance
-from lightgbm import LGBMRegressor
+from catboost import CatBoostRegressor
 from sklearn.metrics import mean_squared_error
 from sklearn.model_selection import LeaveOneGroupOut
 
@@ -54,7 +54,14 @@ def run_rfe():
             X_tr, X_te = X_sub[train_idx], X_sub[test_idx]
             y_tr, y_te = y_sub[train_idx], y_sub[test_idx]
             
-            model = LGBMRegressor(n_estimators=100, random_state=42, n_jobs=-1, verbose=-1)
+            model = CatBoostRegressor(
+                iterations=120,
+                depth=5,
+                learning_rate=0.05,
+                verbose=0,
+                allow_writing_files=False,
+                random_seed=42,
+            )
             y_mean_tr = y_tr.mean(axis=1)
             y_mean_te = y_te.mean(axis=1)
             model.fit(X_tr, y_mean_tr)
@@ -71,7 +78,14 @@ def run_rfe():
         X_sub = X_train[:, current_features]
         
         y_mean = y_train.mean(axis=1)
-        model = LGBMRegressor(n_estimators=100, random_state=42, n_jobs=-1, verbose=-1)
+        model = CatBoostRegressor(
+            iterations=120,
+            depth=5,
+            learning_rate=0.05,
+            verbose=0,
+            allow_writing_files=False,
+            random_seed=42,
+        )
         model.fit(X_sub, y_mean)
         
         m = permutation_importance(model, X_sub, y_mean, n_repeats=3, random_state=42, n_jobs=-1)

@@ -16,8 +16,6 @@ Strategies
     * **CatBoost**: gradient continuation — load existing model via
       ``init_model`` and continue boosting on new data (additional iterations
       at a reduced learning-rate, preventing over-fitting to 2024).
-    * **LightGBM**: warm-start re-fit — set ``warm_start=True`` and add
-      ``n_estimators_increment`` additional rounds on new data.
     * **BayesianForecaster / others**: full retrain on all available data
       when ``X_all`` is supplied, otherwise fine-tune on new data.
 
@@ -70,8 +68,6 @@ class IncrementalEnsembleUpdater:
     catboost_lr_factor : float
         Learning-rate multiplier for gradient continuation (< 1 to prevent
         over-fitting to the new year, default 0.5).
-    lgbm_extra_iter : int
-        Additional LightGBM estimators during warm-start update.
     min_rls_obs : int
         Minimum observations for RLS fallback threshold.
     verbose : bool
@@ -83,14 +79,12 @@ class IncrementalEnsembleUpdater:
         gamma: float = 0.3,
         catboost_extra_iter: int = 50,
         catboost_lr_factor: float = 0.5,
-        lgbm_extra_iter: int = 50,
         verbose: bool = True,
     ):
         self.strategy            = strategy
         self.gamma               = float(np.clip(gamma, 0.0, 1.0))
         self.catboost_extra_iter = catboost_extra_iter
         self.catboost_lr_factor  = catboost_lr_factor
-        self.lgbm_extra_iter     = lgbm_extra_iter
         self.verbose             = verbose
 
         # Diagnostics populated after update()
@@ -176,10 +170,6 @@ class IncrementalEnsembleUpdater:
                 if strat == 'catboost_continuation':
                     self._catboost_continuation(model, X_m_new, y_new,
                                                 X_m_all, y_all)
-                elif strat == 'lgbm_warmstart':
-                    self._lgbm_warmstart(model, X_m_new, y_new,
-                                         X_m_all, y_all,
-                                         entity_indices=entity_indices_new)
                 else:  # 'full_retrain' or fallback
                     self._full_retrain(model, X_m_new, y_new,
                                        entity_indices_new,
@@ -210,8 +200,6 @@ class IncrementalEnsembleUpdater:
         name_lo = name.lower()
         if 'catboost' in name_lo or 'gradientboost' in name_lo:
             return 'catboost_continuation'
-        if 'lightgbm' in name_lo or 'lgbm' in name_lo:
-            return 'lgbm_warmstart'
         return 'full_retrain'     # BayesianRidge, QuantileRF, others
 
     def _catboost_continuation(
@@ -272,46 +260,6 @@ class IncrementalEnsembleUpdater:
         except Exception:
             # Fallback: full retrain
             self._full_retrain(model, X_new, y_new, None, X_all, y_all, None)
-
-    def _lgbm_warmstart(
-        self,
-        model,
-        X_new: np.ndarray,
-        y_new: np.ndarray,
-        X_all: Optional[np.ndarray],
-        y_all: Optional[np.ndarray],
-        entity_indices=None,
-    ) -> None:
-        """LightGBM warm-start: enable warm_start and add more estimators.
-
-        Training data: full history (X_all) when available, otherwise new
-        data (X_new).  Warm_start=True avoids refit from scratch.
-        """
-        X_fit = np.vstack([X_all, X_new]) if X_all is not None else X_new
-        y_fit = np.vstack([y_all, y_new]) if y_all is not None else y_new
-
-        lgbm_multi = getattr(model, 'model', None)
-        if lgbm_multi is None or not hasattr(lgbm_multi, 'estimators_'):
-            self._full_retrain(model, X_new, y_new, entity_indices,
-                               X_all, y_all, None)
-            return
-
-        try:
-            for est in lgbm_multi.estimators_:
-                out_col_idx = lgbm_multi.estimators_.index(est)
-                y_col = (y_fit[:, out_col_idx]
-                         if y_fit.ndim > 1 else y_fit.ravel())
-                est.set_params(
-                    warm_start    = True,
-                    n_estimators  = (est.n_estimators
-                                     + self.lgbm_extra_iter),
-                )
-                with warnings.catch_warnings():
-                    warnings.simplefilter('ignore')
-                    est.fit(X_fit, y_col)
-        except Exception:
-            self._full_retrain(model, X_new, y_new, entity_indices,
-                               X_all, y_all, None)
 
     def _full_retrain(
         self,

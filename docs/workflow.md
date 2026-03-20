@@ -68,7 +68,7 @@ The ML-MCDM pipeline analyzes panel data (entities × time periods × criteria) 
 │                           │                                              │
 │  Phase 4: ML Forecasting (State-of-the-Art Ensemble)                   │
 │  ┌──────────────────────────────────────────────────────────┐           │
-│  │ 6 Models: CatBoost + LightGBM + Bayesian + QRF + KRR + SVR │       │
+│  │ 5 Models: CatBoost + Bayesian + QRF + KRR + SVR │       │
 │  │ Impute panel → Super Learner meta-ensemble              │           │
 │  │ → Conformal Prediction intervals                        │           │
 │  └────────────────────────┬─────────────────────────────────┘           │
@@ -229,20 +229,19 @@ For **each of 8 criteria** (C01 through C08):
 **Pre-processing:** A fully ML-imputed copy of the panel (`build_ml_panel_data` — 3-stage: linear interpolation → ffill/bfill → median) is passed to the forecaster. The raw `panel_data` used by MCDM phases is never mutated.
 
 **Ensemble Architecture:**
-- **6 Always-On Base Models:**
+- **5 Always-On Base Models:**
   1. **CatBoost Gradient Boosting** — Joint multi-output tree-based model (MultiRMSE loss)
-  2. **LightGBM** — Leaf-wise gradient boosting (MultiOutputRegressor)
-  3. **Bayesian Ridge** — Probabilistic linear model (PLS-compressed features)
-  4. **Quantile Random Forest** — Distributional forecasting (QRF quantile intervals)
-  5. **Kernel Ridge Regression** — RBF kernel, L2 regularised
-  6. **Support Vector Regression** — ε-insensitive tube, RBF kernel
+  2. **Bayesian Ridge** — Probabilistic linear model (PLS-compressed features)
+  3. **Quantile Random Forest** — Distributional forecasting (QRF quantile intervals)
+  4. **Kernel Ridge Regression** — RBF kernel, L2 regularised
+  5. **Support Vector Regression** — ε-insensitive tube, RBF kernel
 
 - **Meta-Ensemble:** Super Learner (per-output meta-weights via `PanelWalkForwardCV`)
 - **Uncertainty Quantification:** Conformal Prediction (distribution-free 95% intervals)
 
 **Cross-Validation:**
 - **Method:** `PanelWalkForwardCV` — panel-aware walk-forward splitter (annual folds)
-- **`min_train_years=8`**: first fold trains on 2011–2018, validates on 2019
+- **`min_train_years=5`**: first fold trains on the earliest 5 annual cohorts, validates on the next year
 - **`cv_folds=5`** (default): up to 5 walk-forward folds
 - **Respects temporal ordering** (no data leakage)
 
@@ -250,7 +249,7 @@ For **each of 8 criteria** (C01 through C08):
 - Each model computes its own feature importance:
   - GB: Gini importance
   - Bayesian: Absolute coefficients
-- **Aggregated** across all 6 models (averaged)
+- **Aggregated** across all 5 models (averaged)
 - Saved for exploratory analysis
 
 **Output Files:**
@@ -402,7 +401,7 @@ print(f"Robustness: {result.analysis['sensitivity'].overall_robustness:.4f}")
 |-----------|---------|-------------|
 | `stability_threshold` | 0.95 | Minimum cosine similarity for temporal stability pass |
 | `cv_folds` | 5 | Walk-forward CV folds for forecasting |
-| `cv_min_train_years` | 8 | Minimum annual training cohorts before first val fold |
+| `cv_min_train_years` | 5 | Minimum annual training cohorts before first val fold |
 | `n_simulations` | 1000 | Monte Carlo sensitivity simulations |
 | `random_state` | 42 | Reproducibility seed |
 | `n_splits` | 5 | Time-series CV folds |
@@ -417,7 +416,7 @@ print(f"Robustness: {result.analysis['sensitivity'].overall_robustness:.4f}")
 |-----------|------|-------|
 | Weighting | ~2s | Deterministic CRITIC (two levels) |
 | Ranking | ~10s | 6 MCDM + 2-stage ER |
-| ML Forecasting | ~15-30s | 6 models + Super Learner + Conformal |
+| ML Forecasting | ~12-25s | 5 models + Super Learner + Conformal |
 | Sensitivity Analysis | ~20s | Monte Carlo (1000 sims) |
 | Visualization + Export | ~5s | 5 figures + results |
 
@@ -471,7 +470,7 @@ print(f"Robustness: {result.analysis['sensitivity'].overall_robustness:.4f}")
   ✓ Completed in 7.02s
 
 ▶ Phase 4/7: ML Forecasting
-  Ensemble: 6 models (CatBoost, LightGBM, Bayesian, QRF, KRR, SVR)
+  Ensemble: 5 models (CatBoost, Bayesian, QRF, KRR, SVR)
   Super Learner CV R²: 0.7355 ± 0.084
   Top feature: SC01 (importance = 0.082)
   ✓ Completed in 14.50s
@@ -506,7 +505,7 @@ The ML-MCDM pipeline provides:
 1. **Rigorous Methodology**: Two-stage ER with adaptive zero-handling
 2. **Objective Weighting**: CRITIC Two-Level deterministic pipeline
 3. **Multi-Method Consensus**: 6 MCDM methods (TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS, SAW)
-4. **ML Forecasting**: 6-model ensemble (CatBoost, LightGBM, Bayesian, QRF, KRR, SVR) + Super Learner
+4. **ML Forecasting**: 5-model ensemble (CatBoost, Bayesian, QRF, KRR, SVR) + Super Learner
 5. **Hierarchical Sensitivity**: Multi-level robustness analysis (1000 simulations)
 6. **Comprehensive Outputs**: 5 high-resolution figures + 17+ data files + detailed report
 7. **Production-Ready**: Single-command execution with scientifically validated defaults
@@ -521,3 +520,4 @@ For methodology details, see:
 - [ranking.md](ranking.md) — ER hierarchical ranking
 - [weighting.md](weighting.md) — CRITIC Two-Level weight calculation
 - [objective.md](objective.md) — project objectives
+

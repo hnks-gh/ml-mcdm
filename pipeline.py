@@ -961,7 +961,7 @@ class MLMCDMPipeline:
         
         self.logger.info(f"Target year: {target_year}")
         # Build the log-time model list to mirror _create_models() logic
-        _base_model_names = ["CatBoost", "LightGBM", "BayesianRidge", "QuantileRF",
+        _base_model_names = ["CatBoost", "BayesianRidge", "QuantileRF",
                              "KernelRidge", "SVR"]
         self.logger.info(
             f"Base models: {len(_base_model_names)} ({', '.join(_base_model_names)})"

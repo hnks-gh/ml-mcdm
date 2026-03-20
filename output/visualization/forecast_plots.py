@@ -21,7 +21,7 @@ from .base import (
 
 # ── Module-level model-family colour map (shared across all new figures) ──── #
 _FAMILY_COLOR: Dict[str, str] = {
-    'catboost': '#E74C3C', 'lightgbm': '#2ECC71', 'random':   '#3498DB',
+    'catboost': '#E74C3C', 'random':   '#3498DB',
     'neural':   '#9B59B6', 'bayesian': '#F39C12', 'var':       '#1ABC9C',
     'meta':     '#E67E22', 'quantile': '#E91E63', 'kernel':    '#8E44AD',
     'svr':      '#C0392B', 'ridge':    '#D35400',
@@ -526,7 +526,6 @@ class ForecastPlotter(BasePlotter):
 
         # Model family colour mapping
         _family_color = {
-            'lightgbm': '#2ECC71', 'lgbm': '#2ECC71',
             'xgboost': '#E74C3C', 'xgb': '#E74C3C', 'catboost': '#E74C3C',
             'random': '#3498DB', 'rf': '#3498DB', 'forest': '#3498DB',
             'neural': '#9B59B6', 'nam': '#9B59B6', 'additive': '#9B59B6',
@@ -765,9 +764,9 @@ class ForecastPlotter(BasePlotter):
         ----------
         model_names : list of str, optional
             Ordered list of active base model keys (e.g. ``['CatBoost',
-            'LightGBM', 'BayesianRidge', 'KernelRidge', 'SVR', 'QuantileRF']``).
+            'BayesianRidge', 'KernelRidge', 'SVR', 'QuantileRF']``).
             If None, derived from ``model_contributions`` keys; if that is also
-            None, falls back to the default 6-model roster.
+            None, falls back to the default 5-model roster.
         model_contributions : dict, optional
             ``{model_name: weight}`` from the fitted Meta-Learner.  Used to
             annotate top-3 contributors in the Meta-Learner box and to derive
@@ -836,12 +835,11 @@ class ForecastPlotter(BasePlotter):
 
         # Resolve model names: explicit arg > model_contributions keys > default
         _DEFAULT_MODELS = [
-            'CatBoost', 'LightGBM', 'BayesianRidge',
+            'CatBoost', 'BayesianRidge',
             'KernelRidge', 'SVR', 'QuantileRF',
         ]
         _MODEL_LABELS: Dict[str, tuple] = {
             'CatBoost':     ('CatBoost',    'Symmetric GB'),
-            'LightGBM':     ('LightGBM',    'Leaf-wise GB'),
             'BayesianRidge':('Bayesian\nRidge', 'Group Lasso'),
             'KernelRidge':  ('Kernel\nRidge', 'RBF L2'),
             'SVR':          ('SVR',          'ε-insensitive'),
@@ -956,7 +954,6 @@ class ForecastPlotter(BasePlotter):
         # Model family colour mapping
         _family_color = {
             'catboost': '#E74C3C', 'xgboost': '#E74C3C', 'xgb': '#E74C3C',
-            'lightgbm': '#2ECC71', 'lgbm': '#2ECC71',
             'random': '#3498DB', 'rf': '#3498DB', 'forest': '#3498DB',
             'quantile': '#E91E63', 'qrf': '#E91E63',
             'neural': '#9B59B6', 'nam': '#9B59B6', 'additive': '#9B59B6',

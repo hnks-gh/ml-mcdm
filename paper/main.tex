@@ -124,8 +124,7 @@
   \vspace*{2cm}
 
   {\LARGE\bfseries
-    A Hybrid MCDM and Ensemble Learning Framework for\\[6pt]
-    Performance Indexing: Evidence from Vietnam's PAPI
+    A Hybrid MCDM and Ensemble Learning Framework for Performance Indexing: Evidence from Vietnam's PAPI
   \par}
 
   \vspace{1.5cm}
@@ -330,10 +329,10 @@ on MCDM-based composite indices and machine learning for governance analytics:
     lending credibility to the final consensus ranking.
 
   \item \textbf{State-of-the-art ensemble learning for governance forecasting.}
-    We construct a three-tier predictive system consisting of: (i)~six
+    We construct a three-tier predictive system consisting of: (i)~five
     diverse base models---CatBoost~\citep{Prokhorenkova2018},
-    LightGBM~\citep{Ke2017}, Bayesian Ridge, Quantile Random Forest,
-    Kernel Ridge Regression, and Support Vector Regression---trained on a
+    Bayesian Ridge, Quantile Random Forest, Kernel Ridge Regression, and
+    Support Vector Regression---trained on a
     12-block temporal feature engineering pipeline generating $\approx 295$
     panel features per province; (ii)~a Super Learner meta-ensemble
     \citep{vanderLaan2007} combining base models via Non-Negative Least
@@ -499,20 +498,19 @@ future research.
 % Two-track preprocessing:
 %   PLS track (BayesianRidge, KRR, SVR): PLSRegression(n_components=20)
 %     with mutual-information pre-filter
-%   Threshold track (CatBoost, LightGBM, QRF): variance threshold only
+%   Threshold track (CatBoost, QRF): variance threshold only
 % ----------------------------------------------------------------
 \textit{[Content placeholder.]}
 
 \subsection{Base Forecasting Models}
 \label{subsec:base_models}
 % ----------------------------------------------------------------
-% PLACEHOLDER — 6 diverse base learners:
+% PLACEHOLDER — 5 diverse base learners:
 %   1. CatBoost (joint multi-output MultiRMSE, oblivious trees)
-%   2. LightGBM (leaf-wise, MultiOutputRegressor wrapper)
-%   3. Bayesian Ridge (PLS-compressed features, posterior uncertainty)
-%   4. Quantile Random Forest (full predictive distributions)
-%   5. Kernel Ridge Regression (RBF kernel, L2 regularisation)
-%   6. Support Vector Regression (epsilon-insensitive tube, RBF)
+%   2. Bayesian Ridge (PLS-compressed features, posterior uncertainty)
+%   3. Quantile Random Forest (full predictive distributions)
+%   4. Kernel Ridge Regression (RBF kernel, L2 regularisation)
+%   5. Support Vector Regression (epsilon-insensitive tube, RBF)
 % Target transform: logit for SAW [0,1] targets; Yeo-Johnson otherwise.
 % ----------------------------------------------------------------
 \textit{[Content placeholder.]}
@@ -610,11 +608,10 @@ future research.
 %   KernelRidge:   0.1213 ± 0.0365 (most stable)
 %   CatBoost:      0.1008 ± 0.0621
 %   SVR:           0.0757 ± 0.0313
-%   LightGBM:     -0.0700 ± 0.2223 (high variance)
 %   QuantileRF:   -0.0873 ± 0.1104
 % Super Learner meta-weights:
 %   BayesianRidge 49.0%, KernelRidge 19.1%, CatBoost 11.7%,
-%   SVR 8.6%, QuantileRF 8.6%, LightGBM 3.0%
+%   SVR 8.6%, QuantileRF 8.6%
 % Holdout (2024 withheld, 252 OOF samples):
 %   R² = 0.2171, RMSE = 2.3936, MAE = 1.1700
 % Residual diagnostics: Durbin-Watson, Breusch-Pagan, Shapiro-Wilk.
@@ -676,7 +673,7 @@ future research.
 % PLACEHOLDER — Individual model R² (0.07–0.13) is modest but expected for
 % highly persistent panel data with structural breaks (COVID-19, sub-criteria
 % introduction). The Super Learner's NNLS combination allocates near-zero
-% weight to LightGBM/QRF (tree methods prone to overfitting small T), while
+% weight to QRF when uncertainty is high (tree methods can overfit small T), while
 % Bayesian Ridge (49%) and KernelRidge (19%) reflect suitability of
 % regularised linear methods for small-T panels. Compare with benchmark
 % (random walk, AR(1)). Holdout R² = 0.22 represents genuine out-of-sample
@@ -822,11 +819,6 @@ Springer-Verlag, Berlin.
 Kaufmann, D., Kraay, A., \& Mastruzzi, M. (2010).
 The worldwide governance indicators: Methodology and analytical issues.
 \textit{Hague Journal for the Rule of Law}, 3(2), 220--246.
-
-\bibitem[Ke et al.(2017)]{Ke2017}
-Ke, G., Meng, Q., Finley, T., Wang, T., Chen, W., Ma, W., \ldots \& Liu, T.~Y. (2017).
-LightGBM: A highly efficient gradient boosting decision tree.
-\textit{Advances in Neural Information Processing Systems}, 30, 3146--3154.
 
 \bibitem[Keshavarz~Ghorabaee et al.(2015)]{Keshavarz2015}
 Keshavarz~Ghorabaee, M., Zavadskas, E.~K., Olfat, L., \& Turskis, Z. (2015).

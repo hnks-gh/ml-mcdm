@@ -7,8 +7,8 @@ State-of-the-art ensemble forecasting system optimized for small-to-medium
 panel data (N < 1000), emphasizing model diversity over quantity.
 
 Architecture:
-    Tier 1 - Base Models (6 diverse models):
-        - gradient_boosting: CatBoost (oblivious trees) + LightGBM (leaf-wise)
+    Tier 1 - Base Models (5 diverse models):
+        - catboost_forecaster: CatBoost (oblivious trees, MultiRMSE)
         - bayesian: Bayesian Ridge regression (uncertainty quantification)
         - quantile_forest: Distributional forecasting via quantile RF
 
@@ -26,7 +26,7 @@ Architecture:
                    Phase 5: reversible target transformation)
 
 Design Philosophy:
-    - Model diversity over quantity (6 diverse > 11 correlated)
+    - Model diversity over quantity (5 diverse > many correlated)
     - Statistical appropriateness for N < 1000
     - Automatic optimal weighting (Super Learner)
     - Guaranteed uncertainty coverage (Conformal Prediction)
@@ -47,7 +47,7 @@ Example Usage:
 from .features import TemporalFeatureEngineer, SAWNormalizer
 
 # Tree-based ensemble methods
-from .gradient_boosting import CatBoostForecaster
+from .catboost_forecaster import CatBoostForecaster
 
 # Bayesian linear method
 from .bayesian import BayesianForecaster

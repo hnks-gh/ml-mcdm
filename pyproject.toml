@@ -85,7 +85,6 @@ ml = [
     "tensorflow>=2.10.0",  # Deep learning
     "keras>=2.10.0",       # Neural networks
     "xgboost>=1.7.0",      # Gradient boosting
-    "lightgbm>=3.3.0",     # LightGBM
 ]
 analysis = [
     "shap>=0.42.0",                # Explainability
@@ -104,7 +103,6 @@ forecasting = [
 ]
 accelerated = [
     "catboost>=1.2.0",      # Joint multi-output boosting (MultiRMSE, recommended)
-    "lightgbm>=4.0.0",      # LightGBM fallback (faster, independent per output)
 ]
 all = [
     "ml-mcdm[dev,ml,analysis,forecasting,accelerated]",

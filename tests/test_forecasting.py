@@ -312,7 +312,7 @@ class TestFeatureEngineer:
 
 class TestGradientBoosting:
     def test_fit_predict_multioutput(self, small_dataset):
-        from forecasting.gradient_boosting import CatBoostForecaster
+        from forecasting.catboost_forecaster import CatBoostForecaster
 
         X, y = small_dataset
         model = CatBoostForecaster(iterations=20, random_state=42)
@@ -322,7 +322,7 @@ class TestGradientBoosting:
 
     def test_no_random_early_stopping(self):
         """CatBoostForecaster has allow_writing_files=False and verbose=0 by default."""
-        from forecasting.gradient_boosting import CatBoostForecaster
+        from forecasting.catboost_forecaster import CatBoostForecaster
 
         model = CatBoostForecaster()
         # Verify the compiled model is not yet created (fit() not called)
@@ -330,7 +330,7 @@ class TestGradientBoosting:
         assert model.iterations == 300  # class default
 
     def test_feature_importance(self, small_dataset):
-        from forecasting.gradient_boosting import CatBoostForecaster
+        from forecasting.catboost_forecaster import CatBoostForecaster
 
         X, y = small_dataset
         model = CatBoostForecaster(iterations=20, random_state=42)
@@ -495,7 +495,7 @@ class TestQuantileRandomForest:
 class TestSuperLearner:
     def test_weights_non_negative_and_sum_one(self, small_dataset):
         from forecasting.super_learner import SuperLearner
-        from forecasting.gradient_boosting import CatBoostForecaster
+        from forecasting.catboost_forecaster import CatBoostForecaster
         from forecasting.bayesian import BayesianForecaster
 
         X, y = small_dataset
@@ -541,7 +541,7 @@ class TestSuperLearner:
 
     def test_predict_shape(self, small_dataset):
         from forecasting.super_learner import SuperLearner
-        from forecasting.gradient_boosting import CatBoostForecaster
+        from forecasting.catboost_forecaster import CatBoostForecaster
         from forecasting.bayesian import BayesianForecaster
 
         X, y = small_dataset
@@ -857,7 +857,7 @@ class TestPhaseRegression:
         assert cp._q_hat > 0
 
     def test_phase2_gb_no_early_stop(self):
-        from forecasting.gradient_boosting import CatBoostForecaster
+        from forecasting.catboost_forecaster import CatBoostForecaster
 
         cb = CatBoostForecaster()
         # CatBoost writes no files and emits no per-iteration console output
@@ -886,7 +886,7 @@ class TestKnownAnswerForecasting:
 
     def test_gradient_boosting_recovers_known_slope(self, linear_data):
         """CatBoostForecaster predicts y ≈ 2x on held-out points."""
-        from forecasting.gradient_boosting import CatBoostForecaster
+        from forecasting.catboost_forecaster import CatBoostForecaster
 
         X, y = linear_data
         model = CatBoostForecaster(iterations=100, random_state=42)
@@ -998,7 +998,7 @@ class TestAuditRegressions:
 
     def test_b10_gb_class_default_max_depth_is_5(self):
         """CatBoostForecaster class default depth must be 6 (CatBoost standard)."""
-        from forecasting.gradient_boosting import CatBoostForecaster
+        from forecasting.catboost_forecaster import CatBoostForecaster
 
         cb = CatBoostForecaster()
         assert cb.depth == 6, (
@@ -1210,22 +1210,22 @@ class TestPipelineDecoupling:
         )
 
     def test_stage2_per_model_dicts_populated(self):
-        """_per_model_X_train_ and _per_model_X_pred_ must cover all 6 default base models.
+        """_per_model_X_train_ and _per_model_X_pred_ must cover all 5 default base models.
 
-        Default ensemble: BayesianRidge, CatBoost, LightGBM, QuantileRF, KernelRidge, SVR.
+        Default ensemble: BayesianRidge, CatBoost, QuantileRF, KernelRidge, SVR.
         """
         panel = self._make_mock_panel()
         uf    = self._make_uf()
         uf.stage1_engineer_features(panel, 2018)
         uf.stage2_reduce_features()
 
-        expected_models = {'BayesianRidge', 'CatBoost', 'LightGBM',
+        expected_models = {'BayesianRidge', 'CatBoost',
                            'QuantileRF', 'KernelRidge', 'SVR'}
         assert expected_models <= set(uf._per_model_X_train_.keys()), (
-            "_per_model_X_train_ must cover all 6 default base models"
+            "_per_model_X_train_ must cover all 5 default base models"
         )
         assert expected_models <= set(uf._per_model_X_pred_.keys()), (
-            "_per_model_X_pred_ must cover all 6 default base models"
+            "_per_model_X_pred_ must cover all 5 default base models"
         )
 
     # ------------------------------------------------------------------
@@ -1389,3 +1389,4 @@ class TestPipelineDecoupling:
         assert out['super_learner'] is None, (
             "super_learner must remain None before stage3"
         )
+
