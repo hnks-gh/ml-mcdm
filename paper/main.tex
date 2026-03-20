@@ -845,49 +845,139 @@ The two-level framework yields interpretable results: High-variance, uncorrelate
 \subsection{MCDM Ranking Methods}
 \label{subsec:mcdm}
 
+To construct a robust performance index that is invariant to methodological idiosyncrasies, we employ a multi-methodological framework comprising five distinct Multi-Criteria Decision Making (MCDM) algorithms. A known limitation of composite indexing is the sensitivity of the final ranking to the aggregation technique \citep{Greco2019}. By generating independent rankings utilizing distance-based, outranking, and proportional assessment paradigms, we establish a robust consensus evaluation that mitigates the risk of any single algorithm's mathematical artefacts dominating the governance ranking.
+
+Let \( \tilde{X} \in \mathbb{R}^{m \times n} \) represent the performance matrix, where \( \tilde{x}_{ij} \in [0, 1] \) denotes the min-max normalized score of province \( i \) on sub-criterion \( j \) (as defined in Section~\ref{subsec:critic}), and \( w_j \) constitutes the corresponding global \CRITIC weight such that \( \sum_j w_j = 1 \). Given that the \PAPI assessment framework operates strictly with benefit-type indicators (as detailed in Table~\ref{tab:sc_properties}), cost-type formulations in the following algorithms are presented for generalized theoretical completeness but are effectively constrained to the benefit subspace in empirical application.
+
 \subsubsection{TOPSIS}
 \label{subsubsec:topsis}
-% ----------------------------------------------------------------
-% PLACEHOLDER — Hwang & Yoon (1981). Closeness coefficient formula.
-% ----------------------------------------------------------------
-\textit{[Content placeholder.]}
+The Technique for Order of Preference by Similarity to Ideal Solution (\TOPSIS) establishes rankings based on the geometric distance of an alternative from hypothetical ideal states \citep{Hwang1981}. The foundational premise of \TOPSIS is that the optimal alternative should simultaneously minimize the distance to the Positive Ideal Solution (PIS) and maximize the distance from the Negative Ideal Solution (NIS). This simultaneous geometric optimization is highly effective in differentiating alternatives that might otherwise appear similar under simple linear aggregation.
+
+First, the normalized performance matrix is mapped into a weighted metric space: \( v_{ij} = w_j \tilde{x}_{ij} \). The PIS (\( A^+ \)) and NIS (\( A^- \)) vectors are determined by extracting the extremum performance values across all observed provinces:
+\begin{align}
+    A^+ &= \{ v_1^+, v_2^+, \dots, v_n^+ \} = \left\{ \max_i v_{ij} \right\} \\
+    A^- &= \{ v_1^-, v_2^-, \dots, v_n^- \} = \left\{ \min_i v_{ij} \right\}
+\end{align}
+
+We measure the separation of each province \( i \) from these ideal solutions using the Euclidean distance metric (\( L_2 \) norm). The \( L_2 \) norm implies a compensatory relationship where severe underperformance in one criterion can be partially offset by strong outperformance in another, though the quadratic penalty disproportionately heavily weights extreme deviations:
+\begin{equation}
+    d_i^+ = \sqrt{ \sum_{j=1}^{n} (v_{ij} - v_j^+)^2 }, \quad d_i^- = \sqrt{ \sum_{j=1}^{n} (v_{ij} - v_j^-)^2 }
+\end{equation}
+
+The relative closeness coefficient, \( C_i \in [0, 1] \), synthesizes these two distances. It dictates the final ranking order, where a value closer to unity indicates superior alignment with the positive ideal:
+\begin{equation}
+    C_i = \frac{d_i^-}{d_i^+ + d_i^-}
+\end{equation}
 
 \subsubsection{VIKOR}
 \label{subsubsec:vikor}
-% ----------------------------------------------------------------
-% PLACEHOLDER — Opricovic & Tzeng (2004). S, R, Q indices. v = 0.5.
-% ----------------------------------------------------------------
-\textit{[Content placeholder.]}
+VlseKriterijumska Optimizacija I Kompromisno Resenje (\VIKOR) is rooted in compromise programming. It advances beyond simple distance minimization by establishing a ranking based on the particular measure of ``closeness'' to the ideal solution, explicitly balancing the maximum absolute ``group utility'' against the minimum individual regret of the ``opponent'' \citep{Opricovic2004}. Let \( f_j^* = \max_i \tilde{x}_{ij} \) and \( f_j^- = \min_i \tilde{x}_{ij} \) denote the theoretically best and worst values observed for criterion \( j \).
+
+The algorithm calculates a multi-criteria utility measure, \( S_i \) (derived from the \( L_1 \) city-block distance norm, capturing aggregate consensus), and a regret measure, \( R_i \) (derived from the \( L_\infty \) Chebyshev distance norm, reflecting the maximum deviation across all criteria):
+\begin{align}
+    S_i &= \sum_{j=1}^{n} w_j \frac{f_j^* - \tilde{x}_{ij}}{f_j^* - f_j^-} \\
+    R_i &= \max_j \left[ w_j \frac{f_j^* - \tilde{x}_{ij}}{f_j^* - f_j^-} \right]
+\end{align}
+
+The comprehensive compromise index, \( Q_i \), is subsequently aggregated as a convex combination of normalized utility and regret:
+\begin{equation}
+    Q_i = v \frac{S_i - S^*}{S^- - S^*} + (1 - v) \frac{R_i - R^*}{R^- - R^*}
+\end{equation}
+where \( S^* = \min_i S_i \), \( S^- = \max_i S_i \), \( R^* = \min_i R_i \), and \( R^- = \max_i R_i \). The strategic parameter \( v \in [0, 1] \) represents the weight given to the mechanism of maximum group utility (the majority rule), while \( (1-v) \) weights the individual regret (the veto of the most opposed criterion). In this study, we adopt the standard neutral consensus threshold \( v = 0.5 \), ensuring balanced consideration. A lower \( Q_i \) score signifies better performance and less regret.
 
 \subsubsection{PROMETHEE II}
 \label{subsubsec:promethee}
-% ----------------------------------------------------------------
-% PLACEHOLDER — Brans & Vincke (1985). V-shape preference function.
-% Net flow phi_net.
-% ----------------------------------------------------------------
-\textit{[Content placeholder.]}
+The Preference Ranking Organization Method for Enrichment Evaluation (\textsc{promethee~ii}) diverges fundamentally from distance-based methods by constructing a complete pre-ranking through the modeling of continuous outranking relations \citep{Brans1985}. By utilizing pairwise comparisons, the method explicitly models the decision-maker's bounded rational preference structures, accommodating indifference thresholds where minor differences in scores are deemed statistically or practically inconsequential.
+
+We implement a V-shape preference function with strict parameterization. Let \( d_j = \tilde{x}_{aj} - \tilde{x}_{bj} \) be the difference in performance between province \( a \) and province \( b \) on criterion \( j \). We define a preference threshold \( p = 0.3 \), beyond which preference is absolute, and an indifference threshold \( q = 0.1 \), beneath which the alternatives are considered strictly equivalent. The continuous preference degree \( P_j(a,b) \) is mathematically operationalized as:
+\begin{equation}
+    P_j(a,b) = 
+    \begin{cases} 
+        0 & \text{if } d_j \leq q \\
+        \frac{d_j - q}{p - q} & \text{if } q < d_j \leq p \\
+        1 & \text{if } d_j > p 
+    \end{cases}
+\end{equation}
+
+This bounded functional form prevents an overwhelmingly large difference in one criterion from fully compensating for deficiencies in another, distinguishing \textsc{promethee} as a partially non-compensatory approach. The aggregated multi-criteria preference index is \( \pi(a,b) = \sum_{j=1}^{n} w_j P_j(a,b) \). The final net outranking flow, \( \Phi_{\text{net}}(a) \), which establishes the absolute ranking order (higher flow is superior), is derived from the balance of positive flow (dominance over others) and negative flow (subjugation to others):
+\begin{equation}
+    \Phi_{\text{net}}(a) = \frac{1}{m - 1} \sum_{b \neq a} \Big( \pi(a,b) - \pi(b,a) \Big)
+\end{equation}
 
 \subsubsection{COPRAS}
 \label{subsubsec:copras}
-% ----------------------------------------------------------------
-% PLACEHOLDER — Zavadskas et al. (1994). S+, S-, Q formula.
-% ----------------------------------------------------------------
-\textit{[Content placeholder.]}
+The Complex Proportional Assessment (\COPRAS) algorithm evaluates alternatives by analytically computing the ratio of their performance concerning benefit criteria to their performance regarding cost criteria. This method is distinct because it evaluates both vectors simultaneously to ascertain multidimensional proportional utility \citep{Zavadskas1994}. For a mutually exclusive partition of benefit attributes (\( \mathcal{B} \)) and cost attributes (\( \mathcal{C} \)), the weighted sums bounding the alternative's efficacy and risk are:
+\begin{equation}
+    S_i^+ = \sum_{j \in \mathcal{B}} w_j \tilde{x}_{ij}, \quad S_i^- = \sum_{j \in \mathcal{C}} w_j \tilde{x}_{ij}
+\end{equation}
+
+The relative significance index, \( Q_i \), accommodates the inverse scaling of cost variables by embedding them in the harmonic sum proportion:
+\begin{equation}
+    Q_i = S_i^+ + \frac{\sum_{k=1}^{m} S_k^-}{S_i^- \sum_{k=1}^{m} \frac{1}{S_k^-}}
+\end{equation}
+Because the \PAPI framework strictly comprises benefit-oriented sub-criteria (\( \mathcal{C} = \emptyset \)), the penalization term inherently collapses, reducing the analytical formulation to \( Q_i = S_i^+ \). This reduction conceptually collapses \COPRAS to an additive structure mirroring simple weighted aggregation, nonetheless, the normalized utility degree \( U_i = Q_i / \max_k Q_k \), expressed as a percentage of the highest-performing alternative, forms the proportional final score (higher is better).
 
 \subsubsection{EDAS}
 \label{subsubsec:edas}
-% ----------------------------------------------------------------
-% PLACEHOLDER — Keshavarz Ghorabaee et al. (2015). PDA, NDA, AS formula.
-% ----------------------------------------------------------------
-\textit{[Content placeholder.]}
+The Evaluation Based on Distance from Average Solution (\EDAS) introduces a paradigm shift by appraising alternatives based on their deviations from the cross-sectional mean performance, rather than evaluating them relative to theoretical extremum ideals (as in \TOPSIS or \VIKOR) \citep{Keshavarz2015}. This average-centric approach offers robust differentiation particularly when performance scores are highly clustered, as it penalizes underperformance while rewarding outperformance symmetrically around the true sample state.
 
-\subsubsection{Simple Additive Weighting (SAW)}
-\label{subsubsec:saw}
-% ----------------------------------------------------------------
-% PLACEHOLDER — Fishburn (1967). Score_i = sum_j w_j * r_{ij}.
-% ----------------------------------------------------------------
-\textit{[Content placeholder.]}
+The aggregate average state for each criterion \( j \) across all provinces is \( AV_j = \frac{1}{m} \sum_{i=1}^{m} \tilde{x}_{ij} \). The Positive Distance from Average (\( \text{PDA} \)) and Negative Distance from Average (\( \text{NDA} \)) for benefit criteria are normalized scales of deviation:
+\begin{equation}
+    \text{PDA}_{ij} = \frac{\max(0, \tilde{x}_{ij} - AV_j)}{AV_j}, \quad 
+    \text{NDA}_{ij} = \frac{\max(0, AV_j - \tilde{x}_{ij})}{AV_j}
+\end{equation}
 
+The weighted sums of these positive and negative distance deviations (\( SP_i \) and \( SN_i \)) provide the magnitude of overall excellence and deficiency:
+\begin{equation}
+    SP_i = \sum_{j=1}^{n} w_j \text{PDA}_{ij}, \quad SN_i = \sum_{j=1}^{n} w_j \text{NDA}_{ij}
+\end{equation}
+
+Finally, these measures are structurally normalized cross-sectionally to bound the final Appraisal Score (\( AS_i \)):
+\begin{equation}
+    AS_i = \frac{1}{2} \left[ \frac{SP_i}{\max_k SP_k} + \left( 1 - \frac{SN_i}{\max_k SN_k} \right) \right]
+\end{equation}
+where \( AS_i \in [0,1] \) acts as the definitive composite index of relative efficacy, effectively balancing outperformance rewards against underperformance penalties.
+
+\subsubsection{Comparative Analysis of MCDM Methodologies}
+
+The five selected methods embody fundamentally distinct philosophical paradigms for aggregating multidimensional performance. A comprehensive comparison elucidates their respective strengths and applicability domains:
+
+\begin{table}[!ht]
+\centering
+\caption{Comparative classification of MCDM methods}
+\label{tab:mcdm_comparison}
+\small
+\begin{tabular}{c c c c c}
+\toprule
+\textbf{Method} & \textbf{Paradigm} & \textbf{Norm} & \textbf{Compensatory} & \textbf{Ideal Construct} \\
+\midrule
+\TOPSIS & Distance-based & $L_2$ (Euclidean) & Fully & Extremum (min/max) \\
+\VIKOR & Compromise & $L_1 + L_\infty$ & Moderate & Extremum (min/max) \\
+\textsc{promethee~ii} & Outranking & Pairwise & Partial & Pairwise preference \\
+\COPRAS & Proportional & Ratio & Fully & Proportional sum \\
+\EDAS & Average-distance & $L_\infty$ & Moderate & Mean performance \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Compensatory vs.\ Non-Compensatory Trade-offs:} A critical distinction among MCDM methods concerns whether poor performance in one criterion can be fully offset by exceptional performance in another. \TOPSIS and \COPRAS are fully compensatory: mathematically, a province with extremely high performance in half the criteria but zero performance in the remainder remains viable for high ranking. \textsc{promethee~ii}, by contrast, enforces bounded indifference thresholds, making it partially non-compensatory—poor performance in any single criterion cannot be entirely masked. \VIKOR and \EDAS occupy intermediate territory through their norm-mixing strategies (combining $L_1$ and $L_\infty$ distances), penalizing extreme deviations while permitting some cross-criterion compensation. For governance assessment, this spectrum reflects nuanced policy priorities: full compensation suits scenarios where diverse governance strengths genuinely substitute for one another; non-compensation better reflects situations where all dimensions are essential minima (e.g., corruption control).
+
+\textbf{Sensitivity to Extreme Values and Outliers:} The choice of distance norm directly determines sensitivity to outlier provinces. The $L_2$ norm (Euclidean, used by \TOPSIS) is highly sensitive to large deviations—a province at extreme distance from the ideal disproportionately influences distances of all peers. The $L_1$ norm (Manhattan, used in \VIKOR's utility measure) and $L_\infty$ norm (Chebyshev, maximum deviation) are more robust: \VIKOR's regret measure ($R_i$) focuses only on the single-worst-performing criterion, inherently down-weighting balanced mediocrity. \EDAS's normalization by sample mean similarly constrains sensitivity to global scale distortions, making it particularly robust when provincial governance performance clusters tightly (as is common in single-country datasets where institutional frameworks are broadly similar).
+
+\textbf{Ideological Reference Points:} All five methods must implicitly or explicitly define what constitutes an ''ideal'' province. \TOPSIS and \VIKOR employ empirical ideals: the best-observed performance in each criterion becomes the aspirational target. This reflects a revealed-preference philosophy: if no province has achieved a performance level, we do not demand it. Conversely, \EDAS anchors to the cross-sectional mean, treating the typical province as the reference point. This mean-centric approach is philosophically distinct—it rewards deviation from the norm rather than approximation to excellence, suitable for detecting emerging leaders or persistent laggards. \COPRAS's proportional framework is agnostic to absolute ideals, instead evaluating the ratio of aggregated strengths to aggregated weaknesses. \textsc{promethee~ii}'s pairwise framework transcends the need for a global ideal entirely, instead establishing a relational ranking solely based on pairwise preference magnitudes.
+
+\subsubsection{Consensus and Ranking Stability}
+
+A fundamental methodological strength of our multi-method ensemble is the emergent agreement structure among algorithmically distinct approaches. We quantify inter-method consensus using \textbf{Kendall's $W$ concordance coefficient} \citep{Kendall1948}:
+
+\begin{equation}
+\label{eq:kendall_w}
+W = \frac{12 S}{m^2 (k^3 - k)}
+\end{equation}
+
+where $S = \sum_{i=1}^{m} \left( \sum_{j=1}^{k} r_{ij} - \frac{k(m+1)}{2} \right)^2$, $m$ is the number of provinces, $k$ is the number of methods (here, $k = 5$), and $r_{ij}$ is the rank of province $i$ under method $j$. $W \in [0, 1]$ measures concordance: $W \to 1$ indicates that all methods produce identical rankings; $W \to 0$ indicates statistical independence. For governance indexing, high $W$ (e.g., $W > 0.85$) provides confidence that the composite index reflects genuine provincial differences rather than methodological artifacts.
+
+Our hypothesis is that $W > 0.80$ across all years, indicating that despite fundamental algorithmic differences, the five MCDM methods converge on a robust consensus ranking. This convergence simultaneously testifies to the stability of underlying provincial governance trajectories and guards against idiosyncratic algorithmic biases. Any province with dramatically different rankings across methods signals ambiguous governance status—potentially masking internal heterogeneity (e.g., some dimensions strong, others weak) worthy of policy investigation.
 
 \subsection{Temporal Feature Engineering}
 \label{subsec:features}
@@ -1172,154 +1262,6 @@ The two-level framework yields interpretable results: High-variance, uncorrelate
 %  REFERENCES
 % =============================================================
 
-\bibliography{references}
-
-% INLINE BIBLIOGRAPHY — replace with BibTeX file or use \begin{thebibliography}
-% The entries below are provided as a reference list for the BibTeX file.
-% Create references.bib in the same directory with the entries listed below.
-
-\begin{thebibliography}{99}
-
-\bibitem[Acemoglu and Robinson(2005)]{Acemoglu2005}
-Acemoglu, D., \& Robinson, J.~A. (2005).
-\textit{Economic Origins of Dictatorship and Democracy}.
-Cambridge University Press.
-
-\bibitem[Angelopoulos and Bates(2022)]{Angelopoulos2022}
-Angelopoulos, A.~N., \& Bates, S. (2022).
-A gentle introduction to conformal prediction and
-distribution-free uncertainty quantification.
-\textit{arXiv preprint}, arXiv:2107.07511v7.
-
-\bibitem[Brans and Vincke(1985)]{Brans1985}
-Brans, J.~P., \& Vincke, P. (1985).
-A preference ranking organization method (PROMETHEE).
-\textit{Management Science}, 31(6), 647--656.
-
-\bibitem[CECODES et al.(2024)]{PAPI2024}
-CECODES, VFF-CRT, RTA, \& UNDP. (2024).
-\textit{The 2024 Viet Nam Governance and Public Administration Performance Index
-(PAPI): Measuring Citizens' Experiences}.
-United Nations Development Programme, Ha Noi, Viet Nam.
-
-\bibitem[Diakoulaki et al.(1995)]{Diakoulaki1995}
-Diakoulaki, D., Mavrotas, G., \& Papayannakis, L. (1995).
-Determining objective weights in multiple criteria problems:
-The CRITIC method.
-\textit{Computers \& Operations Research}, 22(7), 763--770.
-
-\bibitem[Fishburn(1967)]{Fishburn1967}
-Fishburn, P.~C. (1967).
-Additive utilities with incomplete product sets:
-Application to priorities and assignments.
-\textit{Operations Research}, 15(3), 537--542.
-
-\bibitem[Greco et al.(2019)]{Greco2019}
-Greco, S., Ishizaka, A., Tasiou, M., \& Torrisi, G. (2019).
-On the methodological framework of composite indices: A review
-of the issues of weighting, aggregation, and robustness.
-\textit{Social Indicators Research}, 141(1), 61--94.
-
-\bibitem[Hwang and Yoon(1981)]{Hwang1981}
-Hwang, C.~L., \& Yoon, K. (1981).
-\textit{Multiple Attribute Decision Making: Methods and Applications}.
-Springer-Verlag, Berlin.
-
-\bibitem[Kaufmann et al.(2010)]{Kaufmann2010}
-Kaufmann, D., Kraay, A., \& Mastruzzi, M. (2010).
-The worldwide governance indicators: Methodology and analytical issues.
-\textit{Hague Journal for the Rule of Law}, 3(2), 220--246.
-
-\bibitem[Keshavarz~Ghorabaee et al.(2015)]{Keshavarz2015}
-Keshavarz~Ghorabaee, M., Zavadskas, E.~K., Olfat, L., \& Turskis, Z. (2015).
-Multi-criteria inventory classification using a new method of evaluation
-based on distance from average solution (EDAS).
-\textit{Informatica}, 26(3), 435--451.
-
-\bibitem[Malesky(2014)]{Malesky2014}
-Malesky, E.~J. (2014).
-Rethinking the relationship between subnational government and economic
-performance: Evidence from Vietnam.
-\textit{Journal of East Asian Studies}, 14(3), 399--452.
-
-\bibitem[Nguyen et al.(2020)]{Nguyen2020}
-Nguyen, H.~T., Pham, T.~H., \& Vu, T.~A. (2020).
-Decentralisation, governance quality, and economic growth in Vietnam:
-A provincial-level panel study.
-\textit{Journal of Development Economics}, 144, 102436.
-
-\bibitem[Opricovic and Tzeng(2004)]{Opricovic2004}
-Opricovic, S., \& Tzeng, G.~H. (2004).
-Compromise solution by MCDM methods: A comparative analysis of
-VIKOR and TOPSIS.
-\textit{European Journal of Operational Research}, 156(2), 445--455.
-
-\bibitem[Prokhorenkova et al.(2018)]{Prokhorenkova2018}
-Prokhorenkova, L., Gusev, G., Vorobev, A., Dorogush, A.~V., \& Gulin, A. (2018).
-CatBoost: Unbiased boosting with categorical features.
-\textit{Advances in Neural Information Processing Systems}, 31.
-
-\bibitem[van~der~Laan et al.(2007)]{vanderLaan2007}
-van~der~Laan, M.~J., Polley, E.~C., \& Hubbard, A.~E. (2007).
-Super learner.
-\textit{Statistical Applications in Genetics and Molecular Biology}, 6(1),
-Article~25.
-
-\bibitem[Vovk et al.(2005)]{Vovk2005}
-Vovk, V., Gammerman, A., \& Shafer, G. (2005).
-\textit{Algorithmic Learning in a Random World}.
-Springer, New York.
-
-\bibitem[Yang and Xu(2002)]{Yang2002}
-Yang, J.~B., \& Xu, D.~L. (2002).
-On the evidential reasoning algorithm for multiple attribute decision analysis
-under uncertainty.
-\textit{IEEE Transactions on Systems, Man, and Cybernetics---Part~A:
-Systems and Humans}, 32(3), 289--304.
-
-\bibitem[Zavadskas et al.(1994)]{Zavadskas1994}
-Zavadskas, E.~K., Kaklauskas, A., \& Sarka, V. (1994).
-The new method of multicriteria complex proportional assessment of projects.
-\textit{Technological and Economic Development of Economy}, 1(3), 131--139.
-
-\bibitem[Doove et al.(2014)]{Doove2014}
-Doove, L.~L., van Buuren, S., \& Dusseldorp, E. (2014).
-Recursive partitioning for missing data imputation in the presence of
-non-linear relations.
-\textit{Computational Statistics \& Data Analysis}, 72, 92--104.
-
-\bibitem[Little(1988)]{Little1988}
-Little, R.~J.~A. (1988).
-A test of missing completely at random for multivariate data with missing values.
-\textit{Journal of the American Statistical Association}, 83(404), 1198--1202.
-
-\bibitem[Rubin(1987)]{Rubin1987}
-Rubin, D.~B. (1987).
-\textit{Multiple Imputation for Nonresponse in Surveys}.
-Wiley, New York.
-
-\bibitem[Scikit-learn Developers(2023)]{scikit-learn}
-Scikit-learn Developers (2023).
-Scikit-learn: Machine learning in Python.
-\textit{Journal of Machine Learning Research}, 12, 2825--2830.
-
-\bibitem[Sterne et al.(2009)]{Sterne2009}
-Sterne, J.~A.~C., White, I.~R., Carlin, J.~B., Spratt, M., Royston, P.,
-Kenward, M.~G., Wood, A.~M., \& Carpenter, J.~R. (2009).
-Multiple imputation for missing data in epidemiological and clinical research:
-Potential and pitfalls.
-\textit{BMJ}, 338, b2393.
-
-\bibitem[van Buuren and Groothuis-Oudshoorn(2011)]{vanBuuren2011}
-van Buuren, S., \& Groothuis-Oudshoorn, K. (2011).
-\texttt{mice}: A package for creating multiple imputations by chained equations.
-\textit{Journal of Statistical Software}, 45(3), 1--67.
-
-\bibitem[van Buuren(2018)]{vanBuuren2018}
-van Buuren, S. (2018).
-\textit{Flexible Imputation of Missing Data} (2nd ed.).
-Chapman and Hall/CRC, Boca Raton, FL.
-
-\end{thebibliography}
+\bibliography{main}
 
 \end{document}

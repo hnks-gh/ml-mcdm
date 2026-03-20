@@ -36,30 +36,31 @@
 \contentsline {subsubsection}{\numberline {2.3.7}Temporal Stability Verification}{17}{subsubsection.2.3.7}%
 \contentsline {subsubsection}{\numberline {2.3.8}Interpretation of Two-Level CRITIC Results}{17}{subsubsection.2.3.8}%
 \contentsline {subsection}{\numberline {2.4}MCDM Ranking Methods}{17}{subsection.2.4}%
-\contentsline {subsubsection}{\numberline {2.4.1}TOPSIS}{17}{subsubsection.2.4.1}%
-\contentsline {subsubsection}{\numberline {2.4.2}VIKOR}{18}{subsubsection.2.4.2}%
-\contentsline {subsubsection}{\numberline {2.4.3}PROMETHEE II}{18}{subsubsection.2.4.3}%
-\contentsline {subsubsection}{\numberline {2.4.4}COPRAS}{18}{subsubsection.2.4.4}%
-\contentsline {subsubsection}{\numberline {2.4.5}EDAS}{18}{subsubsection.2.4.5}%
-\contentsline {subsubsection}{\numberline {2.4.6}Simple Additive Weighting (SAW)}{18}{subsubsection.2.4.6}%
-\contentsline {subsection}{\numberline {2.5}Temporal Feature Engineering}{18}{subsection.2.5}%
-\contentsline {subsection}{\numberline {2.6}Base Forecasting Models}{18}{subsection.2.6}%
-\contentsline {subsection}{\numberline {2.7}Super Learner Meta-Ensemble}{18}{subsection.2.7}%
-\contentsline {subsection}{\numberline {2.8}Conformal Prediction Intervals}{18}{subsection.2.8}%
-\contentsline {subsection}{\numberline {2.9}Evaluation Metrics and Validation}{18}{subsection.2.9}%
-\contentsline {section}{\numberline {3}Results}{19}{section.3}%
-\contentsline {subsection}{\numberline {3.1}CRITIC Criterion Weights and Temporal Stability}{19}{subsection.3.1}%
-\contentsline {subsection}{\numberline {3.2}Historical Provincial Rankings (2011--2024)}{19}{subsection.3.2}%
-\contentsline {subsection}{\numberline {3.3}Inter-Method Concordance and Robustness}{19}{subsection.3.3}%
-\contentsline {subsection}{\numberline {3.4}Forecasting Model Performance}{19}{subsection.3.4}%
-\contentsline {subsection}{\numberline {3.5}2025 Provincial Governance Forecasts and Prediction Intervals}{19}{subsection.3.5}%
-\contentsline {subsection}{\numberline {3.6}Integrated MCDM Ranking of 2025 Forecasts}{19}{subsection.3.6}%
-\contentsline {section}{\numberline {4}Discussion}{19}{section.4}%
-\contentsline {subsection}{\numberline {4.1}Interpretation of CRITIC Weights}{19}{subsection.4.1}%
-\contentsline {subsection}{\numberline {4.2}MCDM Method Convergence and Governance Interpretation}{19}{subsection.4.2}%
-\contentsline {subsection}{\numberline {4.3}Forecasting Performance in Small-Panel Contexts}{19}{subsection.4.3}%
-\contentsline {subsection}{\numberline {4.4}Conformal Prediction Interval Quality}{20}{subsection.4.4}%
-\contentsline {subsection}{\numberline {4.5}Policy Implications for Vietnam's Governance Reform}{20}{subsection.4.5}%
-\contentsline {subsection}{\numberline {4.6}Comparison with Related Approaches}{20}{subsection.4.6}%
-\contentsline {subsection}{\numberline {4.7}Limitations}{20}{subsection.4.7}%
-\contentsline {section}{\numberline {5}Conclusion}{20}{section.5}%
+\contentsline {subsubsection}{\numberline {2.4.1}TOPSIS}{18}{subsubsection.2.4.1}%
+\contentsline {subsubsection}{\numberline {2.4.2}VIKOR}{19}{subsubsection.2.4.2}%
+\contentsline {subsubsection}{\numberline {2.4.3}PROMETHEE II}{19}{subsubsection.2.4.3}%
+\contentsline {subsubsection}{\numberline {2.4.4}COPRAS}{20}{subsubsection.2.4.4}%
+\contentsline {subsubsection}{\numberline {2.4.5}EDAS}{21}{subsubsection.2.4.5}%
+\contentsline {subsubsection}{\numberline {2.4.6}Comparative Analysis of MCDM Methodologies}{21}{subsubsection.2.4.6}%
+\contentsline {subsubsection}{\numberline {2.4.7}Consensus and Ranking Stability}{22}{subsubsection.2.4.7}%
+\contentsline {subsection}{\numberline {2.5}Temporal Feature Engineering}{23}{subsection.2.5}%
+\contentsline {subsection}{\numberline {2.6}Base Forecasting Models}{23}{subsection.2.6}%
+\contentsline {subsection}{\numberline {2.7}Super Learner Meta-Ensemble}{23}{subsection.2.7}%
+\contentsline {subsection}{\numberline {2.8}Conformal Prediction Intervals}{23}{subsection.2.8}%
+\contentsline {subsection}{\numberline {2.9}Evaluation Metrics and Validation}{23}{subsection.2.9}%
+\contentsline {section}{\numberline {3}Results}{24}{section.3}%
+\contentsline {subsection}{\numberline {3.1}CRITIC Criterion Weights and Temporal Stability}{24}{subsection.3.1}%
+\contentsline {subsection}{\numberline {3.2}Historical Provincial Rankings (2011--2024)}{24}{subsection.3.2}%
+\contentsline {subsection}{\numberline {3.3}Inter-Method Concordance and Robustness}{24}{subsection.3.3}%
+\contentsline {subsection}{\numberline {3.4}Forecasting Model Performance}{24}{subsection.3.4}%
+\contentsline {subsection}{\numberline {3.5}2025 Provincial Governance Forecasts and Prediction Intervals}{24}{subsection.3.5}%
+\contentsline {subsection}{\numberline {3.6}Integrated MCDM Ranking of 2025 Forecasts}{24}{subsection.3.6}%
+\contentsline {section}{\numberline {4}Discussion}{24}{section.4}%
+\contentsline {subsection}{\numberline {4.1}Interpretation of CRITIC Weights}{24}{subsection.4.1}%
+\contentsline {subsection}{\numberline {4.2}MCDM Method Convergence and Governance Interpretation}{24}{subsection.4.2}%
+\contentsline {subsection}{\numberline {4.3}Forecasting Performance in Small-Panel Contexts}{24}{subsection.4.3}%
+\contentsline {subsection}{\numberline {4.4}Conformal Prediction Interval Quality}{25}{subsection.4.4}%
+\contentsline {subsection}{\numberline {4.5}Policy Implications for Vietnam's Governance Reform}{25}{subsection.4.5}%
+\contentsline {subsection}{\numberline {4.6}Comparison with Related Approaches}{25}{subsection.4.6}%
+\contentsline {subsection}{\numberline {4.7}Limitations}{25}{subsection.4.7}%
+\contentsline {section}{\numberline {5}Conclusion}{25}{section.5}%
