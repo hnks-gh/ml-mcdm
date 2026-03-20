@@ -1485,7 +1485,7 @@ def _build_ml_year_contexts(
 ) -> dict:
     """Rebuild YearContext objects from an already-imputed subcriteria panel.
 
-    After three-stage temporal imputation every cell should be non-NaN, so
+    After MICE imputation every cell should be non-NaN, so
     the returned YearContexts reflect the clean imputed availability rather
     than the original observed sparsity.  The logic mirrors
     ``DataLoader._create_hierarchical_views()`` exactly so the ML path sees
@@ -1498,7 +1498,7 @@ def _build_ml_year_contexts(
     Parameters
     ----------
     imputed_cs : dict of {int: pd.DataFrame}
-        Province-indexed subcriteria cross-sections after imputation.
+        Province-indexed subcriteria cross-sections after MICE imputation.
     hierarchy :
         ``HierarchyMapping`` from the original ``PanelData``.
     YearContext_cls :
@@ -1575,24 +1575,25 @@ def _build_ml_year_contexts(
 
 
 def build_ml_panel_data(panel_data, max_linear_gap: int = 2):
-    """Build a copy of *panel_data* for the ML forecasting phase.
+    """Build a copy of *panel_data* for the ML forecasting phase with MICE imputation.
 
     The MCDM weighting and ranking phases deliberately use the raw observed
     data (complete-case strategy, no imputation) to avoid introducing synthetic
-    values into MCDM decision matrices.  The ML forecasting phase receives
-    a consistent panel view with rebuilt derived attributes.
+    values into MCDM decision matrices. The ML forecasting phase receives
+    a completely imputed panel view via MICE (Multivariate Imputation by 
+    Chained Equations) with rebuilt derived attributes.
 
     This function creates a new :class:`~data.data_loader.PanelData` object
-    with subcriteria cross-sections as-is (no imputation). Imputation via
-    MICE occurs downstream in the forecasting feature engineering pipeline
-    (see :func:`~forecasting.features.fill_missing_features`).
+    with **MICE-imputed** subcriteria cross-sections using ExtraTreesRegressor
+    to learn multivariate feature correlations across all years. All NaN values
+    in the subcriteria matrices are filled before downstream feature engineering.
 
     All derived views (criteria, final scores) and the per-year
-    ``year_contexts`` are rebuilt from the raw subcriteria so the ML
+    ``year_contexts`` are rebuilt from the imputed subcriteria so the ML
     feature engineer sees consistent active-province sets.
 
     The original *panel_data* is **never modified** — a deep copy of every
-    cross-section DataFrame is made before processing.
+    cross-section DataFrame is made and imputed before processing.
 
     Parameters
     ----------
@@ -1604,9 +1605,9 @@ def build_ml_panel_data(panel_data, max_linear_gap: int = 2):
     Returns
     -------
     PanelData
-        A new PanelData with raw (unimputed) subcriteria and rebuilt derived
-        views.  Passes to ``UnifiedForecaster.fit_predict()`` in place of
-        the original panel_data.
+        A new PanelData with MICE-imputed subcriteria and rebuilt derived
+        views. Passes to ``UnifiedForecaster.fit_predict()`` in place of
+        the original panel_data. All NaN cells filled.
     """
     # Late import to avoid circular dependency at module level:
     # data/missing_data.py does not import from data/data_loader.py at the
@@ -1622,6 +1623,65 @@ def build_ml_panel_data(panel_data, max_linear_gap: int = 2):
         yr: df.copy()
         for yr, df in panel_data.subcriteria_cross_section.items()
     }
+
+    # ------------------------------------------------------------------
+    # 1b. APPLY MICE IMPUTATION (Phase B+: MICE-only strategy)
+    # ------------------------------------------------------------------
+    # Concatenate all years to learn cross-temporal correlations via MICE
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    nan_before = sum(df.isna().sum().sum() for df in imputed_cs.values())
+    if nan_before > 0:
+        logger.info(f"[MICE IMPUTATION] Starting: {nan_before:,} NaN cells across all years")
+        
+        # Concatenate all years with year tracking
+        combined_frames = []
+        for yr in sorted(imputed_cs.keys()):
+            df = imputed_cs[yr].copy()
+            df['_Year_'] = yr  # Track original year for later splitting
+            combined_frames.append(df)
+        combined_data = pd.concat(combined_frames, ignore_index=False)
+        
+        # Extract year column and preserve index
+        year_col = combined_data.pop('_Year_')
+        year_col.name = '_Year_'
+        
+        # Apply MICE imputation to numeric columns only
+        from sklearn.experimental import enable_iterative_imputer
+        from sklearn.impute import IterativeImputer
+        from sklearn.ensemble import ExtraTreesRegressor
+        
+        numeric_cols = combined_data.select_dtypes(include=[np.number]).columns.tolist()
+        if numeric_cols:
+            imputer = IterativeImputer(
+                estimator=ExtraTreesRegressor(
+                    n_estimators=100,
+                    random_state=42,
+                    max_depth=6,
+                    min_samples_leaf=3
+                ),
+                max_iter=20,
+                verbose=0,
+                random_state=42
+            )
+            
+            combined_data[numeric_cols] = pd.DataFrame(
+                imputer.fit_transform(combined_data[numeric_cols]),
+                index=combined_data.index,
+                columns=numeric_cols
+            )
+        
+        # Split back by year
+        imputed_cs = {}
+        for yr in sorted(panel_data.subcriteria_cross_section.keys()):
+            yr_mask = year_col == yr
+            imputed_cs[yr] = combined_data[yr_mask].copy()
+        
+        nan_after = sum(df.isna().sum().sum() for df in imputed_cs.values())
+        logger.info(f"[MICE IMPUTATION] Complete: {nan_before:,} → {nan_after:,} NaN cells")
+        if nan_after > 0:
+            logger.warning(f"[MICE WARNING] {nan_after} NaN cells remaining after MICE")
 
     # ------------------------------------------------------------------
     # 2. Rebuild subcriteria_long from imputed cross-sections

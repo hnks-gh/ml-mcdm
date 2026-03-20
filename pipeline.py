@@ -730,7 +730,7 @@ class MLMCDMPipeline:
         1. No NaN in imputed subcriteria cross-sections
         2. All 28 sub-criteria present in every year
         3. All 63 provinces present (if they had any historical data)
-        4. Three-stage imputation reduced NaN by >99%
+        4. MICE imputation fills all missing subcriteria (Phase B+)
 
         Parameters
         ----------
@@ -777,7 +777,7 @@ class MLMCDMPipeline:
         
         assert not nan_found, (
             f"[CRITICAL] Imputed panel contains {sum(nan_per_year.values())} NaN cells. "
-            "Three-stage imputation failed. Check build_ml_panel_data() logic."
+            "MICE imputation failed. Check build_ml_panel_data() MICE logic."
         )
         self.logger.info("    ✓ No NaN cells found in imputed subcriteria (all 2011-2024 years)")
 
@@ -861,7 +861,7 @@ class MLMCDMPipeline:
         nan_reduction = original_nan_count - imputed_nan_count if original_nan_count > 0 else 0
         nan_reduction_pct = 100.0 * nan_reduction / original_nan_count if original_nan_count > 0 else 0.0
         
-        self.logger.info(f"\n[IMPUTATION SUMMARY] Three-stage temporal imputation complete:")
+        self.logger.info(f"\n[IMPUTATION SUMMARY] MICE imputation complete:")
         self.logger.info(f"  Original panel:")
         self.logger.info(f"    NaN cells: {original_nan_count:,}/{original_total_cells:,} ({100*original_nan_count/original_total_cells:.1f}%)")
         self.logger.info(f"  Imputed panel:")
@@ -912,7 +912,7 @@ class MLMCDMPipeline:
         This method now performs comprehensive end-to-end forecasting for 2025:
 
         1. **Data Imputation** (Step 5, Phase 2)
-           - Applies three-stage temporal imputation to 2011–2024 training panel
+           - Applies MICE imputation to 2011–2024 training panel
            - Outputs fully NaN-free subcriteria cross-sections
            - Validates all 28 SCs present (SC52 excluded), all 63 provinces active
 
@@ -1023,11 +1023,12 @@ class MLMCDMPipeline:
             for sc in sorted(nan_per_sc.keys(), key=lambda x: nan_per_sc[x], reverse=True)[:10]:
                 self.logger.info(f"    {sc}: {nan_per_sc[sc]:,} cells")
 
-        # Apply three-stage temporal imputation
-        self.logger.info("\n[IMPUTATION] Applying three-stage temporal imputation:")
-        self.logger.info("  Stage 1: Linear interpolation (≤2 year gaps)")
-        self.logger.info("  Stage 2: Forward/backward fill (boundary gaps)")
-        self.logger.info("  Stage 3: Cross-sectional median (final fallback)")
+        # Apply MICE imputation (Phase B+ unified strategy)
+        self.logger.info("\n[IMPUTATION] Applying MICE imputation:")
+        self.logger.info("  Method: Multivariate Imputation by Chained Equations")
+        self.logger.info("  Estimator: ExtraTreesRegressor (learns feature correlations)")
+        self.logger.info("  Iterations: 20 (convergence)")
+        self.logger.info("  Target: Fill all missing subcriteria values")
         
         ml_panel_data = build_ml_panel_data(panel_data)
         
