@@ -45,10 +45,12 @@ References
 import numpy as np
 from typing import List, Literal, Optional, Union
 import logging
+import warnings
 
 from sklearn.cross_decomposition import PLSRegression
 from sklearn.decomposition import PCA
 from sklearn.ensemble import RandomForestRegressor, ExtraTreesRegressor
+from sklearn.exceptions import ConvergenceWarning
 from sklearn.experimental import enable_iterative_imputer  # noqa: F401 — required before IterativeImputer
 from sklearn.feature_selection import SelectKBest, VarianceThreshold, mutual_info_regression
 from sklearn.impute import IterativeImputer
@@ -251,7 +253,13 @@ class PanelFeatureReducer:
                     tol=1e-3,
                     imputation_order='roman'
                 )
-                X_var = self._mice_imputer.fit_transform(X_var)
+                with warnings.catch_warnings():
+                    warnings.filterwarnings(
+                        "ignore",
+                        message=r"\[IterativeImputer\] Early stopping criterion not reached\.",
+                        category=ConvergenceWarning,
+                    )
+                    X_var = self._mice_imputer.fit_transform(X_var)
                 self._mice_fitted = True
                 
                 logger.info(

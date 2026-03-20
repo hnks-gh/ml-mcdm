@@ -37,8 +37,10 @@ Imputation by Chained Equations in R. Journal of Statistical Software, 45(3).
 
 import numpy as np
 import pandas as pd
+import warnings
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass, field
+from sklearn.exceptions import ConvergenceWarning
 from sklearn.experimental import enable_iterative_imputer  # noqa: F401
 from sklearn.impute import IterativeImputer
 from sklearn.ensemble import ExtraTreesRegressor
@@ -219,7 +221,13 @@ class MultipleImputationForecaster:
             
             # Impute features
             if has_nan_features:
-                X_imputed = imputer_X.fit_transform(X)
+                with warnings.catch_warnings():
+                    warnings.filterwarnings(
+                        "ignore",
+                        message=r"\[IterativeImputer\] Early stopping criterion not reached\.",
+                        category=ConvergenceWarning,
+                    )
+                    X_imputed = imputer_X.fit_transform(X)
                 self.imputers_.append(imputer_X)
                 if self.verbose:
                     n_missing = np.isnan(X).sum()
@@ -231,7 +239,13 @@ class MultipleImputationForecaster:
             # Impute targets if requested
             if impute_targets and has_nan_targets:
                 imputer_y = self._create_mice_imputer(seed_m + 1)
-                y_imputed = imputer_y.fit_transform(y)
+                with warnings.catch_warnings():
+                    warnings.filterwarnings(
+                        "ignore",
+                        message=r"\[IterativeImputer\] Early stopping criterion not reached\.",
+                        category=ConvergenceWarning,
+                    )
+                    y_imputed = imputer_y.fit_transform(y)
                 if self.verbose:
                     n_missing_y = np.isnan(y).sum()
                     print(f"  Imputed {n_missing_y} target NaNs")

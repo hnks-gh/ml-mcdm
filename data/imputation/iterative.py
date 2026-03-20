@@ -1,6 +1,8 @@
 from typing import Any, Dict, List, Optional, Tuple, Union, TYPE_CHECKING
+import warnings
 import numpy as np
 import pandas as pd
+from sklearn.exceptions import ConvergenceWarning
 from sklearn.experimental import enable_iterative_imputer
 from sklearn.impute import IterativeImputer
 from sklearn.ensemble import ExtraTreesRegressor, RandomForestRegressor
@@ -52,7 +54,13 @@ class MICEImputer:
             tol=1e-3,
             imputation_order='roman'
         )
-        self.imputer.fit(X)
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message=r"\[IterativeImputer\] Early stopping criterion not reached\.",
+                category=ConvergenceWarning,
+            )
+            self.imputer.fit(X)
         self._is_fitted = True
         
         # Cache training means as fallback for fill_missing_features extension (M-01)

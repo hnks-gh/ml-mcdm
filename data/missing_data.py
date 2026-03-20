@@ -36,9 +36,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple, Union
+import warnings
 
 import numpy as np
 import pandas as pd
+from sklearn.exceptions import ConvergenceWarning
 
 
 # ---------------------------------------------------------------------------
@@ -1665,12 +1667,18 @@ def build_ml_panel_data(panel_data, max_linear_gap: int = 2):
                 verbose=0,
                 random_state=42
             )
-            
-            combined_data[numeric_cols] = pd.DataFrame(
-                imputer.fit_transform(combined_data[numeric_cols]),
-                index=combined_data.index,
-                columns=numeric_cols
-            )
+
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore",
+                    message=r"\[IterativeImputer\] Early stopping criterion not reached\.",
+                    category=ConvergenceWarning,
+                )
+                combined_data[numeric_cols] = pd.DataFrame(
+                    imputer.fit_transform(combined_data[numeric_cols]),
+                    index=combined_data.index,
+                    columns=numeric_cols
+                )
         
         # Split back by year
         imputed_cs = {}
