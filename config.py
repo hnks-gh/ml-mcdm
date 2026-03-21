@@ -391,6 +391,44 @@ class ForecastConfig:
     Minimum 2 required (at least 2 training cohorts before first val year).
     Set equal to ``cv_min_train_years`` to disable the secondary sweep."""
 
+    # ── Phase A: Stage-3 runtime guardrails ──────────────────────────────
+    max_total_stage3_minutes: Optional[float] = None
+    """Hard wall-clock budget for Stage 3 (ensemble fit), in minutes.
+
+    When set to a positive value, the SuperLearner enforces a strict
+    deadline for Stage 3 execution. If the deadline is exceeded during
+    essential stages (primary CV or final refit), fitting raises
+    ``TimeoutError`` and forecasting fails fast instead of appearing hung.
+
+    ``None`` (default) disables the global Stage-3 time budget.
+    Recommended for CPU-constrained Colab sessions: ``90`` to ``180``.
+    """
+
+    max_secondary_conformal_folds: int = 999
+    """Maximum number of folds allowed in the secondary conformal sweep.
+
+    Caps the E-02 extended conformal walk-forward loop. This is an explicit
+    safety bound independent of panel length. Values:
+
+    - ``999`` (default): preserve legacy behavior (effectively bounded by
+        available years).
+    - ``1`` to ``5``: aggressive runtime control for CPU-only environments.
+
+    Used only when ``cv_conformal_min_train_years < cv_min_train_years``.
+    """
+
+    allow_skip_secondary_conformal_when_slow: bool = True
+    """Allow skipping/bailing out of secondary conformal sweep under pressure.
+
+    When True, the optional E-02 secondary conformal stage may be skipped or
+    truncated if the Stage-3 time budget is exhausted. Core training remains
+    intact (primary CV + final refit), preserving model correctness while
+    preventing runaway execution.
+
+    When False, secondary conformal obeys strict completion and can raise on
+    timeout when a Stage-3 budget is configured.
+    """
+
     # ── Phase II SOTA Conformal Enhancements ─────────────────────────────
     # All flags default False / off for full backward compatibility.
     # Enable individually to activate the corresponding SOTA technique.

@@ -71,7 +71,15 @@ class EnsembleHyperparameterOptimizer:
 
             scores = []
             # Manual CV loop to support pruner
-            for fold_idx, (train_idx, val_idx) in enumerate(self.cv_splitter.split(X, y)):
+            # CRITICAL: Use year_labels for yearly-aware CV (e.g. _WalkForwardYearlySplit)
+            # This ensures folds respect temporal panel structure for production validity.
+            # Fallback to y for non-yearly splitters (backward compatibility).
+            if year_labels is not None:
+                fold_iter = self.cv_splitter.split(X, year_labels)
+            else:
+                fold_iter = self.cv_splitter.split(X, y)
+            
+            for fold_idx, (train_idx, val_idx) in enumerate(fold_iter):
                 X_train, y_train = X[train_idx], y[train_idx]
                 X_val, y_val = X[val_idx], y[val_idx]
                 
@@ -113,7 +121,15 @@ class EnsembleHyperparameterOptimizer:
             }
 
             scores = []
-            for fold_idx, (train_idx, val_idx) in enumerate(self.cv_splitter.split(X, y)):
+            # CRITICAL: Use year_labels for yearly-aware CV (e.g. _WalkForwardYearlySplit)
+            # This ensures folds respect temporal panel structure for production validity.
+            # Fallback to y for non-yearly splitters (backward compatibility).
+            if year_labels is not None:
+                fold_iter = self.cv_splitter.split(X, year_labels)
+            else:
+                fold_iter = self.cv_splitter.split(X, y)
+            
+            for fold_idx, (train_idx, val_idx) in enumerate(fold_iter):
                 X_train, y_train = X[train_idx], y[train_idx]
                 X_val, y_val = X[val_idx], y[val_idx]
                 
@@ -155,7 +171,15 @@ class EnsembleHyperparameterOptimizer:
             }
 
             scores = []
-            for fold_idx, (train_idx, val_idx) in enumerate(self.cv_splitter.split(X, y)):
+            # CRITICAL: Use year_labels for yearly-aware CV (e.g. _WalkForwardYearlySplit)
+            # This ensures folds respect temporal panel structure for production validity.
+            # Fallback to y for non-yearly splitters (backward compatibility).
+            if year_labels is not None:
+                fold_iter = self.cv_splitter.split(X, year_labels)
+            else:
+                fold_iter = self.cv_splitter.split(X, y)
+            
+            for fold_idx, (train_idx, val_idx) in enumerate(fold_iter):
                 X_train, y_train = X[train_idx], y[train_idx]
                 X_val, y_val = X[val_idx], y[val_idx]
                 
@@ -197,7 +221,15 @@ class EnsembleHyperparameterOptimizer:
             }
 
             scores = []
-            for fold_idx, (train_idx, val_idx) in enumerate(self.cv_splitter.split(X, y)):
+            # CRITICAL: Use year_labels for yearly-aware CV (e.g. _WalkForwardYearlySplit)
+            # This ensures folds respect temporal panel structure for production validity.
+            # Fallback to y for non-yearly splitters (backward compatibility).
+            if year_labels is not None:
+                fold_iter = self.cv_splitter.split(X, year_labels)
+            else:
+                fold_iter = self.cv_splitter.split(X, y)
+            
+            for fold_idx, (train_idx, val_idx) in enumerate(fold_iter):
                 X_train, y_train = X[train_idx], y[train_idx]
                 X_val, y_val = X[val_idx], y[val_idx]
                 

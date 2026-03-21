@@ -45,6 +45,7 @@ References:
 import numpy as np
 import pandas as pd
 import logging
+import time
 from typing import Dict, List, Optional, Tuple, Any
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.linear_model import ElasticNetCV, RidgeCV, Ridge
@@ -358,6 +359,9 @@ class SuperLearner:
         random_state: int = 42,
         verbose: bool = True,
         meta_group_lasso_lambda: float = 0.0,
+        max_total_stage3_minutes: Optional[float] = None,
+        max_secondary_conformal_folds: int = 999,
+        allow_skip_secondary_conformal_when_slow: bool = True,
     ):
         self.base_models = base_models
         self.meta_learner_type = meta_learner_type
@@ -377,6 +381,14 @@ class SuperLearner:
         # mean, borrowing strength across correlated criteria.
         # '0.0' (default) = fully independent per-output NNLS (backward compat).
         self._meta_group_lasso_lambda: float = float(meta_group_lasso_lambda)
+        self.max_total_stage3_minutes = max_total_stage3_minutes
+        self.max_secondary_conformal_folds = max(1, int(max_secondary_conformal_folds))
+        self.allow_skip_secondary_conformal_when_slow = bool(
+            allow_skip_secondary_conformal_when_slow
+        )
+        self._max_stage3_seconds: Optional[float] = None
+        if max_total_stage3_minutes is not None and float(max_total_stage3_minutes) > 0:
+            self._max_stage3_seconds = float(max_total_stage3_minutes) * 60.0
 
         # Fitted components
         self._fitted_base_models: Dict[str, BaseForecaster] = {}
@@ -416,6 +428,57 @@ class SuperLearner:
         # the primary CV window.  Used by stage5 to widen the conformal
         # calibration set for tighter, more reliable coverage.
         self._oof_conformal_residuals_: Optional[np.ndarray] = None   # (n_total, n_outputs)
+
+        # Phase B item 3: Comprehensive diagnostics telemetry for post-mortem analysis.
+        # Tracks planned vs completed folds, timing, and termination events per stage.
+        self._stage3_diagnostics_: Dict[str, Any] = {
+            'primary_cv': {
+                'planned_folds': 0,
+                'completed_folds': 0,
+                'start_time': None,
+                'end_time': None,
+                'elapsed_seconds': None,
+                'per_fold_times': [],  # list of (fold_idx, elapsed_seconds)
+                'truncated': False,
+                'truncation_reason': None,
+            },
+            'persistence_cv': {
+                'planned_folds': 0,
+                'completed_folds': 0,
+                'start_time': None,
+                'end_time': None,
+                'elapsed_seconds': None,
+                'per_fold_times': [],
+                'truncated': False,
+                'truncation_reason': None,
+            },
+            'secondary_conformal': {
+                'planned_folds': 0,
+                'completed_folds': 0,
+                'start_time': None,
+                'end_time': None,
+                'elapsed_seconds': None,
+                'per_fold_times': [],
+                'truncated': False,
+                'truncation_reason': None,
+            },
+            'meta_learner': {
+                'start_time': None,
+                'end_time': None,
+                'elapsed_seconds': None,
+            },
+            'full_refit': {
+                'start_time': None,
+                'end_time': None,
+                'elapsed_seconds': None,
+            },
+            'stage3_total': {
+                'start_time': None,
+                'end_time': None,
+                'elapsed_seconds': None,
+                'target_budget_seconds': self._max_stage3_seconds,
+            },
+        }
 
         # E-03: Dirichlet stacking weight uncertainty estimates.
         # Shape: {model_name: std_of_weight} — computed via bootstrap
@@ -600,9 +663,38 @@ class SuperLearner:
             f"Super Learner: {n_models} base models, {self.n_cv_folds} CV folds"
         )
 
+        stage3_start = time.perf_counter()
+        stage3_deadline = (
+            stage3_start + self._max_stage3_seconds
+            if self._max_stage3_seconds is not None else None
+        )
+        if stage3_deadline is None:
+            logger.info("Stage 3 guardrail: disabled (no time budget configured).")
+        else:
+            logger.info(
+                "Stage 3 guardrail: max_total_stage3_minutes=%.2f (deadline active).",
+                float(self.max_total_stage3_minutes),
+            )
+
+        def _time_left() -> Optional[float]:
+            if stage3_deadline is None:
+                return None
+            return stage3_deadline - time.perf_counter()
+
+        def _enforce_deadline(stage_name: str) -> None:
+            rem = _time_left()
+            if rem is not None and rem <= 0:
+                raise TimeoutError(
+                    "Stage 3 runtime budget exceeded during "
+                    f"{stage_name}. Increase ForecastConfig.max_total_stage3_minutes "
+                    "or reduce model/CV complexity."
+                )
+
         # ============================================================
         # Stage 1: Generate out-of-fold predictions
         # ============================================================
+        stage1_start = time.perf_counter()
+        logger.info("Stage 3/1: Primary OOF CV started.")
         # Choose splitter based on whether calendar year labels are provided.
         # _WalkForwardYearlySplit validates on exactly one calendar year per
         # fold — matching the production task of predicting year T+1 from
@@ -625,7 +717,17 @@ class SuperLearner:
         self._cv_scores = {name: [] for name in self.base_models}
         self._cv_scores_per_criterion_ = {name: [] for name in self.base_models}
 
-        for fold_idx, (train_idx, val_idx) in enumerate(cv_iter):
+        cv_pairs = list(cv_iter)
+        n_primary_folds = len(cv_pairs)
+        logger.info("Stage 3/1: Planned primary folds = %d.", n_primary_folds)
+
+        # Phase B item 3: Initialize primary CV diagnostics
+        self._stage3_diagnostics_['primary_cv']['planned_folds'] = n_primary_folds
+        self._stage3_diagnostics_['primary_cv']['start_time'] = time.perf_counter()
+
+        for fold_idx, (train_idx, val_idx) in enumerate(cv_pairs):
+            fold_start = time.perf_counter()
+            _enforce_deadline("primary CV")
             y_train_cv, y_val_cv = y[train_idx], y[val_idx]
 
             # ── E-08: fold-level covariate shift detection ─────────────────
@@ -770,6 +872,33 @@ class SuperLearner:
                     logger.warning(f"{name} failed on fold {fold_idx}: {e}")
                     self._cv_scores[name].append(np.nan)
 
+            fold_elapsed = time.perf_counter() - fold_start
+            logger.info(
+                "Stage 3/1: Primary fold %d/%d completed in %.2fs "
+                "(train=%d, val=%d).",
+                fold_idx + 1,
+                n_primary_folds,
+                fold_elapsed,
+                len(train_idx),
+                len(val_idx),
+            )
+            # Phase B item 3: Track per-fold completion
+            self._stage3_diagnostics_['primary_cv']['completed_folds'] += 1
+            self._stage3_diagnostics_['primary_cv']['per_fold_times'].append(
+                {'fold_idx': fold_idx, 'elapsed_seconds': fold_elapsed}
+            )
+
+        logger.info(
+            "Stage 3/1: Primary OOF CV finished in %.2fs.",
+            time.perf_counter() - stage1_start,
+        )
+        # Phase B item 3: Finalize primary CV diagnostics
+        self._stage3_diagnostics_['primary_cv']['end_time'] = time.perf_counter()
+        self._stage3_diagnostics_['primary_cv']['elapsed_seconds'] = (
+            self._stage3_diagnostics_['primary_cv']['end_time'] -
+            self._stage3_diagnostics_['primary_cv']['start_time']
+        )
+
         # Compute OOF R² for each model (per-model valid mask, not joint)
         # CRITICAL: filter NaN from y here — targets preserve NaN for missing
         # governance data (features.py M-04).  Without this filter r2_score
@@ -807,6 +936,9 @@ class SuperLearner:
         if self.verbose:
             logger.info("  Evaluating persistence baseline...")
 
+        stage_persist_start = time.perf_counter()
+        logger.info("Stage 3/1b: Persistence baseline CV started.")
+
         persistence_model = PersistenceForecaster(verbose=False)
         persistence_cv_scores = []
         persistence_oof_preds = np.full((n_samples, self._n_outputs), np.nan)
@@ -822,7 +954,17 @@ class SuperLearner:
             tscv_persist = _PanelTemporalSplit(n_splits=self.n_cv_folds)
             cv_iter_persist = tscv_persist.split(X, entity_indices=entity_indices)
 
-        for fold_idx, (train_idx, val_idx) in enumerate(cv_iter_persist):
+        cv_pairs_persist = list(cv_iter_persist)
+        n_persist_folds = len(cv_pairs_persist)
+        logger.info("Stage 3/1b: Planned persistence folds = %d.", n_persist_folds)
+
+        # Phase B item 3: Initialize persistence CV diagnostics
+        self._stage3_diagnostics_['persistence_cv']['planned_folds'] = n_persist_folds
+        self._stage3_diagnostics_['persistence_cv']['start_time'] = time.perf_counter()
+
+        for fold_idx, (train_idx, val_idx) in enumerate(cv_pairs_persist):
+            fold_start = time.perf_counter()
+            _enforce_deadline("persistence CV")
             y_train_persist = y[train_idx]
             y_val_persist = y[val_idx]
 
@@ -863,6 +1005,22 @@ class SuperLearner:
                 )
                 persistence_cv_scores.append(np.nan)
 
+            fold_elapsed = time.perf_counter() - fold_start
+            logger.info(
+                "Stage 3/1b: Persistence fold %d/%d completed in %.2fs "
+                "(train=%d, val=%d).",
+                fold_idx + 1,
+                n_persist_folds,
+                fold_elapsed,
+                len(train_idx),
+                len(val_idx),
+            )
+            # Phase B item 3: Track per-fold completion for persistence CV
+            self._stage3_diagnostics_['persistence_cv']['completed_folds'] += 1
+            self._stage3_diagnostics_['persistence_cv']['per_fold_times'].append(
+                {'fold_idx': fold_idx, 'elapsed_seconds': fold_elapsed}
+            )
+
         # Store persistence CV scores and OOF predictions
         self._cv_scores['Persistence'] = persistence_cv_scores
         self._cv_scores_per_criterion_['Persistence'] = [
@@ -893,10 +1051,23 @@ class SuperLearner:
                 f"  Persistence baseline CV R²: {pers_mean_r2:.4f} "
                 f"(OOF: {self._oof_r2['Persistence']:.4f})"
             )
+        logger.info(
+            "Stage 3/1b: Persistence baseline CV finished in %.2fs.",
+            time.perf_counter() - stage_persist_start,
+        )
+        # Phase B item 3: Finalize persistence CV diagnostics
+        self._stage3_diagnostics_['persistence_cv']['end_time'] = time.perf_counter()
+        self._stage3_diagnostics_['persistence_cv']['elapsed_seconds'] = (
+            self._stage3_diagnostics_['persistence_cv']['end_time'] -
+            self._stage3_diagnostics_['persistence_cv']['start_time']
+        )
 
         # ============================================================
         # Stage 2: Train meta-learner on OOF predictions
         # ============================================================
+        stage2_start = time.perf_counter()
+        logger.info("Stage 3/2: Meta-learner fitting started.")
+        _enforce_deadline("meta-learner fitting")
         # Check if ANY model produced enough valid OOF rows (per-model,
         # not joint).  The old joint mask excluded every row when a
         # single model (e.g. QuantileRF) failed, poisoning
@@ -915,6 +1086,10 @@ class SuperLearner:
             # Pass full OOF matrix; _fit_meta_learner handles NaN
             # per-model via its own per-output valid filter.
             self._fit_meta_learner(oof_predictions, y)
+        logger.info(
+            "Stage 3/2: Meta-learner fitting finished in %.2fs.",
+            time.perf_counter() - stage2_start,
+        )
 
         # ----------------------------------------------------------
         # Cache ensemble OOF predictions for conformal calibration
@@ -981,6 +1156,8 @@ class SuperLearner:
         # residuals → q̂ may be slightly inflated → intervals are wider than
         # necessary but never under-covering (distribution-free guarantee).
         # ================================================================
+        stage4_start = time.perf_counter()
+        logger.info("Stage 3/4: Secondary conformal OOF sweep started.")
         self._oof_conformal_residuals_ = self._build_conformal_oof_residuals(
             X=X,
             y=y,
@@ -989,11 +1166,21 @@ class SuperLearner:
             year_labels=year_labels,
             primary_oof=oof_ensemble,
             fold_correction_fn=fold_correction_fn,
+            stage3_deadline=stage3_deadline,
+            max_secondary_folds=self.max_secondary_conformal_folds,
+            allow_skip_when_slow=self.allow_skip_secondary_conformal_when_slow,
+        )
+        logger.info(
+            "Stage 3/4: Secondary conformal OOF sweep finished in %.2fs.",
+            time.perf_counter() - stage4_start,
         )
 
         # ============================================================
         # Stage 3: Re-train all base models on refit data
         # ============================================================
+        stage3_refit_start = time.perf_counter()
+        logger.info("Stage 3/3: Final full-data refit started.")
+        _enforce_deadline("final full-data refit")
         # When refit_X / refit_y are provided (e.g. training-only data without
         # the holdout year that was appended to X for the CV phase), base models
         # are retrained on that subset so Stage 6 holdout evaluation remains
@@ -1016,6 +1203,7 @@ class SuperLearner:
             _rx_clean, _ry_clean = _rx, _ry
             _rpmX_clean, _rei_clean = _rpmX, _rei
         for name, model in self.base_models.items():
+            _enforce_deadline(f"final full-data refit ({name})")
             try:
                 X_m = _rpmX_clean[name] if (_rpmX_clean and name in _rpmX_clean) else _rx_clean
                 fitted_model = copy.deepcopy(model)
@@ -1023,6 +1211,11 @@ class SuperLearner:
                 self._fitted_base_models[name] = fitted_model
             except Exception as e:
                 logger.warning(f"{name} failed on full data: {e}")
+
+        logger.info(
+            "Stage 3/3: Final full-data refit finished in %.2fs.",
+            time.perf_counter() - stage3_refit_start,
+        )
 
         self._fitted = True
 
@@ -1032,6 +1225,22 @@ class SuperLearner:
         ):
             bar = "█" * int(w * 30)
             logger.info(f"  {name:25s}: {w:.4f} {bar}")
+
+        total_stage3 = time.perf_counter() - stage3_start
+        _rem = _time_left()
+        logger.info(
+            "Stage 3 summary: elapsed=%.2fs%s",
+            total_stage3,
+            (
+                f", remaining_budget={_rem:.2f}s"
+                if _rem is not None else ""
+            ),
+        )
+
+        # Phase B item 3: Finalize Stage 3 total diagnostics
+        self._stage3_diagnostics_['stage3_total']['end_time'] = time.perf_counter()
+        self._stage3_diagnostics_['stage3_total']['start_time'] = stage3_start
+        self._stage3_diagnostics_['stage3_total']['elapsed_seconds'] = total_stage3
 
         return self
 
@@ -1088,6 +1297,9 @@ class SuperLearner:
         year_labels: Optional[np.ndarray],
         primary_oof: np.ndarray,
         fold_correction_fn=None,
+        stage3_deadline: Optional[float] = None,
+        max_secondary_folds: int = 999,
+        allow_skip_when_slow: bool = True,
     ) -> Optional[np.ndarray]:
         """
         E-02 — Extended conformal OOF residuals covering ALL training years.
@@ -1117,12 +1329,39 @@ class SuperLearner:
         ):
             return None
 
+        if stage3_deadline is not None and time.perf_counter() >= stage3_deadline:
+            if allow_skip_when_slow:
+                logger.warning(
+                    "Stage 3/4: Skipping secondary conformal sweep because "
+                    "the Stage-3 time budget is exhausted."
+                )
+                return None
+            raise TimeoutError(
+                "Stage 3 runtime budget exceeded before secondary conformal "
+                "sweep."
+            )
+
         # Determine which validation years are already in the primary OOF.
         primary_has_oof = ~np.isnan(primary_oof).all(axis=1)
         primary_val_years = (
             set(int(yy) for yy in np.unique(year_labels[primary_has_oof]))
             if primary_has_oof.any() else set()
         )
+
+        # CRITICAL: Restrict secondary conformal to TRUE early-gap years only.
+        #
+        # The primary CV is capped by max_folds (e.g., 5 folds), so late years
+        # may be missing from primary_OOF simply due to the fold cap, not
+        # because they are early data.  Secondary sweep should only cover years
+        # BEFORE the earliest year validated by primary CV — these are the
+        # true "early-gap" years representing early historical data that primary
+        # CV cannot access due to min_train_years constraint.
+        #
+        # Example: if primary validates on [2020, 2021, 2022, 2023, 2024] but
+        # due to fold cap only covers [2022, 2023, 2024], secondary should still
+        # only target years < 2020 (true early-gap), not re-validate on
+        # [2020, 2021] which are just late-years missing due to cap.
+        min_primary_val_year = min(primary_val_years) if primary_val_years else None
 
         # Build secondary splitter — starts earlier than primary.
         secondary_splitter = _WalkForwardYearlySplit(
@@ -1133,13 +1372,49 @@ class SuperLearner:
         # Collect per-row secondary OOF predictions
         secondary_oof = np.full((n_samples, n_outputs), np.nan)
 
-        for _fold_idx, (_train_idx, _val_idx) in enumerate(
-            secondary_splitter.split(X, year_labels)
-        ):
+        candidate_folds: List[Tuple[np.ndarray, np.ndarray]] = []
+        for _train_idx, _val_idx in secondary_splitter.split(X, year_labels):
             _val_years = set(int(yy) for yy in np.unique(year_labels[_val_idx]))
             # Skip folds whose val_year is already covered by primary OOF
             if _val_years.issubset(primary_val_years):
                 continue
+            # NEW: Also skip late-year folds that are NOT early-gap years.
+            # Include only folds where ALL validation years < min(primary_val_years).
+            if min_primary_val_year is not None and not all(
+                yy < min_primary_val_year for yy in _val_years
+            ):
+                continue
+            candidate_folds.append((_train_idx, _val_idx))
+
+        if max_secondary_folds is not None and max_secondary_folds > 0:
+            candidate_folds = candidate_folds[:int(max_secondary_folds)]
+
+        logger.info(
+            "Stage 3/4: Planned secondary conformal folds = %d "
+            "(cap=%d).",
+            len(candidate_folds),
+            int(max_secondary_folds),
+        )
+
+        # Phase B item 3: Initialize secondary conformal diagnostics
+        self._stage3_diagnostics_['secondary_conformal']['planned_folds'] = len(candidate_folds)
+        self._stage3_diagnostics_['secondary_conformal']['start_time'] = time.perf_counter()
+
+        for _fold_idx, (_train_idx, _val_idx) in enumerate(candidate_folds):
+            _fold_start = time.perf_counter()
+            if stage3_deadline is not None and time.perf_counter() >= stage3_deadline:
+                if allow_skip_when_slow:
+                    logger.warning(
+                        "Stage 3/4: Secondary conformal sweep truncated at fold %d/%d "
+                        "due to Stage-3 time budget.",
+                        _fold_idx,
+                        len(candidate_folds),
+                    )
+                    break
+                raise TimeoutError(
+                    "Stage 3 runtime budget exceeded during secondary conformal "
+                    f"fold {_fold_idx + 1}."
+                )
 
             _y_train = y[_train_idx]
             _y_nan = (
@@ -1196,6 +1471,12 @@ class SuperLearner:
                     continue
 
             if not secondary_preds:
+                logger.info(
+                    "Stage 3/4: Secondary fold %d/%d produced no valid base-model "
+                    "predictions.",
+                    _fold_idx + 1,
+                    len(candidate_folds),
+                )
                 continue
 
             # F-02: per-output weighted ensemble for secondary fold.
@@ -1216,6 +1497,35 @@ class SuperLearner:
 
             # ens_pred is already (n_val, n_outputs) — assign all columns at once
             secondary_oof[np.ix_(_val_idx, np.arange(n_outputs))] = ens_pred
+            _fold_elapsed = time.perf_counter() - _fold_start
+            logger.info(
+                "Stage 3/4: Secondary fold %d/%d completed in %.2fs "
+                "(train=%d, val=%d).",
+                _fold_idx + 1,
+                len(candidate_folds),
+                _fold_elapsed,
+                len(_train_idx),
+                len(_val_idx),
+            )
+            # Phase B item 3: Track per-fold completion for secondary conformal
+            self._stage3_diagnostics_['secondary_conformal']['completed_folds'] += 1
+            self._stage3_diagnostics_['secondary_conformal']['per_fold_times'].append(
+                {'fold_idx': _fold_idx, 'elapsed_seconds': _fold_elapsed}
+            )
+
+        # Phase B item 3: Finalize secondary conformal diagnostics (before return)
+        self._stage3_diagnostics_['secondary_conformal']['end_time'] = time.perf_counter()
+        self._stage3_diagnostics_['secondary_conformal']['elapsed_seconds'] = (
+            self._stage3_diagnostics_['secondary_conformal']['end_time'] -
+            self._stage3_diagnostics_['secondary_conformal']['start_time']
+        )
+        # Check if truncation occurred
+        if self._stage3_diagnostics_['secondary_conformal']['completed_folds'] < \
+           self._stage3_diagnostics_['secondary_conformal']['planned_folds']:
+            self._stage3_diagnostics_['secondary_conformal']['truncated'] = True
+            self._stage3_diagnostics_['secondary_conformal']['truncation_reason'] = (
+                "Stage 3 time budget exhausted"
+            )
 
         # Pool primary and secondary OOF residuals
         # primary_oof covers the later calibration years, secondary_oof the earlier
@@ -1787,3 +2097,61 @@ class SuperLearner:
             },
             "positive_weights": self.positive_weights,
         }
+
+    def get_stage3_diagnostics(self) -> Dict[str, Any]:
+        """Phase B item 3: Get Stage 3 execution diagnostics.
+
+        Returns a dictionary with planned vs completed fold counts,
+        timing information, and truncation telemetry for each major
+        stage (primary CV, persistence CV, secondary conformal, etc.).
+        Useful for post-mortem analysis of runtime behavior and
+        identifying compute bottlenecks.
+
+        Returns
+        -------
+        diagnostics : dict
+            Keys are stage names ('primary_cv', 'persistence_cv',
+            'secondary_conformal', 'meta_learner', 'full_refit',
+            'stage3_total'), each containing:
+            - planned_folds / completed_folds (for CV loops)
+            - start_time, end_time, elapsed_seconds (wall-clock)
+            - per_fold_times: list of dicts with fold-level timings
+            - truncated / truncation_reason (if applicable)
+        """
+        return self._stage3_diagnostics_.copy()
+
+    def save_stage3_diagnostics(self, output_path: str) -> None:
+        """Phase B item 3: Save Stage 3 diagnostics to JSON file.
+
+        Parameters
+        ----------
+        output_path : str
+            File path to save diagnostics JSON (recommend output/logs/stage3_diags.json).
+            Parent directories are created if they don't exist.
+        """
+        import json
+        from pathlib import Path
+
+        path = Path(output_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Convert timestamps to ISO format strings for JSON serialization
+        diags_json = {}
+        for stage_name, stage_data in self._stage3_diagnostics_.items():
+            if isinstance(stage_data, dict):
+                diags_json[stage_name] = {}
+                for key, value in stage_data.items():
+                    if isinstance(value, float) and value > 1e6 and value < 1e10:
+                        # Likely a timestamp (perf_counter in seconds since Start)
+                        # Just keep as-is; it's relative so doesn't need ISO conversion
+                        diags_json[stage_name][key] = value
+                    else:
+                        diags_json[stage_name][key] = value
+
+        try:
+            with open(path, 'w', encoding='utf-8') as f:
+                json.dump(diags_json, f, indent=2)
+            logger.info(f"Saved Stage 3 execution diagnostics to {path}")
+        except Exception as e:
+            logger.warning(f"Failed to save diagnostics to {path}: {e}")
+

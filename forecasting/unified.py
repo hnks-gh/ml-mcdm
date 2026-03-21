@@ -2017,6 +2017,16 @@ class UnifiedForecaster:
             meta_group_lasso_lambda=float(
                 getattr(self._config, 'meta_group_lasso_lambda', 0.0)
             ),
+            # Phase A runtime guardrails
+            max_total_stage3_minutes=getattr(
+                self._config, 'max_total_stage3_minutes', None
+            ),
+            max_secondary_conformal_folds=int(getattr(
+                self._config, 'max_secondary_conformal_folds', 999
+            )),
+            allow_skip_secondary_conformal_when_slow=bool(getattr(
+                self._config, 'allow_skip_secondary_conformal_when_slow', True
+            )),
         )
 
         # ── E-01: Build fold-correction callable ──────────────────────────
@@ -2063,6 +2073,16 @@ class UnifiedForecaster:
             fold_correction_fn=_fold_correction_fn,
             shift_detector=_shift_det,
         )
+
+        # Phase B item 3: Save Stage 3 execution diagnostics
+        try:
+            from pathlib import Path
+            logs_dir = Path("output/logs")
+            logs_dir.mkdir(parents=True, exist_ok=True)
+            diagnostics_path = str(logs_dir / "stage3_diagnostics.json")
+            self.super_learner_.save_stage3_diagnostics(diagnostics_path)
+        except Exception as e:
+            logger.warning(f"Failed to save Stage 3 diagnostics: {e}")
 
         # Trim OOF arrays to n_train rows so Stage 5 (conformal calibration)
         # and Stage 6b (OOF R²) index correctly against y_train_.
