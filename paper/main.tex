@@ -123,6 +123,9 @@
 \usepackage{url}
 \urlstyle{same}
 
+% Prevent floats from breaking paragraphs
+\usepackage{placeins}
+
 % ---------- Custom Commands ----------
 \newcommand{\PAPI}{\textsc{papi}\xspace}
 \newcommand{\MCDM}{\textsc{mcdm}\xspace}
@@ -245,63 +248,13 @@
 
 The \PAPI dataset represents a multi-level, longitudinal panel of provincial governance indicators from Vietnam, spanning 14 consecutive annual waves (2011--2024). This study structures the data as a hierarchical system consisting of three analytical levels: (i)~a temporal dimension indexed by survey year $t$, (ii)~a spatial dimension indexed by province $i$, and (iii)~a conceptual dimension indexed by governance criteria and sub-criteria.
 
-\subsubsection{Dataset Scope and Dimensionality}
+\subsubsection{Panel Structure and Dimensionality}
 
 The dataset comprises observations of $N = 63$ Vietnamese provinces and centrally administered municipalities (hereafter, provinces) measured annually across $T = 14$ survey waves. The underlying constructs are measured through $K = 8$ main governance criteria (Criteria hereafter, denoted $C_k$ for $k = 1, \ldots, 8$), each composed of multiple sub-criteria (Sub-criteria hereafter, denoted $\text{SC}_{jk}$ for $j = 1, \ldots, n_k$). In total, there are $p = 29$ sub-criteria across all criteria.
-
-This hierarchical composition is summarized in Table~\ref{tab:hierarchy}. Each criterion encompasses 3--4 sub-criteria, with the following distribution:
-
-\begin{table}[!ht]
-\centering
-\caption{Hierarchical structure of PAPI criteria and sub-criteria}
-\label{tab:hierarchy}
-\small
-\begin{tabular}{c c c c}
-\toprule
-\textbf{Criterion} & \textbf{Name} & \textbf{Count} & \textbf{Sub-Criteria Codes} \\
-\midrule
-$C_1$ & Civic Participation & 4 & \texttt{SC11, SC12, SC13, SC14} \\
-$C_2$ & Transparency of Decision-Making & 4 & \texttt{SC21, SC22, SC23, SC24} \\
-$C_3$ & Vertical Accountability & 3 & \texttt{SC31, SC32, SC33} \\
-$C_4$ & Control of Corruption & 4 & \texttt{SC41, SC42, SC43, SC44} \\
-$C_5$ & Public Administrative Procedures & 4 & \texttt{SC51, SC52, SC53, SC54} \\
-$C_6$ & Public Service Delivery & 4 & \texttt{SC61, SC62, SC63, SC64} \\
-$C_7$ & Environmental Governance & 3 & \texttt{SC71, SC72, SC73} \\
-$C_8$ & E-Governance & 3 & \texttt{SC81, SC82, SC83} \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\subsubsection{Panel Structure and Observation Count}
 
 The data define a balanced panel in spatial ($N = 63$ provinces) and temporal ($T = 14$ years) dimensions, yielding a theoretical maximum of $M = N \times T = 882$ province-year observations. Each observation indexed by $(i, t)$ contains measurements of all $p = 29$ sub-criteria (subject to structural missingness, discussed in Section~\ref{subsec:missing}).
 
 Data collection occurs annually during each survey wave. The survey is administered by CECODES, the Vietnam Fatherland Front Research and Training Committee (VFF-CRT), and the United Nations Development Programme (UNDP) in collaboration with provincial statistical offices. Each annual wave typically surveys approximately 14,000 respondents across all 63 provinces, stratified by province, with final indices computed as province-level aggregates.
-
-\subsubsection{Measurement Scale and Benefit Orientation}
-
-All 29 sub-criteria are measured on a continuous scale with minimum 0 and practical maximum approximately 3.33 (reflecting the underlying survey instrument's design). Crucially, all sub-criteria are \textbf{benefit-type} indicators, meaning that higher values indicate stronger governance performance in the respective dimension. This uniform directionality has important implications for MCDM normalization and aggregation (discussed in Sections~\ref{subsec:critic} and~\ref{subsec:mcdm}).
-
-\begin{table}[!ht]
-\centering
-\caption{Sub-criteria measurement scale properties}
-\label{tab:sc_properties}
-\small
-\begin{tabular}{c c c}
-\toprule
-\textbf{Indicator Property} & \textbf{Value} & \textbf{Interpretation} \\
-\midrule
-Criterion type & Benefit & Higher $\Rightarrow$ Better governance \\
-Value range & $[0, 3.33]$ & Based on survey instrument design \\
-Directionality & Monotone increasing & All sub-criteria reward improvement \\
-Cost-type sub-criteria & 0 & None; no minimization targets \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-The absence of cost-type criteria (e.g., corruption incidence where lower would be preferred) simplifies the MCDM normalization step: the decision matrix requires only benefit-direction normalization without sign inversion.
-
-\subsubsection{Temporal Coverage and Periodicity}
 
 Survey data are collected and published on an annual calendar. The 14 waves span 2011--2024 inclusive:
 
@@ -309,69 +262,70 @@ $$\mathcal{T} = \{2011, 2012, \ldots, 2024\}$$
 
 This period encompasses important shifts in Vietnam's governance environment, including the introduction of new indicators (environmental governance and e-governance added in 2018) and administrative disruptions resulting from provincial reorganizations and data collection challenges. The 14-year span provides sufficient temporal variation for both weighting stability analysis (split-half validation) and forecasting model training.
 
-\subsubsection{Data Organization: Long Format Panel}
-
 The working format for weighting and ranking is a long-format panel with columns:
 
 $$\text{panel\_df} = \{\text{Province}, \text{Year}, \text{SC11}, \text{SC12}, \ldots, \text{SC83}\}$$
 
 Thus, each row represents one province-year observation, with one row per 63 provinces per year, yielding up to 882 rows. Missing data and imputation are handled using strategies detailed in Section~\ref{subsec:missing}.
 
-\subsubsection{Conceptual Interpretation}
+\subsubsection{Measurement Framework and Indicator Definitions}
 
-The PAPI sub-criteria capture multiple dimensions of provincial governance capacity and citizen perception:
+All 29 sub-criteria are measured on a continuous scale with minimum 0 and practical maximum approximately 3.33 (reflecting the underlying survey instrument's design). Crucially, all sub-criteria are \textbf{benefit-type} indicators, meaning that higher values indicate stronger governance performance in the respective dimension. This uniform directionality has important implications for MCDM normalization and aggregation (discussed in Sections~\ref{subsec:critic} and~\ref{subsec:mcdm}).
 
-\begin{itemize}[itemsep=2pt]
-  \item \textbf{C1 (Participation):} Extent and inclusiveness of civic engagement in provincial affairs; electoral participation and consultation mechanisms.
-  
-  \item \textbf{C2 (Transparency):} Accessibility of provincial government information and transparency of budget execution and policy decisions.
-  
-  \item \textbf{C3 (Accountability):} Government responsiveness to citizen grievances and access to justice mechanisms for redress.
-  
-  \item \textbf{C4 (Anti-Corruption):} Perceived effectiveness of anti-corruption measures and equitable treatment in service delivery.
-  
-  \item \textbf{C5 (Admin Procedures):} Efficiency and simplification of administrative procedures; burden of compliance on businesses and individuals.
-  
-  \item \textbf{C6 (Service Delivery):} Quality and accessibility of province-delivered public services (healthcare, education, infrastructure, utilities).
-  
-  \item \textbf{C7 (Environmental):} Environmental protection, sustainability of natural resources, and response to pollution/climate issues.
-  
-  \item \textbf{C8 (E-Governance):} Availability of online government services, digital information systems, and internet accessibility.
-
-\end{itemize}
-
-\subsubsection{Data Quality and Sources}
-
-The \PAPI data are published annually in machine-readable format (CSV tables) by the CECODES, VFF-CRT, and UNDP collaborative framework. The primary source documents \citep{PAPI2024} provide codebook mappings, survey methodology, and sampling design. Data were sourced from official public releases covering 2011--2024. Provincial codes and criterion definitions are cross-referenced with the \PAPI codebook.
-
-Summary statistics for sub-criteria across all provinces and years (Table~\ref{tab:descriptive}) are reported after imputation. Before imputation, structural missingness (13.4\% of all cells; see Section~\ref{subsec:missing}) distorts descriptive statistics; post-imputation statistics reflect distributional properties after handling.
+The hierarchical composition of criteria and sub-criteria is presented in Table~\ref{tab:hierarchy}. Each criterion encompasses 3--4 sub-criteria, comprehensively specifying the governance domains assessed:
 
 \begin{table}[!ht]
 \centering
-\caption{Preliminary descriptive statistics of PAPI sub-criteria (post-imputation)}
-\label{tab:descriptive}
+\caption{Comprehensive hierarchical structure of PAPI criteria and sub-criteria with measurement framework}
+\label{tab:hierarchy}
 \small
 \begin{tabular}{c c c c c}
 \toprule
-\textbf{Criterion} & \textbf{Mean} & \textbf{Std.\ Dev.} & \textbf{Min} & \textbf{Max} \\
+\textbf{Crit.} & \textbf{Criterion Name} & \textbf{Code} & \textbf{Sub-Criterion Name} \\
 \midrule
-$C_1$ (Participation) & 2.41 & 0.34 & 1.12 & 3.28 \\
-$C_2$ (Transparency) & 2.18 & 0.38 & 0.89 & 3.10 \\
-$C_3$ (Accountability) & 2.35 & 0.29 & 1.45 & 3.15 \\
-$C_4$ (Anti-Corruption) & 2.26 & 0.32 & 1.08 & 3.02 \\
-$C_5$ (Admin Procedures) & 2.54 & 0.36 & 1.20 & 3.25 \\
-$C_6$ (Service Delivery) & 2.48 & 0.31 & 1.35 & 3.18 \\
-$C_7$ (Environmental) & 2.33 & 0.41 & 0.65 & 3.16 \\
-$C_8$ (E-Governance) & 2.12 & 0.37 & 0.52 & 3.05 \\
+\multirow{4}{*}{$C_1$} & \multirow{4}{*}{Civic Participation} & SC11 & Civic Knowledge \\
+ & & SC12 & Opportunities for Participation in Elections \\
+ & & SC13 & Quality of Village Head Elections \\
+ & & SC14 & Voluntary Contributions \\
+\midrule
+\multirow{4}{*}{$C_2$} & \multirow{4}{*}{Transparency of Local Decision-Making} & SC21 & Access to Information \\
+ & & SC22 & Poverty List Transparency \\
+ & & SC23 & Communal Budget Transparency \\
+ & & SC24 & Transparent Land-Use Plan/Price Frames \\
+\midrule
+\multirow{3}{*}{$C_3$} & \multirow{3}{*}{Vertical Accountability} & SC31 & Interactions With Local Authorities \\
+ & & SC32 & Governments Responsive to Citizen Appeals \\
+ & & SC33 & Access to Justice Services \\
+\midrule
+\multirow{4}{*}{$C_4$} & \multirow{4}{*}{Control of Corruption in Public Sector} & SC41 & Limits on Corruption in Local Governments \\
+ & & SC42 & Limits on Corruption in Service Delivery \\
+ & & SC43 & Equity in State Employment \\
+ & & SC44 & Willingness to Fight Corruption \\
+\midrule
+\multirow{4}{*}{$C_5$} & \multirow{4}{*}{Public Administrative Procedures} & SC51 & Certification Procedures \\
+ & & SC52 & Construction Permits \\
+ & & SC53 & Land Title Procedures \\
+ & & SC54 & Personal Procedures \\
+\midrule
+\multirow{4}{*}{$C_6$} & \multirow{4}{*}{Public Service Delivery} & SC61 & Public Healthcare \\
+ & & SC62 & Primary Education \\
+ & & SC63 & Basic Infrastructure \\
+ & & SC64 & Law and Order \\
+\midrule
+\multirow{3}{*}{$C_7$} & \multirow{3}{*}{Environmental Governance} & SC71 & Environmental Protection \\
+ & & SC72 & Quality of Air \\
+ & & SC73 & Quality of Water \\
+\midrule
+\multirow{3}{*}{$C_8$} & \multirow{3}{*}{E-Governance} & SC81 & Access to E-Government Portals \\
+ & & SC82 & Access to the Internet \\
+ & & SC83 & E-Responsiveness of Provincial Authorities \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Note: Statistics computed from the balanced panel after missing-value imputation (Section~\ref{subsec:missing}).
+\FloatBarrier
 
-\subsubsection{Dataset Limitations}
-
-The survey-based nature of \PAPI introduces inherent limitations: (i)~respondent fatigue and mode effects in citizen surveys; (ii)~potential political economy biases in responses (respondents may be reluctant to report negatively on incumbent officials); (iii)~temporal and geographic stratification of survey samples may introduce heterogeneity in measurement error. These limitations are documented in the PAPI methodology notes and constrain causal inference but do not preclude descriptive analysis or predictive modeling of temporal and cross-provincial governance trajectories.
+The PAPI sub-criteria capture multiple dimensions of provincial governance capacity and citizen perception. Criterion $C_1$ (Civic Participation) reflects the extent and inclusiveness of civic engagement in provincial affairs, encompassing electoral participation and consultation mechanisms. Criterion $C_2$ (Transparency of Local Decision-Making) assesses the accessibility of provincial government information and transparency of budget execution and policy decisions. Criterion $C_3$ (Vertical Accountability) measures government responsiveness to citizen grievances and access to justice mechanisms for redress. Criterion $C_4$ (Control of Corruption in the Public Sector) captures the perceived effectiveness of anti-corruption measures and equitable treatment in service delivery. Criterion $C_5$ (Public Administrative Procedures) evaluates the efficiency and simplification of administrative procedures and the burden of compliance on businesses and individuals. Criterion $C_6$ (Public Service Delivery) measures the quality and accessibility of province-delivered public services including healthcare, education, infrastructure, and utilities. Criterion $C_7$ (Environmental Governance) reflects environmental protection, sustainability of natural resources, and response to pollution and climate issues. Finally, Criterion $C_8$ (E-Governance) captures the availability of online government services, digital information systems, and internet accessibility.
 
 \subsection{Missing Data Structure and Imputation}
 \label{subsec:missing}
@@ -380,15 +334,17 @@ The survey-based nature of \PAPI introduces inherent limitations: (i)~respondent
 % Section 2.2: Missing Data Analysis and Robust Imputation Strategy
 % ================================================================
 
-The \PAPI dataset exhibits substantial structural missingness that reflects both design constraints (introduction of new indicators in later survey waves) and administrative disruptions (provincial-level data collection failures). Proper characterization and imputation of missing data are essential to prevent bias in weighting and ranking.
+The \PAPI dataset exhibits substantial structural missingness reflecting both design constraints and administrative disruptions. The data comprise a balanced panel of 63 Vietnamese provinces measured across 14 annual survey waves (2011--2024) with 29 governance sub-criteria per province-year observation, yielding a theoretical maximum of 25,578 data cells (63 $\times$ 14 $\times$ 29). Across this domain, approximately 3,424 cells are missing, corresponding to a global missingness rate of 13.4\%. While non-trivial, this missingness follows deterministic and partially predictable patterns that permit principled recovery. Understanding and properly addressing these missing data is essential to prevent bias propagation in downstream weighting, ranking, and forecasting analyses.
 
-\subsubsection{Quantification of Missing Data}
+\subsubsection{Missing Data Characterization and Quantification}
 
-Across the complete 14-year panel (63 provinces $\times$ 14 years $\times$ 29 sub-criteria = 25,578 potential cells), approximately 3,424 missing cells are observed, representing a global missingness rate of:
+Missing data in the \PAPI panel arise from three distinct mechanisms, each with different statistical properties and implications for imputation strategy. Type 1 missing data reflect the structural evolution of the governance index itself, with new sub-criteria (environmental governance and e-governance indicators) formally introduced in 2018 and one sub-criterion (administrative procedures, SC52) discontinued from 2021 onward. Specifically, Environmental Governance sub-criteria (SC71, SC72, SC73) are absent for the entire 2011--2017 period, accounting for $3 \times 7 \times 63 = 1,323$ missing cells. E-Governance sub-criteria (SC81, SC82, SC83) similarly were not measured from 2011--2017; SC83 became consistently available only from 2019 onward, contributing approximately 1,260 missing cells. The Transparency sub-criterion SC24 was absent in 2011--2017 and reintroduced in 2018 with partial coverage in certain provinces. Administrative Procedures (SC52) was entirely discontinued from 2021 onward, creating $4 \times 63 = 252$ missing cells in the final four years. Across these indicator-level absences, Type 1 missingness totals 3,116 cells, representing 90.9\% of all missing data. These missings are deterministic and observable: the measurement agencies have explicit knowledge of which indicators had not been assembled in each year. This property makes Type 1 missingness conceptually Missing Completely At Random (MCAR) conditional on the observed year, since the absence is attributable to known governance index design choices rather than data collection failures or outcome characteristics.
 
-$$\text{Missingness} = \frac{3424}{25578} \approx 13.4\%$$
+Type 2 missingness comprises entire province-year observations where all 29 sub-criteria are absent. Nine such cases are identified, totaling 261 missing cells (Table~\ref{tab:missing_type2}). In 2014, provinces P15 and P56 are entirely missing. Three provinces (P14, P15, P18) lack complete data in 2021. In 2023, provinces P14 and P47 are entirely absent; similarly, P17 and P52 are missing in 2024. These gaps reflect administrative disruptions in data collection, provincial-level survey failures, or data processing errors rather than structural index design. Under the assumption that such collection failures depend on observable administrative variables (provincial capacity, data collection infrastructure) rather on the governance quality being measured, Type 2 missingness is assessed as MCAR conditional on administrative covariates. This characterization supports the use of conditional imputation methods such as predictive models trained on provinces that did report in the given year, or within-province temporal interpolation.
 
-While this represents a non-trivial fraction, the missing data follow structured patterns that permit principled recovery. Table~\ref{tab:missing_by_type} categorizes the missing mechanisms into three types.
+Type 3 missingness comprises isolated missing cells within otherwise complete or substantially populated province-year observations. Four province-year combinations exhibit this pattern. In 2018, provinces P14 and P56 each are missing eight sub-criteria (SC21--SC24 and SC41--SC44), concentrated in the Transparency and Control of Corruption domains, suggesting category-specific non-response—possible survey administration failures affecting specific question blocks in particular provinces. In 2022, province P15 is missing 16 cells spanning Criteria 1, 2, 4, and 5, while province P18 is missing 15 cells concentrated in Criteria 2, 3, 4, and 8. Type 3 consists of only 47 cells (1.4\% of total missingness) and likely reflects individual questionnaire item non-response or isolated data entry errors. If the propensity for item-level non-response depends on variables captured in the survey (respondent literacy, internet access, familiarity with governance topics), then Type 3 missingness is assessed as Missing At Random (MAR). Under this mechanism, MICE imputation including these auxiliary variables yields unbiased recovery \citep{Rubin1987}.
+
+An overview of the annual missing data distribution across all three types is presented in Table~\ref{tab:missing_by_type}. The inventory reveals that 2019 and 2020 are the only complete years with zero missing cells. The year 2018 marks the transition point where environmental and e-governance indicators entered the index, reducing single-indicator missings (Type 1) from 441 cell-years to 63. The bulk of Type 2 missingness occurs in 2014, 2021, 2023, and 2024, corresponding to known administrative events (reorganizations, survey disruptions) in certain provinces. Type 3 missingness, though small in absolute count, indicates localized data quality issues in specific province-year-criterion combinations.
 
 \begin{table}[!ht]
 \centering
@@ -419,220 +375,78 @@ While this represents a non-trivial fraction, the missing data follow structured
 \end{tabular}
 \end{table}
 
-\subsubsection{Type 1: Structural Column Missingness}
+\FloatBarrier
 
-Type 1 missingness arises when an entire sub-criterion column is absent for one or more complete years, typically due to temporal expansion of the governance index. Specifically:
+Type 3 missingness—scattered cells within otherwise substantially observed province-years—is limited to four province-year combinations: in 2018, provinces P14 and P56 each lack eight sub-criteria concentrated in Transparency and Corruption Control; in 2022, P15 lacks 16 cells spanning participation, transparency, corruption, and administrative procedures, while P18 lacks 15 cells in similar domains. These localised absences suggest category-specific non-response or data entry anomalies rather than complete survey failure.
 
-\begin{itemize}[itemsep=2pt]
-  \item \textbf{Environmental Governance (SC71, SC72, SC73):} These three sub-criteria were not measured from 2011--2017, being formally introduced in the 2018 survey wave. This accounts for $3 \times 7 \times 63 = 1,323$ missing cells.
-  
-  \item \textbf{E-Governance (SC81, SC82, SC83):} Similarly, e-governance sub-criteria were absent in 2011--2017 and SC83 became consistent only from 2019 onward, accounting for approximately 1,260 cells.
-  
-  \item \textbf{Transparency (SC24):} The transparency sub-criterion SC24 was absent in 2011--2017, re-introduced in 2018 with partial coverage in some provinces.
-  
-  \item \textbf{Administrative Procedures (SC52):} SC52 (Public Administrative Procedures) was discontinued from 2021 onward, creating $4 \times 63 = 252$ missing cells in 2021--2024.
+\subsubsection{Multivariate Imputation by Chained Equations}
 
-\end{itemize}
+The missing data across all three types are recovered using Multivariate Imputation by Chained Equations (MICE), a principled statistical framework that estimates missing values by leveraging the multivariate interdependence structure among governance sub-criteria \citep{Rubin1987, vanBuuren2018}. MICE supersedes simpler univariate methods—such as temporal forward-fill, cross-sectional mean imputation, or last-observation-carried-forward—by respecting the correlation structure among criteria and accommodating both point estimation and propagation of imputation uncertainty through multiple imputations \citep{vanBuuren2018}. For a dataset like \PAPI with moderate missingness ($\rho \approx 0.134$), well-defined feature relationships (governance sub-criteria are inherently correlated through latent governance quality), and mixed missingness mechanisms (Type 1 MCAR-by-design, Type 2/3 potentially MAR), MICE provides a theoretically justified and empirically robust approach.
 
-Type 1 missingness totals 3,116 cells (90.9\% of total missingness) and is deterministic and observable: we have exact knowledge that these columns do not contain information for the specified year ranges.
-
-\subsubsection{Type 2: Entire Province-Year Missingness}
-
-Type 2 missingness occurs when all 29 sub-criteria for a specific (province, year) combination are absent. This reflects administrative gaps in data collection, provincial-level survey failures, or data processing errors. Nine such cases (261 missing cells) are identified:
-
-\begin{table}[!ht]
-\centering
-\caption{Entire province-year observations missing (Type 2)}
-\label{tab:missing_type2}
-\small
-\begin{tabular}{c c c}
-\toprule
-\textbf{Year(s)} & \textbf{Affected Province(s)} & \textbf{Count} \\
-\midrule
-2014 & P15, P56 & 2 \\
-2021 & P14, P15, P18 & 3 \\
-2023 & P14, P47 & 2 \\
-2024 & P17, P52 & 2 \\
-\midrule
-\textbf{Total} & & \textbf{9} \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-These province-year cases are assumed to be missing completely at random (MCAR) conditional on administrative variables, suggesting imputation via temporal within-province forward/backward filling or cross-sectional predictive models.
-
-\subsubsection{Type 3: Scattered Cell Missingness}
-
-Type 3 missingness comprises isolated missing cells within otherwise complete or partially complete province-year observations. Four province-year combinations exhibit this pattern:
-
-\begin{itemize}[itemsep=2pt]
-  \item \textbf{2018, Provinces P14 \& P56:} Each missing 8 sub-criteria (SC21--SC24, SC41--SC44), suggesting category-specific non-response in the transparency and corruption control domains.
-  
-  \item \textbf{2022, Provinces P15 \& P18:} P15 missing 16 cells; P18 missing 15 cells, with concentrated gaps in criteria 1, 2, 4, 5, and 8.
-
-\end{itemize}
-
-Type 3 consists of only 47 cells (1.4\% of missingness) and likely reflects individual question non-response or data entry errors.
-
-\subsubsection{Imputation Strategy via Multivariate Imputation by Chained Equations}
-
-The missing data in the \PAPI dataset are addressed using \textbf{Multivariate Imputation by Chained Equations (MICE)} \citep{Rubin1987, vanBuuren2018}, a principled statistical framework that recovers missing values by leveraging multivariate feature relationships. This approach supersedes simpler univariate methods (temporal back-fill, column medians) by respecting the interdependence structure among governance sub-criteria and accommodates both point estimation and uncertainty quantification via multiple imputation.
-
-\subsubsection{Theoretical Foundation: Missing Data Mechanisms}
-
-MICE operates under explicitly stated assumptions about the missingness mechanism. Four definitions clarify the landscape:
-
-\textbf{Missing Completely At Random (MCAR):} Missing data depend neither on observed nor on unobserved values. Formally, letting $\text{Missing}(X_j) \in \{0,1\}$ denote the indicator of missingness in feature $j$:
-
+MICE operates under explicitly stated assumptions regarding the missingness mechanism. The fundamental classification distinguishes three regimes. Missing Completely At Random (MCAR) holds when:
 \begin{equation}
 \label{eq:mcar}
 P(\text{Missing}(X_j) = 1 \mid X_{\text{obs}}, X_{\text{miss}}) = P(\text{Missing}(X_j) = 1)
 \end{equation}
-
-MCAR holds when missingness is independent of all data. Under MCAR, complete-case analysis introduces no bias, merely reduced sample size.
-
-\textbf{Missing At Random (MAR):} Missing data may depend on observed values but not on unobserved (missing) values:
-
+that is, missingness depends on neither observed nor unobserved data. Under MCAR, complete-case analysis introduces no bias, only loss of statistical power. Missing At Random (MAR) permits:
 \begin{equation}
 \label{eq:mar}
 P(\text{Missing}(X_j) = 1 \mid X_{\text{obs}}, X_{\text{miss}}) = P(\text{Missing}(X_j) = 1 \mid X_{\text{obs}})
 \end{equation}
-
-Example: Environmental governance (E-governance) data missing before 2018 (observed), but missingness unrelated to 2011--2017 environmental quality (unobserved). Under MAR, MICE yields unbiased estimates if the imputation model includes all variables predictive of missingness \citep{Rubin1987}.
-
-\textbf{Missing Not At Random (MNAR):} Missing data depend on unobserved values themselves:
-
+where missingness may depend on observed variables but not on the unobserved missing values themselves. For example, environmental governance data absent in 2011--2017 represents observed temporal information unrelated to the unobserved environmental quality in those years, a MAR scenario. Finally, Missing Not At Random (MNAR) violates MAR:
 \begin{equation}
 \label{eq:mnar}
 P(\text{Missing}(X_j) = 1 \mid X_{\text{obs}}, X_{\text{miss}}) \neq P(\text{Missing}(X_j) = 1 \mid X_{\text{obs}})
 \end{equation}
+occurring when missingness depends inherently on unobserved values—for instance, if corruption indicators were underreported when actual corruption is high. Under MNAR, standard imputation methods including MICE become biased without strong domain assumptions \citep{vanBuuren2018}.
 
-Example: Corruption data unreported because actual corruption is high. Under MNAR, standard imputation methods (including MICE) are biased without additional domain knowledge.
+For the \PAPI dataset, the three identified missing data types are evaluated as follows. Type 1 (Structural Index Expansion) stems from known governance index design choices: Environmental and E-Governance indicators absent in 2011--2017 by foundational design, not by data inadequacy. This is deterministic and declaratively MCAR conditional on the observed year. Type 2 (Entire Province-Year Gaps) reflects administrative disruptions—provincial data collection failures, survey non-response—plausibly attributable to observable administrative or logistical factors (provincial capacity, data collection infrastructure state) rather than the governance construct being measured. These cases are conservatively treated as MCAR conditional on administrative covariates. Type 3 (Scattered Cells) consists of individual questionnaire item non-responses, assessed as MAR if the propensity for non-response depends on respondent-level characteristics (literacy, internet familiarity, governance engagement) recorded in survey auxiliary variables, all of which will be included in the MICE imputation model. Under combined MCAR/MAR assumptions—which hold plausibly for \PAPI—MICE yields unbiased or near-unbiased recovery of missing values \citep{vanBuuren2018}.
 
-\textbf{Assessment for \PAPI:} The three identified missing data types are evaluated as:
-\begin{itemize}[itemsep=2pt]
-  \item \textbf{Type 1 (Structural Index Expansion):} Environmental (SC71--SC73) and E-governance (SC81--SC83) indicators absent 2011--2017 by design, not by missingness. This is deterministic, MCAR conditional on year. 
-  \item \textbf{Type 2 (Full Province-Year Gaps):} Nine province-year combinations entirely missing (e.g., 2014 Provinces P15, P56) represent data collection failures attributable to administrative factors, not outcome quality. Assessed as MCAR conditional on administrative covariates.
-  \item \textbf{Type 3 (Scattered Cells):} Individual items occasionally unreported within otherwise complete rows (e.g., 2018 transparency non-response). Assessed as MAR if reportability depends on respondent literacy or internet access (observed in imputation model), not on the governance truth itself.
-\end{itemize}
-
-Under MAR/MCAR assumptions (which hold for \PAPI), MICE provides unbiased recovery.
-
-\subsubsection{MICE Algorithm}
-
-Let $X = (x_1, x_2, \ldots, x_p) \in \mathbb{R}^{n \times p}$ denote the $n \times p$ feature matrix with missing values. The MICE algorithm iteratively estimates missing values as follows:
-
-\textbf{Initialization (Iteration 0):} Replace all missing entries with column-wise means:
-
+The MICE algorithm operates on a data matrix $X = (x_1, x_2, \ldots, x_p) \in \mathbb{R}^{n \times p}$ containing $n$ observations and $p$ features with missing values. Initialization fills all missing entries with column-wise empirical means:
 \begin{equation}
 \label{eq:mice_init}
 X_{ij}^{(0)} = \begin{cases} X_{ij} & \text{if } X_{ij} \text{ observed} \\ \bar{x}_j = \frac{1}{n} \sum_{i'=1}^{n} X_{i'j} & \text{if } X_{ij} \text{ missing} \end{cases}
 \end{equation}
-
-\textbf{Iteration Loop} (for $t = 1, 2, \ldots, T_{\max}$):
-For each feature $j = 1, 2, \ldots, p$:
-
-\begin{enumerate}[itemsep=2pt]
-  \item Set missing entries of $x_j$ back to missing (restore $X_{\cdot j}^{\text{miss}}$ from iteration $t-1$).
-  \item Fit a regression model predicting $x_j$ from all other features using complete cases:
-  
-  \begin{equation}
-  \label{eq:mice_regress}
-  \hat{f}_j = \text{Regressor}(X_{\text{obs}, -j}^{(t-1)}, X_{\text{obs}, j}^{(t-1)})
-  \end{equation}
-  
-  where $X_{\text{obs}, -j}$ denotes the complete cases of all features except $j$, fitted to observed values of $x_j$.
-  
-  \item Use the fitted model to predict missing values in $x_j$:
-  
-  \begin{equation}
-  \label{eq:mice_predict}
-  X_{\text{miss}, j}^{(t)} = \hat{f}_j(X_{\text{miss}, -j}^{(t-1)})
-  \end{equation}
-  
-  \item Update feature $j$ with predictions:
-  
-  \begin{equation}
-  \label{eq:mice_update}
-  X_{\cdot j}^{(t)} = \begin{cases} X_{\text{obs}, j}^{(t-1)} & \text{observed} \\ X_{\text{miss}, j}^{(t)} & \text{imputed} \end{cases}
-  \end{equation}
-\end{enumerate}
-
-\textbf{Convergence Criterion:} The algorithm terminates after $T_{\max}$ iterations (default: $T_{\max} = 20$), which empirically achieves convergence for datasets with moderate missingness ($\rho \approx 0.13$ as in \PAPI) \citep{vanBuuren2018}.
-
-\textbf{Regression Estimator:} Following \citep{Doove2014}, we employ \textbf{ExtraTreesRegressor} (Extremely Randomized Trees) for the regression step. ExtraTreesRegressor is selected because it:
-\begin{itemize}[itemsep=2pt]
-  \item Captures nonlinear relationships among governance criteria (superior to linear regression).
-  \item Exhibits robustness to scale heterogeneity (governance metrics span different measurement scales).
-  \item Converges rapidly (10--15 iterations typical), enabling practical MICE inference.
-  \item Integrates seamlessly with \texttt{sklearn.impute.IterativeImputer} \citep{scikit-learn}.
-\end{itemize}
-
-\subsubsection{Convergence Properties and Theoretical Guarantees}
-
-A central theoretical result establishes monotone improvement in the likelihood of observed data:
-
-\textbf{Theorem (Monotone Convergence of MICE) \citep{vanBuuren2011, vanBuuren2018}:} Under the assumption that the posterior distribution $p(X_{\text{miss}} \mid X_{\text{obs}})$ admits consistent estimation via the regression models employed, the log-likelihood of the observed data satisfies:
-
+This initialization provides starting values for the iterative imputation loop. The algorithm then cycles through iterations $t = 1, 2, \ldots, T_{\max}$ (default: $T_{\max} = 20$). At each iteration and for each feature $j = 1, \ldots, p$: (1) the missing entries of feature $x_j$ are temporarily restored to missing status; (2) a regression model is fitted on the complete cases using all other features as predictors and the observed values of $x_j$ as the target:
 \begin{equation}
-\label{eq:mice_monotone}
-\ell(X_{\text{obs}} \mid \hat{\theta}^{(t+1)}) \geq \ell(X_{\text{obs}} \mid \hat{\theta}^{(t)})
+\label{eq:mice_regress}
+\hat{f}_j^{(t)} = \text{Regressor}(X_{\text{obs}, -j}^{(t-1)}, X_{\text{obs}, j}^{(t-1)})
+\end{equation}
+(3) the fitted model predicts imputed values for the missing entries:
+\begin{equation}
+\label{eq:mice_predict}
+X_{\text{miss}, j}^{(t)} = \hat{f}_j^{(t)}(X_{\text{miss}, -j}^{(t-1)})
+\end{equation}
+and (4) feature $j$ is updated with both observed and imputed values for use in subsequent feature iterations:
+\begin{equation}
+\label{eq:mice_update}
+X_{\cdot j}^{(t)} = \begin{cases} X_{\text{obs}, j}^{(t-1)} & \text{observed cells} \\ X_{\text{miss}, j}^{(t)} & \text{imputed cells} \end{cases}
 \end{equation}
 
-for all iterations $t \geq 1$, where $\hat{\theta}^{(t)}$ denotes the estimated model parameters at iteration $t$.
+For the regression component, this study employs ExtraTreesRegressor (Extremely Randomized Trees) following guidance in the imputation literature \citep{Doove2014}. ExtraTreesRegressor is selected because it captures nonlinear relationships among governance criteria without assuming parametric form; exhibits robustness to scale heterogeneity since governance metrics span different measurement scales and distributions; achieves rapid convergence with tree-based ensembles typically stabilizing by iterations 10--15; and integrates seamlessly with scikit-learn's \texttt{IterativeImputer} implementation \citep{scikit-learn}. A central theoretical result establishes monotone improvement in the likelihood of observed data across iterations. Under the assumption that the posterior distribution $p(X_{\text{miss}} \mid X_{\text{obs}})$ admits consistent estimation via the regression models employed, the log-likelihood of observed data satisfies \citep{vanBuuren2011, vanBuuren2018}:
+\begin{equation}
+\label{eq:mice_monotone}
+\ell(X_{\text{obs}} \mid \hat{\theta}^{(t+1)}) \geq \ell(X_{\text{obs}} \mid \hat{\theta}^{(t)}) \quad \text{for all } t \geq 1
+\end{equation}
+This monotonicity theorem guarantees that each iteration improves (or maintains) the fit to observed data, ensuring that imputed values become progressively more plausible. Convergence rate depends on missingness proportion (the \PAPI rate of 13.4\% facilitates rapid convergence), feature correlation structure (highly correlated governance criteria enable rapid imputation), and estimator choice (tree-based methods typically converge by iteration 15, parametric models may require 50+ iterations).
 
-\textbf{Practical Implication:} Each MICE iteration provably improves (or maintains) the log-likelihood of observed data, guaranteeing that imputed values become increasingly plausible. The algorithm cannot degrade the fit to observed data.
-
-Convergence rate depends critically on \citep{vanBuuren2018} (Chapter 3):
-\begin{itemize}[itemsep=2pt]
-  \item \textbf{Missingness proportion:} Higher rates ($\rho > 0.30$) slow convergence; the \PAPI rate ($\rho \approx 0.134$) facilitates rapid convergence.
-  \item \textbf{Feature correlation structure:} Highly correlated governance criteria enable rapid imputation; weakly correlated margins require more iterations.
-  \item \textbf{Estimator choice:} Tree-based estimators (ExtraTreesRegressor, RandomForest) typically achieve convergence by iteration 10--15; parametric models may require 20--50 iterations.
-\end{itemize}
-
-\subsubsection{Multiple Imputation and Rubin's Rules}
-
-While MICE can produce a single point estimate (setting $M = 1$), modern practice employs \textbf{multiple imputation} ($M > 1$) to quantify uncertainty introduced by missing data imputation \citep{Rubin1987}. 
-
-The procedure is:
-
-\textbf{Step 1: Generate } $M$ \textbf{independent imputations.} Re-run the MICE algorithm $M$ times with different random seeds, producing $M$ complete datasets $\{X^{(1)}, X^{(2)}, \ldots, X^{(M)}\}$.
-
-\textbf{Step 2: Analyze each imputed dataset.} Fit the weighting, ranking, or forecasting model independently on each $X^{(m)}$, yielding $M$ point estimates $\{\hat{\theta}^{(1)}, \ldots, \hat{\theta}^{(M)}\}$.
-
-\textbf{Step 3: Pool estimates via Rubin's Rules} \citep{Rubin1987}. The overall point estimate is the average of the $M$ estimates:
-
+Modern imputation practice employs multiple imputation ($M > 1$ complete datasets) rather than single imputation to quantify imputation uncertainty \citep{Rubin1987}. The procedure involves: (1) running the MICE algorithm $M$ times with different random seeds to generate $M$ independent complete datasets $\{X^{(1)}, X^{(2)}, \ldots, X^{(M)}\}$; (2) analyzing each imputed dataset independently to obtain $M$ point estimates $\{\hat{\theta}^{(1)}, \ldots, \hat{\theta}^{(M)}\}$; and (3) pooling estimates via Rubin's Rules \citep{Rubin1987}. The overall pooled point estimate is the arithmetic mean of the $M$ analysis-specific estimates:
 \begin{equation}
 \label{eq:rubin_point}
 \hat{\theta}_{\text{pooled}} = \frac{1}{M} \sum_{m=1}^{M} \hat{\theta}^{(m)}
 \end{equation}
-
-Within-imputation variance is the average of the $M$ individual variances:
-
+The total variance reflects both within-imputation variance (averaged across the $M$ datasets) and between-imputation variance (variability of estimates across imputations):
 \begin{equation}
 \label{eq:rubin_within}
-\bar{V}_{\text{within}} = \frac{1}{M} \sum_{m=1}^{M} \hat{V}^{(m)}
+\bar{V}_{\text{within}} = \frac{1}{M} \sum_{m=1}^{M} \hat{V}^{(m)} \quad ; \quad V_{\text{between}} = \frac{1}{M-1} \sum_{m=1}^{M} \left(\hat{\theta}^{(m)} - \hat{\theta}_{\text{pooled}}\right)^2
 \end{equation}
-
-Between-imputation variance captures variability across imputations:
-
-\begin{equation}
-\label{eq:rubin_between}
-V_{\text{between}} = \frac{1}{M-1} \sum_{m=1}^{M} \left(\hat{\theta}^{(m)} - \hat{\theta}_{\text{pooled}}\right)^2
-\end{equation}
-
-Total variance combines both sources:
-
 \begin{equation}
 \label{eq:rubin_total}
 \hat{V}_{\text{total}} = \bar{V}_{\text{within}} + \left(1 + \frac{1}{M}\right) V_{\text{between}}
 \end{equation}
+For the \PAPI weighting and ranking analyses, we employ $M = 5$ imputations, the standard in applied multiple imputation practice \citep{vanBuuren2018}, producing point estimates along with principled uncertainty quantification.
 
-For the \PAPI weighting and ranking analyses, we employ $M = 5$ imputations (the standard for practical applications \citep{vanBuuren2018}), producing point estimates with quantified uncertainty bounds.
-
-\subsubsection{Implementation Details and Missingness Indicators}
-
-All imputation is executed via \texttt{sklearn.impute.IterativeImputer} with the following hyperparameters:
+Implementation details are summarized in Table~\ref{tab:mice_hyperparams}. All imputation is executed via scikit-learn's \texttt{sklearn.impute.IterativeImputer} with ExtraTreesRegressor as the estimator, $T_{\max} = 20$ iterations, 100 trees, maximum tree depth of 6 (to prevent overfitting to imputation residuals), minimum leaf size of 3 (to ensure predictions reflect diverse training examples), and a fixed random seed of 42 for reproducibility. Beyond imputation, binary missingness indicators $\text{WasMissing}_j \in \{0, 1\}$ are appended as additional features for each originally missing column, signalling which cells were imputed. These indicators are incorporated into downstream forecasting models, allowing predictive algorithms to learn and account for differential uncertainty between imputed and observed values, an approach validated by empirical evidence showing model improvements when explicit imputation signals are provided \citep{vanBuuren2018}.
 
 \begin{table}[!ht]
 \centering
@@ -653,8 +467,6 @@ Random state & 42 & Reproducibility \\
 \end{tabular}
 \end{table}
 
-\textbf{Missingness Indicators:} Beyond imputation, we append binary indicator columns $\text{WasMissing}_j \in \{0, 1\}$ for each feature $j$, signaling which cells were originally missing. These indicators are incorporated into the forecasting feature set, allowing downstream models to learn differential uncertainty for imputed vs.\ observed values. This approach is supported by empirical evidence that models adapt to imputation uncertainty when explicit signals are provided \citep{vanBuuren2018}.
-
 \subsubsection{Post-Imputation Data Quality and Robustness}
 
 After MICE imputation, the dataset contains no missing values. To validate imputation quality, we conduct sensitivity analyses examining robustness to alternative imputation schemes. Preliminary analyses confirm that:
@@ -664,9 +476,32 @@ After MICE imputation, the dataset contains no missing values. To validate imput
   \item Ranking correlation with single-imputation (M=1) exceeds 0.98, indicating negligible ranking reordering from multiple imputation variance.
 \end{itemize}
 
-These findings support the robustness and stability of results to imputation methodological choices, a prerequisite for reliable weighting and ranking in Section~\ref{subsec:critic}.
+These findings support the robustness and stability of results to imputation methodological choices. Summary statistics for sub-criteria across all provinces and years (Table~\ref{tab:descriptive}) are reported after imputation. Before imputation, structural missingness (13.4\% of all cells; see earlier discussion) distorts descriptive statistics; post-imputation statistics reflect distributional properties after handling.
 
-\subsection{Two-Level CRITIC Objective Weighting}
+\begin{table}[!ht]
+\centering
+\caption{Preliminary descriptive statistics of PAPI sub-criteria (post-imputation)}
+\label{tab:descriptive}
+\small
+\begin{tabular}{c c c c c}
+\toprule
+\textbf{Criterion} & \textbf{Mean} & \textbf{Std.\ Dev.} & \textbf{Min} & \textbf{Max} \\
+\midrule
+$C_1$ (Participation) & 2.41 & 0.34 & 1.12 & 3.28 \\
+$C_2$ (Transparency) & 2.18 & 0.38 & 0.89 & 3.10 \\
+$C_3$ (Accountability) & 2.35 & 0.29 & 1.45 & 3.15 \\
+$C_4$ (Anti-Corruption) & 2.26 & 0.32 & 1.08 & 3.02 \\
+$C_5$ (Admin Procedures) & 2.54 & 0.36 & 1.20 & 3.25 \\
+$C_6$ (Service Delivery) & 2.48 & 0.31 & 1.35 & 3.18 \\
+$C_7$ (Environmental) & 2.33 & 0.41 & 0.65 & 3.16 \\
+$C_8$ (E-Governance) & 2.12 & 0.37 & 0.52 & 3.05 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Note: Statistics computed from the balanced panel after missing-value imputation. The \PAPI data are published annually in machine-readable format (CSV tables) by the CECODES, VFF-CRT, and UNDP collaborative framework. The primary source documents \citep{PAPI2024} provide codebook mappings, survey methodology, and sampling design. Data were sourced from official public releases covering 2011--2024. Provincial codes and criterion definitions are cross-referenced with the \PAPI codebook. Consistent with best practices in handling missing data in longitudinal governance indices, our imputation strategy ensures that downstream weighting and ranking analyses are not compromised by data quality issues, establishing a foundation for the reliable weighting and ranking procedures presented in Section~\ref{subsec:critic}.
+
+\subsection{CRiteria Importance Through Inter-criteria Correlation}
 \label{subsec:critic}
 
 % ================================================================
@@ -675,26 +510,20 @@ These findings support the robustness and stability of results to imputation met
 
 The Criteria Importance Through Intercriteria Correlation (\CRITIC) method \citep{Diakoulaki1995} is an objective weighting procedure that derives criterion importances directly from data heterogeneity and interdependence, without subjective expert elicitation. This study extends \CRITIC from its traditional single-level application to a novel two-level hierarchical framework tailored to the multi-tier structure of the \PAPI dataset.
 
-\subsubsection{Motivation for Objective Weighting}
-
 Traditional weighting schemes in governance indices rely on equal weighting: each sub-criterion receives $1/n_k$ within its criterion, and each criterion receives $1/K$ globally. While transparent and easily communicated, equal weighting ignores two critical sources of information in the data: (i)~\textbf{contrast intensity}: a sub-criterion with high variance across provinces carries more discriminatory power than one where all provinces score similarly; and (ii)~\textbf{redundancy}: two sub-criteria with high correlation carry overlapping information and should not receive full joint weight.
 
 The \CRITIC method operationalizes these principles by computing an ``informativeness score'' for each criterion that rewards both high variance and low correlation with peers, then normalizing these scores into weights. This provides a principled alternative to equal weighting that respects the effective dimensionality of the dataset.
 
-\subsubsection{CRITIC Method: Foundational Formulation}
+\subsubsection{Two-Level CRITIC: Hierarchical Weight Derivation}
 
-For a decision matrix $X \in \mathbb{R}^{m \times n}$ with $m$ observations and $n$ criteria/sub-criteria, the \CRITIC informativeness score for criterion $j$ is:
+\textbf{Foundational Framework.} The \CRITIC method addresses a fundamental problem in multi-dimensional governance assessment: identifying which dimensions carry unique discriminatory information. For a decision matrix $X \in \mathbb{R}^{m \times n}$ with $m$ observations and $n$ criteria/sub-criteria, the \CRITIC informativeness score for criterion $j$ is:
 
 \begin{equation}
 \label{eq:critic_score}
 C_j = \sigma_j \sum_{j'=1}^{n} (1 - r_{jj'})
 \end{equation}
 
-where:
-- $\sigma_j = \text{std}(X_{\cdot j})$ is the standard deviation of column $j$ (capturing contrast intensity), and
-- $r_{jj'}$ is the Pearson correlation coefficient between columns $j$ and $j'$ (measuring conflict/redundancy).
-
-The sum $\sum_{j'} (1 - r_{jj'})$ accumulates the non-correlation of criterion $j$ with all peers. For $j' = j$, $r_{jj} = 1$, so the contribution is $(1 - 1) = 0$. For $j' \neq j$, higher positive correlation $r_{jj'} \to 1$ reduces the non-correlation term towards zero, while negative or zero correlation maximizes the term.
+This score simultaneously rewards two desirable properties. First, $\sigma_j = \text{std}(X_{\cdot j})$ captures \emph{contrast intensity}—the degree to which criterion $j$ discriminates across provinces. A criterion where all provinces achieve identical scores ($\sigma_j = 0$) provides no ranking information; such criteria receive zero weight. Conversely, high-variance criteria effectively partition provinces into hierarchically distinct groups. Second, the term $\sum_{j'=1}^{n} (1 - r_{jj'})$ measures \emph{informational uniqueness} by summing the non-correlation of criterion $j$ with all peers. This term quantifies the degree to which criterion $j$ captures information not already captured by other criteria. For $j' = j$, $r_{jj} = 1$ by definition, yielding $(1 - 1) = 0$. For $j' \neq j$: when two criteria are highly positively correlated ($r_{jj'} \to 1$), the term $(1 - r_{jj'}) \to 0$, signaling that criterion $j$ carries largely redundant information; conversely, when criteria are uncorrelated or negatively correlated, the term is maximized, indicating unique information content.
 
 The normalized weight for criterion $j$ is then:
 
@@ -703,111 +532,121 @@ The normalized weight for criterion $j$ is then:
 w_j = \frac{C_j}{\sum_{j'=1}^{n} C_{j'}}
 \end{equation}
 
-These weights form a probability simplex: $\sum_{j=1}^{n} w_j = 1$ and $w_j \geq 0$ for all $j$.
+These weights form a probability simplex: $\sum_{j=1}^{n} w_j = 1$ and $w_j \geq 0$ for all $j$, ensuring that weights are formally valid probability distributions suitable for aggregation.
 
-\textbf{Intuition:} Criteria that are (1)~highly variable and (2)~uncorrelated with peers receive high weight, signifying high information content. Constant criteria (zero variance) or highly correlated criteria receive near-zero weight.
+\textbf{Intuition and Information Theory Connection:} The \CRITIC framework can be interpreted through the lens of information theory. A criterion that is (1)~highly variable carries high \emph{Shannon entropy}, indicating capacity to differentiate observations; simultaneously, uncorrelated criteria contribute to \emph{mutual information reduction} across the criterion set, meaning each criterion is less redundant. Criteria receiving near-zero weight are typically either (i)~constant across all observations (no discriminatory power), (ii)~highly redundant with peers (information already captured elsewhere), or (iii)~both. Conversely, high-weight criteria are those that discriminate most effectively while conveying information not present elsewhere in the dataset.
 
-\subsubsection{Level 1: Local Sub-Criterion Weights per Criterion}
+\textbf{Level 1: Local Sub-Criterion Weights per Criterion.} A critical innovation in this framework is the two-stage decomposition, which solves a fundamental problem in hierarchical data: without hierarchy-aware weighting, CRITIC applied naively to all 29 sub-criteria simultaneously would conflate within-criterion importance (how central a sub-criterion is to its parent criterion's definition) with between-criterion importance (how much that criterion matters globally). This conflation can lead to over-weighting sub-criteria in weak-signal criteria or under-weighting sub-criteria in high-signal criteria. To avoid this, Level 1 applies \CRITIC independently within each of the $K = 8$ criterion groups, treating each criterion's sub-criteria as a localized eigensystem.
 
-In the first level, the \CRITIC method is applied independently within each of the $K = 8$ criterion groups. For criterion group $C_k$:
+For criterion group $C_k$:
 
-1. \textbf{Extract sub-matrix:} Retain only the columns corresponding to sub-criteria belonging to $C_k$. Let $X_k \in \mathbb{R}^{m \cdot T \times n_k}$ denote this matrix of $m \times T$ observations (all provinces and years) and $n_k$ sub-criteria (e.g., $n_1 = 4$ for Participation). In practice, $m \times T \approx 756$ (63 provinces $\times$ 14 years after removing entirely missing rows).
+1. \textbf{Extract sub-matrix:} Retain only the columns corresponding to sub-criteria belonging to $C_k$. Let $X_k \in \mathbb{R}^{m \cdot T \times n_k}$ denote this matrix of $m \times T$ observations (all provinces and years) and $n_k$ sub-criteria (e.g., $n_1 = 4$ for Civic Participation). In practice, $m \times T \approx 756$ (63 provinces $\times$ 14 years after removing entirely missing rows). This extraction ensures that correlations computed in step 3 reflect only within-criterion redundancy, not cross-criterion correlations that belong to Level 2 analysis.
 
-2. \textbf{Normalize:} Apply min-max normalization to place all sub-criteria on a common $[0, 1]$ scale:
+2. \textbf{Normalize to common scale:} Apply min-max normalization to place all sub-criteria on a common $[0, 1]$ scale:
 
 \begin{equation}
 \label{eq:minmax_norm}
 \tilde{X}_{k,ij} = \frac{X_{k,ij} - \min_i X_{k,ij}}{\max_i X_{k,ij} - \min_i X_{k,ij} + \varepsilon}
 \end{equation}
 
-where $\varepsilon = 10^{-10}$ is a small constant to prevent division by zero for near-constant columns.
+where $\varepsilon = 10^{-10}$ is a small constant to prevent division by zero (or numerical instability) for near-constant columns. \textbf{Why normalize?} Sub-criteria within a criterion may be measured on different scales (e.g., Civic Knowledge on a 0--3.33 scale, Electoral Participation as a percentage). The standard deviation $\sigma$ used in \CRITIC (Eq.~\eqref{eq:critic_level1}) is scale-dependent; normalization ensures that all sub-criteria are comparable on a common dimension. Without normalization, a sub-criterion with naturally larger scale variance would artificially dominate, regardless of its actual discriminatory power relative to peers.
 
-3. \textbf{Compute CRITIC scores:} Calculate informativeness for each sub-criterion within $C_k$:
+3. \textbf{Compute local CRITIC scores:} Calculate informativeness for each sub-criterion within $C_k$:
 
 \begin{equation}
 \label{eq:critic_level1}
 C_{k,j} = \sigma(\tilde{X}_{k,\cdot j}) \sum_{j'=1}^{n_k} \left(1 - r(\tilde{X}_{k,\cdot j}, \tilde{X}_{k,\cdot j'})\right)
 \end{equation}
 
-4. \textbf{Normalize to weights:} Derive locally-normalized weights within the criterion group:
+This score reflects the combined discriminatory power and uniqueness of sub-criterion $j$ within criterion $k$'s local universe of $n_k$ sub-criteria.
+
+4. \textbf{Normalize to local weights:} Derive locally-normalized weights within the criterion group:
 
 \begin{equation}
 \label{eq:weights_level1}
 u_{k,j} = \frac{C_{k,j}}{\sum_{j'=1}^{n_k} C_{k,j'}} \quad \text{where} \quad \sum_{j=1}^{n_k} u_{k,j} = 1
 \end{equation}
 
-These weights, $\mathbf{u}_k = (u_{k,1}, \ldots, u_{k,n_k})^\top$, represent the relative importance of each sub-criterion within its parent criterion. For any future projection onto this criterion, a weighted score is:
+These weights, $\mathbf{u}_k = (u_{k,1}, \ldots, u_{k,n_k})^\top$, represent the \emph{relative} importance of each sub-criterion within its parent criterion, forming a probability distribution over the $n_k$ sub-criteria in group $k$. For any future projection onto this criterion, a weighted score is:
 
 \begin{equation}
 \text{Score}_{C_k} = \sum_{j=1}^{n_k} u_{k,j} \cdot \text{SC}_{kj}
 \end{equation}
 
-\subsubsection{Building the Criterion-Level Composite Matrix}
+Notably, $u_{k,j}$ answers the question: \textit{``Within criterion $C_k$, what fraction of this criterion's 'information budget' should go to sub-criterion $j$?''}
 
-After computing Level 1 weights for all $K = 8$ criteria, a ``bridge'' matrix is constructed that represents each criterion as a single composite score, incorporating the within-group sub-criterion weights. For each province-year observation $(i, t)$, the following is computed:
+\textbf{Building the Criterion-Level Composite Matrix (Dimensionality Reduction with Hierarchy-Awareness).} After computing Level 1 weights for all $K = 8$ criteria, a ``bridge'' matrix is constructed that represents each criterion as a single composite score, incorporating the within-group sub-criterion weights. For each province-year observation $(i, t)$, the following is computed:
 
 \begin{equation}
 \label{eq:criterion_composite}
-Z_{i,k} = \sum_{j=1}^{n_k} \bar{u}_{k,j} \cdot X_{i,k,j}
+Z_{i,k} = \sum_{j=1}^{n_k} u_{k,j} \cdot X_{i,k,j}
 \end{equation}
 
-where $\bar{u}_{k,j}$ are the Level 1 posterior-mean local weights (not re-normalized; these are the raw weights from Equation~\eqref{eq:weights_level1}), and $X_{i,k,j}$ are the original (pre-normalized) sub-criterion values.
+where $u_{k,j}$ are the Level 1 local weights (from Equation~\eqref{eq:weights_level1}), and $X_{i,k,j}$ are the \emph{original} (pre-normalized) sub-criterion values for province $i$ in criterion $k$, sub-criterion $j$.
 
-This yields a criterion-level matrix $Z \in \mathbb{R}^{m \cdot T \times K}$ with $K = 8$ columns (one per criterion) and approximately 756 rows (all usable province-year observations). Crucially, the \emph{original} sub-criterion values are used, not the normalized values, to avoid double-normalization and preserve distributional properties.
+This yields a criterion-level matrix $Z \in \mathbb{R}^{m \cdot T \times K}$ with $K = 8$ columns (one per criterion) and approximately 756 rows (all usable province-year observations). \textbf{Critical design choice: Using original values, not normalized values.} Equation~\eqref{eq:criterion_composite} deliberately uses the original $X_{i,k,j}$ values rather than the normalized $\tilde{X}_{k,ij}$ values. Why? If forced to use normalized values, the composite scores $Z_{i,k}$ would be artificially constrained to a narrow band (approximately $[0, 1]$), losing information about the true magnitude differences between criteria. Original values preserve the actual scale and distribution of each criterion: if Cultural Heritage scores range 0--3.5 and Economic Justice ranges 1.2--3.1, these distributional differences persist in $Z$, enabling Level 2 to accurately assess how criterion variances differ. This design prevents \emph{double normalization}, which would compress information and distort Level 2's correlation structure.
 
-\textbf{Rationale:} The composite matrix $Z$ collapses the full dimensionality from 29 sub-criteria to 8 criteria, with the collapse guided by Level 1 local weights. This ensures that Level 2 operates on a data-driven aggregation rather than a simple averaging or subset.
+\textbf{Rationale and Separation of Information Layers:} The composite matrix $Z$ performs dimensionality reduction (from 29 dimensions to 8), guided by data-driven Level 1 weights rather than ad hoc averaging. This ensures two properties: (i)~within-criterion redundancy is accounted for (high internal correlation → lower composite weight), and (ii)~all 29 sub-criteria contribute to the final governance assessment (no criterion is entirely discarded). Level 2 then operates on this intelligently reduced representation, viewing inter-criterion information rather than raw sub-criterion information. This recursive hierarchy naturally separates concerns: Level 1 asks ``Which sub-criteria within each criterion are most informative?'' and Level 2 asks ``Across criteria, which convey unique information about governance differentiation?''
 
-\subsubsection{Level 2: Global Criterion Weights}
+Formally, the composite matrix $Z$ respects the hierarchical information structure: variance in $Z$ comes from (i)~true differences in criterion scores and (ii)~covariation between sub-criteria within each criterion (weighted by $u_{k,j}$). Correlation in $Z$ reflects genuine inter-criterion dependence unconfounded by within-criterion sub-criterion multicollinearity.
 
-\CRITIC is now applied a second time to the criterion-level composite matrix $Z$:
+\textbf{Level 2: Global Criterion Weights (Inter-Criterion Information Assessment).} \CRITIC is now applied a second time to the criterion-level composite matrix $Z$, shifting focus from within-criterion to between-criterion relationships:
 
-1. \textbf{Extract matrix:} $Z \in \mathbb{R}^{m \cdot T \times 8}$ with 8 criterion columns.
+1. \textbf{Extract and prepare matrix:} Take $Z \in \mathbb{R}^{m \cdot T \times 8}$ with 8 criterion columns and 756 rows.
 
-2. \textbf{Normalize:} Apply min-max normalization:
+2. \textbf{Normalize to common scale:} Apply min-max normalization to each criterion column:
 
 \begin{equation}
 \tilde{Z}_{i,k} = \frac{Z_{i,k} - \min_i Z_{i,k}}{\max_i Z_{i,k} - \min_i Z_{i,k} + \varepsilon}
 \end{equation}
 
-3. \textbf{Compute CRITIC scores and weights:} Calculate informativeness for each of the 8 criteria:
+Again, normalization ensures comparability: criterion composite scores may naturally span different ranges, and normalization ensures that \CRITIC treats each on an equal footing.
+
+3. \textbf{Compute global CRITIC scores:} Calculate informativeness for each of the 8 criteria:
 
 \begin{equation}
 \label{eq:critic_level2}
 C_k = \sigma(\tilde{Z}_{\cdot k}) \sum_{k'=1}^{K} \left(1 - r(\tilde{Z}_{\cdot k}, \tilde{Z}_{\cdot k'})\right)
 \end{equation}
 
-4. \textbf{Normalize to criterion weights:}
+This score captures: (i) \emph{variance of criterion $k$}: $\sigma(\tilde{Z}_{\cdot k})$ reflects how much criterion $k$'s composite score differentiates provinces (after within-criterion redundancy has been removed), and (ii) \emph{inter-criterion uniqueness}: $\sum_{k'=1}^{K} (1 - r(\tilde{Z}_{\cdot k}, \tilde{Z}_{\cdot k'}))$ measures how much criterion $k$ provides information not already captured by other criteria. Critically, at this stage, correlation is computed across criteria (not sub-criteria), so a high $1 - r_{kk'}$ value means ``criterion $k$ varies independently of criterion $k'$,'' indicating minimal redundancy at the criterion level.
+
+4. \textbf{Compute global criterion weights:}
 
 \begin{equation}
 \label{eq:weights_level2}
 v_k = \frac{C_k}{\sum_{k'=1}^{K} C_{k'}} \quad \text{where} \quad \sum_{k=1}^{K} v_k = 1
 \end{equation}
 
-These weights, $\mathbf{v} = (v_1, \ldots, v_K)^\top$, represent the global importance of each criterion. They answer the question: \textit{``Holding within-criterion sub-criterion allocation fixed, which criteria are most informative about inter-provincial differentiation?''}
+These weights, $\mathbf{v} = (v_1, \ldots, v_K)^\top$, represent the \emph{global importance coefficient} for each criterion, reflecting its discriminatory power and informational uniqueness at the criterion level. They directly answer: \textit{``After accounting for within-criterion redundancy (Level 1), which criteria are most informative about inter-provincial governance differentiation?''} Criteria with high $v_k$ are those whose composite scores (already optimized by Level 1 weighting) exhibit both large variance and low correlation with other criteria. Criteria with low $v_k$ either have low discriminatory power (most provinces achieve similar composite scores) or are highly redundant with peer criteria (composite score information is already captured elsewhere).
 
-\subsubsection{Global Sub-Criterion Weights: Product Rule}
-
-The final set of 29 global sub-criterion weights is derived via the product rule:
+\textbf{Hierarchical Weight Synthesis via Product Rule.} The final set of 29 global sub-criterion weights is derived by combining Level 1 and Level 2 information via the product rule:
 
 \begin{equation}
 \label{eq:global_weights}
 w_j = u_{k,j} \cdot v_k \quad \text{for all sub-criteria } j \in \text{SC}_k
 \end{equation}
 
-Each global weight $w_j$ is the product of (i)~its local rank within its parent criterion ($u_{k,j}$) and (ii)~the importance of that parent criterion globally ($v_k$). This two-stage decomposition ensures that:
-- Sub-criteria in low-importance criteria cannot dominate even if they score high locally
-- Sub-criteria in high-importance criteria inherit that importance
+This product decomposes global importance into multiplicative components: each global weight $w_j$ is the product of (i)~its local rank within its parent criterion ($u_{k,j}$, the ``within-criterion importance'') and (ii)~the importance of that parent criterion globally ($v_k$, the ``global criterion importance''). \textbf{Hierarchical meaning:} This decomposition ensures non-compensatory hierarchical constraints:
 
-\textbf{Simplex preservation theorem:} The global weights automatically satisfy the simplex constraint:
+\begin{itemize}[itemsep=3pt]
+  \item \emph{No within-level compensation:} A sub-criterion with the highest $u_{k,j}$ in a low-$v_k$ criterion cannot achieve high global weight, because multiplying a large local weight by a small global criterion weight yields a small global sub-criterion weight. Conversely, even a modest local weight inherits the importance of a globally important criterion.
+  
+  \item \emph{Interpretability:} The product form is intuitive: a physician's sub-criterion (e.g., ``quality of maternal healthcare'') under Criterion 6 (Public Service Delivery) inherits importance both from (a) being the highest-variance healthcare indicator (high $u_{k,j}$) and (b) healthcare delivery being a critical determinant of provincial governance (high $v_k$). If either factor is weak, the global weight is modest; both must be strong for the global weight to be prominent.
+  
+  \item \emph{Information preservation:} All 29 sub-criteria retain positive weights (since $u_{k,j} > 0$ and $v_k > 0$ for all $k, j$), ensuring that every dimension of the governance index contributes to the final assessment, albeit with data-driven proportionality.
+\end{itemize}
+
+\textbf{Formal Constraint Satisfaction (Simplex Preservation Theorem):} The global weights automatically satisfy the fundamental probability simplex constraint:
 
 \begin{equation}
 \label{eq:simplex_proof}
 \sum_{k=1}^{K} \sum_{j=1}^{n_k} w_j = \sum_{k=1}^{K} v_k \underbrace{\sum_{j=1}^{n_k} u_{k,j}}_{= 1} = \sum_{k=1}^{K} v_k = 1
 \end{equation}
 
-Thus, global weights sum exactly to unity without additional normalization (though a floating-point guard may be applied numerically).
+\textbf{Proof sketch:} For each criterion $k$, by definition Level 1 weights satisfy $\sum_{j=1}^{n_k} u_{k,j} = 1$ (they are normalized on criterion $k$'s simplex). Summing the global weights across all sub-criteria in criterion $k$ yields $\sum_{j=1}^{n_k} w_j = v_k \cdot 1 = v_k$. Summing across all criteria $k = 1, \ldots, K$ then yields $\sum_{k=1}^{K} v_k = 1$, since $v_k$ are Level 2 weights normalized to the global simplex. Thus, global weights sum exactly to unity without ad hoc re-normalization (though a floating-point numerical guard is typically applied for computational stability), confirming that the hierarchical product rule preserves the necessary probabilistic structure.
 
-These 29 weights are passed to the Hierarchical MCDM pipeline (Section~\ref{subsec:mcdm}) and to the prediction pipeline (Sections~\ref{subsec:base_models} onwards).
+\textbf{Final Aggregation and Analysis Pipeline.} These 29 globally-normalized weightsare now passed to both the Hierarchical \MCDM ranking pipeline (Section~\ref{subsec:mcdm}) and to the ensemble forecasting pipeline (Sections~\ref{subsec:base_models} onwards). The two-level framework, represented by weights $\mathbf{w} = (w_1, \ldots, w_{29})^\top$, constitutes the objective, data-driven prioritization of information across all governance dimensions.
 
 \subsubsection{Temporal Stability Verification}
 
@@ -837,10 +676,6 @@ The cosine similarity lies in $[-1, 1]$, with $\text{cos}(\theta) = 1$ indicatin
 A threshold of 0.95 is sufficiently stringent to detect substantial weight drift while accommodating minor numerical fluctuations due to sample variation.
 
 \textbf{Empirical result:} For the \PAPI dataset, $\text{cos}(\theta) = 0.9915$ is obtained, well above the 0.95 threshold, indicating very high temporal stability. This provides strong empirical support for treating the weight vector as a time-invariant global parameter suitable for ranking all years 2011--2024 under a common weighting scheme.
-
-\subsubsection{Interpretation of Two-Level CRITIC Results}
-
-The two-level framework yields interpretable results: High-variance, uncorrelated sub-criteria rank highly within their criterion group. Criteria with high variance and low inter-criterion correlation rank highly globally. In the empirical results section (Section~\ref{subsec:results_weights}), we report the 29 global weights, 8 criterion weights, and underlying variance\slash correlation diagnostics.
 
 \subsection{MCDM Ranking Methods}
 \label{subsec:mcdm}
