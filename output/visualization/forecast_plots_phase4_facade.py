@@ -68,7 +68,7 @@ def _build_payload(**kwargs) -> ForecastVizPayload:
         per_model_feature_importance=kwargs.get('per_model_feature_importance'),
         current_scores=_ensure_array(kwargs.get('current_scores')),
         provinces=kwargs.get('provinces'),
-        prediction_year=kwargs.get('prediction_year'),
+        target_year=kwargs.get('target_year'),
         cv_fold_val_years=kwargs.get('cv_fold_val_years'),
     )
 
@@ -291,11 +291,11 @@ class ForecastPlotter(BasePlotter):
         save_name: str = 'fig18_feature_importance.png',
     ) -> Optional[str]:
         """F-12: Feature importance lollipop chart."""
-        # Note: Feature importance is a Dict, not part of ForecastVizPayload
-        # For now, we accept it and delegate without payload (chart handles Dict directly)
-        # This is a limitation of Phase 4 - will be addressed in Phase 5
         payload = _build_payload()
-        return self._interpretability.plot_feature_importance(payload, save_name=save_name)
+        # Note: This is a special case - we pass importance dict directly to chart
+        # The chart module method signature may differ
+        return self._interpretability.plot_feature_importance(
+            importance, top_n=top_n, title=title, save_name=save_name)
 
     def plot_feature_importance_single(
         self,
