@@ -4,7 +4,7 @@ Hyperparameter Tuning Module
 =============================
 
 Provides the `EnsembleHyperparameterOptimizer` class to run Optuna TPE search
-for base models: CatBoost, KernelRidge, SVR, and QuantileRF.
+for base models: CatBoost, KernelRidge, and QuantileRF.
 """
 
 import json
@@ -156,56 +156,6 @@ class EnsembleHyperparameterOptimizer:
             timeout=self.config.hp_tune_timeout_seconds
         )
         logger.info(f"KernelRidge tuned: best R2={study.best_value:.4f}, params={study.best_params}")
-        return study.best_params
-
-    def optimize_svr(self, X: np.ndarray, y: np.ndarray, year_labels: Optional[np.ndarray] = None) -> Dict[str, Any]:
-        """Tuning for SVRForecaster."""
-        if not _OPTUNA_AVAILABLE:
-            return {}
-
-        def objective(trial: optuna.Trial) -> float:
-            from forecasting.svr import SVRForecaster
-            params = {
-                'C': trial.suggest_float('C', 1e-2, 1e2, log=True),
-                'epsilon': trial.suggest_float('epsilon', 1e-3, 1.0, log=True),
-            }
-
-            scores = []
-            # CRITICAL: Use year_labels for yearly-aware CV (e.g. _WalkForwardYearlySplit)
-            # This ensures folds respect temporal panel structure for production validity.
-            # Fallback to y for non-yearly splitters (backward compatibility).
-            if year_labels is not None:
-                fold_iter = self.cv_splitter.split(X, year_labels)
-            else:
-                fold_iter = self.cv_splitter.split(X, y)
-            
-            for fold_idx, (train_idx, val_idx) in enumerate(fold_iter):
-                X_train, y_train = X[train_idx], y[train_idx]
-                X_val, y_val = X[val_idx], y[val_idx]
-                
-                model = SVRForecaster(**params)
-                model.fit(X_train, y_train)
-                preds = model.predict(X_val)
-                score = self._compute_r2(y_val, preds)
-                scores.append(score)
-                
-                trial.report(score, fold_idx)
-                if trial.should_prune():
-                    raise optuna.TrialPruned()
-
-            return float(np.mean(scores))
-
-        study = optuna.create_study(
-            direction="maximize",
-            sampler=TPESampler(seed=self.random_state),
-            pruner=MedianPruner(n_warmup_steps=1)
-        )
-        study.optimize(
-            objective, 
-            n_trials=self.config.hp_tune_n_trials,
-            timeout=self.config.hp_tune_timeout_seconds
-        )
-        logger.info(f"SVR tuned: best R2={study.best_value:.4f}, params={study.best_params}")
         return study.best_params
 
     def optimize_quantilerf(self, X: np.ndarray, y: np.ndarray, year_labels: Optional[np.ndarray] = None) -> Dict[str, Any]:

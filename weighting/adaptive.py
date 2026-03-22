@@ -46,12 +46,12 @@ from data.missing_data import prepare_decision_matrix, MatrixFilterReport
 @dataclass
 class AdaptiveWeightResult(WeightResult):
     """Extended weight result with adaptive calculation metadata."""
-    included_alternatives: List[str]  # Provinces included in calculation
-    excluded_alternatives: List[str]  # Provinces excluded (all NaN across all criteria)
-    included_criteria: List[str]  # Criteria included in calculation
-    excluded_criteria: List[str]  # Criteria excluded (all NaN across all provinces)
-    n_included: int  # Number of alternatives included
-    n_excluded: int  # Number of alternatives excluded
+    included_alternatives: List[str] = None  # Provinces included in calculation
+    excluded_alternatives: List[str] = None  # Provinces excluded (all NaN across all criteria)
+    included_criteria: List[str] = None  # Criteria included in calculation
+    excluded_criteria: List[str] = None  # Criteria excluded (all NaN across all provinces)
+    n_included: int = 0  # Number of alternatives included
+    n_excluded: int = 0  # Number of alternatives excluded
 
 
 class AdaptiveWeightCalculator:

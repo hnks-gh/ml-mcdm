@@ -73,14 +73,14 @@ class ForecastBootstrapResult:
 @dataclass
 class ERBootstrapResult:
     """Result container for ER belief distribution bootstrap analysis."""
-    mean_beliefs: Dict[str, np.ndarray]        # entity â†’ mean belief vector
-    std_beliefs: Dict[str, np.ndarray]         # entity â†’ std belief vector
-    ci_lower_beliefs: Dict[str, np.ndarray]    # entity â†’ lower CI per grade
-    ci_upper_beliefs: Dict[str, np.ndarray]    # entity â†’ upper CI per grade
-    mean_utility: Dict[str, float]             # entity â†’ mean final utility
-    std_utility: Dict[str, float]              # entity â†’ utility std
-    utility_ci: Dict[str, Tuple[float, float]] # entity â†’ (lower, upper) CI
-    grade_stability: Dict[str, float]          # entity â†’ dominant-grade stability
+    mean_beliefs: Dict[str, np.ndarray]        # entity → mean belief vector
+    std_beliefs: Dict[str, np.ndarray]         # entity → std belief vector
+    ci_lower_beliefs: Dict[str, np.ndarray]    # entity → lower CI per grade
+    ci_upper_beliefs: Dict[str, np.ndarray]    # entity → upper CI per grade
+    mean_utility: Dict[str, float]             # entity → mean final utility
+    std_utility: Dict[str, float]              # entity → utility std
+    utility_ci: Dict[str, Tuple[float, float]] # entity → (lower, upper) CI
+    grade_stability: Dict[str, float]          # entity → dominant-grade stability
     grades: List[str]
     effective_iterations: int
     convergence_rate: float

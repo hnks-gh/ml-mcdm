@@ -57,7 +57,6 @@ from .bayesian import BayesianForecaster
 from .features import TemporalFeatureEngineer
 # Kernel methods (T-03a, T-03b)
 from .kernel_ridge import KernelRidgeForecaster
-from .svr import SVRForecaster
 
 # State-of-the-art advanced models
 from .quantile_forest import QuantileRandomForestForecaster
@@ -877,7 +876,6 @@ class UnifiedForecaster:
         if getattr(cfg, 'auto_tune_kernel', False):
             logger.info("Tuning Kernel models...")
             tuned_params['KernelRidge'] = optimizer.optimize_kernel_ridge(X_pca, y, year_labels)
-            tuned_params['SVR'] = optimizer.optimize_svr(X_pca, y, year_labels)
 
         if getattr(cfg, 'auto_tune_qrf', False):
             logger.info("Tuning Quantile Random Forest...")
@@ -907,9 +905,6 @@ class UnifiedForecaster:
         gb_depth    = cfg.gb_max_depth              if cfg is not None else 5
         krr_alpha   = getattr(cfg, 'krr_alpha',   1.0)   if cfg is not None else 1.0
         krr_gamma   = getattr(cfg, 'krr_gamma',   "scale") if cfg is not None else "scale"
-        svr_C       = getattr(cfg, 'svr_C',       1.0)   if cfg is not None else 1.0
-        svr_eps     = getattr(cfg, 'svr_epsilon',  0.1)   if cfg is not None else 0.1
-        svr_gamma   = getattr(cfg, 'svr_gamma',   "scale") if cfg is not None else "scale"
         # Phase 2.1: early stopping configuration
         es_rounds   = getattr(cfg, 'gb_early_stopping_rounds', 20) if cfg is not None else 20
         es_val_frac = getattr(cfg, 'gb_validation_fraction',  0.20) if cfg is not None else 0.20
@@ -921,13 +916,10 @@ class UnifiedForecaster:
         # ── Phase 3: merge tuned HPs with config defaults (tuned take priority)
         _gb_params   = self._tuned_params_.get('CatBoost', {})
         _krr_params  = self._tuned_params_.get('KernelRidge', {})
-        _svr_params  = self._tuned_params_.get('SVR', {})
         _qrf_params  = self._tuned_params_.get('QuantileRF', {})
 
         # Override config variables if tuned
         krr_alpha = _krr_params.get('alpha', krr_alpha)
-        svr_C = _svr_params.get('C', svr_C)
-        svr_eps = _svr_params.get('epsilon', svr_eps)
         qrf_n_est = _qrf_params.get('n_estimators', qrf_n_est)
 
         # --- Tier 1a: Tree-based gradient boosting -------------------------
@@ -946,10 +938,6 @@ class UnifiedForecaster:
         models['BayesianRidge'] = BayesianForecaster()
         models['KernelRidge'] = KernelRidgeForecaster(
             alpha=krr_alpha, gamma=krr_gamma,
-            random_state=self.random_state,
-        )
-        models['SVR'] = SVRForecaster(
-            C=svr_C, epsilon=svr_eps, gamma=svr_gamma,
             random_state=self.random_state,
         )
 
@@ -1784,19 +1772,17 @@ class UnifiedForecaster:
         self.X_pred_tree_ = self.reducer_tree_.transform(self.X_pred_.values)
 
         # Per-model routing: PCA track (linear/kernel) → PLS; tree track → threshold.
-        # PCA track: BayesianRidge, KernelRidge, SVR (smooth/kernel methods)
+        # PCA track: BayesianRidge, KernelRidge (smooth/kernel methods)
         # Tree track: CatBoost, QuantileRF
         self._per_model_X_train_ = {
             'BayesianRidge':    self.X_train_pca_,
             'KernelRidge':      self.X_train_pca_,
-            'SVR':              self.X_train_pca_,
             'CatBoost':         self.X_train_tree_,
             'QuantileRF':       self.X_train_tree_,
         }
         self._per_model_X_pred_ = {
             'BayesianRidge':    self.X_pred_pca_,
             'KernelRidge':      self.X_pred_pca_,
-            'SVR':              self.X_pred_pca_,
             'CatBoost':         self.X_pred_tree_,
             'QuantileRF':       self.X_pred_tree_,
         }
@@ -1911,8 +1897,8 @@ class UnifiedForecaster:
     def stage3_fit_base_models(self) -> None:
         """Stage 3: Create base models and train the Super Learner ensemble.
 
-        Creates the five base forecasters (CatBoost, BayesianRidge,
-        KernelRidge, SVR, QuantileRF) and delegates training to
+        Creates the four base forecasters (CatBoost, BayesianRidge,
+        KernelRidge, QuantileRF) and delegates training to
         ``SuperLearner.fit()``, which
         executes three sub-steps atomically:
 
@@ -1986,7 +1972,7 @@ class UnifiedForecaster:
             )
             # Build CV routing from _per_model_X_train_ keys, substituting
             # per-track CV matrices (PCA or tree track with holdout appended)
-            _pca_cv_track = {'BayesianRidge', 'KernelRidge', 'SVR'}
+            _pca_cv_track = {'BayesianRidge', 'KernelRidge'}
             _per_model_cv = {
                 mname: (_X_cv_pca if mname in _pca_cv_track else _X_cv_tree)
                 for mname in self._per_model_X_train_
@@ -2042,7 +2028,7 @@ class UnifiedForecaster:
             entity_indices_arr=_ent_cv,
             per_model_tree_names={
                 name for name in self.models_
-                if name not in {'BayesianRidge', 'KernelRidge', 'SVR'}
+                if name not in {'BayesianRidge', 'KernelRidge'}
             },
         )
         # ── E-08: Create shift detector when enabled ──────────────────────────
@@ -3070,7 +3056,7 @@ class UnifiedForecaster:
                     [_ent_to_idx_ho.get(e, 0) for e in self.X_holdout_.index],
                     dtype=int,
                 )
-                _pca_ho_track = {'BayesianRidge', 'KernelRidge', 'SVR'}
+                _pca_ho_track = {'BayesianRidge', 'KernelRidge'}
                 _per_model_X_holdout = {
                     name: (_X_ho_pca if name in _pca_ho_track else _X_ho_tree)
                     for name in self.super_learner_._fitted_base_models

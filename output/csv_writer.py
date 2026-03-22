@@ -1578,5 +1578,175 @@ class CsvWriter:
 
         return saved
 
+    def save_temporal_stability(self, temporal_result: Any) -> Optional[str]:
+        """
+        Save temporal stability analysis results.
+
+        Parameters
+        ----------
+        temporal_result : TemporalStabilityResult
+            Result from WindowedTemporalStabilityAnalyzer.analyze()
+
+        Returns
+        -------
+        str
+            Path to saved CSV file (temporal_stability_summary.csv)
+
+        Files produced
+        --------------
+        weighting/temporal_stability_summary.csv — aggregate metrics
+        weighting/temporal_stability_rolling_window.csv — per-window timeline
+        """
+        if temporal_result is None:
+            return None
+
+        saved_files = []
+
+        try:
+            # Summary statistics
+            summary_data = {
+                'Metric': [
+                    'Spearman_Rho_Mean',
+                    'Spearman_Rho_Std',
+                    'Kendalls_W',
+                    'Year_Min',
+                    'Year_Max',
+                    'N_Windows',
+                    'N_Pairs',
+                ],
+                'Value': [
+                    float(temporal_result.spearman_rho_mean),
+                    float(temporal_result.spearman_rho_std),
+                    float(temporal_result.kendalls_w),
+                    temporal_result.year_range[0],
+                    temporal_result.year_range[1],
+                    len(set().union(*[w for _ in temporal_result.rolling_timeline])) if temporal_result.rolling_timeline else 0,
+                    len(temporal_result.spearman_rho_rolling),
+                ],
+            }
+            df_summary = pd.DataFrame(summary_data)
+            path_summary = self._save_csv(
+                df_summary,
+                'temporal_stability_summary.csv',
+                directory=self.weighting_dir,
+                float_fmt='%.6g'
+            )
+            saved_files.append(path_summary)
+
+            # Per-criterion CV
+            cv_data = {
+                'Criterion': list(temporal_result.coefficient_variation.keys()),
+                'Coefficient_Variation': list(temporal_result.coefficient_variation.values()),
+            }
+            df_cv = pd.DataFrame(cv_data).sort_values('Criterion').reset_index(drop=True)
+            path_cv = self._save_csv(
+                df_cv,
+                'temporal_stability_cv.csv',
+                directory=self.weighting_dir,
+                float_fmt='%.6g'
+            )
+            saved_files.append(path_cv)
+
+            # Rolling window timeline (if available)
+            if temporal_result.rolling_timeline:
+                df_rolling = pd.DataFrame(temporal_result.rolling_timeline)
+                path_rolling = self._save_csv(
+                    df_rolling,
+                    'temporal_stability_rolling_window.csv',
+                    directory=self.weighting_dir,
+                    float_fmt='%.6g'
+                )
+                saved_files.append(path_rolling)
+
+            return path_summary  # Return main summary file
+
+        except Exception as exc:
+            _logger.warning(f'save_temporal_stability failed: {exc}')
+            return None
+
+    def save_sensitivity_analysis(self, sensitivity_result: Any) -> Optional[str]:
+        """
+        Save sensitivity analysis results (three-tier perturbation).
+
+        Parameters
+        ----------
+        sensitivity_result : SensitivityResult
+            Result from CRITICSensitivityAnalyzer.analyze()
+
+        Returns
+        -------
+        str
+            Path to saved CSV file (sensitivity_analysis_summary.csv)
+
+        Files produced
+        --------------
+        weighting/sensitivity_analysis_summary.csv — robustness & sensitivity per tier
+        weighting/sensitivity_analysis_criteria.csv — per-criterion sensitivity scores
+        weighting/sensitivity_analysis_disruption.csv — rank disruption statistics
+        """
+        if sensitivity_result is None:
+            return None
+
+        saved_files = []
+
+        try:
+            # Tier robustness summary
+            robustness_data = {
+                'Tier': list(sensitivity_result.tier_robustness.keys()),
+                'Robustness_Score': list(sensitivity_result.tier_robustness.values()),
+            }
+            df_robustness = pd.DataFrame(robustness_data).sort_values('Tier').reset_index(drop=True)
+            path_robustness = self._save_csv(
+                df_robustness,
+                'sensitivity_analysis_summary.csv',
+                directory=self.weighting_dir,
+                float_fmt='%.6g'
+            )
+            saved_files.append(path_robustness)
+
+            # Per-criterion sensitivity per tier
+            criteria_rows = []
+            for criterion in sensitivity_result.per_criterion_sensitivity.keys():
+                row = {'Criterion': criterion}
+                for tier, sensitivity in sensitivity_result.per_criterion_sensitivity[criterion].items():
+                    row[f'Sensitivity_{tier}'] = float(sensitivity)
+                criteria_rows.append(row)
+
+            df_criteria = pd.DataFrame(criteria_rows).sort_values('Criterion').reset_index(drop=True)
+            path_criteria = self._save_csv(
+                df_criteria,
+                'sensitivity_analysis_criteria.csv',
+                directory=self.weighting_dir,
+                float_fmt='%.6g'
+            )
+            saved_files.append(path_criteria)
+
+            # Rank disruption statistics per tier
+            disruption_rows = []
+            for tier in sensitivity_result.rank_disruption_stats.keys():
+                stats = sensitivity_result.rank_disruption_stats[tier]
+                disruption_rows.append({
+                    'Tier': tier,
+                    'Mean_Disruption': float(stats.get('mean', 0.0)),
+                    'Std_Disruption': float(stats.get('std', 0.0)),
+                    'Max_Disruption': float(stats.get('max', 0.0)),
+                    'Q95_Disruption': float(stats.get('q95', 0.0)),
+                })
+
+            df_disruption = pd.DataFrame(disruption_rows).sort_values('Tier').reset_index(drop=True)
+            path_disruption = self._save_csv(
+                df_disruption,
+                'sensitivity_analysis_disruption.csv',
+                directory=self.weighting_dir,
+                float_fmt='%.6g'
+            )
+            saved_files.append(path_disruption)
+
+            return path_robustness  # Return main summary file
+
+        except Exception as exc:
+            _logger.warning(f'save_sensitivity_analysis failed: {exc}')
+            return None
+
 
 __all__ = ['CsvWriter']

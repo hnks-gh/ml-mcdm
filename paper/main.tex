@@ -648,34 +648,115 @@ This product decomposes global importance into multiplicative components: each g
 
 \textbf{Final Aggregation and Analysis Pipeline.} These 29 globally-normalized weightsare now passed to both the Hierarchical \MCDM ranking pipeline (Section~\ref{subsec:mcdm}) and to the ensemble forecasting pipeline (Sections~\ref{subsec:base_models} onwards). The two-level framework, represented by weights $\mathbf{w} = (w_1, \ldots, w_{29})^\top$, constitutes the objective, data-driven prioritization of information across all governance dimensions.
 
-\subsubsection{Temporal Stability Verification}
+\subsubsection{Weighting Analysis}
 
-A key robustness concern is whether \CRITIC weights are stable across the 14-year observation window. Substantial drift in weights would suggest either data quality issues or genuine structural breaks (regime changes) in governance dynamics, either of which would compromise the use of a single fixed weight vector.
+\textbf{Temporal Stability Analysis: Window-Based Assessment}
 
-A \textbf{split-half temporal stability test} is conducted:
+The split-half test provides a binary temporal stability verdict. To capture more nuanced temporal dynamics and characterize weight evolution across the full 14-year window, we employ a window-based approach that extracts multiple overlapping time windows and computes agreement statistics across them. This approach is more statistically powerful than binary tests and provides actionable information about \textit{when} and \textit{where} weight shifts occur.
 
-1. \textbf{Partition data:} The 14-year panel is split at the temporal midpoint: Early period (2011--2017, $T_{\text{early}} = 7$ years) and Late period (2018--2024, $T_{\text{late}} = 7$ years).
+\textbf{Motivation:} A core assumption in governance assessment is that the prioritization of criteria—their relative importance for discriminating provinces—remains stable across time. Substantial drift in weights over 14 years would suggest either cumulative data quality degradation, genuine structural breaks in governance patterns requiring time-variant analysis, or both. A robust weighting system should exhibit temporal consistency, enabling the use of a single unified weight vector across all observation years.
 
-2. \textbf{Compute weights independently:} The complete two-level \CRITIC pipeline is applied to each subsample separately. This yields two sets of 29 global weights: $\mathbf{w}_{\text{early}} = (w_1^{\text{early}}, \ldots, w_{29}^{\text{early}})^\top$ and $\mathbf{w}_{\text{late}}$.
+\textbf{Methodological approach:} Rather than a single binary temporal stability test, we employ a window-based approach that extracts multiple overlapping time windows and computes rank agreement metrics across them. This approach is statistically more powerful than binary tests and provides disaggregated information identifying \textit{when} and \textit{where} weight instability emerges, should it occur.
 
-3. \textbf{Compute cosine similarity:} The angle between the two weight vectors is measured using normalized cosine similarity:
-
-\begin{equation}
-\label{eq:cosine_sim}
-\text{cos}(\theta) = \frac{\mathbf{w}_{\text{early}} \cdot \mathbf{w}_{\text{late}}}{\|\mathbf{w}_{\text{early}}\| \cdot \|\mathbf{w}_{\text{late}}\|}
-\end{equation}
-
-The cosine similarity lies in $[-1, 1]$, with $\text{cos}(\theta) = 1$ indicating perfect alignment, $\text{cos}(\theta) = 0$ indicating orthogonality, and $\text{cos}(\theta) = -1$ indicating opposite directions.
-
-4. \textbf{Decision rule:} Weights are declared stable if:
+\textbf{Window construction:} The 14-year panel (2011--2024) is decomposed into overlapping time windows of fixed length $L = 5$ years with unit step size (consecutive windows overlap by 4 years). This yields $(T - L) + 1 = 10$ distinct windows:
 
 \begin{equation}
-\text{cos}(\theta) \geq \theta_{\text{stability}} \quad \text{(default: } \theta_{\text{stability}} = 0.95 \text{)}
+\text{Window}_k = [\text{year}_{\min} + (k-1), \ldots, \text{year}_{\min} + (k-1) + 4] \quad \text{for } k = 1, 2, \ldots, 10
 \end{equation}
 
-A threshold of 0.95 is sufficiently stringent to detect substantial weight drift while accommodating minor numerical fluctuations due to sample variation.
+For each window, a mean weight vector is computed by averaging the criterion weights across the constituent years:
 
-\textbf{Empirical result:} For the \PAPI dataset, $\text{cos}(\theta) = 0.9915$ is obtained, well above the 0.95 threshold, indicating very high temporal stability. This provides strong empirical support for treating the weight vector as a time-invariant global parameter suitable for ranking all years 2011--2024 under a common weighting scheme.
+\begin{equation}
+\bar{\mathbf{w}}_k = \frac{1}{L} \sum_{t \in \text{Window}_k} \mathbf{w}_t
+\end{equation}
+
+This produces 10 window-specific mean weight vectors, each representing the average prioritization scheme in a 5-year epoch. Comparisons among these vectors reveal medium-term weight trajectories and any persistent deviations.
+
+\textbf{Spearman's rank correlation across windows:} The ordinal ranking of criteria may drift due to temporal shifts in governance dynamics. To quantify this drift sensitively, we compute Spearman's rank correlation coefficient $\rho$ between consecutive windows. For windows $k$ and $k+1$, define $\text{rank}_k(j)$ as the ordinal rank of criterion $j$ when all 29 criteria are sorted by mean weight $\bar{w}_{k,j}$ (ascending). Then:
+
+\begin{equation}
+\rho_k = 1 - \frac{6 \sum_{j=1}^{n} (\text{rank}_k(j) - \text{rank}_{k+1}(j))^2}{n(n^2 - 1)}
+\end{equation}
+
+This yields $W - 1 = 9$ pairwise rank correlations across consecutive windows. High mean correlation (e.g., $\bar{\rho} > 0.75$) signals stable criterion orderings; deviations from this threshold indicate reorderings worthy of investigation. The standard deviation $\sigma_{\rho}$ of correlations across windows captures volatility, identifying whether instability is episodic or persistent.
+
+\textbf{Kendall's W: Omnibus agreement coefficient:} While pairwise Spearman correlations characterize adjacent-window agreement, we employ Kendall's coefficient of concordance $W$ to obtain a single omnibus statistic measuring agreement across \textit{all} 10 windows simultaneously. This statistic quantifies the global consistency of criterion rankings across the full temporal span:
+
+\begin{equation}
+W = \frac{12S}{m^2(n^3 - n)}
+\end{equation}
+
+where $m = 10$ (number of windows), $n = 29$ (number of criteria), and $S = \sum_{j=1}^{n} (R_j - \bar{R})^2$ is the sum of squared rank deviations, with $\bar{R} = \frac{m(n+1)}{2}$ as the theoretical mean rank. The coefficient ranges $W \in [0, 1]$: $W = 1$ indicates identical criterion rankings in all windows (perfect agreement), while $W = 0$ indicates independent, random rankings. For the \PAPI dataset, $W$ serves as a global temporal stability indicator.
+
+\textbf{Coefficient of variation analysis:} While Spearman's $\rho$ and Kendall's $W$ measure ranking position stability, they are insensitive to changes in weight magnitudes. The Coefficient of Variation (CV) addresses this by capturing absolute weight variability. For each criterion $j$, compute:
+
+\begin{equation}
+\text{CV}_j = \frac{\sigma_j}{\bar{w}_j}
+\end{equation}
+
+where $\sigma_j$ and $\bar{w}_j$ are the standard deviation and mean of criterion $j$'s weight across all 14 individual years. CV values range $[0, \infty)$: CV $< 0.10$ indicates highly stable weight magnitude; CV $\in [0.10, 0.30]$ indicates moderate variation; CV $> 0.30$ signals substantial weight volatility. Computing CV for all 29 criteria yields a per-criterion sensitivity profile identifying which criteria exhibit most/least temporal stability. Criteria with low CV are reliable components of the weighting scheme, while high-CV criteria warrant additional scrutiny.
+
+\textbf{Interpretation and reporting:} The window-based temporal stability analysis produces three complementary outputs: (i)~a time-series of 9 pairwise Spearman correlations, enabling identification of specific periods where ranking instability emerges; (ii)~a single Kendall's $W$ statistic summarizing global agreement across all windows; and (iii)~a per-criterion CV profile revealing which criteria are most temporally fragile. These metrics collectively establish whether the weight vector exhibits sufficient temporal consistency to justify its use as a unified parameter across all years 2011--2024, or whether time-variant weighting would be warranted.
+
+\textbf{Sensitivity Analysis: Three-Tier Perturbation Framework}
+
+\textbf{Motivation and complementarity:} While temporal stability assesses parameter consistency over time, sensitivity analysis addresses an orthogonal robustness question: \textit{How resilient are the final rankings to perturbations in weight values?} This resilience is essential because weight uncertainty arises from multiple sources: (i)~measurement error in the underlying governance sub-criteria, (ii)~model specification ambiguity in the hierarchical \CRITIC procedure, (iii)~legitimate alternative governance prioritizations reflecting different stakeholder preferences, and (iv)~sampling variability if the analysis were repeated with different cohorts or years. Sensitivity analysis quantifies how much ranking positions would change under plausible deviations from the point-estimate \CRITIC weights.
+
+\textbf{Three-tier framework design:} We employ a Monte Carlo perturbation framework with three progressively intense perturbation magnitudes, progressively stressing the weight vector:
+
+\begin{itemize}[itemsep=2pt]
+  \item \textbf{Conservative tier (±5\%):} Reflects small measurement errors or minor model variations. If rankings prove stable under ±5\% weight perturbations, the weighting scheme is robust to small specification uncertainties.
+  
+  \item \textbf{Moderate tier (±15\%):} Reflects realistic policy revisions or substantial criterion data revisions (e.g., 2018 governance index redesign). Stability under ±15\% perturbations suggests resilience to non-trivial weight changes.
+  
+  \item \textbf{Aggressive tier (±50\%):} Represents extreme stress testing. Massive weight deviations (±50\%) simulate worst-case scenarios where governance assessment paradigms shift radically. Robustness here is unexpected but highly desirable.
+\end{itemize}
+
+\textbf{Perturbation procedure:} For each tier $t \in \{\text{conservative}, \text{moderate}, \text{aggressive}\}$, conduct $R = 1000$ independent Monte Carlo replicates. For replicate $r$:
+
+\begin{enumerate}
+  \item Generate random perturbations $\delta_{r,j} \sim \text{Uniform}(-m_t, +m_t)$ for each criterion $j$, with $m_t \in \{0.05, 0.15, 0.50\}$ corresponding to the three tiers.
+  
+  \item Apply perturbations to compute perturbed weights: $\tilde{w}_{r,j} = w^*_j (1 + \delta_{r,j})$.
+  
+  \item Apply non-negativity guard to ensure computational stability: $\tilde{w}_{r,j} := \max(\tilde{w}_{r,j}, 10^{-8})$.
+  
+  \item Re-normalize to enforce the probability simplex constraint $\sum_j \hat{w}_{r,j} = 1.0$:
+  
+  \begin{equation}
+    \hat{w}_{r,j} = \frac{\tilde{w}_{r,j}}{\sum_{\ell=1}^{n} \tilde{w}_{r,\ell}}
+  \end{equation}
+  
+  \item Re-rank all criteria by perturbed weights and compute the rank ordering change relative to the original.
+\end{enumerate}
+
+\textbf{Rank disruption metric:} For each replicate, quantify the magnitude of ranking disruption using Spearman's rank correlation between the original and perturbed criterion orderings:
+
+\begin{equation}
+\text{Disruption}_{r} = 1 - \rho(\text{rank}_{\text{original}}, \text{rank}_{\text{perturbed}, r})
+\end{equation}
+
+The disruption metric ranges $[0, 1]$: a value near 0 indicates that ranking remains stable despite perturbation (robust to weight variations), while values near 1 indicate substantial rank reordering (sensitive to weight specification). Aggregating across all 1000 replicates per tier yields the mean disruption $\bar{\text{Disruption}}_t$ for each tier $t$.
+
+\textbf{Robustness scoring:} Define the robustness score for perturbation tier $t$ as:
+
+\begin{equation}
+\text{Robustness}_t = 1 - \bar{\text{Disruption}}_t \in [0, 1]
+\end{equation}
+
+By construction, robustness should decrease monotonically as perturbation intensity increases:
+
+$$\text{Robustness}_{\text{conservative}} \geq \text{Robustness}_{\text{moderate}} \geq \text{Robustness}_{\text{aggressive}}$$
+
+This monotonicity property is both expected and diagnostic: violation of the monotonicity order signals either numerical instability or weight configurations prone to tie-breaking sensitivity, warranting investigation. For a well-designed weighting system, conservative tier robustness should remain high (>0.85), indicating resilience to minor perturbations.
+
+\textbf{Per-criterion sensitivity profiles:} Aggregation at the tier level masks criterion-specific patterns. To identify ``fragile'' criteria prone to rank reordering, compute for each criterion $j$ and tier $t$ the mean rank position change across all replicates:
+
+\begin{equation}
+\Delta\text{rank}_{t,j} = \frac{1}{R} \sum_{r=1}^{R} |\text{rank}_{\text{original}}(j) - \text{rank}_{\text{perturbed}}(r,j)|
+\end{equation}
+
+Values near 0 indicate ranking stability; larger values (up to $n-1 = 28$) indicate frequent rank shifts. Criteria with high $\Delta\text{rank}$ are \textit{sensitive} (their rank position fluctuates readily with weight changes), while those with low $\Delta\text{rank}$ are \textit{robust} (their ranking remains anchored). Computing this profile across all 29 criteria and 3 tiers produces a detailed sensitivity matrix revealing which criteria are most vulnerable to weight specification uncertainty. Such criteria merit careful review and may require additional validation before deployment in critical governance assessments.
 
 \subsection{MCDM Ranking Methods}
 \label{subsec:mcdm}

@@ -17,12 +17,14 @@ Temporal stability analysis is delegated to ``analysis/``.
 
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 import logging
 
 from .base import WeightResult
 from .critic import CRITICWeightCalculator
 from .normalization import global_min_max_normalize
+from analysis.critic_temporal_stability import WindowedTemporalStabilityAnalyzer
+from analysis.critic_sensitivity_analysis import CRITICSensitivityAnalyzer
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +60,9 @@ class CRITICWeightingCalculator:
         criteria_groups: Dict[str, List[str]],
         entity_col: str = "Province",
         time_col: str = "Year",
+        run_temporal_stability: bool = True,
+        run_sensitivity_analysis: bool = True,
+        weight_all_years: Dict[int, Dict[str, float]] = None,
     ) -> WeightResult:
         """
         Run two-level deterministic CRITIC weighting.
@@ -71,6 +76,15 @@ class CRITICWeightingCalculator:
             ``{criterion_id: [sc_col1, …]}`` — criterion groups.
         entity_col : str, default 'Province'
         time_col   : str, default 'Year'
+        run_temporal_stability : bool, default=True
+            If True, compute window-based temporal stability metrics.
+            Results attached to WeightResult.temporal_stability.
+        run_sensitivity_analysis : bool, default=True
+            If True, compute three-tier perturbation sensitivity metrics.
+            Results attached to WeightResult.sensitivity_analysis.
+        weight_all_years : Dict[int, Dict[str, float]], optional
+            Per-year weight histories (required if running temporal/sensitivity analyses).
+            Format: {year: {criterion: weight}}
 
         Returns
         -------
@@ -383,8 +397,29 @@ class CRITICWeightingCalculator:
             "n_years":           n_years,
         }
 
-        return WeightResult(
+        # Initialize result
+        result = WeightResult(
             weights=global_sc_weights,
             method="critic_weighting",
             details=details,
         )
+
+        # Compute temporal stability analysis if enabled and weight history provided
+        if run_temporal_stability and weight_all_years is not None:
+            try:
+                temporal_analyzer = WindowedTemporalStabilityAnalyzer()
+                result.temporal_stability = temporal_analyzer.analyze(weight_all_years)
+                logger.info("Temporal stability analysis completed")
+            except Exception as e:
+                logger.warning(f"Temporal stability analysis failed: {e}")
+
+        # Compute sensitivity analysis if enabled and weight history provided
+        if run_sensitivity_analysis and weight_all_years is not None:
+            try:
+                sensitivity_analyzer = CRITICSensitivityAnalyzer()
+                result.sensitivity_analysis = sensitivity_analyzer.analyze(weight_all_years)
+                logger.info("Sensitivity analysis completed")
+            except Exception as e:
+                logger.warning(f"Sensitivity analysis failed: {e}")
+
+        return result

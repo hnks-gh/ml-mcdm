@@ -245,55 +245,6 @@ class TestForecastValidator:
 
 
 # ---------------------------------------------------------------------------
-# TemporalStabilityValidator (weighting/validation.py) - Spearman
-# ---------------------------------------------------------------------------
-
-class TestTemporalStabilityValidatorWeighting:
-    """
-    TemporalStabilityValidator from weighting.validation.
-    API: __init__(stability_threshold=) ; validate(weight_history_df)
-    Result fields: spearman_correlation, cosine_similarity, is_stable.
-    """
-
-    @staticmethod
-    def _history(w1, w2):
-        """Build a 2-row DataFrame so split-half compares w1 vs w2."""
-        cols = [f"c{i}" for i in range(len(w1))]
-        return pd.DataFrame([w1, w2], columns=cols)
-
-    def test_identical_vectors_correlation_is_one(self):
-        from weighting.validation import TemporalStabilityValidator
-        w = np.array([0.1, 0.4, 0.2, 0.3])
-        tsv = TemporalStabilityValidator(stability_threshold=0.9)
-        result = tsv.validate(self._history(w, w.copy()))
-        assert abs(result.spearman_correlation - 1.0) < 1e-6
-
-    def test_reversed_vectors_give_minus_one(self):
-        from weighting.validation import TemporalStabilityValidator
-        w1 = np.array([0.4, 0.3, 0.2, 0.1])
-        w2 = w1[::-1].copy()
-        tsv = TemporalStabilityValidator(stability_threshold=0.9)
-        result = tsv.validate(self._history(w1, w2))
-        assert abs(result.spearman_correlation + 1.0) < 1e-6
-
-    def test_correlation_in_minus_one_plus_one(self):
-        from weighting.validation import TemporalStabilityValidator
-        rng = np.random.RandomState(99)
-        for _ in range(10):
-            w1 = rng.dirichlet(np.ones(5))
-            w2 = rng.dirichlet(np.ones(5))
-            tsv = TemporalStabilityValidator(stability_threshold=0.9)
-            result = tsv.validate(self._history(w1, w2))
-            assert -1.0 - 1e-9 <= result.spearman_correlation <= 1.0 + 1e-9
-
-    def test_close_vectors_stable(self):
-        from weighting.validation import TemporalStabilityValidator
-        w1 = np.array([0.30, 0.40, 0.30])
-        w2 = np.array([0.31, 0.39, 0.30])
-        tsv = TemporalStabilityValidator(stability_threshold=0.5)
-        result = tsv.validate(self._history(w1, w2))
-        assert result.is_stable
-
 
 # ---------------------------------------------------------------------------
 # Regression tests preserved from earlier phases

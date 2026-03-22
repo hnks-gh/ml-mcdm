@@ -3,16 +3,35 @@
 
 import numpy as np
 import pandas as pd
-from typing import Dict
-from dataclasses import dataclass
+from typing import Dict, Optional, Any
+from dataclasses import dataclass, field
 
 
 @dataclass
 class WeightResult:
-    """Result container for weight calculations."""
+    """
+    Result container for weight calculations.
+
+    Attributes
+    ----------
+    weights : Dict[str, float]
+        Calculated weights per criterion. Sum = 1.0 (within 1e-10).
+    method : str
+        Name of weight calculation method (e.g., 'critic').
+    details : Dict
+        Method-specific details and metadata.
+    temporal_stability : Optional[TemporalStabilityResult], default=None
+        Window-based temporal stability metrics (if run_temporal_stability=True).
+        Fields: spearman_rho_rolling, spearman_rho_mean, kendalls_w, etc.
+    sensitivity_analysis : Optional[SensitivityResult], default=None
+        Three-tier perturbation sensitivity metrics (if run_sensitivity_analysis=True).
+        Fields: tier_robustness, per_criterion_sensitivity, rank_disruption_stats, etc.
+    """
     weights: Dict[str, float]
     method: str
     details: Dict
+    temporal_stability: Optional[Any] = None
+    sensitivity_analysis: Optional[Any] = None
     
     @property
     def as_array(self) -> np.ndarray:

@@ -1210,9 +1210,9 @@ class TestPipelineDecoupling:
         )
 
     def test_stage2_per_model_dicts_populated(self):
-        """_per_model_X_train_ and _per_model_X_pred_ must cover all 5 default base models.
+        """_per_model_X_train_ and _per_model_X_pred_ must cover all 4 default base models.
 
-        Default ensemble: BayesianRidge, CatBoost, QuantileRF, KernelRidge, SVR.
+        Default ensemble: BayesianRidge, CatBoost, QuantileRF, KernelRidge.
         """
         panel = self._make_mock_panel()
         uf    = self._make_uf()
@@ -1220,12 +1220,12 @@ class TestPipelineDecoupling:
         uf.stage2_reduce_features()
 
         expected_models = {'BayesianRidge', 'CatBoost',
-                           'QuantileRF', 'KernelRidge', 'SVR'}
+                           'QuantileRF', 'KernelRidge'}
         assert expected_models <= set(uf._per_model_X_train_.keys()), (
-            "_per_model_X_train_ must cover all 5 default base models"
+            "_per_model_X_train_ must cover all 4 default base models"
         )
         assert expected_models <= set(uf._per_model_X_pred_.keys()), (
-            "_per_model_X_pred_ must cover all 5 default base models"
+            "_per_model_X_pred_ must cover all 4 default base models"
         )
 
     # ------------------------------------------------------------------

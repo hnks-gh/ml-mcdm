@@ -53,7 +53,7 @@ from .validation import (
 )
 
 # Bootstrap — ML + ER uncertainty quantification
-from .bootstrap import (
+from .ml_er_bootstrap import (
     ForecastBootstrapResult,
     ERBootstrapResult,
     ForecastBootstrap,
@@ -89,6 +89,5 @@ __all__ = [
 
     # Stability
     'StabilityResult',
-    'TemporalStabilityValidator',
     'temporal_stability_verification',
 ]
