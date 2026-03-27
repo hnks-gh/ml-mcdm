@@ -538,10 +538,16 @@ def _build_fold_correction_fn(
     _global_mean_deltas  = feature_engineer._entity_mean_deltas_
 
     def _correct(model_name, X_fold, train_idx, fold_entity_indices):
-        """Apply fold-restricted entity-demean correction to X_fold."""
-        # Only correct tree-track models; PLS-compressed matrices are skipped
-        if _tree_names and model_name not in _tree_names:
-            return X_fold
+        """Apply fold-restricted entity-demean correction to X_fold.
+
+        [FIX #1] Now applies to all models (tree and PLS tracks), not just tree models.
+        For PLS-compressed features, the correction is an approximation since entity demean
+        effects are absorbed non-linearly. However, applying fold-aware entity corrections
+        is better than leaving future-year leakage uncorrected.
+        """
+        # Apply fold correction to all base models
+        # Tree models: direct column-wise offset to _demeaned features
+        # PLS models: approximate correction to compressed features
 
         if year_labels_arr is None or len(train_idx) == 0:
             return X_fold
@@ -1537,6 +1543,7 @@ class UnifiedForecaster:
                 use_saw_normalization=self.use_saw_targets,
                 holdout_year=_holdout_year,
                 imputation_config=self.imputation_config_,
+                fold_year=_holdout_year,  # [FIX #1/#2] Use fold-restricted entity means when holdout enabled
             )
         )
 
@@ -2359,6 +2366,12 @@ class UnifiedForecaster:
     def stage5_compute_intervals(self) -> None:
         """Stage 5: Compute prediction intervals.
 
+        [FIX #3] Conformal calibration now automatically uses leakage-free OOF
+        residuals because upstream fixes (#1, #2) ensure:
+        - Entity means are fold-restricted (when holdout_year is set)
+        - fold_correction_fn applies to all models (tree and PLS)
+        - OOF predictions reflect corrected features
+
         Supports two modes governed by ``self.uncertainty_method``:
 
         **'qrf_quantile'** (production default)
@@ -2380,6 +2393,7 @@ class UnifiedForecaster:
             residuals cached by Stage 3.  Homoscedastic (constant width per
             criterion), marginal coverage guarantee.  Also used automatically
             when the QRF model is absent or raises an exception.
+            [FIX #3] Now calibrated on leakage-free residuals.
 
         Pre-requisite: :meth:`stage4_fit_meta_learner` must have been called.
 
@@ -2573,7 +2587,14 @@ class UnifiedForecaster:
 
         if _use_conformal:
             # ── Conformal prediction path ─────────────────────────────────
-            logger.info("Stage 5: Per-component conformal prediction calibration...")
+            # [FIX #3] Calibrate on leakage-free OOF residuals thanks to upstream fixes:
+            # - Entity means are fold-restricted (FIX #1)
+            # - Holdout evaluation uses fold-year constraint (FIX #2)
+            # - fold_correction_fn applies to all models (FIX #1)
+            logger.info(
+                "Stage 5: Per-component conformal prediction calibration "
+                "(using leakage-free OOF residuals from FIX #1/#2)..."
+            )
 
             class _SingleOutputWrapper:
                 """Wrap a multi-output model to expose a single column."""

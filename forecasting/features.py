@@ -377,6 +377,7 @@ class TemporalFeatureEngineer:
                       use_saw_normalization: bool = False,
                       holdout_year: Optional[int] = None,
                       imputation_config: Optional[ImputationConfig] = None,
+                      fold_year: Optional[int] = None,
                       ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame,
                                  pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         """
@@ -448,6 +449,12 @@ class TemporalFeatureEngineer:
                 ``(X_holdout, y_holdout)``.  Typically set to
                 ``max(training_years)`` so the most recent complete year
                 serves as a true out-of-sample evaluation set.
+            fold_year: When not None (for fold-aware feature engineering in CV),
+                entity statistics (entity_mean, entity_mean_delta) are computed
+                only from feature years strictly less than fold_year.  This
+                eliminates look-ahead bias from entity-demeaned features when
+                used in cross-validation folds.  Default None = use all training
+                years (global entity statistics, for prediction and holdout eval).
 
         Returns:
             Tuple of six DataFrames:
@@ -549,23 +556,33 @@ class TemporalFeatureEngineer:
         self._entities_: List[str] = list(entities)
         self._components_: List[str] = list(components)
         self._all_train_feature_years_: List[int] = list(train_feature_years)
+        self._fold_year_: Optional[int] = fold_year  # Store fold_year for debugging/logging
+
+        # E-01: Determine eligible years for entity mean computation
+        # If fold_year is provided, restrict to years strictly less than fold_year
+        # (no look-ahead bias). Otherwise, use all training feature years (global stats).
+        if fold_year is not None:
+            eligible_years_for_means = [y for y in train_feature_years if y < fold_year]
+        else:
+            eligible_years_for_means = train_feature_years
 
         for _entity in entities:
             _edata = _get_entity_data(_entity).reindex(years)
             for _c in components:
                 # ── Entity mean ────────────────────────────────────────────
-                _vals = _edata.loc[train_feature_years, _c].values.astype(float)
+                # Compute mean from eligible years only (fold-restricted if fold_year provided)
+                _vals = _edata.loc[eligible_years_for_means, _c].values.astype(float)
                 _mean = float(np.nanmean(_vals)) if not np.all(np.isnan(_vals)) else 0.0
                 self._entity_means_[(_entity, _c)] = _mean
 
                 # ── Entity mean delta ──────────────────────────────────────
                 # Δ_t = val[years[i]] - val[years[i-1]] for every consecutive
-                # pair within train_feature_years.  NaN on either endpoint
-                # skips that pair so one missing year does not void the mean.
+                # pair within eligible years. NaN on either endpoint skips that
+                # pair so one missing year does not void the mean.
                 _deltas = []
-                for _i in range(1, len(train_feature_years)):
-                    _v_curr = float(_edata.loc[train_feature_years[_i], _c])
-                    _v_prev = float(_edata.loc[train_feature_years[_i - 1], _c])
+                for _i in range(1, len(eligible_years_for_means)):
+                    _v_curr = float(_edata.loc[eligible_years_for_means[_i], _c])
+                    _v_prev = float(_edata.loc[eligible_years_for_means[_i - 1], _c])
                     if not (np.isnan(_v_curr) or np.isnan(_v_prev)):
                         _deltas.append(_v_curr - _v_prev)
                 self._entity_mean_deltas_[(_entity, _c)] = (
@@ -573,6 +590,8 @@ class TemporalFeatureEngineer:
                 )
 
                 # ── E-01: store per-year raw value ─────────────────────────
+                # Store ALL years' values (even outside eligible window) for later
+                # fold-correction recomputation
                 for _yr in train_feature_years:
                     _raw = (
                         float(_edata.loc[_yr, _c])
@@ -610,6 +629,17 @@ class TemporalFeatureEngineer:
                 self._component_year_medians_[(_yr, _c)] = (
                     float(np.median(_mvals)) if _mvals else 0.0
                 )
+
+        # ── Diagnostic logging for FIX #1 (fold-aware entity means) ──────────
+        if fold_year is not None:
+            n_eligible = len(eligible_years_for_means)
+            n_total = len(train_feature_years)
+            logger.info(
+                f"  [FIX #1] Fold-aware entity means computed: "
+                f"fold_year={fold_year}, eligible_years={n_eligible}/{n_total} "
+                f"(years < {fold_year})"
+            )
+
 
         # Store imputation configuration (used for backward compatibility)
         self._imputation_config = imputation_config or ImputationConfig()

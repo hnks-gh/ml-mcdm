@@ -634,10 +634,12 @@ class SuperLearner:
             refit_entity_indices: Entity indices paired with ``refit_X``.
             fold_correction_fn: Optional callable ``(model_name, X_fold,
                 train_idx, fold_entity_indices) -> X_fold_corrected`` that
-                applies fold-aware entity-demean corrections to tree-track
-                feature matrices inside the CV loop (E-01 fix).  Called
-                once per (fold, model) pair for training and validation folds.
-                When None, no correction is applied (default).
+                [FIX #1] applies fold-aware entity-demean corrections to feature
+                matrices inside the CV loop.  Called once per (fold, model) pair
+                for training and validation folds.  Applies to all models (tree
+                and PLS tracks). For tree models, correction is exact; for PLS
+                models, it's an approximation since PLS absorbs entity demeaning
+                non-linearly.  When None, no correction is applied (default).
             shift_detector: Optional :class:`PanelCovariateShiftDetector`
                 (E-08).  When not ``None``, per-fold MMD²-based covariate
                 shift detection is run before base-model fitting.  Detected
@@ -766,10 +768,12 @@ class SuperLearner:
                 # The entity-demeaned features in X_train_tree_ were computed
                 # using global entity means (all training years).  In early
                 # CV folds some of those years are in the future (leakage).
-                # fold_correction_fn adjusts only the _demeaned and
-                # _demeaned_momentum columns to use fold-restricted means.
-                # Applied only to tree-track matrices (the callable returns
-                # the input unchanged for PLS-compressed matrices).
+                # [FIX #1] fold_correction_fn adjusts _demeaned and _demeaned_momentum
+                # columns to use fold-restricted (time-aware) entity means instead of
+                # global means. Applied to all models (tree and PLS tracks).
+                # For tree models: direct column-wise offset correction is exact.
+                # For PLS models: offset-linear approximation (PLS absorbs entity demeaning
+                # non-linearly, but correction is better than leaving future-year leakage).
                 if fold_correction_fn is not None:
                     _train_ent_fold = (
                         entity_indices[train_idx]
