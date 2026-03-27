@@ -213,8 +213,24 @@ class MLMCDMPipeline:
                 # can still save partial results (weights, data) rather than
                 # crashing entirely — consistent with phases 4-7.
                 try:
+                    self.logger.info(
+                        f"\n[DEBUG] Starting primary ranking for latest year: {max(panel_data.years)}"
+                    )
                     ranking_result = self._run_hierarchical_ranking(panel_data, weights)
+                    self.logger.info(
+                        f"[DEBUG] Primary ranking complete: result type={type(ranking_result).__name__}"
+                    )
+                    if ranking_result is not None:
+                        self.logger.info(
+                            f"[DEBUG] Ranking result has: "
+                            f"final_ranking={ranking_result.final_ranking is not None}, "
+                            f"final_scores={ranking_result.final_scores is not None}, "
+                            f"criterion_method_scores={len(getattr(ranking_result, 'criterion_method_scores', {}))} criteria"
+                        )
                 except Exception as _rank_exc:
+                    self.logger.error(
+                        f"[DEBUG] Primary ranking FAILED with exception: {_rank_exc}", exc_info=True
+                    )
                     ph.warning(f'Hierarchical ranking failed: {_rank_exc}')
                     self.logger.error(
                         'Phase 3 (Hierarchical Ranking) failed — partial results will '
@@ -228,17 +244,36 @@ class MLMCDMPipeline:
                     getattr(self.config, 'ranking', None), 'run_all_years', True
                 ):
                     try:
+                        self.logger.info(
+                            f"[DEBUG] Starting multi-year ranking for {len(panel_data.years)} years"
+                        )
                         multi_year_results = self._run_hierarchical_ranking_all_years(
                             panel_data, weights
                         )
+                        self.logger.info(
+                            f"[DEBUG] Multi-year ranking complete: {len(multi_year_results)} years succeeded"
+                        )
+                        for yr, result in multi_year_results.items():
+                            n_crit = len(getattr(result, 'criterion_method_scores', {}))
+                            self.logger.info(
+                                f"[DEBUG] Year {yr}: {n_crit} criteria with method scores"
+                            )
                         ph.detail(
                             f'Multi-year: {len(multi_year_results)}/{len(panel_data.years)} '
                             f'years ranked in parallel'
                         )
                     except Exception as _myr_exc:
+                        self.logger.error(
+                            f"[DEBUG] Multi-year ranking FAILED: {_myr_exc}", exc_info=True
+                        )
                         self.logger.warning(
                             f'Multi-year ranking failed (non-fatal): {_myr_exc}'
                         )
+                else:
+                    if ranking_result is None:
+                        self.logger.info("[DEBUG] Skipping multi-year ranking (primary ranking failed)")
+                    else:
+                        self.logger.info("[DEBUG] Skipping multi-year ranking (run_all_years=False)")
 
             # Phase 4: ML Forecasting (4 base models + Super Learner + Conformal Prediction)
             forecast_result = None

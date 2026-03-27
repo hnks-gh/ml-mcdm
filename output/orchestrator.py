@@ -159,17 +159,20 @@ class OutputOrchestrator:
 
         # 16. Per-year per-method MCDM scores (14 long-format CSVs)
         if multi_year_results:
+            logger.info(f'[DEBUG] Attempting to save ranking CSVs for {len(multi_year_results)} years')
             try:
                 saved_ms = self.csv.save_method_scores_all_years(multi_year_results)
                 if saved_ms:
+                    logger.info(f'[DEBUG] save_method_scores_all_years returned {len(saved_ms)} files')
                     for key in saved_ms:
                         logger.info(f'Saved: {Path(saved_ms[key]).name}')
                 else:
-                    logger.info('Skipped: mcdm_criteria_*_ranking.csv (no data in multi_year_results)')
+                    logger.warning('[DEBUG] save_method_scores_all_years returned empty dict (no ranking data)')
             except Exception as _exc:
+                logger.error(f'[DEBUG] save_method_scores_all_years raised exception: {_exc}', exc_info=True)
                 logger.warning(f'save_method_scores_all_years failed: {_exc}')
         else:
-            logger.info('Skipped: mcdm_criteria_*_ranking.csv (no multi_year_results)')
+            logger.warning('[DEBUG] Skipped ranking CSVs: multi_year_results is empty or None')
 
         # 19. Markdown report
         try:

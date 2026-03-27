@@ -320,18 +320,34 @@ class PanelData:
         sc_cols   = ctx.criterion_subcriteria.get(criterion, [])
         provinces = ctx.criterion_alternatives.get(criterion, [])
         if not sc_cols or not provinces:
+            import logging
+            logging.getLogger('ml_mcdm').warning(
+                f"[DEBUG] get_criterion_matrix({criterion}, {year}): "
+                f"EMPTY (sc_cols={len(sc_cols)}, provinces={len(provinces)})"
+            )
             return pd.DataFrame()
 
         cs = self.subcriteria_cross_section.get(year, pd.DataFrame())
         avail_provs = [p for p in provinces if p in cs.index]
         avail_scs   = [c for c in sc_cols   if c in cs.columns]
         if not avail_provs or not avail_scs:
+            import logging
+            logging.getLogger('ml_mcdm').warning(
+                f"[DEBUG] get_criterion_matrix({criterion}, {year}): "
+                f"No data found (avail_provs={len(avail_provs)}, avail_scs={avail_scs})"
+            )
             return pd.DataFrame()
 
         mat = cs.loc[avail_provs, avail_scs]
         # Defensive: drop any rows that still contain NaN (should not occur
         # given the YearContext guarantees, but guards against edge cases).
         mat = mat.dropna()
+        if mat.empty:
+            import logging
+            logging.getLogger('ml_mcdm').warning(
+                f"[DEBUG] get_criterion_matrix({criterion}, {year}): "
+                f"Matrix was empty after NaN removal"
+            )
         return mat
 
     def get_subcriteria_year(self, year: int) -> pd.DataFrame:

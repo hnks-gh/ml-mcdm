@@ -1430,8 +1430,10 @@ class CsvWriter:
         """
         saved: Dict[str, str] = {}
         if not multi_year_results:
+            _logger.warning('[DEBUG] save_method_scores_all_years: multi_year_results is empty')
             return saved
 
+        _logger.info(f'[DEBUG] save_method_scores_all_years: processing {len(multi_year_results)} years')
         _METHODS = ['TOPSIS', 'VIKOR', 'PROMETHEE', 'COPRAS', 'EDAS', 'Base']
         _RANK_COLS = [f'{m}_Rank' for m in _METHODS] + ['ER_Rank']
         years = sorted(multi_year_results.keys())
@@ -1443,15 +1445,20 @@ class CsvWriter:
         for yr in years:
             try:
                 yr_res = multi_year_results[yr]
+                _logger.info(f'[DEBUG] Year {yr}: processing ranking result')
                 method_scores = getattr(yr_res, 'criterion_method_scores', {})
                 method_ranks  = getattr(yr_res, 'criterion_method_ranks', {})
+                _logger.info(f'[DEBUG] Year {yr}: method_scores keys={list(method_scores.keys())}, method_ranks keys={list(method_ranks.keys())}')
                 er_res        = getattr(yr_res, 'er_result', None)
                 crit_beliefs  = getattr(er_res, 'criterion_beliefs', {}) if er_res else {}
                 final_ranking = getattr(yr_res, 'final_ranking', None)
                 final_scores  = getattr(yr_res, 'final_scores', None)
 
                 if not method_scores:
+                    _logger.warning(f'[DEBUG] Year {yr}: SKIPPED (method_scores is empty)')
                     continue
+
+                _logger.info(f'[DEBUG] Year {yr}: Processing {len(method_scores)} criteria')
 
                 # ── Per-criterion ranking rows ────────────────────────────
                 for crit_id in sorted(method_scores):
@@ -1576,6 +1583,7 @@ class CsvWriter:
                 df, 'mcdm_scores_composite_ranking.csv',
                 directory=self.ranking_dir, float_fmt='%.0f')
 
+        _logger.info(f'[DEBUG] save_method_scores_all_years complete: saved {len(saved)} files (criteria: {list(saved.keys())})')
         return saved
 
     def save_temporal_stability(self, temporal_result: Any) -> Optional[str]:

@@ -240,6 +240,14 @@ class HierarchicalRankingPipeline:
 
         hierarchy   = panel_data.hierarchy
 
+        logger.info(
+            f"[DEBUG] Ranking.rank() called: hierarchy has {len(hierarchy.all_subcriteria)} SCs, "
+            f"{len(hierarchy.all_criteria)} criteria"
+        )
+        logger.info(
+            f"[DEBUG] All SCs in hierarchy: {sorted(hierarchy.all_subcriteria)}"
+        )
+
         # ------------------------------------------------------------------
         # Determine active alternatives via YearContext
         # ------------------------------------------------------------------
@@ -354,6 +362,15 @@ class HierarchicalRankingPipeline:
 
             all_method_scores[crit_id] = crit_scores
             all_method_ranks[crit_id]  = crit_ranks
+            logger.info(
+                f"[DEBUG] {crit_id}: successfully processed "
+                f"({len(df_crit)} provinces, {len(df_crit.columns)} SCs)"
+            )
+
+        logger.info(
+            f"[DEBUG] Stage 1 complete: all_method_scores has {len(all_method_scores)} criteria, "
+            f"all_method_ranks has {len(all_method_ranks)} criteria"
+        )
 
         # ------------------------------------------------------------------
         # Stage 2: Ranking aggregation
