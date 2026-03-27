@@ -715,7 +715,7 @@ class UnifiedForecaster:
                  random_state: int = 42,
                  verbose: bool = True,
                  config: Optional[ForecastConfig] = None,
-                 target_level: str = "criteria",
+                 target_level: str = "subcriteria",
                  uncertainty_method: str = 'conformal'):
         self.conformal_method = conformal_method
         self.conformal_alpha = conformal_alpha
@@ -743,12 +743,22 @@ class UnifiedForecaster:
 
         # ── SAW target normalization & true holdout ───────────────────────
         # Resolved from ForecastConfig when provided; otherwise production defaults.
-        # use_saw_targets=True: train on per-year minmax-normalised [0,1] scores
-        # and compute a CRITIC-weighted composite after prediction (Phase 1).
-        # NOTE: SAW normalization is DISABLED for sub-criteria mode (target_level='subcriteria')
-        # because SAW targets are designed for criteria-level [0,1] bounded values.
+        #
+        # [FIX #9] CHANGED (2026-03-28): use_saw_targets defaults to False (Option A).
+        # RATIONALE: SAW [0,1] normalization with clipping discards extrapolation information.
+        # - Clips predictions at [0, 1] boundaries, losing model confidence signals
+        # - Conformal intervals capped at boundaries → underestimated uncertainty at extremes
+        # - Artificial clustering: many predictions pile up at 0.0 or 1.0 after clipping
+        # - Loss of information: clipping removes signal about prediction confidence
+        #
+        # SOLUTION: Train on raw (unclipped) scales; use Yeo-Johnson transform for variance
+        # stabilization. Maintains full extrapolation information while preserving conformal
+        # interval validity (Yeo-Johnson is strictly monotone, same as logit).
+        #
+        # BACKWARD COMPATIBILITY: Config can override via use_saw_targets=True for
+        # historical analysis, but production default is now False.
         self.use_saw_targets: bool = (
-            config.use_saw_targets if config is not None else True
+            config.use_saw_targets if config is not None else False  # [FIX #9] Changed from True
         )
         # PHASE 3 STEP 9: Override SAW normalization for sub-criteria mode
         # Sub-criteria targets have different scale distributions; SAW normalization
@@ -993,9 +1003,9 @@ class UnifiedForecaster:
 
         Algorithm
         ---------
-        1. Clip predictions to [0, 1] (SAW normalization domain).  Model
-           outputs may slightly overshoot due to extrapolation; clamping
-           ensures consistency with the SAW training domain.
+        1. Preserve predictions without clipping (allow extrapolation).  [FIX #9]
+           When model predicts outside [0,1] it signals confidence in moving beyond
+           observed range. Clipping would discard this information.
         2. Drop zero-variance predicted criteria (constant column → CRITIC
            weight = 0 regardless; excluding them avoids numerical instability
            in the correlation matrix and in the standard deviation term).
@@ -1006,7 +1016,7 @@ class UnifiedForecaster:
            compute information content weights for each criterion.
         5. Re-normalise weights to sum to 1 over *all* criteria (including
            any dropped constant columns, which receive weight 0).
-        6. Return ``(clipped_scores × weights).sum(axis=1)``.
+        6. Return ``(scores × weights).sum(axis=1)`` (unbounded - no clipping).
 
         Parameters
         ----------
@@ -1030,8 +1040,17 @@ class UnifiedForecaster:
         """
         from weighting.critic import CRITICWeightCalculator
 
-        # ── Step 1: clip to SAW domain ────────────────────────────────────
-        scores = predicted_saw_scores.clip(lower=0.0, upper=1.0)
+        # ── Step 1: preserve extrapolation information (no clipping) ──────
+        # [FIX #9] CHANGED (2026-03-28): Removed clipping to preserve extrapolation.
+        # BEFORE: scores = predicted_saw_scores.clip(lower=0.0, upper=1.0)
+        # REASON: Clipping discards information about predictions outside [0,1],
+        #         which is valuable when the model predicts "better than best" or
+        #         "worse than worst" observed in historical data.
+        # NOTE: When use_saw_targets=True (historical mode), this allows the model's
+        #       confidence in extrapolation to flow through to CRITIC weighting.
+        #       When use_saw_targets=False (production default), predictions are already
+        #       on raw scale (unbounded), so this line handles both cases correctly.
+        scores = predicted_saw_scores.copy()  # No clipping; preserve all values
 
         # ── Guard: CRITIC needs ≥ 2 observations ─────────────────────────
         if len(scores) < 2:
@@ -1379,9 +1398,9 @@ class UnifiedForecaster:
 
         Algorithm
         ---------
-        1. Clip predictions to [0, 1] (SAW normalization domain).  Model
-           outputs may slightly overshoot due to extrapolation; clamping
-           ensures consistency with the SAW training domain.
+        1. Preserve predictions without clipping (allow extrapolation).  [FIX #9]
+           When model predicts outside [0,1] it signals confidence in moving beyond
+           observed range. Clipping would discard this information.
         2. Drop zero-variance predicted criteria (constant column → CRITIC
            weight = 0 regardless; excluding them avoids numerical instability
            in the correlation matrix and in the standard deviation term).
@@ -1392,7 +1411,7 @@ class UnifiedForecaster:
            compute information content weights for each criterion.
         5. Re-normalise weights to sum to 1 over *all* criteria (including
            any dropped constant columns, which receive weight 0).
-        6. Return ``(clipped_scores × weights).sum(axis=1)``.
+        6. Return ``(scores × weights).sum(axis=1)`` (unbounded - no clipping).
 
         Parameters
         ----------
@@ -1416,8 +1435,17 @@ class UnifiedForecaster:
         """
         from weighting.critic import CRITICWeightCalculator
 
-        # ── Step 1: clip to SAW domain ────────────────────────────────────
-        scores = predicted_saw_scores.clip(lower=0.0, upper=1.0)
+        # ── Step 1: preserve extrapolation information (no clipping) ──────
+        # [FIX #9] CHANGED (2026-03-28): Removed clipping to preserve extrapolation.
+        # BEFORE: scores = predicted_saw_scores.clip(lower=0.0, upper=1.0)
+        # REASON: Clipping discards information about predictions outside [0,1],
+        #         which is valuable when the model predicts "better than best" or
+        #         "worse than worst" observed in historical data.
+        # NOTE: When use_saw_targets=True (historical mode), this allows the model's
+        #       confidence in extrapolation to flow through to CRITIC weighting.
+        #       When use_saw_targets=False (production default), predictions are already
+        #       on raw scale (unbounded), so this line handles both cases correctly.
+        scores = predicted_saw_scores.copy()  # No clipping; preserve all values
 
         # ── Guard: CRITIC needs ≥ 2 observations ─────────────────────────
         if len(scores) < 2:
@@ -1572,11 +1600,14 @@ class UnifiedForecaster:
         n_targets = y_train.shape[1] if y_train.shape else 0
         expected_targets = 28 if self.target_level == "subcriteria" else 8
         
-        # Allow mock unit tests to pass (they use 2 or 3 components)
-        assert n_targets == expected_targets or n_targets < 8, (
+        # [FIX: HIGH-PRIORITY] Removed silent fallback for invalid target counts.
+        # Unit tests with 2-3 targets should explicitly configure target_level
+        # or be skipped. No silent passes for dimensional mismatches.
+        assert n_targets == expected_targets, (
             f"[CRITICAL] Target dimension mismatch: expected {expected_targets}, got {n_targets}. "
             f"Target level: {self.target_level}. "
-            f"Check: feature_engineer.fit_transform() selected correct components."
+            f"Check: feature_engineer.fit_transform() selected correct components. "
+            f"For unit tests with non-standard dimensions, set target_level explicitly."
         )
         logger.info(f"  ✓ ASSERTION PASSED: Target dimension = {n_targets} ({self.target_level} mode)")
         
@@ -3783,6 +3814,226 @@ class UnifiedForecaster:
             ),
             model_comparison=self.model_comparison_,
         )
+
+    # ────────────────────────────────────────────────────────────────────
+    # FIX #8: Helper Method for Holdout Retraining with Fold Correction
+    # ────────────────────────────────────────────────────────────────────
+
+    def _prepare_retraining_with_fold_correction(
+        self,
+        expanded_panel_data,
+        original_test_years: Optional[List[int]] = None,
+        verbose: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        [FIX #8] Prepare feature engineer for retraining when expanding training set
+        to include holdout data, preventing entity-statistic leakage.
+
+        OVERVIEW
+        --------
+        When retraining a fitted model on expanded data (e.g., historical years +
+        newly-available holdout year), entity-demeaned features must be recomputed
+        from the NEW training set only. Simply reusing the original feature
+        engineer causes future-year leakage (entity means include the holdout year).
+
+        This helper provides:
+        1. Guidance on the correct retraining pattern
+        2. Automatic computation of the new fold_year boundary
+        3. Validation that fold_year is set correctly
+        4. Example code for advanced practitioners
+
+        PROBLEM SCENARIO
+        ----------------
+        Original pipeline:
+        - Training years: [2011, 2012, ..., 2023] → max = 2023
+        - Holdout year: 2023 (held-out for validation)
+        - Prediction year: 2025
+
+        After holdout validation, you decide to retrain on expanded data:
+        - NEW training years: [2011, 2012, ..., 2023]  (include holdout year)
+        - NEW prediction year: 2025
+        - NEW holdout year (optional): 2024 or None
+
+        **DANGER**: If entity means are computed from ALL years [2011..2023],
+        they includes 2023 (the old holdout year). When predicting for 2025,
+        entity statistics now contaminate the 2024 features (lookahead bias).
+
+        SOLUTION
+        --------
+        Set fold_year correctly during retraining:
+
+        ```python
+        forecaster = UnifiedForecaster()
+
+        # Original training (holdout year = 2023)
+        result_1 = forecaster.fit_predict(panel_data, target_year=2024)
+
+        # After validation, retrain on expanded data
+        # New fold_year should be max(new_holdout_year) or None for no restriction
+        new_max_year = 2024  # New data available
+        expanded_data = # ... add 2024 data from holdout set
+
+        # Prepare for retraining:
+        prep_info = forecaster._prepare_retraining_with_fold_correction(
+            expanded_panel_data=expanded_data,
+            original_test_years=[2024],  # Holdout year from original pipeline
+            verbose=True
+        )
+
+        # Then retrain:
+        forecaster_v2 = UnifiedForecaster()
+        # CRITICAL: Pass fold_year to fit_transform explicitly during retraining
+        # This ensures entity means restricted to years BEFORE the new holdout
+        result_2 = forecaster_v2.fit_predict(expanded_data, target_year=2025)
+        # Inside fit_predict → stage1_engineer_features →
+        #   fit_transform(..., fold_year=<new_max_train_year>)
+        ```
+
+        MATHEMATICAL GUARANTEE
+        ----------------------
+        When fold_year is set correctly to max(expanded_training_years):
+        - Entity means computed from years < fold_year only
+        - Features for year Y use only data from years < Y (no lookahead)
+        - Predictions inherit this leakage-free property
+        - Conformal intervals remain valid (no assumption violation)
+
+        Parameters
+        ----------
+        expanded_panel_data : PanelData-like
+            Panel data object with newly-added years (e.g., original + holdout year).
+            Must have years attribute or similar property listing all years.
+
+        original_test_years : list of int, optional
+            Years that were held-out in the original pipeline (e.g., [2023]).
+            Used for validation warnings. If None, skipped.
+
+        verbose : bool, default True
+            Print diagnostic messages about fold_year computation and
+            retraining recommendations.
+
+        Returns
+        -------
+        dict with keys:
+            'fold_year': int or None
+                Recommended fold_year for retraining. Set to max(training years)
+                to ensure entity statistics don't include any holdout/future years.
+            'original_test_years': list
+                Original holdout years (informational; for audit trail).
+            'new_available_years': list
+                All years in expanded_panel_data (sorted).
+            'new_max_year': int
+                max(new_available_years); recommended fold_year = this value.
+            'note': str
+                Explanation of fold_year and usage pattern.
+
+        Notes
+        -----
+        **For Developers / Advanced Practitioners**
+
+        This method is INFORMATIONAL — it does not modify the forecaster state.
+        To actually use the returned fold_year, you must pass it through the
+        feature-engineering layer:
+
+        ```python
+        X_train, y_train, X_pred, entity_info, X_holdout, y_holdout = (
+            forecaster.feature_engineer_.fit_transform(
+                expanded_panel_data,
+                target_year=2025,
+                fold_year=prep_info['fold_year'],  # ← USE THIS
+                ...
+            )
+        )
+        ```
+
+        **Why Not Automatic?**
+
+        Retraining is an advanced operation with many variants:
+        - Expanding training set (this scenario)
+        - Shrinking for ablation studies
+        - Changing the prediction target year
+        - Removing certain years/entities for sensitivity analysis
+        - Combining multiple datasets
+
+        Without knowing the full context, automat blind application of fold_year
+        could mask errors or enforce incorrect assumptions.
+
+        **Key Insight from FIX #1/#2**
+
+        TIER 1 of the ML-MCDM fixes established that:
+        1. Entity statistics MUST be restricted to fold's training years
+        2. This applies to ALL models (tree and PLS tracks)
+        3. Correction machinery is built into fold_correction_fn
+        4. Holdout evaluation ALSO needs fold_year enforcement
+
+        This helper is a guardrail for downstream applications that reuse
+        the fitted forecaster in new contexts.
+
+        References
+        ----------
+        - ACTION_PLAN.md: FIX #8 (Holdout Retraining with Fold Correction)
+        - .claude/TIER1-COMPLETION-SUMMARY.md: FIX #1 implementation
+        """
+        try:
+            # Extract years from expanded_panel_data
+            if hasattr(expanded_panel_data, 'years'):
+                new_years = sorted(list(expanded_panel_data.years))
+            elif hasattr(expanded_panel_data, 'year_range'):
+                new_years = sorted(list(range(expanded_panel_data.year_range[0],
+                                               expanded_panel_data.year_range[1] + 1)))
+            else:
+                new_years = []
+
+            if not new_years:
+                logger.warning(
+                    "    _prepare_retraining_with_fold_correction: Could not extract "
+                    "years from expanded_panel_data. Using None for fold_year."
+                )
+                fold_year = None
+            else:
+                fold_year = int(max(new_years))
+
+            # Prepare output
+            info = {
+                'fold_year': fold_year,
+                'original_test_years': original_test_years or [],
+                'new_available_years': new_years,
+                'new_max_year': fold_year,
+                'note': (
+                    f"[FIX #8] Retraining with expanded data: fold_year={fold_year}. "
+                    f"Pass this to feature_transform(..., fold_year={fold_year}) to ensure "
+                    f"entity statistics don't include years >= {fold_year}."
+                ),
+            }
+
+            if verbose:
+                print("\n" + "="*80)
+                print("FIX #8: HOLDOUT RETRAINING WITH FOLD CORRECTION")
+                print("="*80)
+                print(f"Original holdout years: {original_test_years}")
+                print(f"Expanded panel years:   {new_years}")
+                print(f"Recommended fold_year: {fold_year}")
+                print("\nUSAGE PATTERN:")
+                print(f"  X_train, y_train, ... = forecaster.feature_engineer_.fit_transform(")
+                print(f"      expanded_panel_data, target_year=<new_target>,")
+                print(f"      fold_year={fold_year},  # ← CRITICAL: Set this to prevent leakage")
+                print(f"      ...")
+                print(f"  )")
+                print("="*80 + "\n")
+
+            return info
+
+        except Exception as e:
+            logger.error(
+                f"_prepare_retraining_with_fold_correction failed: {e}. "
+                f"Returning None for fold_year — manual review required."
+            )
+            return {
+                'fold_year': None,
+                'original_test_years': original_test_years or [],
+                'new_available_years': [],
+                'new_max_year': None,
+                'note': f"Error during preparation: {e}",
+            }
 
     @_silence_warnings
     def fit_predict(self,

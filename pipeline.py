@@ -1132,46 +1132,32 @@ class MLMCDMPipeline:
             self.logger.info("=" * 80)
             
             try:
-                # Get ml_panel_data from earlier in the method (via closure)
-                # Note: ml_panel_data is built earlier for feature engineering
-                # If not cached, rebuild it briefly for aggregation logic
-                try:
-                    from .data.missing_data import build_ml_panel_data
-                except ImportError:
-                    from data.missing_data import build_ml_panel_data
-                
-                ml_panel_data = build_ml_panel_data(panel_data)
-                
-                try:
-                    from .weighting import CRITICWeightingCalculator
-                except ImportError:
-                    from weighting import CRITICWeightingCalculator
+                # BUG-1 FIX: ml_panel_data was already built at the top of this
+                # method (fully MICE-imputed). Reuse it — do NOT call
+                # build_ml_panel_data() again, which would double the MICE runtime.
+                #
+                # BUG-2 FIX: Instead of re-running CRITICWeightingCalculator on
+                # the single 2025 forecast cross-section (63 provinces × 1 year),
+                # use the historically-grounded Phase 2 weights (2011–2024, 14 years)
+                # stored in self.weights. These are the same weights used by the
+                # MCDM ranking phase and are far more reliable than single-year CRITIC.
+                hist_weights = getattr(self, 'weights', {})
+                hist_details = hist_weights.get('details', {}) if isinstance(hist_weights, dict) else {}
+                local_sc_weights = hist_details.get('level1', {})
+                hist_crit_weights = hist_details.get('level2', {}).get('criterion_weights', {})
+                hist_global_sc = hist_weights.get('weights', {}) if isinstance(hist_weights, dict) else {}
 
-                pred_df = result.predictions.copy()
-                pred_df.index.name = 'Province'
-                pred_df = pred_df.reset_index()
-                pred_df['Year'] = target_year
+                if not local_sc_weights:
+                    self.logger.warning(
+                        "  ⚠ Phase 2 historical CRITIC weights not found in self.weights; "
+                        "SC→criteria aggregation will fall back to equal weighting within each group."
+                    )
 
-                active_groups = {}
-                for crit_id, sc_list in ml_panel_data.hierarchy.criteria_to_subcriteria.items():
-                    active = [sc for sc in sc_list if sc in result.predictions.columns]
-                    if active:
-                        active_groups[crit_id] = active
-
-                calc = CRITICWeightingCalculator(config=self.config.weighting)
-                forecast_weight_result = calc.calculate(
-                    panel_df=pred_df,
-                    criteria_groups=active_groups,
-                    entity_col='Province',
-                    time_col='Year',
-                )
-
-                result.forecast_criterion_weights_ = forecast_weight_result.details['level2']['criterion_weights']
-                local_sc_weights = forecast_weight_result.details['level1']
                 forecast_weights_dict = {
-                    'global_sc_weights': forecast_weight_result.weights,
-                    'criterion_weights': result.forecast_criterion_weights_
+                    'global_sc_weights': hist_global_sc,
+                    'criterion_weights': hist_crit_weights,
                 }
+                result.forecast_criterion_weights_ = hist_crit_weights
 
                 # Get the panel's hierarchy for SC-to-criteria mapping
                 criteria_predictions = self._aggregate_sc_to_criteria(

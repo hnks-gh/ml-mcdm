@@ -9,7 +9,10 @@ dual-model architecture in UnifiedForecaster.
 LINEAR TRACK — mode='pls'
     VarianceThreshold(0.005) → StandardScaler → [MI pre-filter] → PLSRegression
     Supervised compression: PLSRegression (PLS2) finds the linear combinations
-    of X with maximum covariance with all 8 criterion targets simultaneously.
+    of X with maximum covariance with all targets simultaneously.
+    [ARCHITECTURALLY ADAPTIVE] Handles both 8 criteria (target_level='criteria')
+    and 28 sub-criteria (target_level='subcriteria') via dimensionality-aware
+    component calculation: n_components = min(n_samples // 10, 20).
     Target-aware compression is strictly superior to PCA for forecasting tasks
     where the objective is prediction accuracy, not explained feature variance.
     n_components = min(n_samples // 10, 20) → p/n ≤ 0.024.
