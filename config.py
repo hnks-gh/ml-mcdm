@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import List, Dict, Optional, Literal
 from enum import Enum
 import json
+import numpy as np
 
 from data.imputation import ImputationConfig
 
@@ -675,6 +676,83 @@ class ForecastConfig:
 
     The auto-scaling fires only when this field retains its default value
     (3); explicit non-default values are always honoured.
+    """
+
+    # ── TIER 3: SVR & ElasticNet hyperparameters (FIX #6) ────────────────
+    svr_C: float = 1.0
+    """Support Vector Regression regularization parameter.
+
+    Controls the trade-off between fitting the training data and minimizing
+    the margin (regularization).  Larger C enforces stricter fitting (more
+    support vectors); smaller C allows more margin violations (smoother decision
+    boundary).
+
+    Typical range: [0.1, 10.0].  Default 1.0 provides a balanced fit for
+    small-to-medium panel datasets.
+    """
+
+    svr_gamma: str = "scale"
+    """RBF kernel bandwidth parameter for SVR.
+
+    Controls the kernel's decay rate:
+    * ``"scale"`` (default): γ = 1 / (n_features × Var[X_scaled])
+    * ``"auto"``: γ = 1 / n_features
+    * Float value: fixed bandwidth (e.g., 0.01, 0.1)
+
+    Smaller γ → wider influence per support vector (smoother).
+    Larger γ → localized influence (more complex boundaries).
+    """
+
+    svr_epsilon: float = 0.1
+    """ε-tube half-width for SVR's ε-insensitive loss.
+
+    Residuals |y - ŷ| ≤ ε contribute zero loss; residuals outside ε
+    accumulate linear loss.  Larger ε → fewer support vectors (smoother),
+    more robust to noise.  Smaller ε → more support vectors, tighter fit.
+
+    Typical range: [0.01, 0.5] depending on target scale.
+    Default 0.1 is suitable for normalized [0, 1] criteria.
+    """
+
+    elasticnet_l1_ratios: List[float] = field(default_factory=lambda: [0.2, 0.5, 0.8])
+    """L1/L2 weight ratios for ElasticNet cross-validation.
+
+    Each ratio is tried during internal CV:
+    * 0.0 = pure Ridge (L2 only)
+    * 1.0 = pure LASSO (L1 only)
+    * 0.5 = balanced ElasticNet
+
+    Higher L1 ratios (0.8) favor feature selection (sparsity).
+    Default [0.2, 0.5, 0.8] biases toward moderate-to-high sparsity,
+    improving interpretability on panel data.
+    """
+
+    elasticnet_alphas: np.ndarray = field(
+        default_factory=lambda: np.logspace(-4, 1, 20)
+    )
+    """Regularization strengths for ElasticNet cross-validation.
+
+    ElasticNetCV tries each alpha and selects the best via internal CV.
+    Default: 20 logarithmically-spaced values [1e-4, ..., 10].
+
+    Smaller α → weaker regularization (closer fit).
+    Larger α → stronger regularization (more shrinkage).
+
+    Auto-tuning adapts to each criterion's noise level.
+    """
+
+    # ── CatBoost adaptive scaling (FIX #7) ────────────────────────────────
+    catboost_adaptive_depth: bool = True
+    """Enable adaptive depth scaling for CatBoost based on fold size.
+
+    When True (default), CatBoost's max_depth parameter scales dynamically:
+    * n_train < 200  → depth = 3 (prevent overfitting on small folds)
+    * n_train ≈ 300  → depth = 4 (balanced)
+    * n_train ≥ 1000 → depth = 5–6 (allow deeper trees for larger samples)
+
+    Formula: depth = max(3, min(7, int(np.log2(max(10, n_train / 5)))))
+
+    When False, uses fixed gb_max_depth value (legacy behavior).
     """
 
     # ── Target transformation (Phase 5) ──────────────────────────────────

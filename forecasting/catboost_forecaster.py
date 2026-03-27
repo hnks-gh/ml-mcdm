@@ -111,15 +111,48 @@ class CatBoostForecaster(BaseForecaster):
 
         y_fit = y[:, ~self._const_mask_] if self._const_mask_.any() else y
 
+        # FIX #7 (TIER 3): Adaptive hyperparameter scaling based on fold size
+        # Prevents overfitting on small folds and underfitting on large folds
+        # by adjusting tree depth, number of iterations, and minimum leaf size.
         n_samples = X.shape[0]
+
+        # Logarithmic depth scaling formula (from ACTION_PLAN TIER 3 FIX #7):
+        # depth = max(3, min(7, int(np.log2(max(10, n_train / 5)))))
+        # This scales depth from 3 (small folds) to 7 (large folds) based on
+        # the effective training set size per tree (n/5 handles fold structure).
+        adaptive_depth = max(3, min(7, int(np.log2(max(10, n_samples / 5)))))
+
+        # Early stopping rounds scale with sqrt(n): fewer rounds for tiny folds,
+        # more for large folds. Prevents premature stopping on n<100 and wasted
+        # rounds on n>1000.
+        adaptive_es_rounds = max(10, int(np.sqrt(n_samples / 25)))
+
+        # Effective hyperparameters for this fold
         if n_samples < 200:
-            eff_depth, eff_iter, eff_min_leaf = 3, 100, max(8, n_samples // 16)
+            # Very small fold: conservative model to prevent memorization
+            eff_depth = min(3, adaptive_depth)
+            eff_iter = 100
+            eff_min_leaf = max(8, n_samples // 16)
         elif n_samples < 400:
-            eff_depth, eff_iter, eff_min_leaf = 4, 150, max(5, n_samples // 32)
+            # Small fold: moderate complexity
+            eff_depth = min(4, adaptive_depth)
+            eff_iter = 150
+            eff_min_leaf = max(5, n_samples // 32)
         elif n_samples < 600:
-            eff_depth, eff_iter, eff_min_leaf = 5, 200, max(4, n_samples // 64)
+            # Medium fold: allow deeper trees
+            eff_depth = min(5, adaptive_depth)
+            eff_iter = 200
+            eff_min_leaf = max(4, n_samples // 64)
         else:
-            eff_depth, eff_iter, eff_min_leaf = self.depth, self.iterations, max(4, n_samples // 64)
+            # Large fold: use adaptive depth + configured iterations
+            eff_depth = adaptive_depth
+            eff_iter = self.iterations
+            eff_min_leaf = max(4, n_samples // 64)
+
+        logger.debug(
+            f"CatBoost adaptive scaling (n={n_samples}): "
+            f"depth={eff_depth}, iter={eff_iter}, min_leaf={eff_min_leaf}"
+        )
 
         if not _CATBOOST_AVAILABLE:
             raise RuntimeError(

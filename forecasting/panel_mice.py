@@ -35,6 +35,8 @@ REMOVAL SCHEDULE:
 See data.imputation.iterative.MICEImputer for details.
 """
 
+from __future__ import annotations
+
 import warnings
 warnings.warn(
     "forecasting.panel_mice is DEPRECATED as of 2026-03-27. "
@@ -46,40 +48,37 @@ warnings.warn(
 
 # Original implementation below (for reference, do not use)
 # ============================================================================
-
-
-Phase 1 — Temporal (within-entity)
-    For each entity, interpolate NaN values across the time dimension using
-    linear interpolation with nearest-neighbour boundary extension.  Captures
-    entity-specific temporal autocorrelation (the strongest signal in panels).
-
-Phase 2 — Spatial (cross-sectional, per year)
-    For each calendar year, apply K-Nearest-Neighbour imputation across
-    entities using the complete features of neighbouring entities at the
-    same time point.  Captures cross-entity spatial correlation.
-
-Phase 3 — Global fallback
-    Any residual NaN after phases 1–2 is handled by IterativeImputer with
-    HistGradientBoostingRegressor (handles NaN natively, sample_posterior=True
-    for stochastic draws needed by Rubin's Rules downstream).
-
-Design notes
-------------
-* Operates on the engineered feature matrix ``(X, entity_indices, year_labels)``
-  after ``TemporalFeatureEngineer.fit_transform()`` but BEFORE
-  ``PanelFeatureReducer`` so the imputed values flow into dimensionality
-  reduction correctly.
-* ``transform()`` uses Phase 2 KNN (same-year entities' feature values are
-  available at prediction time for historical years) and Phase 3 global
-  imputer's ``transform()`` to handle prediction-year NaN.  For truly
-  novel prediction years, Phase 1 temporal extrapolation is applied first.
-
-References
-----------
-van Buuren, S. (2018). Flexible Imputation of Missing Data, Chapter 9.3.
-    CRC Press.  https://stefvanbuuren.name/fimd/
-"""
-from __future__ import annotations
+#
+# Phase 1 — Temporal (within-entity)
+#     For each entity, interpolate NaN values across the time dimension using
+#     linear interpolation with nearest-neighbour boundary extension.  Captures
+#     entity-specific temporal autocorrelation (the strongest signal in panels).
+#
+# Phase 2 — Spatial (cross-sectional, per year)
+#     For each calendar year, apply K-Nearest-Neighbour imputation across
+#     entities using the complete features of neighbouring entities at the
+#     same time point.  Captures cross-entity spatial correlation.
+#
+# Phase 3 — Global fallback
+#     Any residual NaN after phases 1–2 is handled by IterativeImputer with
+#     HistGradientBoostingRegressor (handles NaN natively, sample_posterior=True
+#     for stochastic draws needed by Rubin's Rules downstream).
+#
+# Design notes
+# ------------
+# * Operates on the engineered feature matrix ``(X, entity_indices, year_labels)``
+#   after ``TemporalFeatureEngineer.fit_transform()`` but BEFORE
+#   ``PanelFeatureReducer`` so the imputed values flow into dimensionality
+#   reduction correctly.
+# * ``transform()`` uses Phase 2 KNN (same-year entities' feature values are
+#   available at prediction time for historical years) and Phase 3 global
+#   imputer's ``transform()`` to handle prediction-year NaN.  For truly
+#   novel prediction years, Phase 1 temporal extrapolation is applied first.
+#
+# References
+# ----------
+# van Buuren, S. (2018). Flexible Imputation of Missing Data, Chapter 9.3.
+#     CRC Press.  https://stefvanbuuren.name/fimd/
 
 import warnings
 from typing import Optional, Tuple

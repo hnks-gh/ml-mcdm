@@ -536,9 +536,9 @@ Current 4-model ensemble has 35-50% correlation within pairs:
 
 This causes meta-learner weight collapse (one model gets 0.85+).
 
-#### Solution: Replace Redundant Models
+#### Solution: Replace Redundant Models with Diverse 4-Model Ensemble
 
-**Proposed Ensemble** (maximum diversity):
+**Final Ensemble** (maximum diversity, optimized for panel data):
 
 ```
 REMOVE:
@@ -547,98 +547,201 @@ REMOVE:
 
 KEEP:
   ✓ CatBoost (tree gradient boosting)
+  ✓ BayesianRidge (Bayesian linear inference)
 
-ADD:
-  ✓ LightGBM (tree with GOSS; different from CatBoost)
-  ✓ Ridge (L2 linear; simple, different from Bayesian sparsity)
-  ✓ Gaussian Process (non-parametric kernel; extrapolation aware)
+ADD (for complementary diversity):
+  ✓ SVR with RBF kernel (smooth kernel non-linear, different from tree partitioning)
+  ✓ ElasticNet (penalized linear with L1 sparsity, different from Bayesian shrinkage)
 ```
 
-**Alternative models** (if above don't work):
-- GradientBoosting (sklearn, simpler than CatBoost)
-- Polynomial (2nd order; different feature space)
-- ElasticNet (L1+L2 regularization; different penalty)
+**Why this ensemble:**
+- **CatBoost**: Non-linear via recursive partitioning (step functions + interactions)
+- **BayesianRidge**: Linear with Bayesian uncertainty + automatic relevance determination
+- **SVR (RBF)**: Non-linear via smooth kernel expansion (structurally different from trees)
+- **ElasticNet**: Linear with L1+L2 penalties (explicit feature selection, different regularization paradigm)
+
 
 #### Implementation Steps
 
-1. **Install required packages**:
+1. **Verify sklearn-learn version** (SVR, ElasticNetCV are standard in sklearn):
    ```bash
-   pip install lightgbm gpytorch
+   pip install --upgrade scikit-learn  # Ensure ≥1.0 for RidgeCV, ElasticNetCV
    ```
 
 2. **Implement new models** (unified.py lines 889-953):
    ```python
+   from sklearn.svm import SVR
+   from sklearn.linear_model import ElasticNetCV
+   
    def _create_models(self, X_train, config, fold_id=None):
        models = {
            'catboost': self._make_catboost(X_train, config),
-           'lightgbm': self._make_lightgbm(X_train, config),
-           'ridge': self._make_ridge(X_train, config),
-           'gaussian_process': self._make_gp(X_train, config),
+           'bayesian_ridge': self._make_bayesian_ridge(X_train, config),
+           'svr': self._make_svr(X_train, config),
+           'elasticnet': self._make_elasticnet(X_train, config),
        }
        return models
-
-   def _make_lightgbm(self, X_train, config):
-       return LGBMRegressor(
-           num_leaves=31,
-           learning_rate=0.05,
-           n_estimators=200,
-           random_state=42
-       )
-
-   def _make_gp(self, X_train, config):
-       from sklearn.gaussian_process import GaussianProcessRegressor
-       from sklearn.gaussian_process.kernels import RBF, WhiteKernel
-       return GaussianProcessRegressor(
-           kernel=RBF(length_scale=1.0) + WhiteKernel(),
-           n_restarts_optimizer=10,
-           random_state=42
-       )
-
-   def _make_ridge(self, X_train, config):
-       return Ridge(alpha=1.0)
    ```
 
-3. **Remove old models** (or keep as backup for testing):
+3. **Add SVR forecaster** (new file `forecasting/svr_forecaster.py`):
    ```python
-   # DELETE:
-   # - QuantileRF
-   # - KernelRidge
-   # Comment out for now, completely remove in next pass
+   from sklearn.svm import SVR
+   from .base import BaseForecaster
+   
+   class SVRForecaster(BaseForecaster):
+       """Support Vector Regression with RBF kernel.
+       
+       Provides smooth, non-linear predictions via kernel expansion.
+       Fundamentally different mechanism from tree-based models.
+       """
+       def __init__(self, C=1.0, gamma='scale', epsilon=0.1, random_state=42):
+           self.model = SVR(
+               kernel='rbf',
+               C=C,
+               gamma=gamma,
+               epsilon=epsilon,
+               cache_size=200,
+               verbose=0
+           )
+           self.random_state = random_state
+       
+       def fit(self, X_train, y_train):
+           self.model.fit(X_train, y_train)
+           return self
+       
+       def predict(self, X):
+           return self.model.predict(X)
+   ```
+   
+   Then in `_create_models`:
+   ```python
+   def _make_svr(self, X_train, config):
+       svr_C = getattr(config, 'svr_C', 1.0) if config else 1.0
+       svr_gamma = getattr(config, 'svr_gamma', 'scale') if config else 'scale'
+       return SVRForecaster(
+           C=svr_C,
+           gamma=svr_gamma,
+           random_state=self.random_state
+       )
    ```
 
-4. **Update model names/tracking** (super_learner.py):
+4. **Add ElasticNet forecaster** (new file `forecasting/elasticnet_forecaster.py`):
    ```python
-   # Update _model_names to reflect new ensemble
+   from sklearn.linear_model import ElasticNetCV
+   from .base import BaseForecaster
+   
+   class ElasticNetForecaster(BaseForecaster):
+       """ElasticNet with automatic regularization tuning.
+       
+       Combines L1 (LASSO) and L2 (Ridge) penalties for feature selection
+       and stability. Fundamentally different from Bayesian shrinkage.
+       """
+       def __init__(self, l1_ratios=None, alphas=None, cv=5, random_state=42):
+           if l1_ratios is None:
+               l1_ratios = [0.2, 0.5, 0.8]
+           if alphas is None:
+               alphas = np.logspace(-4, 1, 20)
+           
+           self.model = ElasticNetCV(
+               l1_ratio=l1_ratios,
+               alphas=alphas,
+               cv=cv,
+               random_state=random_state,
+               max_iter=5000,
+               tol=1e-3
+           )
+           self.random_state = random_state
+       
+       def fit(self, X_train, y_train):
+           self.model.fit(X_train, y_train)
+           return self
+       
+       def predict(self, X):
+           return self.model.predict(X)
+   ```
+   
+   Then in `_create_models`:
+   ```python
+   def _make_elasticnet(self, X_train, config):
+       en_l1_ratios = getattr(config, 'elasticnet_l1_ratios', [0.2, 0.5, 0.8]) if config else [0.2, 0.5, 0.8]
+       en_alphas = getattr(config, 'elasticnet_alphas', np.logspace(-4, 1, 20)) if config else np.logspace(-4, 1, 20)
+       return ElasticNetForecaster(
+           l1_ratios=en_l1_ratios,
+           alphas=en_alphas,
+           random_state=self.random_state
+       )
+   ```
+
+5. **Remove old models** (clean removal):
+   ```python
+   # REMOVE from _create_models:
+   # - QuantileRF (was: models['QuantileRF'] = ...)
+   # - KernelRidge (was: models['KernelRidge'] = ...)
+   ```
+
+6. **Update config.py with new hyperparameters** (lines ~600-650):
+   ```python
+   # SVR parameters
+   svr_C: float = 1.0              # Regularization strength
+   svr_gamma: str = 'scale'        # Kernel coefficient
+   
+   # ElasticNet parameters
+   elasticnet_l1_ratios: List[float] = field(default_factory=lambda: [0.2, 0.5, 0.8])
+   elasticnet_alphas: np.ndarray = field(default_factory=lambda: np.logspace(-4, 1, 20))
+   ```
+
+7. **Update super_learner.py model tracking** (lines ~100-120):
+   ```python
+   # Update _model_names to:
+   self._model_names = ['CatBoost', 'BayesianRidge', 'SVR', 'ElasticNet']
    ```
 
 #### Expected Outcomes
 
-- **Model correlation**: Reduced from 35-50% to 10-25%
-- **Meta-learner weights**: Spread across 4 models (0.20-0.30 each) instead of collapse
-- **Ensemble robustness**: +30-50% improvement; weights stable to small data changes
-- **Forecast accuracy**: +2-5% improvement from true diversity
+- **Model correlation matrix** (expected):
+  ```
+                CatBoost  BayesianRidge  SVR  ElasticNet
+  CatBoost        1.0       0.20±0.10   0.15±0.10  0.18±0.10
+  BayesianRidge  0.20       1.0         0.18±0.10  0.22±0.10
+  SVR            0.15       0.18         1.0       0.16±0.10
+  ElasticNet     0.18       0.22        0.16       1.0
+  ```
+  Average off-diagonal: **~0.18** (down from 0.40-0.45)
+  
+- **Meta-learner weights**: Spread evenly [0.24, 0.26, 0.25, 0.25] instead of collapse [0.88, 0.08, 0.02, 0.02]
+- **Ensemble robustness**: +30-50% improvement in weight stability across folds
+- **Forecast accuracy**: +2-5% improvement from true diversity + stable meta-learner
+- **Conformal coverage**: Maintained at 95% (now on honest residuals post-Tier 1 fixes)
 
 #### Testing & Validation
 
 ```python
 # Verification checklist:
-✓ New models train without errors
-✓ Correlation matrix computed; diagonal ~1.0, off-diagonal <0.25
-✓ Meta-learner weights spread (Gini index > 0.3)
-✓ OOF loss not worse than before (should improve)
-✓ Holdout loss improves or stays same
-✓ Conformal coverage maintained
-✓ Cross-fold stability improves
+✓ SVRForecaster trains without errors on all folds
+✓ ElasticNetForecaster CV tuning converges (alpha_~0.01-0.1 typical)
+✓ Correlation matrix computed; all off-diagonal <0.25 (target: ~0.18±0.05)
+✓ Meta-learner weights spread evenly [0.22, 0.28, 0.25, 0.25] (Gini > 0.4 indicates spread)
+✓ OOF R² not worse than before (should stay ~0.74-0.76 post-Tier 1)
+✓ Holdout R² improves or stays same (~0.71-0.73)
+✓ Per-fold weight std dev decreases (target: <0.05 from ±0.15)
+✓ Conformal coverage maintained at 95% (on honest residuals)
+✓ Cross-fold stability: std(fold_R²) decreases by 15-25%
+✓ No NaN/inf in any model predictions
+✓ SVR support vector count reasonable (should be 20-40% of training set)
+✓ ElasticNet sparsity: 40-60% of features selected (indicates L1 working)
 ```
 
-#### Files to Edit
+#### Files to Create/Edit
 
-| File | Lines | Changes | Complexity |
-|------|-------|---------|------------|
-| `unified.py` | 889-953 | Add LightGBM, Gaussian Process models | Medium |
-| `unified.py` | 900-950 | Remove/comment QuantileRF, KernelRidge | Low |
-| `super_learner.py` | ~1600 | Update model tracking | Low |
-| `config.py` | 582-678 | Add hyperparams for new models | Low |
+| File | Action | Lines | Changes | Complexity |
+|------|--------|-------|---------|------------||
+| `forecasting/svr_forecaster.py` | **CREATE** | 1-80 | New SVRForecaster class | Low |
+| `forecasting/elasticnet_forecaster.py` | **CREATE** | 1-100 | New ElasticNetForecaster class | Low |
+| `unified.py` | Edit | 889-953 | Replace model factory; add _make_svr, _make_elasticnet | Medium |
+| `unified.py` | Edit | 900-950 | Remove QuantileRF, KernelRidge instantiation | Low |
+| `super_learner.py` | Edit | ~100-120 | Update _model_names list | Very Low |
+| `config.py` | Edit | 600-650 | Add svr_C, svr_gamma, elasticnet_l1_ratios, elasticnet_alphas | Low |
+| `forecasting/__init__.py` | Edit | — | Import SVRForecaster, ElasticNetForecaster | Very Low |
 
 ---
 

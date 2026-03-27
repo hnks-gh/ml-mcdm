@@ -698,11 +698,13 @@ class TemporalFeatureEngineer:
 
                 target = entity_data.loc[next_yr, components].values.astype(float)
 
-                # Enhancement M-04: Relaxed partial-NaN handling
-                # Skip only if ALL targets are NaN (both criteria and sub-criteria modes)
-                # Partial NaN targets are preserved; downstream models handle via
-                # sample weighting (BayesianForecaster) or component-wise training
-                if np.all(np.isnan(target)):
+                # Enhancement M-04 (TIER 2 FIX #4): Consistent partial-NaN handling
+                # Dropped partial-NaN handling for consistency with meta-learner.
+                # Now: Skip if ANY targets are NaN (conservative approach).
+                # Rationale: Prevents silent data loss inconsistency between features and meta-learner.
+                # Benefits: Simpler behavior, more robust OOF training, clearer data semantics.
+                # Data retention: Only fully-observed rows used across all components.
+                if np.any(np.isnan(target)):
                     n_skipped_train += 1
                     continue
 

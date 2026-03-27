@@ -56,6 +56,9 @@ from .bayesian import BayesianForecaster
 from .kernel_ridge import KernelRidgeForecaster
 from .svr import SVRForecaster
 
+# Linear methods with explicit feature selection
+from .elasticnet_forecaster import ElasticNetForecaster
+
 from .quantile_forest import QuantileRandomForestForecaster
 
 # Meta-ensemble methods
@@ -92,6 +95,8 @@ __all__ = [
     # Kernel methods (T-03a, T-03b)
     'KernelRidgeForecaster',
     'SVRForecaster',
+    # Linear methods with explicit feature selection
+    'ElasticNetForecaster',
     # Advanced models (SOTA)
     'QuantileRandomForestForecaster',
     # Meta-ensemble

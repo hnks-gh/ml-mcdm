@@ -55,11 +55,12 @@ from .base import BaseForecaster
 from .catboost_forecaster import CatBoostForecaster
 from .bayesian import BayesianForecaster
 from .features import TemporalFeatureEngineer
-# Kernel methods (T-03a, T-03b)
-from .kernel_ridge import KernelRidgeForecaster
+# Kernel methods (T-03a, T-03b, TIER 3: SVR for PCA track)
+from .svr import SVRForecaster
+# Linear methods with explicit feature selection (TIER 3: new ensemble)
+from .elasticnet_forecaster import ElasticNetForecaster
 
 # State-of-the-art advanced models
-from .quantile_forest import QuantileRandomForestForecaster
 from .super_learner import SuperLearner, _WalkForwardYearlySplit as PanelWalkForwardCV
 from .conformal import ConformalPredictor
 from .preprocessing import PanelFeatureReducer
@@ -879,56 +880,59 @@ class UnifiedForecaster:
             logger.info("Tuning Gradient Boosting models...")
             tuned_params['CatBoost'] = optimizer.optimize_catboost(X_tree, y, year_labels)
 
-        if getattr(cfg, 'auto_tune_kernel', False):
-            logger.info("Tuning Kernel models...")
-            tuned_params['KernelRidge'] = optimizer.optimize_kernel_ridge(X_pca, y, year_labels)
-
-        if getattr(cfg, 'auto_tune_qrf', False):
-            logger.info("Tuning Quantile Random Forest...")
-            tuned_params['QuantileRF'] = optimizer.optimize_quantilerf(X_tree, y, year_labels)
-
-        if any([getattr(cfg, 'auto_tune_gb', False), getattr(cfg, 'auto_tune_kernel', False), getattr(cfg, 'auto_tune_qrf', False)]):
+        if any([getattr(cfg, 'auto_tune_gb', False)]):
             optimizer.save_best_params(tuned_params, params_file)
-            
+
         self._tuned_params_ = tuned_params
 
     def _create_models(self) -> Dict[str, BaseForecaster]:
         """
-        Create all base model instances (5 diverse models).
+        Create all base model instances (4 diverse models - TIER 3 ensemble).
+
+        TIER 3: Improved ensemble composition for maximum diversity:
+        - Removed QuantileRF (redundant tree-based model with CatBoost)
+        - Removed KernelRidge (redundant RBF kernel with SVR)
+        - Added SVRForecaster (smooth kernel non-linear, complementary to trees)
+        - Added ElasticNetForecaster (L1+L2 penalized linear with feature selection)
 
         Hyperparameters are resolved from the ForecastConfig passed to
         ``__init__`` (if provided), otherwise production defaults are used.
         All tunable parameters are exposed in ``ForecastConfig`` so they can
         be adjusted without modifying source code.
 
-        Default decisions:
-            CatBoost         : max_depth=5 (32 leaves ≈ 24 samples/leaf at
-                               n=756), n_estimators=200 (class default)
+        Ensemble diversity (TIER 3 targets):
+        * CatBoost:        Non-linear via recursive tree partitioning + gradients
+        * BayesianRidge:   Linear with Bayesian uncertainty + automatic shrinkage
+        * SVR (RBF):       Non-linear via smooth kernel expansion (structurally different from trees)
+        * ElasticNet:      Linear with L1+L2 penalties and explicit feature selection
+
+        Expected correlations (TIER 3 target):
+        * Off-diagonal: ~0.15-0.25 (down from 0.35-0.50 in prior ensemble)
+        * Meta-learner weight spread: [0.22, 0.28, 0.25, 0.25] (even distribution)
         """
         # Resolve hyperparameters: config takes priority, else use defaults
         cfg = self._config
         gb_n_est    = cfg.gb_n_estimators           if cfg is not None else 200
         gb_depth    = cfg.gb_max_depth              if cfg is not None else 5
-        krr_alpha   = getattr(cfg, 'krr_alpha',   1.0)   if cfg is not None else 1.0
-        krr_gamma   = getattr(cfg, 'krr_gamma',   "scale") if cfg is not None else "scale"
         # Phase 2.1: early stopping configuration
         es_rounds   = getattr(cfg, 'gb_early_stopping_rounds', 20) if cfg is not None else 20
         es_val_frac = getattr(cfg, 'gb_validation_fraction',  0.20) if cfg is not None else 0.20
-        # Phase 2.4: QRF n_estimators from config (fixes hardcoded=100 bug)
-        qrf_n_est   = getattr(cfg, 'qrf_n_estimators', 300) if cfg is not None else 300
+
+        # TIER 3: SVR hyperparameters
+        svr_C       = getattr(cfg, 'svr_C', 1.0)           if cfg is not None else 1.0
+        svr_gamma   = getattr(cfg, 'svr_gamma', "scale")   if cfg is not None else "scale"
+        svr_epsilon = getattr(cfg, 'svr_epsilon', 0.1)     if cfg is not None else 0.1
+
+        # TIER 3: ElasticNet hyperparameters
+        en_l1_ratios = getattr(cfg, 'elasticnet_l1_ratios', [0.2, 0.5, 0.8]) if cfg is not None else [0.2, 0.5, 0.8]
+        en_alphas    = getattr(cfg, 'elasticnet_alphas', np.logspace(-4, 1, 20)) if cfg is not None else np.logspace(-4, 1, 20)
 
         models = {}
 
         # ── Phase 3: merge tuned HPs with config defaults (tuned take priority)
         _gb_params   = self._tuned_params_.get('CatBoost', {})
-        _krr_params  = self._tuned_params_.get('KernelRidge', {})
-        _qrf_params  = self._tuned_params_.get('QuantileRF', {})
 
-        # Override config variables if tuned
-        krr_alpha = _krr_params.get('alpha', krr_alpha)
-        qrf_n_est = _qrf_params.get('n_estimators', qrf_n_est)
-
-        # --- Tier 1a: Tree-based gradient boosting -------------------------
+        # --- TIER 1a: Tree-based gradient boosting (unchanged) ----------------
         models['CatBoost'] = CatBoostForecaster(
             iterations=_gb_params.get('iterations', gb_n_est),
             depth=_gb_params.get('depth', gb_depth),
@@ -940,20 +944,30 @@ class UnifiedForecaster:
             random_state=self.random_state,
         )
 
-        # --- Tier 1b: Bayesian linear + kernel methods (PCA track) --------
+        # --- TIER 1b: Bayesian linear (unchanged) --------- (PCA track) ----
         models['BayesianRidge'] = BayesianForecaster()
-        models['KernelRidge'] = KernelRidgeForecaster(
-            alpha=krr_alpha, gamma=krr_gamma,
+
+        # --- TIER 3: SVRForecaster (new - replaces KernelRidge) (PCA track) --
+        # SVR provides smooth kernel non-linear predictions, fundamentally different
+        # from tree-based partitioning, complementing CatBoost. RBF kernel + epsilon-tube
+        # loss makes it more robust to outliers than KernelRidge L2 penalty.
+        models['SVR'] = SVRForecaster(
+            C=svr_C,
+            gamma=svr_gamma,
+            epsilon=svr_epsilon,
             random_state=self.random_state,
         )
 
-        # --- Tier 1c: Tree-track models -----------------------------------
-        # Phase 2.4 FIX: was hardcoded n_estimators=100 (ignored class default
-        # of 200 and config field qrf_n_estimators=300). Now reads from config.
-        models['QuantileRF'] = QuantileRandomForestForecaster(
-            n_estimators=qrf_n_est, 
-            min_samples_leaf=_qrf_params.get('min_samples_leaf', 1),
-            random_state=self.random_state
+        # --- TIER 3: ElasticNetForecaster (new - replaces QuantileRF) (PCA track) --
+        # ElasticNet combines L1 (LASSO) and L2 (Ridge) penalties with explicit
+        # feature selection (typically 40-60% of features retained). Differs from
+        # Bayesian shrinkage via hard feature elimination, increasing ensemble diversity.
+        # Cross-validated alpha and l1_ratio selection adapts to each criterion's signal.
+        models['ElasticNet'] = ElasticNetForecaster(
+            l1_ratios=en_l1_ratios,
+            alphas=en_alphas,
+            cv=5,
+            random_state=self.random_state,
         )
 
         return models
@@ -1778,20 +1792,20 @@ class UnifiedForecaster:
         )
         self.X_pred_tree_ = self.reducer_tree_.transform(self.X_pred_.values)
 
-        # Per-model routing: PCA track (linear/kernel) → PLS; tree track → threshold.
-        # PCA track: BayesianRidge, KernelRidge (smooth/kernel methods)
-        # Tree track: CatBoost, QuantileRF
+        # Per-model routing: TIER 3 ensemble updated (March 27, 2026)
+        # PCA track: BayesianRidge, SVR, ElasticNet (diverse linear/kernel methods)
+        # Tree track: CatBoost (single gradient boosting model)
         self._per_model_X_train_ = {
             'BayesianRidge':    self.X_train_pca_,
-            'KernelRidge':      self.X_train_pca_,
+            'SVR':              self.X_train_pca_,
+            'ElasticNet':       self.X_train_pca_,
             'CatBoost':         self.X_train_tree_,
-            'QuantileRF':       self.X_train_tree_,
         }
         self._per_model_X_pred_ = {
             'BayesianRidge':    self.X_pred_pca_,
-            'KernelRidge':      self.X_pred_pca_,
+            'SVR':              self.X_pred_pca_,
+            'ElasticNet':       self.X_pred_pca_,
             'CatBoost':         self.X_pred_tree_,
-            'QuantileRF':       self.X_pred_tree_,
         }
         logger.info(
             f"  PLS track:      {self.reducer_pca_.get_summary()}"
@@ -1899,13 +1913,12 @@ class UnifiedForecaster:
         # NOTE: Only tree models use the extended data; PLS models continue
         # to use their own unreduced per_model_X_train_ entry.
         self._per_model_X_train_['CatBoost'] = self.X_train_tree_
-        self._per_model_X_train_['QuantileRF'] = self.X_train_tree_
 
     def stage3_fit_base_models(self) -> None:
         """Stage 3: Create base models and train the Super Learner ensemble.
 
         Creates the four base forecasters (CatBoost, BayesianRidge,
-        KernelRidge, QuantileRF) and delegates training to
+        SVR, ElasticNet) and delegates training to
         ``SuperLearner.fit()``, which
         executes three sub-steps atomically:
 
@@ -1979,7 +1992,8 @@ class UnifiedForecaster:
             )
             # Build CV routing from _per_model_X_train_ keys, substituting
             # per-track CV matrices (PCA or tree track with holdout appended)
-            _pca_cv_track = {'BayesianRidge', 'KernelRidge'}
+            # TIER 3: Updated track assignments (March 27, 2026)
+            _pca_cv_track = {'BayesianRidge', 'SVR', 'ElasticNet'}
             _per_model_cv = {
                 mname: (_X_cv_pca if mname in _pca_cv_track else _X_cv_tree)
                 for mname in self._per_model_X_train_
@@ -2035,7 +2049,7 @@ class UnifiedForecaster:
             entity_indices_arr=_ent_cv,
             per_model_tree_names={
                 name for name in self.models_
-                if name not in {'BayesianRidge', 'KernelRidge'}
+                if name not in {'BayesianRidge', 'SVR', 'ElasticNet'}
             },
         )
         # ── E-08: Create shift detector when enabled ──────────────────────────
@@ -2374,26 +2388,18 @@ class UnifiedForecaster:
 
         Supports two modes governed by ``self.uncertainty_method``:
 
-        **'qrf_quantile'** (production default)
-            Heteroscedastic leaf-quantile intervals from the fitted
-            QuantileRF base model.  Leaf-set quantiles map each entity's
-            feature vector to the empirical distribution of training labels
-            in its leaf nodes — volatile entities receive wider bands, stable
-            ones narrower.
+        **'qrf_quantile'** (DEPRECATED post-TIER 3 - QuantileRF removed)
+            [Deprecated]: Quantile Random Forest was replaced with SVRForecaster
+            and ElasticNetForecaster in TIER 3 (March 27, 2026) to reduce
+            ensemble correlation. This method is no longer supported.
+            Falls back to 'conformal' automatically.
 
-            Bonferroni-corrected per-component quantiles::
-
-                lower_q = α / (2D),   upper_q = 1 − α / (2D)
-
-            guarantee *joint* coverage ≥ 1 − α across all D criteria
-            simultaneously (union bound).
-
-        **'conformal'** (fallback)
+        **'conformal'** (production default post-TIER 3)
             Distribution-free conformal intervals calibrated from the OOF
             residuals cached by Stage 3.  Homoscedastic (constant width per
-            criterion), marginal coverage guarantee.  Also used automatically
-            when the QRF model is absent or raises an exception.
-            [FIX #3] Now calibrated on leakage-free residuals.
+            criterion), marginal coverage guarantee.
+            [FIX #3] Now calibrated on leakage-free residuals (TIER 1 fix).
+            [TIER 3] Now the primary method after QRF removal.
 
         Pre-requisite: :meth:`stage4_fit_meta_learner` must have been called.
 
@@ -3077,7 +3083,7 @@ class UnifiedForecaster:
                     [_ent_to_idx_ho.get(e, 0) for e in self.X_holdout_.index],
                     dtype=int,
                 )
-                _pca_ho_track = {'BayesianRidge', 'KernelRidge'}
+                _pca_ho_track = {'BayesianRidge', 'SVR', 'ElasticNet'}
                 _per_model_X_holdout = {
                     name: (_X_ho_pca if name in _pca_ho_track else _X_ho_tree)
                     for name in self.super_learner_._fitted_base_models

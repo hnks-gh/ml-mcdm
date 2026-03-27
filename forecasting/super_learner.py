@@ -53,7 +53,6 @@ from sklearn.metrics import r2_score, mean_squared_error
 
 logger = logging.getLogger('ml_mcdm')
 from sklearn.preprocessing import StandardScaler
-from scipy.optimize import nnls
 import copy
 import warnings
 import functools
@@ -1587,6 +1586,9 @@ class SuperLearner:
 
             # Build sub-matrix using only active (non-failed) models
             active_preds = model_preds[:, active_indices]
+            # TIER 2 FIX #4: Consistent partial-NaN filtering
+            # Requires all active models have valid predictions AND target is non-NaN
+            # Features engine now skips partial-NaN rows, so this should pass all rows
             valid = ~np.isnan(active_preds).any(axis=1) & ~np.isnan(y_col)
             if valid.sum() < 3:
                 all_coefs.append(np.ones(n_models) / n_models)
@@ -1627,28 +1629,21 @@ class SuperLearner:
                     active_preds_valid, y_valid
                 )
             else:  # ridge
-                if self.positive_weights:
-                    # Use NNLS for a proper non-negative least-squares
-                    # solution instead of post-hoc clipping of Ridge coefs.
-                    try:
-                        coefs_nnls, _ = nnls(active_preds_valid, y_valid)
-                        active_coefs = coefs_nnls
-                        if out_col == 0:
-                            self._meta_learner = None  # no sklearn meta object
-                    except Exception:
-                        pass  # fall through to RidgeCV
-
-                if active_coefs is None:
-                    meta = RidgeCV(
-                        alphas=self.meta_alpha_range,
-                        cv=TimeSeriesSplit(n_splits=max(2, min(3, valid.sum() // 2))),
-                    )
+                # TIER 2 FIX #5: Replace NNLS with Ridge for stability
+                # Previous NNLS approach was unstable under correlated OOF predictions.
+                # Ridge provides L2 regularization automatically.
+                # Positive constraint: clip after fitting and renormalize.
+                meta = RidgeCV(
+                    alphas=self.meta_alpha_range,
+                    cv=TimeSeriesSplit(n_splits=max(2, min(3, valid.sum() // 2))),
+                )
 
             # Fit sklearn meta-learner if active_coefs not already set
             if active_coefs is None:
                 try:
                     meta.fit(active_preds_valid, y_valid)
                     active_coefs = meta.coef_.copy()
+                    # Apply positive-weight constraint if enabled
                     if self.positive_weights:
                         active_coefs = np.maximum(active_coefs, 0)
                     if out_col == 0:
