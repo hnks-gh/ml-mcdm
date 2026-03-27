@@ -411,12 +411,53 @@ class HierarchicalRankingPipeline:
             )
         else:
             # ER disabled — Stage 2 is entirely skipped.
-            # No composite ranking is produced; the 5 MCDM methods and Base
-            # remain as separate independent outputs in criterion_method_scores.
+            # Compute simple criterion-weighted mean of method averages (Base included).
             logger.info(
                 "  ER disabled — Stage 2 skipped. "
-                "Individual method scores preserved (no composite ranking)."
+                "Computing criterion-weighted mean composite scores."
             )
+            
+            # Collect all alternatives that appeared in ANY criterion's ranking
+            all_alternatives_set = set()
+            for crit_scores in all_method_scores.values():
+                for method_scores in crit_scores.values():
+                    all_alternatives_set.update(method_scores.index)
+            all_alternatives_list = sorted(all_alternatives_set)
+            
+            if not all_alternatives_list:
+                logger.warning("  ER disabled but no alternatives found — returning empty rankings")
+                final_scores_direct = pd.Series(dtype=float, name="composite_score")
+                final_ranking_direct = pd.Series(dtype=int, name="composite_rank")
+            else:
+                # Build composite: for each alternative, weighted average of criterion means
+                composite_scores_dict = {}
+                for alt in all_alternatives_list:
+                    crit_contributions = []
+                    for crit_id in sorted(all_method_scores.keys()):
+                        crit_weight = criterion_weights.get(crit_id, 0)
+                        if crit_weight == 0:
+                            continue
+                        # Average all method scores for this alternative-criterion
+                        method_values = []
+                        for method_scores in all_method_scores[crit_id].values():
+                            if alt in method_scores.index:
+                                method_values.append(method_scores[alt])
+                        if method_values:
+                            crit_mean = np.nanmean(method_values)
+                            crit_contributions.append(crit_weight * crit_mean)
+                    
+                    if crit_contributions:
+                        composite_scores_dict[alt] = np.sum(crit_contributions)
+                    else:
+                        composite_scores_dict[alt] = 0.0
+                
+                final_scores_direct = pd.Series(composite_scores_dict, name="composite_score")
+                final_ranking_direct = final_scores_direct.rank(ascending=False).astype(int)
+                final_ranking_direct.name = "composite_rank"
+                logger.info(
+                    f"  Composite ranking: {len(final_ranking_direct)} alternatives scored"
+                )
+            
             return HierarchicalRankingResult(
                 er_result=None,
                 criterion_method_scores=all_method_scores,
@@ -425,6 +466,8 @@ class HierarchicalRankingPipeline:
                 subcriteria_weights_used=group_subcrit_weights,
                 methods_used=self.ALL_METHODS,
                 target_year=target_year,
+                final_scores_direct=final_scores_direct,
+                final_ranking_direct=final_ranking_direct,
             )
 
     def rank_fast(
