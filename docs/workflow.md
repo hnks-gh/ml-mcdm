@@ -31,7 +31,7 @@ The ML-MCDM pipeline analyzes panel data (entities × time periods × criteria) 
 
 - **Automated Pipeline**: Single entry point (`main.py`) runs complete analysis
 - **Modular Design**: 7 independent phases with clean interfaces
-- **State-of-the-Art Forecasting**: UnifiedForecaster with 6 diverse models
+- **State-of-the-Art Forecasting**: UnifiedForecaster with 4 diverse models (CatBoost, Bayesian Ridge, SVR, ElasticNet) + Super Learner + Conformal Prediction
 - **Robust Error Handling**: Adaptive zero-handling, graceful fallbacks with detailed logging
 - **High-Quality Outputs**: 300 DPI figures, comprehensive CSV/JSON results, detailed reports
 

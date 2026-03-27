@@ -124,12 +124,13 @@ class MLMCDMPipeline:
 
     Integrates
     ----------
-    * Two-Level Deterministic CRITIC Weighting
-    * 6 traditional MCDM methods per criterion group:
-        TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS, SAW
-    * Two-stage Evidential Reasoning aggregation (Yang & Xu, 2002)
-    * ML Forecasting: 6-model ensemble + Meta-Learner (optional)
-    * Hierarchical sensitivity analysis
+    * Two-Level Deterministic CRITIC Weighting (NaN-aware, adaptive)
+    * 6 Traditional MCDM Methods per Criterion Group:
+        TOPSIS, VIKOR, PROMETHEE II, COPRAS, EDAS, SAW
+    * Two-Stage Evidential Reasoning Aggregation (Yang & Xu, 2002)
+    * ML Forecasting: 4-Model Ensemble (CatBoost, Bayesian Ridge, SVR, ElasticNet)
+        + Super Learner Meta-Ensemble + Conformal Prediction (optional)
+    * Hierarchical Sensitivity Analysis & Temporal Stability Assessment
     """
 
     def __init__(self, config: Optional[Config] = None):
@@ -239,7 +240,7 @@ class MLMCDMPipeline:
                             f'Multi-year ranking failed (non-fatal): {_myr_exc}'
                         )
 
-            # Phase 4: ML Forecasting (base models + Meta-Learner + Conformal)
+            # Phase 4: ML Forecasting (4 base models + Super Learner + Conformal Prediction)
             forecast_result = None
             with self.console.phase('Ensemble ML Forecasting') as ph:
                 if not self.config.forecast.enabled:
@@ -786,12 +787,14 @@ class MLMCDMPipeline:
         self.logger.info("    ✓ No NaN cells found in imputed subcriteria (all 2011-2024 years)")
 
         # ──────────────────────────────────────────────────────────────────
-        # Assertion 2: All 28 sub-criteria present in every year
+        # Assertion 2: All 29 sub-criteria present in every year
         # ──────────────────────────────────────────────────────────────────
+        # Note: SC52 is included in hierarchy (discontinued 2021, but present 2011-2020).
+        # YearContext will naturally exclude it for years 2021-2024.
         expected_scs = set(ml_panel_data.hierarchy.all_subcriteria)
-        assert len(expected_scs) == 28, (
-            f"[CRITICAL] Expected 28 sub-criteria, got {len(expected_scs)}. "
-            "SC52 exclusion may not be configured correctly."
+        assert len(expected_scs) == 29, (
+            f"[CRITICAL] Expected 29 sub-criteria, got {len(expected_scs)}. "
+            "SC52 should be included in hierarchy (year-active exclusion handled by YearContext)."
         )
         
         sc_count_per_year = {}
@@ -804,15 +807,15 @@ class MLMCDMPipeline:
             
             assert not missing_scs, (
                 f"[CRITICAL] Year {yr}: Missing sub-criteria {sorted(missing_scs)}. "
-                "Expected all 28 SCs in the imputed panel."
+                "Expected all 29 SCs in the imputed panel."
             )
             assert not extra_scs, (
                 f"[CRITICAL] Year {yr}: Unexpected sub-criteria {sorted(extra_scs)}. "
-                "Expected exactly 28 SCs (SC52 excluded)."
+                "Expected exactly 29 SCs (SC52 included)."
             )
         
         self.logger.info(
-            f"    ✓ All 28 sub-criteria present in every year "
+            f"    ✓ All 29 sub-criteria present in every year "
             f"({min(sc_count_per_year.values())}–{max(sc_count_per_year.values())} per year)"
         )
 
@@ -918,12 +921,12 @@ class MLMCDMPipeline:
         1. **Data Imputation** (Step 5, Phase 2)
            - Applies MICE imputation to 2011–2024 training panel
            - Outputs fully NaN-free subcriteria cross-sections
-           - Validates all 28 SCs present (SC52 excluded), all 63 provinces active
+           - Validates all 29 SCs present (SC52 included, year-active), all 63 provinces active
 
         2. **ML Training & Prediction** (Steps 7–8, Phase 3)
            - Forecaster configured to predict 28 sub-criteria (not 8 criteria)
-           - 6 diverse base models + Meta-Learner ensemble
-           - Conformal Prediction for 95% uncertainty intervals
+           - 4 diverse base models: CatBoost + BayesianRidge + SVR + ElasticNet
+           - Super Learner meta-ensemble + Conformal Prediction for 95% intervals
 
         3. **Post-Forecast Aggregation** (Step 10, Phase 4)
            - Aggregates 28 SC predictions to 8 criteria using critic weights
@@ -965,8 +968,8 @@ class MLMCDMPipeline:
         
         self.logger.info(f"Target year: {target_year}")
         # Build the log-time model list to mirror _create_models() logic
-        _base_model_names = ["CatBoost", "BayesianRidge", "QuantileRF",
-                             "KernelRidge", "SVR"]
+        _base_model_names = ["CatBoost", "BayesianRidge", "SVR",
+                             "ElasticNet"]
         self.logger.info(
             f"Base models: {len(_base_model_names)} ({', '.join(_base_model_names)})"
         )
@@ -1264,13 +1267,17 @@ class MLMCDMPipeline:
         local_weights: Optional[Dict[str, Dict[str, float]]] = None,
     ) -> pd.DataFrame:
         """
-        Aggregate 28 sub-criteria predictions to 8 criteria using critic weights.
+        Aggregate 29 sub-criteria predictions to 8 criteria using critic weights.
 
-        **Step 10 (Phase 4)**: After UnifiedForecaster produces 28 SC predictions
-        for 2025, aggregate to 8 criteria via two-level critic weighting:
+        **Step 10 (Phase 4)**: After UnifiedForecaster produces 29 SC predictions
+        for 2025 (including SC52 for cross-temporal consistency), aggregate to
+        8 criteria via two-level critic weighting:
         - Level 1: Local SC weights per criterion group (normalized within C_k)
         - Level 2: Criterion weights (derived from composite matrix)
         - Global: global_w[SC_j] = local_w[SC_j | C_k] × criterion_w[C_k]
+
+        Note: For 2025 forecasts, SC52 will be zero-filled (no future data), but
+        is included in aggregation for consistency with historical MCDM phases.
 
         The weighting uses critic values computed from the full 2011–2024 panel
         (available in pipeline.py:_calculate_weights as a cached result), ensuring
@@ -1279,9 +1286,9 @@ class MLMCDMPipeline:
         Parameters
         ----------
         sc_predictions : pd.DataFrame
-            Shape (n_entities, 28) sub-criteria predictions for 2025.
+            Shape (n_entities, 29) sub-criteria predictions for 2025.
             Index = province names; columns = SC11, SC12, ..., SC53, SC54, SC61...SC83
-            (28 total, excluding SC52).
+            (29 total, including SC52).  SC52 will be zero or forward-filled.
 
         hierarchy : HierarchyMapping
             Hierarchy with criteria_to_subcriteria mapping: {C_k: [SCs]}.
@@ -1312,7 +1319,7 @@ class MLMCDMPipeline:
 
         Example
         -------
-        >>> sc_pred = pd.DataFrame(random values, shape=(63, 28))  # 63 provinces
+        >>> sc_pred = pd.DataFrame(random values, shape=(63, 29))  # 63 provinces, SC52 included
         >>> crit_pred = self._aggregate_sc_to_criteria(sc_pred, hierarchy, 2025)
         >>> assert crit_pred.shape == (63, 8)
         >>> assert all(col in crit_pred.columns for col in ['C01', ..., 'C08'])
@@ -1322,9 +1329,9 @@ class MLMCDMPipeline:
 
         # ── Validate input ────────────────────────────────────────────────
         expected_scs = sorted(hierarchy.all_subcriteria)
-        assert len(expected_scs) == 28, (
-            f"Expected 28 SCs, got {len(expected_scs)}. "
-            "SC52 exclusion may not be configured correctly."
+        assert len(expected_scs) == 29, (
+            f"Expected 29 SCs, got {len(expected_scs)}. "
+            "SC52 should be in hierarchy (year-active exclusion by YearContext)."
         )
         
         actual_scs = sorted(sc_predictions.columns.tolist())

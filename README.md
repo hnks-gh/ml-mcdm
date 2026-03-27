@@ -12,7 +12,7 @@ This framework combines Multi-Criteria Decision Making (MCDM) with machine learn
 
 1. **Objective Weighting** via CRITIC-based adaptive weighting (NaN-aware, two-level)
 2. **Hierarchical Ranking** using 6 Traditional MCDM methods + Evidential Reasoning (ER)
-3. **ML Forecasting (optional)** via 6-model ensemble + Super Learner + Conformal Prediction
+3. **ML Forecasting (optional)** via 4-Model Ensemble (CatBoost, Bayesian Ridge, SVR, ElasticNet) + Super Learner + Conformal Prediction
 
 **Application:** Vietnam PAPI (Provincial Governance and Public Administration Performance Index) analysis across 63 provinces over 14 years (2011-2024).
 

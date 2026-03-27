@@ -128,9 +128,9 @@ class PanelDataConfig:
     year_col: str = "Year"
 
     # Hierarchy
-    # NOTE: n_subcriteria = 28 (SC52 is permanently excluded as of 2021)
-    # C01:4, C02:4, C03:3, C04:4, C05:3 (was 4, excluding SC52), C06:4, C07:3, C08:3  → 28 total
-    n_subcriteria: int = 28
+    # NOTE: n_subcriteria = 29 (SC52 is year-active: present 2011-2020, absent 2021-2024)
+    # C01:4, C02:4, C03:3, C04:4, C05:4, C06:4, C07:3, C08:3  → 29 total
+    n_subcriteria: int = 29
     n_criteria: int = 8
     subcriteria_prefix: str = "SC"
     criteria_prefix: str = "C"
@@ -144,10 +144,10 @@ class PanelDataConfig:
         return self.n_provinces * self.n_years
 
     # Number of sub-criteria per criterion, in C01..C08 order.
-    # C01:4, C02:4, C03:3, C04:4, C05:3, C06:4, C07:3, C08:3  → 28 total
-    # NOTE: C05 reduced from 4 to 3 because SC52 is excluded globally
+    # C01:4, C02:4, C03:3, C04:4, C05:4 (includes SC52), C06:4, C07:3, C08:3  → 29 total
+    # NOTE: C05 has 4 sub-criteria (SC51, SC52, SC53, SC54); SC52 is year-active
     _subcriteria_per_criterion: List[int] = field(
-        default_factory=lambda: [4, 4, 3, 4, 3, 4, 3, 3],
+        default_factory=lambda: [4, 4, 3, 4, 4, 4, 3, 3],
         init=False,
         repr=False,
     )
@@ -156,19 +156,15 @@ class PanelDataConfig:
     def subcriteria_cols(self) -> List[str]:
         """Return SC codes in dataset order: SC11–SC14, SC21–SC24, …, SC81–SC83.
         
-        Permanently excludes SC52 (discontinued from 2021 onward).
-        For C05: returns [SC51, SC53, SC54] (skips SC52).
+        Includes SC52 (discontinued from 2021, but present in years 2011-2020).
+        SC52 will be year-actively excluded by YearContext for years 2021-2024.
+        For C05: returns [SC51, SC52, SC53, SC54] (includes SC52).
         """
         codes: List[str] = []
         for crit_idx, n_sub in enumerate(self._subcriteria_per_criterion, start=1):
             for sub_idx in range(1, n_sub + 1):
-                # Special handling for C05: skip SC52
-                if crit_idx == 5:  # C05
-                    # Map sub_idx 1→1, 2→3, 3→4 (to align with codebook)
-                    actual_sub_idx = sub_idx if sub_idx < 2 else sub_idx + 1
-                    codes.append(f"{self.subcriteria_prefix}{crit_idx}{actual_sub_idx}")
-                else:
-                    codes.append(f"{self.subcriteria_prefix}{crit_idx}{sub_idx}")
+                # C05 now includes SC52 (no special handling needed)
+                codes.append(f"{self.subcriteria_prefix}{crit_idx}{sub_idx}")
         return codes
 
     @property
@@ -782,8 +778,11 @@ class ForecastConfig:
     # ── Forecast target level ─────────────────────────────────────────────
     forecast_level: str = "subcriteria"
     """Forecast target granularity.
-    'subcriteria' — predict all 28 raw sub-criterion values (SC11–SC83, excluding SC52). [DEFAULT]
+    'subcriteria' — predict all 29 raw sub-criterion values (SC11–SC83, including SC52 for temporal consistency). [DEFAULT]
     'criteria'    — predict 8 aggregated criterion composites (C01–C08). [DEPRECATED - see note below]
+    
+    Note on SC52: SC52 is included for temporal/hierarchical consistency (present in 2011-2020 data).
+    For 2025 forecasts, SC52 will be zero-filled or forward-filled since it's discontinued.
     
     DEPRECATION NOTICE (v2025.01):
     'criteria' mode is deprecated. Sub-criteria forecasting is required for

@@ -3,7 +3,7 @@
 
 **Core principle**: Ranking RESPECTS missing data structure. NO IMPUTATION.
 
-Two-stage ranking system that runs 5 traditional MCDM methods within each
+Two-stage ranking system that runs 6 traditional MCDM methods within each
 criterion group, then aggregates results using Evidential Reasoning. All methods
 handle partial NaN natively on observed (non-missing) values.
 
@@ -13,7 +13,7 @@ Stage 1 — Within-Criterion Ranking (NO IMPUTATION)
     For each criterion C_k (k = 1…8):
         • Filter all-NaN rows/columns (preserve partial NaN)
         • Extract and rank on observed values only
-        • Run 5 MCDM methods (TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS)
+        • Run 6 MCDM methods (TOPSIS, VIKOR, PROMETHEE II, COPRAS, EDAS, SAW)
         • Normalize scores to [0, 1]
 
 Stage 2 — Global Aggregation via Evidential Reasoning
@@ -25,8 +25,8 @@ Stage 2 — Global Aggregation via Evidential Reasoning
 
 Missing Data Handling
 ---------------------
-As of 2026-03-20, no imputation occurs in the ranking phase. All methods
-(TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS) handle NaN via:
+As of 2026-03-28, no imputation occurs in the ranking phase. All methods
+(TOPSIS, VIKOR, PROMETHEE II, COPRAS, EDAS, SAW) handle NaN via:
     • Complete-case distance/preference computations (pairwise on observed)
     • NaN skipping in dimension-wise calculations
     • No artificial 0.5 neutral score imputation

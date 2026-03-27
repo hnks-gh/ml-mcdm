@@ -58,7 +58,13 @@ class OutputOrchestrator:
         self.csv.save_weights(weights, subcriteria)
         logger.info('Saved: weights_analysis.csv')
 
-        # 2. Rankings — skipped (final_rankings.csv removed per spec)
+        # 2. Final Rankings (ER composite ranking across all criteria)
+        if ranking_result is not None:
+            try:
+                path_rank = self.csv.save_rankings(ranking_result, panel_data.provinces)
+                logger.info(f'Saved: {Path(path_rank).name}')
+            except Exception as _exc:
+                logger.warning(f'save_rankings (final composite) failed: {_exc}')
 
         # 3. MCDM scores per criterion (long format, all years)
         if multi_year_results:

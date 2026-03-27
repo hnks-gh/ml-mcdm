@@ -404,8 +404,8 @@ class DataLoader:
     def _load_hierarchy_mapping(self, data_dir: Path) -> HierarchyMapping:
         """Load hierarchy mapping from codebook files.
         
-        NOTE: Permanently excludes SC52 (discontinued from 2021 onward) to ensure
-        consistent 28-SC structure across all analysis phases.
+        NOTE: Includes SC52 (year-active: present 2011-2020, absent 2021-2024).
+        YearContext handles year-by-year exclusion based on data availability.
         """
         codebook_dir = data_dir / "codebook"
 
@@ -455,18 +455,17 @@ class DataLoader:
             zip(crit_df['Variable_Code'], crit_df['Variable_Name'])
         )
 
-        # ── CRITICAL FIX (Phase 1): Exclude SC52 globally from hierarchy ──
-        # SC52 was discontinued as of 2021. For end-to-end integrity,
-        # we permanently exclude it from the hierarchy structure.
-        # This ensures all analysis phases (MCDM, forecasting) work with a
-        # consistent 28-SC structure, not 29.
-        if "SC52" in subcriteria_to_criteria:
-            self.logger.info(
-                f"[PHASE 1] Excluding SC52 from hierarchy (discontinued from 2021)"
-            )
-            del subcriteria_to_criteria["SC52"]
-            if "SC52" in subcriteria_names:
-                del subcriteria_names["SC52"]
+        # ── SC52 Handling (Phase 1): Year-Interactive Inclusion ──
+        # SC52 was discontinued as of 2021 but has valid data for 2011-2020.
+        # We keep SC52 in the hierarchy and let YearContext handle year-by-year
+        # exclusion based on data availability. This ensures:
+        # - SC52 participates in MCDM for years 2011-2020 (data-driven)
+        # - SC52 is excluded for years 2021-2024 (no data)
+        # - Visualizations show SC52 with historical data + missing recent years
+        self.logger.info(
+            f"[PHASE 1] SC52 included in hierarchy; will be year-actively "
+            f"excluded for 2021-2024 (data-driven by YearContext)"
+        )
 
         criteria_to_subcriteria: Dict[str, List[str]] = {}
         for sc, c in subcriteria_to_criteria.items():
@@ -476,17 +475,17 @@ class DataLoader:
         for c in criteria_to_subcriteria:
             criteria_to_subcriteria[c] = sorted(criteria_to_subcriteria[c])
 
-        # Validate: C05 should have 3 SCs (SC51, SC53, SC54), not 4
+        # Validate: C05 should have 4 SCs (SC51, SC52, SC53, SC54)
         c05_scs = criteria_to_subcriteria.get("C05", [])
-        if len(c05_scs) != 3 or "SC52" in c05_scs:
+        if len(c05_scs) != 4 or "SC52" not in c05_scs:
             raise ValueError(
-                f"[PHASE 1 VALIDATION FAILED] C05 should have 3 SCs (excluding SC52), "
+                f"[PHASE 1 VALIDATION FAILED] C05 should have 4 SCs (including SC52), "
                 f"but got {len(c05_scs)}: {c05_scs}"
             )
 
         self.logger.info(
             f"[OK] Loaded hierarchy: {len(criteria_to_subcriteria)} criteria, "
-            f"{len(subcriteria_to_criteria)} subcriteria (SC52 excluded)"
+            f"{len(subcriteria_to_criteria)} subcriteria (SC52 included, year-active)"
         )
 
         return HierarchyMapping(
@@ -839,11 +838,11 @@ class DataLoader:
         
         Creates a YearContext for the forecast year that:
         - **Mirrors sub-criteria and criteria structure** from the latest year (e.g., 2024)
-          → 28 active SCs (SC52 excluded), 8 active criteria
+          → 29 active SCs (SC52 included, year-active), 8 active criteria
         - **Uses ALL 63 global provinces** for prediction (not limited to latest year's available data)
         
         This ensures ML forecasting has a complete, consistent scope:
-        **28 SCs × 8 criteria × 63 provinces** for all forecast year predictions.
+        **29 SCs × 8 criteria × 63 provinces** for all forecast year predictions.
         
         **PHASE 1 (2025 Planning)**: Used for 2025 forecast context creation.
         
@@ -878,7 +877,7 @@ class DataLoader:
         # ────────────────────────────────────────────────────────────────────
         # Mirror sub-criteria and criteria structure from latest year
         # ────────────────────────────────────────────────────────────────────
-        active_scs = ctx_latest.active_subcriteria.copy()  # 28 SCs
+        active_scs = ctx_latest.active_subcriteria.copy()  # 29 SCs (SC52 year-active)
         active_criteria = ctx_latest.active_criteria.copy()  # 8 criteria
         
         # ────────────────────────────────────────────────────────────────────
@@ -903,7 +902,7 @@ class DataLoader:
             )
         
         # ────────────────────────────────────────────────────────────────────
-        # Build valid pairs: all (province, SC) combinations for 28 active SCs
+        # Build valid pairs: all (province, SC) combinations for 29 active SCs
         # ────────────────────────────────────────────────────────────────────
         valid_pairs: Set[Tuple[str, str]] = set()
         for prov in active_provinces:
@@ -919,7 +918,7 @@ class DataLoader:
             active_subcriteria=active_scs,
             active_criteria=active_criteria,
             excluded_provinces=excluded_provinces,
-            excluded_subcriteria=[],  # No SCs excluded (28 active)
+            excluded_subcriteria=[],  # No SCs excluded (29 active, SC52 year-active)
             excluded_criteria=[],  # No criteria excluded (8 active)
             criterion_alternatives=criterion_alternatives_map,
             criterion_subcriteria=criterion_scs_map,
@@ -934,16 +933,16 @@ class DataLoader:
             f"  Active: {len(ctx_forecast.active_provinces)} provinces [ALL GLOBAL],\n"
             f"          {len(ctx_forecast.active_subcriteria)} subcriteria,\n"
             f"          {len(ctx_forecast.active_criteria)} criteria\n"
-            f"  ✓ Scope: 28 SCs × 8 criteria × 63 provinces"
+            f"  ✓ Scope: 29 SCs × 8 criteria × 63 provinces"
         )
         
         # ────────────────────────────────────────────────────────────────────
-        # Validation: enforce 28 SCs, 8 criteria, 63 provinces
+        # Validation: enforce 29 SCs, 8 criteria, 63 provinces
         # ────────────────────────────────────────────────────────────────────
-        if len(ctx_forecast.active_subcriteria) != 28:
+        if len(ctx_forecast.active_subcriteria) != 29:
             raise ValueError(
                 f"[PHASE 1 VALIDATION FAILED] Forecast year {forecast_year} "
-                f"should have 28 active subcriteria, "
+                f"should have 29 active subcriteria (SC52 year-active), "
                 f"but got {len(ctx_forecast.active_subcriteria)}: "
                 f"{ctx_forecast.active_subcriteria}"
             )

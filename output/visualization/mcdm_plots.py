@@ -238,7 +238,7 @@ class MCDMPlotter(BasePlotter):
             ax.set_ylabel('Average Pairwise Spearman ρ', fontsize=11)
             ax.set_ylim(0, 1.08)
             ax.set_title('Inter-Method Rank Agreement per Criterion\n'
-                         '(average pairwise Spearman ρ across 5 MCDM methods)',
+                         '(average pairwise Spearman ρ across 6 MCDM methods)',
                          fontsize=13, fontweight='bold', pad=10)
             ax.yaxis.grid(True, linestyle='--', alpha=0.4, zorder=0)
             ax.set_axisbelow(True)
@@ -744,7 +744,7 @@ class MCDMPlotter(BasePlotter):
         criteria groups.
 
         For ER: use the overall Kendall's W from the ER result (inter-method
-        agreement of the 5 MCDM inputs used by ER).
+        agreement of the 6 MCDM inputs used by ER).
 
         Returns
         -------
@@ -784,7 +784,7 @@ class MCDMPlotter(BasePlotter):
                 if rho_vals:
                     stability[method] = float(np.mean(rho_vals))
 
-        # ER stability ≡ Kendall's W of the 5 MCDM methods used by ER
+        # ER stability ≡ Kendall's W of the 6 MCDM methods used by ER
         kw = getattr(ranking_result, 'kendall_w', None)
         if kw is not None:
             stability['ER'] = float(kw)
@@ -881,7 +881,7 @@ class MCDMPlotter(BasePlotter):
     ) -> Optional[str]:
         """
         Horizontal bar chart comparing the cross-criteria ranking stability
-        (average pairwise Spearman ρ) of Base, the 5 MCDM methods, and ER.
+        (average pairwise Spearman ρ) of Base, the 6 MCDM methods, and ER.
 
         Bars sorted from highest to lowest stability.  Base is shown in a
         muted gray, MCDM methods in the categorical palette, and ER in a

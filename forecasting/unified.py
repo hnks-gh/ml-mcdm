@@ -3,17 +3,16 @@
 Unified Forecasting Orchestrator
 ================================
 
-State-of-the-art ensemble forecasting system optimised for small-to-medium
+State-of-the-art ensemble forecasting system optimized for small-to-medium
 panel data (N < 1000).  Orchestrates all forecasting sub-components through
 a clean single-entry-point API.
 
-Model ensemble (5 diverse types)
----------------------------------
-- Gradient Boosting (CatBoost)  — joint multi-output oblivious trees (MultiRMSE)
-- Bayesian Ridge                — linear model with posterior uncertainty
-- Quantile RF                   — full predictive distributions via leaf quantiles
-- Panel VAR                     — LSDV fixed effects + autoregressive dynamics
-- Neural Additive Model — interpretable shape functions (optional NAM²)
+Model ensemble (4 diverse types - TIER 3)
+------------------------------------------
+- Gradient Boosting (CatBoost)      — joint multi-output oblivious trees (MultiRMSE)
+- Bayesian Ridge                    — linear model with posterior uncertainty (PCA track)
+- Support Vector Regression (SVR)   — smooth RBF kernel non-linear regression
+- ElasticNet                        — L1+L2 penalized linear with feature selection
 
 Meta-ensemble
 -------------
@@ -250,7 +249,7 @@ class UnifiedForecastResult:
     Structure:
     - active_provinces: all provinces with valid 2025 predictions
     - active_criteria: all 8 criteria (C01–C08)
-    - active_subcriteria: all 28 SCs (SC52 excluded)
+    - active_subcriteria: all 29 SCs (SC52 year-active)
     - criterion_alternatives: {C_k: [all provinces]} per criterion
     - criterion_subcriteria: {C_k: [SCs in C_k]} per criterion
     - valid_pairs: all (province, SC) pairs (complete case)
@@ -1170,7 +1169,7 @@ class UnifiedForecaster:
         ----------
         sc_predictions_df : pd.DataFrame
             SC predictions from UnifiedForecaster, shape (63, 28).
-            Index = province names; columns = [SC11, SC12, ..., SC83] (SC52 excluded).
+            Index = province names; columns = [SC11, SC12, ..., SC83] (SC52 included, year-active).
 
         panel_data : PanelData
             Original panel data object, providing:
@@ -1236,8 +1235,8 @@ class UnifiedForecaster:
                 f"Got {type(sc_predictions_df)}."
             )
             n_sc, n_cols = sc_predictions_df.shape
-            assert n_cols == 28, (
-                f"[CRITICAL] Expected 28 SC columns (excluding SC52), "
+            assert n_cols == 29, (
+                f"[CRITICAL] Expected 29 SC columns (SC52 included, year-active), "
                 f"got {n_cols}. Check forecaster target_level and data."
             )
             assert n_sc == 63, (
@@ -1246,10 +1245,10 @@ class UnifiedForecaster:
             logger.info(f"  ✓ Input validation: {n_sc} provinces × {n_cols} SCs")
 
             # ── ASSERTION 2: SC column names are exactly as expected ──────
-            expected_scs = panel_data.hierarchy.all_subcriteria  # 28 SCs, SC52 excluded
-            assert len(expected_scs) == 28, (
-                f"[CRITICAL] Hierarchy should have 28 SCs, has {len(expected_scs)}. "
-                f"Check PanelDataConfig.n_subcriteria."
+            expected_scs = panel_data.hierarchy.all_subcriteria  # 29 SCs, SC52 included (year-active)
+            assert len(expected_scs) == 29, (
+                f"[CRITICAL] Hierarchy should have 29 SCs, has {len(expected_scs)}. "
+                f"Check PanelDataConfig.n_subcriteria (SC52 should be included)."
             )
             actual_scs = list(sc_predictions_df.columns)
             assert actual_scs == expected_scs, (
@@ -1260,7 +1259,7 @@ class UnifiedForecaster:
             )
             logger.info(
                 f"  ✓ SC naming validation: {actual_scs[0]}...{actual_scs[-1]} "
-                f"(SC52 excluded)"
+                f"(SC52 included, year-active per YearContext)"
             )
 
             # ── Build hierarchy: criteria → SCs ───────────────────────────
