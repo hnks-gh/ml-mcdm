@@ -208,7 +208,7 @@ class MLMCDMPipeline:
             # Phase 3: Hierarchical Ranking (6 MCDM methods + optional ER)
             multi_year_results: Dict[int, Any] = {}
             ranking_result: Optional[HierarchicalRankingResult] = None
-            with self.console.phase('Hierarchical Ranking (Traditional MCDM)') as ph:
+            with self.console.phase('Hierarchical Ranking') as ph:
                 # PL-1: guard against primary ranking failure so the pipeline
                 # can still save partial results (weights, data) rather than
                 # crashing entirely — consistent with phases 4-7.
@@ -1124,18 +1124,18 @@ class MLMCDMPipeline:
                     )
         
         # ── Phase 5 Integration: Post-Forecast Aggregation ───────────────
-        # Step 10: Aggregate 28 SC predictions to 8 criteria using critic weights
-        # If forecast was on sub-criteria (28 outputs), aggregate to criteria (8 outputs)
+        # Step 10: Aggregate 29 SC predictions to 8 criteria using critic weights
+        # If forecast was on sub-criteria (29 outputs), aggregate to criteria (8 outputs)
         # This enables downstream weighting/ranking phases to operate on the same
         # decision matrix structure as historical years.
         if (self.config.forecast.forecast_level == 'subcriteria' and 
             hasattr(result, 'predictions') and result.predictions is not None and
-            result.predictions.shape[1] == 28):
+            result.predictions.shape[1] == 29):
             
             self.logger.info(
                 "\n" + "=" * 80)
             self.logger.info(
-                "PHASE 5 INTEGRATION: POST-FORECAST AGGREGATION (28 SC → 8 Criteria)")
+                "PHASE 5 INTEGRATION: POST-FORECAST AGGREGATION (29 SC → 8 Criteria)")
             self.logger.info("=" * 80)
             
             try:

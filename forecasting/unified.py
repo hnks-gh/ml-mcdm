@@ -1553,8 +1553,8 @@ class UnifiedForecaster:
         logger.info(f"Target level: {self.target_level.upper()}")
         logger.info(f"Target year: {target_year}")
         if self.target_level == "subcriteria":
-            logger.info(f"Expected output dimensions: 28 sub-criteria (SC11–SC83, excluding SC52)")
-            logger.info(f"Expected targets shape: (n_train, 28)")
+            logger.info(f"Expected output dimensions: 29 sub-criteria (SC11–SC83, including SC52 year-active)")
+            logger.info(f"Expected targets shape: (n_train, 29)")
         else:
             logger.info(f"Expected output dimensions: 8 criteria (C01–C08)")
             logger.info(f"Expected targets shape: (n_train, 8)")
@@ -1597,7 +1597,7 @@ class UnifiedForecaster:
         # ── PHASE 3 STEP 7 & 8: Validate target dimensions ───────────────
         # CRITICAL ASSERTION: Ensure correct output dimensions for target level
         n_targets = y_train.shape[1] if y_train.shape else 0
-        expected_targets = 28 if self.target_level == "subcriteria" else 8
+        expected_targets = 29 if self.target_level == "subcriteria" else 8  # SC52 included (year-active)
         
         # [FIX: HIGH-PRIORITY] Removed silent fallback for invalid target counts.
         # Unit tests with 2-3 targets should explicitly configure target_level

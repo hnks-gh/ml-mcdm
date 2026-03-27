@@ -59,7 +59,7 @@ class OutputOrchestrator:
         logger.info('Saved: weights_analysis.csv')
 
         # 2. Final Rankings (ER composite ranking across all criteria)
-        if ranking_result is not None:
+        if ranking_result is not None and ranking_result.final_ranking is not None:
             try:
                 path_rank = self.csv.save_rankings(ranking_result, panel_data.provinces)
                 logger.info(f'Saved: {Path(path_rank).name}')
@@ -161,10 +161,15 @@ class OutputOrchestrator:
         if multi_year_results:
             try:
                 saved_ms = self.csv.save_method_scores_all_years(multi_year_results)
-                for key in saved_ms:
-                    logger.info(f'Saved: {Path(saved_ms[key]).name}')
+                if saved_ms:
+                    for key in saved_ms:
+                        logger.info(f'Saved: {Path(saved_ms[key]).name}')
+                else:
+                    logger.info('Skipped: mcdm_criteria_*_ranking.csv (no data in multi_year_results)')
             except Exception as _exc:
                 logger.warning(f'save_method_scores_all_years failed: {_exc}')
+        else:
+            logger.info('Skipped: mcdm_criteria_*_ranking.csv (no multi_year_results)')
 
         # 19. Markdown report
         try:

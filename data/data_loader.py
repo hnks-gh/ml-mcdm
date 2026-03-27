@@ -962,10 +962,10 @@ class DataLoader:
                 f"but got {len(ctx_forecast.active_provinces)}"
             )
         
-        if len(ctx_forecast.valid_pairs) != 28 * 63:
+        if len(ctx_forecast.valid_pairs) != 29 * 63:
             raise ValueError(
                 f"[PHASE 1 VALIDATION FAILED] Forecast year {forecast_year} "
-                f"should have 28×63=1764 valid pairs, "
+                f"should have 29×63=1827 valid pairs (SC52 year-active), "
                 f"but got {len(ctx_forecast.valid_pairs)}"
             )
 
