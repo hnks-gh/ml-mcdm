@@ -242,8 +242,8 @@ class MLMCDMPipeline:
             # Phase 4: ML Forecasting (base models + Meta-Learner + Conformal)
             forecast_result = None
             with self.console.phase('Ensemble ML Forecasting') as ph:
-                if not self.config.forecasting.enabled:
-                    ph.detail('Forecasting disabled (config.forecasting.enabled=False)')
+                if not self.config.forecast.enabled:
+                    ph.detail('Forecasting disabled (config.forecast.enabled=False)')
                     self.logger.info('PHASE 4: Ensemble ML Forecasting DISABLED (skipped)')
                 else:
                     try:
