@@ -242,11 +242,15 @@ class MLMCDMPipeline:
             # Phase 4: ML Forecasting (base models + Meta-Learner + Conformal)
             forecast_result = None
             with self.console.phase('Ensemble ML Forecasting') as ph:
-                try:
-                    forecast_result = self._run_forecasting(panel_data)
-                except Exception as e:
-                    ph.warning(f'Forecasting skipped: {e}')
-                    self.logger.debug(traceback.format_exc())
+                if not self.config.forecasting.enabled:
+                    ph.detail('Forecasting disabled (config.forecasting.enabled=False)')
+                    self.logger.info('PHASE 4: Ensemble ML Forecasting DISABLED (skipped)')
+                else:
+                    try:
+                        forecast_result = self._run_forecasting(panel_data)
+                    except Exception as e:
+                        ph.warning(f'Forecasting skipped: {e}')
+                        self.logger.debug(traceback.format_exc())
 
             # Phase 5: Sensitivity Analysis & Validation
             analysis_results: Dict[str, Any] = {'sensitivity': None, 'validation': None}
