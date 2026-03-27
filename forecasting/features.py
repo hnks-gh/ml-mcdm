@@ -41,9 +41,9 @@ When ``panel_data.year_contexts`` is present, ``fit_transform`` removes:
 * **Prediction rows** limited to entities in the *forecast year*'s
   ``active_provinces`` set; excluded entities are simply absent from output.
 
-Imputation Strategy (Phase B+)
-------------------------------
-**SIMPLIFIED MICE-Only Strategy**: 
+Imputation Strategy (MICE-Only, Production-Ready)
+-------------------------------------------------
+**Unified MICE-Only Strategy (Production V1.0)**:
 
 NaN values in feature vectors arise from insufficient history:
 - **Lag features**: For entities with short histories (e.g., lag-3 in year 1)
@@ -51,28 +51,36 @@ NaN values in feature vectors arise from insufficient history:
 - **Momentum & derivatives**: When prior years unavailable
 - **Entity-demeaned features**: For isolated entities with few observations
 
-Rather than applying per-block tiered imputation (PHASE A), the simplified
-architecture uses **single-stage MICE imputation** to fill ALL missing values:
+The production-ready architecture uses **single unified MICE imputation**
+to fill ALL missing values consistently across the pipeline:
 
 1. **Feature Engineering** (this module): Produces features with NaN
-   for historical gaps. No imputation at this stage.
+   for historical gaps. NO imputation at this stage (clean handoff to MICE).
 
-2. **MICE Imputation** (preprocessing.PanelFeatureReducer): 
-   - IterativeImputer(ExtraTreesRegressor) captures multivariate feature
-     correlations automatically — no per-block tier configuration needed.
-   - Missingness indicators (_was_missing) preserved for model interpretation.
-   - Applied BEFORE dimensionality reduction so imputed values flow into PLS.
+2. **MICE Imputation** (data.imputation.MICEImputer):
+   - IterativeImputer(ExtraTreesRegressor, n_estimators=150, max_depth=8)
+   - Multivariate feature correlations: uses all features to predict each missing value
+   - Missingness indicators (_was_missing) appended for model awareness
+   - Applied in preprocessing.PanelFeatureReducer BEFORE dimensionality reduction
+   - Guaranteed leakage-free: fitted on training data only
 
 3. **Optional Multiple Imputation** (unified.UnifiedForecaster):
-   - M=5 stochastic MICE imputations to quantify uncertainty.
-   - Predictions pooled via Rubin's Rules for total variance estimation.
-   - Recommended for production systems requiring uncertainty quantification.
+   - M=5 stochastic MICE imputations to quantify uncertainty
+   - Predictions pooled via Rubin's Rules for total variance estimation
+   - Recommended for production systems requiring uncertainty quantification
 
-**Rationale**: MICE with ExtraTreesRegressor elegantly handles:
-✓ Multivariate relationships (respects feature correlations)
-✓ Nonlinear patterns (adaptive tree-based estimation)
-✓ Panel structure (uses entity and temporal information)
-✓ Uncertainty quantification (via multiple imputation)
+**Algorithm Rationale**:
+MICE with ExtraTreesRegressor achieves:
+✓ Multivariate relationships (learns feature correlations automatically)
+✓ Nonlinear patterns (ExtraTreesRegressor adaptive estimation)
+✓ Panel structure (temporal and spatial correlations preserved)
+✓ Uncertainty quantification (via posterior sampling in M imputations)
+✓ Leakage-free by design (fit only on training, transform on test)
+
+**Deprecated Strategies** (REMOVED):
+✗ Lag zero-fill (conflated missing with true zero governance scores)
+✗ Cross-sectional median (biased feature selection, no multivariate correlation)
+✗ Per-block tiered imputation (over-engineered, inconsistent)
 
 Phase 1 Enhancement Summary
 ----------------------------

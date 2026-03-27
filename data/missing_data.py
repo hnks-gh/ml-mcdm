@@ -1627,16 +1627,18 @@ def build_ml_panel_data(panel_data, max_linear_gap: int = 2):
     }
 
     # ------------------------------------------------------------------
-    # 1b. APPLY MICE IMPUTATION (Phase B+: MICE-only strategy)
+    # 1b. APPLY UNIFIED MICE IMPUTATION (Production-Ready)
     # ------------------------------------------------------------------
-    # Concatenate all years to learn cross-temporal correlations via MICE
+    # Concatenate all years to learn cross-temporal correlations via MICE,
+    # then split back. Uses data.imputation.MICEImputer for consistency.
+
     import logging
     logger = logging.getLogger(__name__)
-    
+
     nan_before = sum(df.isna().sum().sum() for df in imputed_cs.values())
     if nan_before > 0:
         logger.info(f"[MICE IMPUTATION] Starting: {nan_before:,} NaN cells across all years")
-        
+
         # Concatenate all years with year tracking
         combined_frames = []
         for yr in sorted(imputed_cs.keys()):
@@ -1644,53 +1646,51 @@ def build_ml_panel_data(panel_data, max_linear_gap: int = 2):
             df['_Year_'] = yr  # Track original year for later splitting
             combined_frames.append(df)
         combined_data = pd.concat(combined_frames, ignore_index=False)
-        
+
         # Extract year column and preserve index
         year_col = combined_data.pop('_Year_')
         year_col.name = '_Year_'
-        
-        # Apply MICE imputation to numeric columns only
-        from sklearn.experimental import enable_iterative_imputer
-        from sklearn.impute import IterativeImputer
-        from sklearn.ensemble import ExtraTreesRegressor
-        
+
+        # Apply unified MICE imputation via MICEImputer
+        from data.imputation import MICEImputer, ImputationConfig
+
         numeric_cols = combined_data.select_dtypes(include=[np.number]).columns.tolist()
         if numeric_cols:
-            imputer = IterativeImputer(
-                estimator=ExtraTreesRegressor(
-                    n_estimators=150,      # increased from 100 for stability
-                    random_state=42,
-                    max_depth=8,           # relaxed from 6 for better fits
-                    min_samples_leaf=2     # relaxed from 3 for flexibility
-                ),
-                max_iter=40,               # increased from 20 for convergence
-                tol=5e-3,                  # relaxed from default 1e-3 for achievability
-                verbose=0,
-                random_state=42
+            # Create imputation config (using defaults from ImputationConfig)
+            imputation_config = ImputationConfig(
+                use_mice_imputation=True,
+                mice_max_iter=40,
+                mice_n_nearest_features=30,
+                mice_estimator='extra_trees',
+                mice_add_indicator=False,  # Don't add indicators for ML panel data
+                random_state=42,
             )
 
-            with warnings.catch_warnings():
-                warnings.filterwarnings(
-                    "ignore",
-                    message=r"\[IterativeImputer\] Early stopping criterion not reached\.",
-                    category=ConvergenceWarning,
-                )
-                combined_data[numeric_cols] = pd.DataFrame(
-                    imputer.fit_transform(combined_data[numeric_cols]),
-                    index=combined_data.index,
-                    columns=numeric_cols
-                )
-        
+            mice_imputer = MICEImputer(imputation_config)
+            X_numeric = combined_data[numeric_cols].values
+
+            logger.info(
+                f"[MICE] Fitting on {X_numeric.shape[0]} samples × {X_numeric.shape[1]} features, "
+                f"{nan_before} NaN cells ({100*nan_before/(X_numeric.size):.2f}%)"
+            )
+
+            X_imputed = mice_imputer.fit_transform(X_numeric)
+            combined_data[numeric_cols] = pd.DataFrame(
+                X_imputed,
+                index=combined_data.index,
+                columns=numeric_cols
+            )
+
         # Split back by year
         imputed_cs = {}
         for yr in sorted(panel_data.subcriteria_cross_section.keys()):
             yr_mask = year_col == yr
             imputed_cs[yr] = combined_data[yr_mask].copy()
-        
+
         nan_after = sum(df.isna().sum().sum() for df in imputed_cs.values())
         logger.info(f"[MICE IMPUTATION] Complete: {nan_before:,} → {nan_after:,} NaN cells")
         if nan_after > 0:
-            logger.warning(f"[MICE WARNING] {nan_after} NaN cells remaining after MICE")
+            logger.warning(f"[MICE WARNING] {nan_after} NaN cells remaining after MICE imputation")
 
     # ------------------------------------------------------------------
     # 2. Rebuild subcriteria_long from imputed cross-sections

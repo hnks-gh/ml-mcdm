@@ -1,6 +1,6 @@
 # ML-MCDM Framework
 
-**A Hybrid Multi-Criteria Decision Making Framework with Evidential Reasoning and Ensemble Machine Learning**
+**A Hybrid Multi-Criteria Decision Making and Ensemble Learning Framework for Performance Assessment: Evidence from Vietnam’s PAPI**
 
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)

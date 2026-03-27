@@ -174,34 +174,9 @@ class PanelFeatureReducer:
             else [f"f{i}" for i in range(n_features)]
         )
 
-        # M-02/M-08: Enhanced MICE imputation with MissForest configuration
-        # Uses ExtraTreesRegressor (not RandomForest) for better handling of
-        # correlated governance features. ExtraTrees provides lower variance
-        # predictions due to extreme randomization of splits.
-        # Enhanced parameters: max_iter=20 for convergence, add_indicator=True
-        # for explicit missingness flags, n_nearest_features limits to most
-        # informationally relevant neighbors.
-        if self.use_mice_imputation and np.isnan(X).any():
-            from sklearn.ensemble import ExtraTreesRegressor
-            self._imputer = IterativeImputer(
-                estimator=ExtraTreesRegressor(
-                    n_estimators=150,      # increased from 100 for stability
-                    max_depth=8,           # relaxed from 6 to allow deeper fits
-                    min_samples_leaf=2,    # relaxed from 3 for flexibility
-                    max_features='sqrt',   # reduces tree correlation
-                    bootstrap=True,
-                    random_state=self.random_state,
-                ),
-                max_iter=40,               # increased from 20 for convergence
-                tol=5e-3,                  # relaxed from 1e-3 to 5e-3 for achievability
-                initial_strategy='median', # robust to outliers
-                n_nearest_features=min(30, n_features),  # increased from 20 for richer imputation
-                add_indicator=True,        # append missingness flags
-                random_state=self.random_state,
-            )
-            X = self._imputer.fit_transform(X)
-        else:
-            self._imputer = None
+        # MICE imputation is applied AFTER variance threshold (see "Tier 1 MICE" below).
+        # This allows MICE to focus on informative dimensions only.
+        self._imputer = None
 
         # Stage A: remove near-constant features (P-01: threshold=0.005)
         self._var_selector = VarianceThreshold(threshold=self.variance_threshold)
@@ -218,59 +193,38 @@ class PanelFeatureReducer:
         _col_means = np.nanmean(X_var, axis=0)
         self._var_col_means_ = np.where(np.isnan(_col_means), 0.0, _col_means)
 
-        # ===== PHASE B Enhancement: MICE Imputation (Tier 1) =====
-        # Apply MICE imputation if enabled and residual NaN remains after VarianceThreshold.
-        # Note: This is distinct from the Layer 1 IterativeImputer above; this stage
-        # provides more sophisticated imputation via ExtraTreesRegressor after removing
-        # low-variance features, allowing MICE to focus on informative dimensions.
-        if self.imputation_config.use_mice_imputation:
-            residual_nan_count = np.isnan(X_var).sum()
-            if residual_nan_count > 0:
-                logger.info(
-                    f"Tier 1 MICE imputation: {residual_nan_count} residual NaN detected. "
-                    f"Fitting MICE with {self.imputation_config.mice_estimator}..."
-                )
-                
-                estimator_model = ExtraTreesRegressor(
-                    n_estimators=100,
-                    max_features='sqrt',
-                    min_samples_leaf=3,
-                    bootstrap=True,
-                    random_state=self.imputation_config.random_state,
-                ) if self.imputation_config.mice_estimator == 'extra_trees' else RandomForestRegressor(
-                    n_estimators=100,
-                    min_samples_leaf=3,
-                    random_state=self.imputation_config.random_state,
-                )
-                
-                self._mice_imputer = IterativeImputer(
-                    estimator=estimator_model,
-                    max_iter=self.imputation_config.mice_max_iter,
-                    initial_strategy='median',
-                    n_nearest_features=min(self.imputation_config.mice_n_nearest_features, X_var.shape[1]),
-                    add_indicator=self.imputation_config.mice_add_indicator,
-                    random_state=self.imputation_config.random_state,
-                    tol=1e-3,
-                    imputation_order='roman'
-                )
-                with warnings.catch_warnings():
-                    warnings.filterwarnings(
-                        "ignore",
-                        message=r"\[IterativeImputer\] Early stopping criterion not reached\.",
-                        category=ConvergenceWarning,
-                    )
-                    X_var = self._mice_imputer.fit_transform(X_var)
-                self._mice_fitted = True
-                
-                logger.info(
-                    f"MICE imputation complete. "
-                    f"Missingness indicators appended: {self.imputation_config.mice_add_indicator}"
-                )
+        # ===== TIER 1: MICE Imputation (Production-Ready) =====
+        # Apply unified MICE imputation to residual NaN after variance threshold.
+        # This is the ONLY imputation pass in the pipeline (no redundant pre-filtering).
+        #
+        # Uses data.imputation.MICEImputer with ExtraTreesRegressor for:
+        # - Multivariate feature correlations (learns relationships automatically)
+        # - Nonlinear patterns (tree-based adaptive estimation)
+        # - Panel structure (temporal/spatial correlations preserved)
+        # - Uncertainty quantification (via posterior sampling in multiple imputation)
+        if self.use_mice_imputation and np.isnan(X_var).any():
+            from data.imputation import MICEImputer
+
+            self._mice_imputer = MICEImputer(self.imputation_config)
+            nm_before = np.isnan(X_var).sum()
+            logger.info(
+                f"[MICE] Fitting on variance-filtered features: "
+                f"{X_var.shape[0]} samples × {X_var.shape[1]} features, "
+                f"{nm_before} NaN cells ({100*nm_before/X_var.size:.2f}%)"
+            )
+
+            X_var = self._mice_imputer.fit_transform(X_var)
+            nm_after = np.isnan(X_var).sum()
+            logger.info(
+                f"[MICE] Imputation complete: {nm_before} → {nm_after} NaN cells. "
+                f"Missingness indicators appended: {self.imputation_config.mice_add_indicator}"
+            )
+            self._mice_fitted = True
         else:
             self._mice_imputer = None
             self._mice_fitted = False
 
-        # ========================= End MICE Tier 1 ========================
+        # ========================= End TIER 1 MICE ========================
 
         # ===== PHASE 4.3 Enhancement: VIF Filter =====
         self._vif_drop_mask = np.zeros(X_var.shape[1], dtype=bool)
@@ -470,27 +424,25 @@ class PanelFeatureReducer:
         if not self._fitted:
             raise ValueError("PanelFeatureReducer not fitted. Call fit() first.")
 
-        if self._imputer is not None and np.isnan(X).any():
-            X = self._imputer.transform(X)
-
+        # No pre-variance MICE (removed redundant Tier 0)
         X_var = self._var_selector.transform(X)
 
-        # ===== PHASE A: Tier 1 MICE Transform (M-12) =====
+        # ===== TIER 1: MICE Transform (production-ready) =====
         if self._mice_fitted and self._mice_imputer is not None and np.isnan(X_var).any():
             X_var = self._mice_imputer.transform(X_var)
 
         # Fallback NaN fill with training column means when no MICE imputer
         # was fitted (training data was NaN-free) but holdout / prediction
-        # features carry residual NaN.  Without this guard, StandardScaler
-        # raises "Input contains NaN" crashing stage2/stage3 transforms.
+        # features carry residual NaN. Without this guard, StandardScaler
+        # raises "Input contains NaN" crashing downstream transforms.
         if np.isnan(X_var).any():
             _means = getattr(self, '_var_col_means_', np.zeros(X_var.shape[1]))
             # Handle dimension mismatch if VIF filtering dropped some means
             if self._vif_drop_mask is not None:
                 _means = _means[~self._vif_drop_mask]
             X_var = np.where(np.isnan(X_var), _means[np.newaxis, :], X_var)
-            
-        # Phase 4.3 VIF Drop
+
+        # Phase 4.3 VIF Drop (if enabled)
         if self._vif_drop_mask is not None:
             X_var = X_var[:, ~self._vif_drop_mask]
 

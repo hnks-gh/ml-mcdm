@@ -1,6 +1,6 @@
 %% ============================================================
 %%  A Hybrid MCDM and Ensemble Learning Framework for
-%%  Performance Indexing: Evidence from Vietnam's PAPI
+%%  Performance Assessment: Evidence from Vietnam's PAPI
 %%
 %%  Author    : Ngoc Kim Son Hoang
 %%  Affiliation: Faculty of Development Economics,
@@ -108,7 +108,7 @@
 \usepackage{fancyhdr}
 \pagestyle{fancy}
 \fancyhf{}
-\fancyhead[L]{\small\textit{Hybrid MCDM--Ensemble Framework for Performance Indexing}}
+\fancyhead[L]{\small\textit{Hybrid MCDM--Ensemble Framework for Performance Assessment}}
 \fancyhead[R]{\small\textit{Hoang, N.K.S.}}
 \fancyfoot[C]{\thepage}
 \renewcommand{\headrulewidth}{0.4pt}
@@ -156,7 +156,7 @@
   \vspace*{2cm}
 
   {\LARGE\bfseries
-    A Hybrid MCDM and Ensemble Learning Framework for Performance Indexing: Evidence from Vietnam's PAPI
+    A Hybrid Multi-Criteria Decision Making and Ensemble Learning Framework for Performance Assessment: Evidence from Vietnam's PAPI
   \par}
 
   \vspace{1.5cm}
@@ -169,7 +169,7 @@
     Faculty of Development Economics,\\
     VNU University of Economics and Business,\\
     Vietnam National University, Hanoi 10000, Vietnam\\[4pt]
-    \href{mailto:23050613@vnu.edu.vn}{\texttt{23050613@vnu.edu.vn}}
+    23050613@vnu.edu.vn
   }
 
   \vspace{1cm}
@@ -198,7 +198,7 @@
   \vspace{0.5cm}
 
   \noindent\textbf{Keywords:} Multi-Criteria Decision Making; CRITIC; Ensemble Learning;
-  Stacking; Conformal Prediction; Performance Indexing; PAPI; Vietnam
+  Stacking; Conformal Prediction; Performance Assessment; PAPI; Vietnam
 
   \vspace{0.5cm}
 \end{titlepage}
@@ -250,17 +250,17 @@ The \PAPI dataset represents a multi-level, longitudinal panel of provincial gov
 
 \subsubsection{Panel Structure and Dimensionality}
 
-The dataset comprises observations of $N = 63$ Vietnamese provinces and centrally administered municipalities (hereafter, provinces) measured annually across $T = 14$ survey waves. The underlying constructs are measured through $K = 8$ main governance criteria (Criteria hereafter, denoted $C_k$ for $k = 1, \ldots, 8$), each composed of multiple sub-criteria (Sub-criteria hereafter, denoted $\text{SC}_{jk}$ for $j = 1, \ldots, n_k$). In total, there are $p = 29$ sub-criteria across all criteria.
+The dataset comprises observations of $N = 63$ Vietnamese provinces and centrally administered municipalities (hereafter, provinces) measured annually across $T = 14$ survey waves. The underlying constructs are measured through $K = 8$ dimension (Criteria hereafter, denoted $C_k$ for $k = 1, \ldots, 8$), each composed of multiple sub-criteria (Sub-criteria hereafter, denoted $\text{SC}_{jk}$ for $j = 1, \ldots, n_k$). In total, there are $p = 29$ sub-criteria across all criteria.
 
 The data define a balanced panel in spatial ($N = 63$ provinces) and temporal ($T = 14$ years) dimensions, yielding a theoretical maximum of $M = N \times T = 882$ province-year observations. Each observation indexed by $(i, t)$ contains measurements of all $p = 29$ sub-criteria (subject to structural missingness, discussed in Section~\ref{subsec:missing}).
 
-Data collection occurs annually during each survey wave. The survey is administered by CECODES, the Vietnam Fatherland Front Research and Training Committee (VFF-CRT), and the United Nations Development Programme (UNDP) in collaboration with provincial statistical offices. Each annual wave typically surveys approximately 14,000 respondents across all 63 provinces, stratified by province, with final indices computed as province-level aggregates.
+Data collection occurs annually during each survey wave. The survey is administered by Centre for Community Support \& Development Studies (CECODES), the Vietnam Fatherland Front Research and Training Committee (VFF-CRT), and the United Nations Development Programme (UNDP) in collaboration with provincial statistical offices. Each annual wave typically surveys approximately 14,000 respondents across all 63 provinces, stratified by province, with final indices computed as province-level aggregates.
 
 Survey data are collected and published on an annual calendar. The 14 waves span 2011--2024 inclusive:
 
 $$\mathcal{T} = \{2011, 2012, \ldots, 2024\}$$
 
-This period encompasses important shifts in Vietnam's governance environment, including the introduction of new indicators (environmental governance and e-governance added in 2018) and administrative disruptions resulting from provincial reorganizations and data collection challenges. The 14-year span provides sufficient temporal variation for both weighting stability analysis (split-half validation) and forecasting model training.
+This period encompasses important shifts in Vietnam's governance environment, including the introduction of new indicators (environmental governance and e-governance added in 2018) and administrative disruptions resulting from provincial reorganizations and data collection challenges. The 14-year span provides sufficient temporal variation for forecasting model training.
 
 The working format for weighting and ranking is a long-format panel with columns:
 
@@ -270,53 +270,55 @@ Thus, each row represents one province-year observation, with one row per 63 pro
 
 \subsubsection{Measurement Framework and Indicator Definitions}
 
-All 29 sub-criteria are measured on a continuous scale with minimum 0 and practical maximum approximately 3.33 (reflecting the underlying survey instrument's design). Crucially, all sub-criteria are \textbf{benefit-type} indicators, meaning that higher values indicate stronger governance performance in the respective dimension. This uniform directionality has important implications for MCDM normalization and aggregation (discussed in Sections~\ref{subsec:critic} and~\ref{subsec:mcdm}).
+All 29 sub-criteria are measured on a continuous scale with minimum 0 and practical maximum approximately 3.33 (reflecting the underlying survey instrument's design). Crucially, all sub-criteria are benefit-type indicators, meaning that higher values indicate stronger governance performance in the respective dimension. This uniform directionality has important implications for MCDM normalization and aggregation (discussed in Sections~\ref{subsec:critic} and~\ref{subsec:mcdm}).
 
 The hierarchical composition of criteria and sub-criteria is presented in Table~\ref{tab:hierarchy}. Each criterion encompasses 3--4 sub-criteria, comprehensively specifying the governance domains assessed:
+
+\newcolumntype{C}[1]{>{\centering\arraybackslash}m{#1}}
 
 \begin{table}[!ht]
 \centering
 \caption{Comprehensive hierarchical structure of PAPI criteria and sub-criteria with measurement framework}
 \label{tab:hierarchy}
 \small
-\begin{tabular}{c c c c c}
+\begin{tabular}{c >{\centering\arraybackslash}m{3.6cm} c l}
 \toprule
-\textbf{Crit.} & \textbf{Criterion Name} & \textbf{Code} & \textbf{Sub-Criterion Name} \\
+\textbf{Criteria} & \textbf{Criterion Name} & \textbf{Sub-Criterion} & \multicolumn{1}{c}{\textbf{Sub-Criterion Name}} \\
 \midrule
-\multirow{4}{*}{$C_1$} & \multirow{4}{*}{Civic Participation} & SC11 & Civic Knowledge \\
+\multirow{4}{*}{$C_1$} & \multirow{4}{3.6cm}{\centering Civic Participation} & SC11 & Civic Knowledge \\
  & & SC12 & Opportunities for Participation in Elections \\
  & & SC13 & Quality of Village Head Elections \\
  & & SC14 & Voluntary Contributions \\
 \midrule
-\multirow{4}{*}{$C_2$} & \multirow{4}{*}{Transparency of Local Decision-Making} & SC21 & Access to Information \\
+\multirow{4}{*}{$C_2$} & \multirow{4}{3.6cm}{\centering Transparency of Local Decision-Making} & SC21 & Access to Information \\
  & & SC22 & Poverty List Transparency \\
  & & SC23 & Communal Budget Transparency \\
  & & SC24 & Transparent Land-Use Plan/Price Frames \\
 \midrule
-\multirow{3}{*}{$C_3$} & \multirow{3}{*}{Vertical Accountability} & SC31 & Interactions With Local Authorities \\
+\multirow{3}{*}{$C_3$} & \multirow{3}{3.6cm}{\centering Vertical Accountability} & SC31 & Interactions With Local Authorities \\
  & & SC32 & Governments Responsive to Citizen Appeals \\
  & & SC33 & Access to Justice Services \\
 \midrule
-\multirow{4}{*}{$C_4$} & \multirow{4}{*}{Control of Corruption in Public Sector} & SC41 & Limits on Corruption in Local Governments \\
+\multirow{4}{*}{$C_4$} & \multirow{4}{3.6cm}{\centering Control of Corruption in Public Sector} & SC41 & Limits on Corruption in Local Governments \\
  & & SC42 & Limits on Corruption in Service Delivery \\
  & & SC43 & Equity in State Employment \\
  & & SC44 & Willingness to Fight Corruption \\
 \midrule
-\multirow{4}{*}{$C_5$} & \multirow{4}{*}{Public Administrative Procedures} & SC51 & Certification Procedures \\
+\multirow{4}{*}{$C_5$} & \multirow{4}{3.6cm}{\centering Public Administrative Procedures} & SC51 & Certification Procedures \\
  & & SC52 & Construction Permits \\
  & & SC53 & Land Title Procedures \\
  & & SC54 & Personal Procedures \\
 \midrule
-\multirow{4}{*}{$C_6$} & \multirow{4}{*}{Public Service Delivery} & SC61 & Public Healthcare \\
+\multirow{4}{*}{$C_6$} & \multirow{4}{3.6cm}{\centering Public Service Delivery} & SC61 & Public Healthcare \\
  & & SC62 & Primary Education \\
  & & SC63 & Basic Infrastructure \\
  & & SC64 & Law and Order \\
 \midrule
-\multirow{3}{*}{$C_7$} & \multirow{3}{*}{Environmental Governance} & SC71 & Environmental Protection \\
+\multirow{3}{*}{$C_7$} & \multirow{3}{3.6cm}{\centering Environmental Governance} & SC71 & Environmental Protection \\
  & & SC72 & Quality of Air \\
  & & SC73 & Quality of Water \\
 \midrule
-\multirow{3}{*}{$C_8$} & \multirow{3}{*}{E-Governance} & SC81 & Access to E-Government Portals \\
+\multirow{3}{*}{$C_8$} & \multirow{3}{3.6cm}{\centering E-Governance} & SC81 & Access to E-Government Portals \\
  & & SC82 & Access to the Internet \\
  & & SC83 & E-Responsiveness of Provincial Authorities \\
 \bottomrule

@@ -1,10 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-Multiple Imputation with Rubin's Rules
-=======================================
+Multiple Imputation with Rubin's Rules (Enhanced 2026-03-27)
+============================================================
 
 Enhancement M-07: Panel-aware multiple imputation with proper uncertainty
 propagation via Rubin's Rules (1987).
+
+**Updated 2026-03-27**: Now uses unified MICEImputer (data.imputation.MICEImputer)
+for all MICE operations. Configuration via ImputationConfig.
 
 Single imputation (mean, median, MICE point estimate) treats imputed values as
 observed, producing overconfident models. Multiple imputation correctly
@@ -14,13 +17,14 @@ Algorithm
 ---------
 1. Generate M=5 imputed datasets {X^(m), y^(m)} using MICE with
    sample_posterior=True (stochastic draws from predictive distribution)
+   using unified MICEImputer (ExtraTreesRegressor-based)
 2. Train forecaster on each imputed dataset independently → M predictions
 3. Pool via Rubin's Rules:
-   
+
    ȳ = (1/M) Σ_m ŷ^(m)                    [pooled prediction]
-   
+
    Var_total = Var_within + (1+1/M) Var_between
-   
+
    where:
    - Var_within = (1/M) Σ_m Var^(m)       [within-imputation variance]
    - Var_between = (1/(M-1)) Σ_m (ŷ^(m) - ȳ)²  [between-imputation variance]
@@ -31,22 +35,23 @@ invisible to single-imputation approaches.
 References
 ----------
 Rubin, D. B. (1987). Multiple Imputation for Nonresponse in Surveys. Wiley.
-van Buuren, S., & Groothuis-Oudshoorn, K. (2011). mice: Multivariate 
+van Buuren, S., & Groothuis-Oudshoorn, K. (2011). mice: Multivariate
 Imputation by Chained Equations in R. Journal of Statistical Software, 45(3).
 """
 
 import numpy as np
 import pandas as pd
 import warnings
+import logging
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass, field
 from sklearn.exceptions import ConvergenceWarning
-from sklearn.experimental import enable_iterative_imputer  # noqa: F401
-from sklearn.impute import IterativeImputer
-from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.base import clone
 
 from .base import BaseForecaster
+from data.imputation import MICEImputer, ImputationConfig
+
+logger = logging.getLogger('ml_mcdm')
 
 
 @dataclass
@@ -96,6 +101,8 @@ class MultipleImputationForecaster:
         M=5 is standard for most applications; M≥10 for high missingness rates.
     mice_max_iter : int
         IterativeImputer max iterations. Default 20.
+        **Note (2026-03-27)**: Should be updated to use unified MICEImputer
+        (data.imputation.MICEImputer) with sample_posterior=True when available.
     mice_n_nearest : int
         Number of nearest features for MICE imputation. Default 20.
     random_state : int

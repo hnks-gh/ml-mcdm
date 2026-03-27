@@ -1,9 +1,52 @@
 # -*- coding: utf-8 -*-
 """
-Panel Sequential MICE Imputation (E-05)
-=========================================
+🚫 DEPRECATED: Panel Sequential MICE Imputation (E-05)
+======================================================
 
-Three-phase hierarchical imputation that respects panel data structure:
+**Deprecated as of 2026-03-27**
+
+This multi-phase imputation approach (temporal → spatial → global) has been
+superseded by the unified MICE imputation strategy using ExtraTreesRegressor.
+
+REASON FOR DEPRECATION:
+- Over-engineered: Three phases achieve the same result as single MICE pass
+- Complex: Hard to debug and validate
+- Unified MICE with n_nearest_features=30 captures both temporal and spatial
+  correlations automatically through multivariate learning
+- Production simplified: Single configuration, single validation suite
+
+MIGRATION:
+Use unified MICE imputation instead:
+
+    from data.imputation import MICEImputer, ImputationConfig
+
+    config = ImputationConfig(
+        mice_estimator='extra_trees',
+        mice_max_iter=40,
+        mice_n_nearest_features=30,  # Captures temporal + spatial
+    )
+    imputer = MICEImputer(config)
+    X_imputed = imputer.fit_transform(X_train)
+
+REMOVAL SCHEDULE:
+- Current (active): 2026-03 to 2026-06 (3-month deprecation period)
+- Removal: 2026-06-27
+
+See data.imputation.iterative.MICEImputer for details.
+"""
+
+import warnings
+warnings.warn(
+    "forecasting.panel_mice is DEPRECATED as of 2026-03-27. "
+    "Use data.imputation.MICEImputer instead. "
+    "Will be removed 2026-06-27.",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
+# Original implementation below (for reference, do not use)
+# ============================================================================
+
 
 Phase 1 — Temporal (within-entity)
     For each entity, interpolate NaN values across the time dimension using

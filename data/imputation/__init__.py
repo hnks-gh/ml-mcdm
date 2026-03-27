@@ -3,6 +3,13 @@ import numpy as np
 import pandas as pd
 from dataclasses import dataclass, field
 
+# ============================================================================
+# CORE: Production MICE Imputation
+# ============================================================================
+
+from .iterative import MICEImputer
+from .validation import MICEValidation
+
 @dataclass
 class ImputationConfig:
     """
@@ -215,7 +222,17 @@ class ImputationAudit:
     imputation_errors: Dict[str, str] = field(default_factory=dict)
     metadata: Dict[str, Any] = field(default_factory=dict)
 
-# Import specialized engines (to be populated later)
-# from .iterative import MICEImputer, MissForestImputer
-# from .tensor import CPALSImputer
-# from .gp import GPImputer
+
+# ============================================================================
+# PUBLIC API
+# ============================================================================
+# Only production-ready MICE imputation is exposed.
+# Legacy methods (GAIN, multi-phase temporal, etc.) removed 2026-03-27.
+
+__all__ = [
+    'MICEImputer',           # Production MICE engine
+    'ImputationConfig',      # Configuration dataclass
+    'ImputationAudit',       # Audit trail
+    'MICEValidation',        # Validation suite
+]
+
