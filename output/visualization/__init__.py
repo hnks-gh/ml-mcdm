@@ -26,6 +26,7 @@ from .base import BasePlotter, apply_style, HAS_MATPLOTLIB
 from .ranking_plots import RankingPlotter
 from .weighting_plots import WeightingPlotter
 from .mcdm_plots import MCDMPlotter
+from .mcdm_ranking_figures import MCDMRankingPlotter
 from .sensitivity_plots import SensitivityPlotter
 from .forecast_plots import ForecastPlotter
 from .summary_plots import SummaryPlotter
@@ -53,15 +54,14 @@ class VisualizationOrchestrator:
         self._ranking_top_n: int = max(1, int(ranking_top_n))
 
         # Each plotter writes into its own phase subfolder
-        self.ranking = RankingPlotter(f'{output_dir}/mcdm', dpi)
+        self.ranking = RankingPlotter(f'{output_dir}/ranking', dpi)
+        self.mcdm_ranking = MCDMRankingPlotter(f'{output_dir}/ranking', dpi)
         self.weighting = WeightingPlotter(f'{output_dir}/weighting', dpi)
-        self.mcdm = MCDMPlotter(f'{output_dir}/mcdm', dpi)
-        self.sensitivity = SensitivityPlotter(f'{output_dir}/sensitivity', dpi)
+        self.mcdm = MCDMPlotter(f'{output_dir}/ranking', dpi)  # fig06, fig08e, fig08f → ranking
         self.forecast = ForecastPlotter(f'{output_dir}/forecasting', dpi)
-        self.summary = SummaryPlotter(f'{output_dir}/summary', dpi)
         self._plotters = [
-            self.ranking, self.weighting, self.mcdm,
-            self.sensitivity, self.forecast, self.summary,
+            self.ranking, self.mcdm_ranking, self.weighting, self.mcdm,
+            self.forecast,
         ]
 
     # ------------------------------------------------------------------
@@ -69,17 +69,8 @@ class VisualizationOrchestrator:
     # ------------------------------------------------------------------
 
     # Ranking
-    def plot_final_ranking(self, *a, **kw):
-        return self.ranking.plot_final_ranking(*a, **kw)
-
     def plot_final_ranking_summary(self, *a, **kw):
         return self.ranking.plot_final_ranking_summary(*a, **kw)
-
-    def plot_score_distribution(self, *a, **kw):
-        return self.ranking.plot_score_distribution(*a, **kw)
-
-    def plot_tier_ranking(self, *a, **kw):
-        return self.ranking.plot_tier_ranking(*a, **kw)
 
     def plot_multiyear_slopegraph(self, *a, **kw):
         return self.ranking.plot_multiyear_slopegraph(*a, **kw)
@@ -122,29 +113,46 @@ class VisualizationOrchestrator:
     def plot_method_agreement_matrix(self, *a, **kw):
         return self.mcdm.plot_method_agreement_matrix(*a, **kw)
 
-    def plot_method_agreement_per_criterion(self, *a, **kw):
-        return self.mcdm.plot_method_agreement_per_criterion(*a, **kw)
-
     def plot_rank_parallel_coordinates(self, *a, **kw):
         return self.mcdm.plot_rank_parallel_coordinates(*a, **kw)
 
-    def plot_criterion_parallel_grid(self, *a, **kw):
-        return self.mcdm.plot_criterion_parallel_grid(*a, **kw)
-
-    def plot_criterion_scores(self, *a, **kw):
-        return self.mcdm.plot_criterion_scores(*a, **kw)
-
     def plot_mcdm_composite_scatter(self, *a, **kw):
         return self.mcdm.plot_mcdm_composite_scatter(*a, **kw)
-
-    def plot_criterion_er_utility_heatmap(self, *a, **kw):
-        return self.mcdm.plot_criterion_er_utility_heatmap(*a, **kw)
 
     def plot_method_stability_comparison(self, *a, **kw):
         return self.mcdm.plot_method_stability_comparison(*a, **kw)
 
     def plot_method_disc_power_comparison(self, *a, **kw):
         return self.mcdm.plot_method_disc_power_comparison(*a, **kw)
+
+    # MCDM Ranking (new ranking-specific visualizations)
+    def plot_all_method_distributions(self, *a, **kw):
+        """All 6 MCDM method score distribution charts."""
+        return self.mcdm_ranking.plot_all_method_distributions(*a, **kw)
+
+    def plot_method_agreement_matrix_ranking(self, *a, **kw):
+        """6×6 method agreement matrix (Spearman correlation)."""
+        return self.mcdm_ranking.plot_method_agreement_matrix(*a, **kw)
+
+    def plot_kendall_w_analysis(self, *a, **kw):
+        """Kendall's W concordance analysis."""
+        return self.mcdm_ranking.plot_kendall_w_analysis(*a, **kw)
+
+    def plot_rank_profiles(self, *a, **kw):
+        """Rank profiles for top-N alternatives."""
+        return self.mcdm_ranking.plot_rank_profiles(*a, **kw)
+
+    def plot_method_boxplots(self, *a, **kw):
+        """Method score distribution boxplots."""
+        return self.mcdm_ranking.plot_method_boxplots(*a, **kw)
+
+    def plot_method_scatter_comparison(self, *a, **kw):
+        """Pairwise method scatter plot matrix."""
+        return self.mcdm_ranking.plot_method_scatter_comparison(*a, **kw)
+
+    def plot_perturbation_sensitivity(self, *a, **kw):
+        """Perturbation sensitivity analysis."""
+        return self.mcdm_ranking.plot_perturbation_sensitivity(*a, **kw)
 
     # Sensitivity
     def plot_sensitivity_tornado(self, *a, **kw):
@@ -165,11 +173,7 @@ class VisualizationOrchestrator:
     def plot_rank_volatility(self, *a, **kw):
         return self.sensitivity.plot_rank_volatility(*a, **kw)
 
-    def plot_er_uncertainty(self, *a, **kw):
-        return self.sensitivity.plot_er_uncertainty(*a, **kw)
 
-    def plot_robustness_summary(self, *a, **kw):
-        return self.sensitivity.plot_robustness_summary(*a, **kw)
 
     def plot_tornado_butterfly(self, *a, **kw):
         return self.sensitivity.plot_tornado_butterfly(*a, **kw)
@@ -303,12 +307,6 @@ class VisualizationOrchestrator:
         subcriteria = weights['subcriteria']
 
         # ── Ranking ───────────────────────────────────────────────
-        # fig01 — lollipop gradient ranking
-        _safe(self.ranking.plot_final_ranking, provinces, scores, ranks)
-
-        # fig01b — tier-band lollipop
-        _safe(self.ranking.plot_tier_ranking, provinces, scores, ranks)
-
         # fig01c — multi-year slope graph (only when multi-year data exists)
         if multi_year_results:
             _safe(self.ranking.plot_multiyear_slopegraph,
@@ -316,16 +314,7 @@ class VisualizationOrchestrator:
                 top_n=getattr(self, '_ranking_top_n', 20),
             )
 
-        # fig01d — ER belief distribution heatmap (ER-only)
-        if getattr(ranking_result, 'er_result', None) is not None:
-            _safe(self.ranking.plot_belief_heatmap, ranking_result, provinces)
-
-        # fig01e — rank vs uncertainty scatter (ER-only)
-        if getattr(ranking_result, 'er_result', None) is not None:
-            _safe(self.ranking.plot_rank_uncertainty_scatter, ranking_result, provinces)
-
-        # fig02 — score distribution histogram + KDE
-        _safe(self.ranking.plot_score_distribution, scores)
+        # fig01d and fig01e skipped (ER removed)
 
         # fig02b — MC rank-uncertainty error-bar chart
         mc_stats = weights.get('mc_province_stats', {})
@@ -372,31 +361,34 @@ class VisualizationOrchestrator:
         if all_method_ranks:
             _safe(self.mcdm.plot_method_agreement_matrix, all_method_ranks)
 
-        # fig06b — per-criterion avg Spearman bar
-        _safe(self.mcdm.plot_method_agreement_per_criterion, ranking_result)
-
-        # fig07 — 2×4 grid of per-criterion parallel-coord panels
-        _safe(self.mcdm.plot_criterion_parallel_grid, ranking_result, provinces)
-
-        # fig08 — per-criterion method score panels (one file per criterion)
-        for crit_id, method_scores in ranking_result.criterion_method_scores.items():
-            _safe(self.mcdm.plot_criterion_scores,
-                method_scores, crit_id, top_n=5,
-                save_name=f'fig08_{crit_id}_scores.png',
-            )
-
-        # fig08b — MCDM composite vs ER final score scatter (ER-only)
-        if getattr(ranking_result, 'er_result', None) is not None:
-            _safe(self.mcdm.plot_mcdm_composite_scatter, ranking_result, provinces)
-
-        # fig08c — Province × Criterion ER utility heatmap (ER-only)
-        if getattr(ranking_result, 'er_result', None) is not None:
-            _safe(self.mcdm.plot_criterion_er_utility_heatmap, ranking_result, provinces)
         # fig08e — Method stability comparison (cross-criteria Spearman ρ)
         _safe(self.mcdm.plot_method_stability_comparison, ranking_result)
 
         # fig08f — Method discriminatory power comparison (score IQR)
         _safe(self.mcdm.plot_method_disc_power_comparison, ranking_result)
+
+        # ── MCDM Ranking (New professional ranking visualizations) ──────
+        if multi_year_results:
+            # fig09* — Individual method score distributions (6 charts)
+            _safe(self.mcdm_ranking.plot_all_method_distributions, multi_year_results)
+
+            # fig10 — Method agreement matrix (Spearman 6×6 heatmap)
+            _safe(self.mcdm_ranking.plot_method_agreement_matrix, multi_year_results)
+
+            # fig11 — Kendall's W concordance analysis (4-panel interpretation)
+            _safe(self.mcdm_ranking.plot_kendall_w_analysis, multi_year_results)
+
+            # fig12 — Rank profiles (parallel coordinates for top-N)
+            _safe(self.mcdm_ranking.plot_rank_profiles, multi_year_results)
+
+            # fig13 — Method boxplots (score distribution comparison)
+            _safe(self.mcdm_ranking.plot_method_boxplots, multi_year_results)
+
+            # fig14 — Method scatter matrix (pairwise 6×6 comparisons)
+            _safe(self.mcdm_ranking.plot_method_scatter_comparison, multi_year_results)
+
+            # fig15 — Perturbation sensitivity & robustness analysis
+            _safe(self.mcdm_ranking.plot_perturbation_sensitivity, multi_year_results)
 
         # ── Sensitivity ──────────────────────────────────────────
         sens = analysis_results.get('sensitivity')
@@ -457,23 +449,6 @@ class VisualizationOrchestrator:
                 _safe(self.sensitivity.plot_rank_change_violin,
                     pert_a, provinces=provinces,
                 )
-
-            # fig25 — robustness summary infographic
-            if hasattr(sens, 'overall_robustness'):
-                _safe(self.sensitivity.plot_robustness_summary,
-                    sens.overall_robustness,
-                    getattr(sens, 'confidence_level', 0.95),
-                    crit_sens,
-                    top_n_stab,
-                )
-
-        # ER uncertainty (fig15) — only when ER is enabled
-        if getattr(ranking_result, 'er_result', None) is not None:
-            try:
-                unc = ranking_result.er_result.uncertainty
-                _inc(self.sensitivity.plot_er_uncertainty(unc, provinces))
-            except Exception as _exc:
-                _logger.debug('ER uncertainty plot skipped: %s', _exc)
 
         # ── Forecast ──────────────────────────────────────────────
         if forecast_result is not None:

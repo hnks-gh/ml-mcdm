@@ -17,9 +17,8 @@ Files are organised under ``output/result/csv/<phase>/``:
   - ranking/     — mcdm_criteria_C01_ranking.csv … mcdm_criteria_C08_ranking.csv,
                    mcdm_scores_composite_ranking.csv
 
-Columns for MCDM methods: TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS, Base, ER
+Columns for MCDM methods: TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS, SAW
   (Base = raw sum of original sub-criteria values per criterion, naive baseline)
-  (SAW retired; Base replaces it in all exports)
   - forecasting/ — forecast_*, model_*, feature_importance, cv scores
   - sensitivity/ — sensitivity_*.csv, sensitivity_summary.json
 """
@@ -162,7 +161,6 @@ class CsvWriter:
         ranks = ranking_result.final_ranking
 
         # Use the active province list from the result's index so that
-        # dynamically-excluded provinces are never written to output.
         active_provinces = (
             list(scores.index)
             if hasattr(scores, 'index')
@@ -171,36 +169,27 @@ class CsvWriter:
 
         df = pd.DataFrame({
             'Province': active_provinces,
-            'ER_Score': np.asarray(scores.values if hasattr(scores, 'values') else scores),
-            'ER_Rank': np.asarray(ranks.values if hasattr(ranks, 'values') else ranks, dtype=int),
+            'Composite_Score': np.asarray(scores.values if hasattr(scores, 'values') else scores),
+            'Composite_Rank': np.asarray(ranks.values if hasattr(ranks, 'values') else ranks, dtype=int),
         })
 
         n = len(df)
-        df['Percentile'] = ((n - df['ER_Rank'] + 1) / n * 100).round(1)
+        df['Percentile'] = ((n - df['Composite_Rank'] + 1) / n * 100).round(1)
 
-        mean_s = df['ER_Score'].mean()
-        std_s = df['ER_Score'].std()
-        df['Z_Score'] = ((df['ER_Score'] - mean_s) / std_s).round(4) if std_s > 0 else 0
+        mean_s = df['Composite_Score'].mean()
+        std_s = df['Composite_Score'].std()
+        df['Z_Score'] = ((df['Composite_Score'] - mean_s) / std_s).round(4) if std_s > 0 else 0
 
         df['Tier'] = pd.cut(
-            df['ER_Rank'],
+            df['Composite_Rank'],
             bins=[0, n * 0.1, n * 0.25, n * 0.5, n * 0.75, n + 1],
             labels=['Elite (Top 10%)', 'High (10-25%)', 'Upper-Mid (25-50%)',
                     'Lower-Mid (50-75%)', 'Low (75-100%)'],
         )
 
-        try:
-            unc = ranking_result.er_result.uncertainty
-            if 'belief_entropy' in unc.columns:
-                df['Belief_Entropy'] = unc['belief_entropy'].values
-            if 'utility_interval_width' in unc.columns:
-                df['Utility_Interval_Width'] = unc['utility_interval_width'].values
-        except Exception as _exc:
-            _logger.debug('section skipped: %s', _exc)
-
         df['Kendall_W'] = ranking_result.kendall_w
 
-        df = df.sort_values('ER_Rank').reset_index(drop=True)
+        df = df.sort_values('Composite_Rank').reset_index(drop=True)
         df.index = df.index + 1
         df.index.name = 'Position'
         return self._save_csv(df, 'final_rankings.csv', float_fmt='%.4f',
@@ -217,9 +206,8 @@ class CsvWriter:
         Write per-criterion MCDM score files spanning all years.
 
         Each file is long-format: one row per (Year, Province) pair with
-        columns for TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS, Base, and ER
-        (Stage-1 ER average utility for that criterion).  ``Base`` is the
-        raw-sum naive baseline (un-normalised, un-weighted sub-criteria sum).
+        columns for TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS, and Base
+        (raw-sum naive baseline, un-normalised, un-weighted sub-criteria sum).
 
         Files produced (mcdm/ directory)
         ---------------------------------
@@ -258,8 +246,6 @@ class CsvWriter:
                             row[method] = float(series.loc[prov])
                         else:
                             row[method] = float('nan')
-                    bd = crit_beliefs.get(prov, {}).get(crit_id)
-                    row['ER'] = float(bd.average_utility()) if bd is not None else float('nan')
                     crit_rows[crit_id].append(row)
 
         for crit_id, rows in crit_rows.items():
@@ -864,14 +850,12 @@ class CsvWriter:
         provinces: List[str],
     ) -> Dict[str, str]:
         """
-        Write Province × Year matrices for ER scores and integer ranks,
-        plus a long-format criterion-level ER utility table.
+        Write Province × Year matrices for composite scores and integer ranks.
 
         Files produced
         --------------
         ranking/rankings_all_years.csv    — score matrix
         ranking/ranks_all_years.csv       — rank matrix
-        ranking/criterion_er_scores_all_years.csv — long format
         """
         saved: Dict[str, str] = {}
         if not multi_year_results:
@@ -1013,8 +997,8 @@ class CsvWriter:
     ) -> Optional[str]:
         """
         Write a single wide table with composite (averaged across criteria)
-        scores and ranks for every MCDM method plus the final ER score, and
-        Spearman rank correlations vs. ER.
+        scores and ranks for every MCDM method plus the final aggregated score, and
+        Spearman rank correlations vs. final aggregated rank.
 
         File produced
         -------------
@@ -1051,28 +1035,28 @@ class CsvWriter:
             for col in score_cols:
                 df[f'{col}_Rank'] = df[col].rank(ascending=False, method='min').astype(int)
 
-            # ER final score + rank
-            er_scores = ranking_result.final_scores.reindex(active_provinces)
-            df['ER_Score'] = er_scores.values
-            df['ER_Rank']  = ranking_result.final_ranking.reindex(active_provinces).values
+            # Final aggregated score + rank
+            agg_scores = ranking_result.final_scores.reindex(active_provinces)
+            df['Composite_Score'] = agg_scores.values
+            df['Composite_Rank']  = ranking_result.final_ranking.reindex(active_provinces).values
 
             # Summary stats across method ranks
             rank_cols = [f'{c}_Rank' for c in score_cols]
             df['Mean_Method_Score'] = df[score_cols].mean(axis=1)
             df['Rank_Range']        = df[rank_cols].max(axis=1) - df[rank_cols].min(axis=1)
 
-            # Spearman correlation of each method vs. ER rank
-            er_rank = df['ER_Rank']
+            # Spearman correlation of each method vs. aggregated rank
+            agg_rank = df['Composite_Rank']
             from scipy.stats import spearmanr
             spearman_row: Dict[str, float] = {}
             for col in score_cols:
                 r_col = f'{col}_Rank'
-                rho, _ = spearmanr(df[r_col], er_rank)
+                rho, _ = spearmanr(df[r_col], agg_rank)
                 spearman_row[col] = round(float(rho), 4)
-            df['Spearman_vs_ER'] = df[score_cols].apply(
+            df['Spearman_vs_Agg'] = df[score_cols].apply(
                 lambda row: float(np.mean([spearman_row.get(c, 0) for c in score_cols])), axis=1)
 
-            df = df.sort_values('ER_Rank').reset_index()
+            df = df.sort_values('Composite_Rank').reset_index()
             df.index = df.index + 1
             df.index.name = 'Position'
 
@@ -1426,7 +1410,7 @@ class CsvWriter:
         mcdm_scores_composite_ranking.csv
 
         Columns: Year, Province, TOPSIS_Rank, VIKOR_Rank, PROMETHEE_Rank,
-                 COPRAS_Rank, EDAS_Rank, Base_Rank, ER_Rank
+                 COPRAS_Rank, EDAS_Rank, Base_Rank, Composite_Rank
         """
         saved: Dict[str, str] = {}
         if not multi_year_results:
@@ -1435,7 +1419,7 @@ class CsvWriter:
 
         _logger.info(f'[DEBUG] save_method_scores_all_years: processing {len(multi_year_results)} years')
         _METHODS = ['TOPSIS', 'VIKOR', 'PROMETHEE', 'COPRAS', 'EDAS', 'Base']
-        _RANK_COLS = [f'{m}_Rank' for m in _METHODS] + ['ER_Rank']
+        _RANK_COLS = [f'{m}_Rank' for m in _METHODS] + ['Composite_Rank']
         years = sorted(multi_year_results.keys())
 
         # Accumulate rows per criterion and for composite
@@ -1477,18 +1461,6 @@ class CsvWriter:
                         else []
                     )
 
-                    # ER Stage-1 utility → rank (higher utility = rank 1)
-                    er_utils = {}
-                    for prov in prov_list:
-                        bd = crit_beliefs.get(prov, {}).get(crit_id)
-                        er_utils[prov] = (
-                            float(bd.average_utility()) if bd is not None else float('nan')
-                        )
-                    er_util_series = pd.Series(er_utils)
-                    er_rank_series = er_util_series.rank(
-                        ascending=False, method='min', na_option='bottom'
-                    ).astype('Int64')
-
                     for prov in prov_list:
                         row: Dict[str, Any] = {'Year': yr, 'Province': prov}
                         for method in _METHODS:
@@ -1498,8 +1470,6 @@ class CsvWriter:
                                 row[f'{method}_Rank'] = int(v) if not pd.isna(v) else pd.NA
                             else:
                                 row[f'{method}_Rank'] = pd.NA
-                        er_v = er_rank_series.loc[prov] if prov in er_rank_series.index else pd.NA
-                        row['ER_Rank'] = int(er_v) if not pd.isna(er_v) else pd.NA
                         crit_rows[crit_id].append(row)
 
                 # ── Composite ranking rows ────────────────────────────────
@@ -1542,20 +1512,14 @@ class CsvWriter:
                         ascending=False, method='min', na_option='bottom'
                     ).astype('Int64')
 
-                # Final ER composite rank from final_ranking
-                if final_ranking is not None and hasattr(final_ranking, 'reindex'):
-                    er_comp_rank = final_ranking.reindex(active_provinces)
-                else:
-                    er_comp_rank = pd.Series(pd.NA, index=active_provinces)
-
                 for prov in active_provinces:
                     row = {'Year': yr, 'Province': prov}
                     for method in _METHODS:
                         rk = method_composite_scores[f'{method}_Rank']
                         v = rk.loc[prov] if prov in rk.index else pd.NA
                         row[f'{method}_Rank'] = int(v) if not pd.isna(v) else pd.NA
-                    er_v = er_comp_rank.loc[prov] if prov in er_comp_rank.index else pd.NA
-                    row['ER_Rank'] = int(er_v) if not pd.isna(er_v) else pd.NA
+                    comp_v = final_ranking.loc[prov] if prov in final_ranking.index else pd.NA
+                    row['Composite_Rank'] = int(comp_v) if not pd.isna(comp_v) else pd.NA
                     composite_rows.append(row)
 
             except Exception as _exc:

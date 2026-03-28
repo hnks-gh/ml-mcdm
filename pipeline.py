@@ -7,7 +7,7 @@ Seven-phase production pipeline:
 
   Phase 1  Data Loading
   Phase 2  Weight Calculation       (Hybrid Weighting — two-level MC Ensemble)
-  Phase 3  Hierarchical Ranking     (6 traditional MCDM + optional ER)
+  Phase 3  Hierarchical Ranking     (6 traditional MCDM methods)
   Phase 4  ML Forecasting           (base models + Meta-Learner + Conformal)
   Phase 5  Sensitivity Analysis     (Hierarchical multi-level robustness)
   Phase 6  Visualization            (high-resolution figures)
@@ -32,7 +32,7 @@ try:
     from .data import DataLoader, PanelData, HierarchyMapping, YearContext
     from .ranking import TOPSISCalculator
     from .ranking import HierarchicalRankingPipeline, HierarchicalRankingResult
-    from .analysis import MLSensitivityAnalysis, ERSensitivityAnalysis, CombinedSensitivityResult
+    from .analysis import MLSensitivityAnalysis, CombinedSensitivityResult
     from .output.visualization import VisualizationOrchestrator
     from .output import OutputOrchestrator
 except ImportError:
@@ -42,7 +42,7 @@ except ImportError:
     from data import DataLoader, PanelData, HierarchyMapping, YearContext
     from ranking import TOPSISCalculator
     from ranking import HierarchicalRankingPipeline, HierarchicalRankingResult
-    from analysis import MLSensitivityAnalysis, ERSensitivityAnalysis, CombinedSensitivityResult
+    from analysis import MLSensitivityAnalysis, CombinedSensitivityResult
     from output.visualization import VisualizationOrchestrator
     from output import OutputOrchestrator
 
@@ -75,7 +75,7 @@ class PipelineResult:
     criterion_weights_dict: Dict[str, float]  # {C01..C08: float}, sums to 1
     weight_details: Dict[str, Any]       # full WeightResult.details dict
 
-    # Hierarchical Ranking (Traditional MCDM + ER)
+    # Hierarchical Ranking (Traditional MCDM)
     # Optional so the pipeline can return partial results if this phase fails
     ranking_result: Optional[HierarchicalRankingResult] = None
 
@@ -127,7 +127,7 @@ class MLMCDMPipeline:
     * Two-Level Deterministic CRITIC Weighting (NaN-aware, adaptive)
     * 6 Traditional MCDM Methods per Criterion Group:
         TOPSIS, VIKOR, PROMETHEE II, COPRAS, EDAS, SAW
-    * Two-Stage Evidential Reasoning Aggregation (Yang & Xu, 2002)
+    * Criterion-Weighted Aggregation with Composite Scoring
     * ML Forecasting: 4-Model Ensemble (CatBoost, Bayesian Ridge, SVR, ElasticNet)
         + Super Learner Meta-Ensemble + Conformal Prediction (optional)
     * Hierarchical Sensitivity Analysis & Temporal Stability Assessment
@@ -179,8 +179,7 @@ class MLMCDMPipeline:
         start_time = time.time()
 
         try:
-            self.console.banner('ML-MCDM Panel Data Analysis Pipeline',
-                                subtitle='Traditional MCDM + ER + ML Forecasting')
+            self.console.banner('ML-MCDM')
 
             # Phase 1: Data Loading
             with self.console.phase('Data Loading') as ph:
@@ -205,7 +204,7 @@ class MLMCDMPipeline:
                     self.logger.warning(
                         'Per-year CRITIC weights failed (non-fatal): %s', _wt_exc)
 
-            # Phase 3: Hierarchical Ranking (6 MCDM methods + optional ER)
+            # Phase 3: Hierarchical Ranking (6 MCDM methods)
             multi_year_results: Dict[int, Any] = {}
             ranking_result: Optional[HierarchicalRankingResult] = None
             with self.console.phase('Hierarchical Ranking') as ph:
@@ -652,15 +651,7 @@ class MLMCDMPipeline:
         panel_data: PanelData,
         weights: Dict[str, Any],
     ) -> HierarchicalRankingResult:
-        use_er = getattr(
-            getattr(self.config, 'ranking', None),
-            'use_evidential_reasoning', False,
-        )
-        pipeline = HierarchicalRankingPipeline(
-            n_grades=self.config.er.n_grades,
-            method_weight_scheme=self.config.er.method_weight_scheme,
-            use_evidential_reasoning=use_er,
-        )
+        pipeline = HierarchicalRankingPipeline()
         return pipeline.rank(
             panel_data          = panel_data,
             subcriteria_weights = weights['global_sc_weights'],
@@ -681,7 +672,7 @@ class MLMCDMPipeline:
         ``ThreadPoolExecutor`` is used rather than ``ProcessPoolExecutor`` to
         avoid pickling issues with complex dataclass objects;  numpy operations
         release the GIL so meaningful parallelism is achieved for the
-        matrix-heavy MCDM and ER stages.
+        matrix-heavy MCDM stages.
 
         Returns
         -------
@@ -695,12 +686,6 @@ class MLMCDMPipeline:
         years = sorted(panel_data.years)
         sc_weights   = weights['global_sc_weights']
         crit_weights = weights['criterion_weights']
-        n_grades     = self.config.er.n_grades
-        scheme       = self.config.er.method_weight_scheme
-        use_er       = getattr(
-            getattr(self.config, 'ranking', None),
-            'use_evidential_reasoning', False,
-        )
 
         # Resolve max_parallel_years: config → cpu_count → len(years)
         _cfg_max = getattr(getattr(self.config, 'ranking', None),
@@ -718,11 +703,7 @@ class MLMCDMPipeline:
         def _rank_year(year: int):
             """Worker: create a fresh pipeline instance and rank one year."""
             try:
-                _pl = HierarchicalRankingPipeline(
-                    n_grades=n_grades,
-                    method_weight_scheme=scheme,
-                    use_evidential_reasoning=use_er,
-                )
+                _pl = HierarchicalRankingPipeline()
                 result = _pl.rank(
                     panel_data          = panel_data,
                     subcriteria_weights = sc_weights,

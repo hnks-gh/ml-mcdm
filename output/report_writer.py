@@ -84,7 +84,7 @@ class ReportWriter:
         # ── Front Matter ─────────────────────────────────────────
         L.append('---')
         L.append('title: "Multi-Criteria Decision Analysis of Vietnamese Provincial Competitiveness"')
-        L.append('subtitle: "A Traditional MCDM + Evidential Reasoning Approach with Machine-Learning Forecasting"')
+        L.append('subtitle: "A Criterion-Weighted MCDM Ensemble with Machine-Learning Forecasting"')
         L.append(f'date: "{datetime.now().strftime("%Y-%m-%d")}"')
         L.append('---')
         L.append('')
@@ -96,7 +96,7 @@ class ReportWriter:
             ('1', 'Executive Summary', 'executive-summary'),
             ('2', 'Data Description and Descriptive Statistics', 'data-description-and-descriptive-statistics'),
             ('3', 'Objective Weight Derivation', 'objective-weight-derivation'),
-            ('4', 'Hierarchical Evidential Reasoning Ranking', 'hierarchical-evidential-reasoning-ranking'),
+            ('4', 'Composite Scoring via MCDM Ensemble', 'composite-scoring-via-mcdm-ensemble'),
             ('5', 'Criterion-Level MCDM Evaluation', 'criterion-level-mcdm-evaluation'),
             ('6', 'Inter-Method Agreement and Concordance Analysis', 'inter-method-agreement-and-concordance-analysis'),
             ('7', 'Sensitivity and Robustness Analysis', 'sensitivity-and-robustness-analysis'),
@@ -130,9 +130,9 @@ class ReportWriter:
         )
         L.append('')
         L.append(
-            'Final provincial rankings are obtained via a two-stage Evidential Reasoning (ER) '
-            'aggregation procedure that combines belief structures from all constituent methods '
-            'while explicitly quantifying residual uncertainty.'
+            'Final provincial rankings are obtained via criterion-weighted aggregation of scores '
+            'from six traditional MCDM methods (TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS, SAW). '
+            'The composite score explicitly quantifies inter-method agreement via Kendall\'s coefficient.'
         )
         L.append('')
 
@@ -152,7 +152,7 @@ class ReportWriter:
         # Bottom 5
         L.append('**Table 1(b). Lowest-ranked provinces.**')
         L.append('')
-        L.append('| Rank | Province | ER Score |')
+        L.append('| Rank | Province | Composite Score |')
         L.append('| ---: | :--- | ---: |')
         for i in range(min(5, n_prov)):
             idx = order[-(i + 1)]
@@ -271,33 +271,39 @@ class ReportWriter:
             L.append('')
 
         # ============================================================
-        # 4. ER Ranking
+        # 4. Hierarchical Ranking
         # ============================================================
-        L.append('# 4. Hierarchical Evidential Reasoning Ranking')
+        L.append('# 4. Hierarchical Ranking with MCDM Ensemble')
         L.append('')
         L.append(
-            'The ER approach (Yang & Xu, 2002) aggregates MCDM scores into '
-            'belief structures.  The recursive ER algorithm for combining '
-            'two evidence bodies is:'
+            'The ranking aggregates 6 traditional MCDM methods using '
+            'criterion-weighted averaging. Within each criterion, scores from '
+            'TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS, and SAW are averaged, '
+            'then the criterion means are weighted and summed to produce '
+            'the final composite score.'
         )
         L.append('')
-        L.append('$$m_{1 \\oplus 2}(H_n) = \\frac{m_1(H_n) m_2(\\Theta) + m_2(H_n) m_1(\\Theta) + m_1(H_n) m_2(H_n)}{1 - K}$$')
+        L.append('**Aggregation Formula:**')
         L.append('')
-        L.append('where $K = \\sum_{H_i \\cap H_j = \\varnothing} m_1(H_i) m_2(H_j)$ is the conflict factor.')
+        L.append('$$S_i = \\sum_{k=1}^{8} w_k \\cdot \\frac{1}{6} \\sum_{m=1}^{6} s_{i,k}^{(m)}$$')
+        L.append('')
+        L.append('where:')
+        L.append('  - $S_i$ is the composite score for alternative $i$')
+        L.append('  - $w_k$ is the criterion weight for criterion $k$ (from CRITIC)')
+        L.append('  - $s_{i,k}^{(m)}$ is the score from method $m$ for alternative $i$ under criterion $k$')
         L.append('')
 
-        L.append(f'- **Aggregation:** Evidential Reasoning (Yang & Xu, 2002)')
         L.append(f'- **MCDM Methods:** {len(ranking_result.methods_used)}')
-        L.append(f"- **Kendall's $W$:** {ranking_result.kendall_w:.4f}")
+        L.append(f"- **Kendall's $W$ (inter-method agreement):** {ranking_result.kendall_w:.4f}")
         L.append(f'- **Target Year:** {ranking_result.target_year}')
         L.append('')
 
         # Full ranking table
         mean_s = scores_arr.mean()
         std_s = scores_arr.std() if scores_arr.std() > 0 else 1.0
-        L.append('**Table 5. Complete provincial ranking by ER composite score.**')
+        L.append('**Table 5. Complete provincial ranking by composite score.**')
         L.append('')
-        L.append('| Rank | Province | ER Score | $z$-Score | Quartile |')
+        L.append('| Rank | Province | Composite Score | $z$-Score | Quartile |')
         L.append('| ---: | :--- | ---: | ---: | :---: |')
         for idx in order:
             r = ranks_arr[idx]
@@ -322,20 +328,7 @@ class ReportWriter:
         L.append(f'| IQR | {iqr:.4f} |')
         L.append('')
 
-        # ER Uncertainty (only when ER is enabled)
-        if getattr(ranking_result, 'er_result', None) is not None:
-            try:
-                unc = ranking_result.er_result.uncertainty
-                L.append('### Evidential Reasoning Uncertainty')
-                L.append('')
-                L.append(f'- **Mean Belief Entropy:** {unc["belief_entropy"].mean():.4f} '
-                         f'(SD = {unc["belief_entropy"].std():.4f})')
-                L.append(f'- **Mean Utility Interval Width:** '
-                         f'{unc["utility_interval_width"].mean():.4f} '
-                         f'(SD = {unc["utility_interval_width"].std():.4f})')
-                L.append('')
-            except Exception as _exc:
-                _logger.debug('section skipped: %s', _exc)
+
 
         # ============================================================
         # 5. Criterion-Level
@@ -716,12 +709,14 @@ class ReportWriter:
         )
         L.append('')
 
-        L.append('## 10.3 Evidential Reasoning')
+        L.append('## 10.3 Hierarchical Ranking Aggregation')
         L.append('')
         L.append(
-            'The ER framework (Yang & Xu, 2002) transforms method outputs into basic '
-            'probability assignments over an evaluation grade set. Stage 1 aggregates '
-            'methods within each criterion; Stage 2 aggregates criteria into the final score.'
+            'The ranking aggregation employs a two-level weighted mean approach. '
+            'First, for each criterion and method, normalized scores are computed. '
+            'Second, within each criterion, the six method scores are averaged. '
+            'Finally, criterion weights (from CRITIC analysis) are applied to compute the composite score. '
+            'Ranking is then determined by sorting provinces by their composite scores in descending order.'
         )
         L.append('')
 

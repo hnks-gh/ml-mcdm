@@ -15,7 +15,6 @@ Configuration Groups
 - TOPSISConfig             — TOPSIS method parameters
 - VIKORConfig              — VIKOR compromise parameter
 - WeightingConfig          — Hybrid MC Ensemble + Bayesian Bootstrap
-- EvidentialReasoningConfig— two-stage ER aggregation
 - ForecastConfig           — ML forecasting ensemble settings
 - ValidationConfig         — sensitivity / robustness analysis
 - VisualizationConfig      — figure appearance defaults
@@ -237,24 +236,6 @@ class WeightingConfig:
 
 
 # =========================================================================
-# Evidential Reasoning Configuration
-# =========================================================================
-
-@dataclass
-class EvidentialReasoningConfig:
-    """Two-stage ER aggregation (Yang & Xu, 2002).
-
-    Stage 1 — Within each criterion, combine 6 traditional MCDM method scores.
-    Stage 2 — Combine 8 criterion beliefs with criterion weights.
-    """
-    n_grades: int = 5
-    method_weight_scheme: Literal["equal", "rank_based"] = "equal"
-    base_methods: List[str] = field(default_factory=lambda: [
-        # Traditional
-        "topsis", "vikor", "promethee", "copras", "edas", "saw",
-    ])
-
-
 # =========================================================================
 # ML Forecasting (State-of-the-Art Ensemble)
 # =========================================================================
@@ -1014,15 +995,6 @@ class RankingConfig:
     """
     Hierarchical ranking configuration.
 
-    use_evidential_reasoning
-        **Disabled by default** (= False).  When True, the ranking pipeline
-        uses the full two-stage Evidential Reasoning aggregation (Yang & Xu,
-        2002) with belief distributions and utility intervals.  When False
-        (current default), ER is skipped entirely — the pipeline runs the
-        6 MCDM methods per criterion (TOPSIS, VIKOR, PROMETHEE II, COPRAS,
-        EDAS, SAW) and stores their scores/ranks as separate independent
-        outputs in criterion_method_scores.  No ER fusion is applied.
-
     run_all_years
         When True, the ranking pipeline is executed for every year in the
         panel (not just the target year) to enable temporal charts.
@@ -1038,7 +1010,6 @@ class RankingConfig:
         (mean_rank, std_rank, prob_top1, prob_topK) are carried through
         the details dict so CSV writers can persist them.
     """
-    use_evidential_reasoning: bool = False
     run_all_years: bool = True
     max_parallel_years: Optional[int] = None   # None → auto (cpu_count)
     expose_mc_province_stats: bool = True
@@ -1082,7 +1053,6 @@ class Config:
 
     # Weighting
     weighting: WeightingConfig = field(default_factory=WeightingConfig)
-    er: EvidentialReasoningConfig = field(default_factory=EvidentialReasoningConfig)
 
     # Ranking
     ranking: RankingConfig = field(default_factory=RankingConfig)
@@ -1153,10 +1123,6 @@ class Config:
             f"  RANKING\n"
             f"    Run all years   : {self.ranking.run_all_years}\n"
             f"    Max workers     : {self.ranking.max_parallel_years or 'auto'}\n\n"
-            f"  EVIDENTIAL REASONING\n"
-            f"    Base methods    : {len(self.er.base_methods)}\n"
-            f"    Method weights  : {self.er.method_weight_scheme}\n"
-            f"    Grades          : {self.er.n_grades}\n\n"
             f"  VALIDATION\n"
             f"    Sensitivity sim : {self.validation.n_simulations}\n"
             f"    Weight perturb  : {self.validation.weight_perturbation}\n"
