@@ -31,8 +31,9 @@ re-calibrate ensemble weights:
     w_updated = (1 − γ) · w_prev  +  γ · w_new_calibration
 
 where γ=0.3 (configurable).  ``w_new_calibration`` is computed via NNLS on
-the new-year predictions, so the blend retains historical stability while
-absorbing the most recent signal.
+the new-year predictions (secondary calibration blend only — the primary
+meta-learner is Ridge, updated via _fit_meta_learner in SuperLearner).
+The blend retains historical stability while absorbing the most recent signal.
 
 References
 ----------
@@ -305,8 +306,9 @@ class IncrementalEnsembleUpdater:
     ) -> None:
         """Blend existing meta-weights with new-year calibration weights.
 
+        Secondary calibration step (distinct from SuperLearner's Ridge meta-learner):
         1. Collects predictions from all updated base models on X_new.
-        2. Fits NNLS on those predictions → new-year calibration weights w_new.
+        2. Fits NNLS on new-year predictions → new-year calibration weights w_new.
         3. Blends: w_final = (1−γ)·w_prev + γ·w_new, normalised to sum=1.
         """
         if y_new.ndim == 1:

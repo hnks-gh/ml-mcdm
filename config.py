@@ -259,12 +259,12 @@ class ForecastConfig:
         the standalone class default (previously hardcoded to 100 in
         ``_create_models``).
     """
-    enabled: bool = False
+    enabled: bool = True
     """Enable/disable ensemble ML forecasting (Phase 4).
 
     Set to True to run the 2025 ensemble forecasting phase.
     Set to False to skip forecasting and proceed directly to MCDM analysis.
-    Default: False (disabled for quick MCDM audits).
+    Default: True (enabled - production-ready ensemble ML).
     """
     target_year: Optional[int] = None  # Auto-set to latest_year + 1
 

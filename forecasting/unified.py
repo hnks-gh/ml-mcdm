@@ -16,7 +16,7 @@ Model ensemble (4 diverse types - TIER 3)
 
 Meta-ensemble
 -------------
-- Super Learner (``_PanelTemporalSplit`` panel-aware CV, NNLS meta-weights)
+- Super Learner (``_PanelTemporalSplit`` panel-aware CV, Ridge L2-regularized meta-weights)
 - OOF predictions cached once; never deep-copied during conformal calibration
 
 Uncertainty calibration
@@ -1954,8 +1954,8 @@ class UnifiedForecaster:
 
         1. Panel-aware walk-forward CV → per-fold out-of-fold (OOF) ensemble
            predictions for the meta-learner.
-        2. NNLS-constrained meta-learner fitted on the stacked OOF predictions
-           → optimal non-negative weights that sum to 1.
+        2. Ridge L2-regularized meta-learner fitted on the stacked OOF predictions
+           → optimal positive-constrained weights that sum to 1.
         3. Full re-fit of every base model on the **complete** training set
            (no holdout rows included — zero leakage).
 
@@ -2050,7 +2050,7 @@ class UnifiedForecaster:
             random_state=self.random_state,
             verbose=self.verbose,
             # E-04: group LASSO soft-sharing across output criteria.
-            # 0.0 (default) = fully independent per-output NNLS (backward compat).
+            # 0.0 (default) = fully independent per-output Ridge (backward compat).
             meta_group_lasso_lambda=float(
                 getattr(self._config, 'meta_group_lasso_lambda', 0.0)
             ),
@@ -2168,7 +2168,7 @@ class UnifiedForecaster:
         * **All other models** — full retrain on ``X_all / y_all`` (or
           ``X_new / y_new`` if historical data is not supplied).
 
-        Meta-weights are re-calibrated on new predictions via NNLS and
+        Meta-weights are re-calibrated on new predictions via Ridge regression and
         γ-blended with the previous weights (``w = (1-γ)·w_prev + γ·w_new``).
 
         Pre-requisite: :meth:`stage3_fit_base_models` must have been called.
@@ -2243,7 +2243,7 @@ class UnifiedForecaster:
     def stage4_fit_meta_learner(self) -> None:
         """Stage 4: Extract meta-weights and generate ensemble predictions.
 
-        Retrieves the NNLS meta-weights from the fitted SuperLearner, then
+        Retrieves the Ridge meta-weights from the fitted SuperLearner, then
         runs the ensemble forward pass over the prediction year to produce
         point predictions and epistemic uncertainty estimates.  Also
         constructs conservative Gaussian fallback prediction intervals that

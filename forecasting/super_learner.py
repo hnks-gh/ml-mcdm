@@ -9,9 +9,10 @@ trained on out-of-fold predictions to optimally combine base models.
 
 Architecture:
     Base Models → Out-of-Fold Predictions → Meta-Learner → Final Prediction
-         ├─ Gradient Boosting  (ŷ₁)           ↓
-         ├─ Random Forest      (ŷ₂)      ElasticNet / Ridge
-         └─ Bayesian Ridge     (ŷ₃)      (learns α₁...αₙ)
+         ├─ CatBoost          (ŷ₁)           ↓
+         ├─ BayesianRidge     (ŷ₂)      Ridge Regression
+         ├─ SVR               (ŷ₃)      L2-regularized meta-weights
+         └─ ElasticNet        (ŷ₄)      (learns α₁...αₙ)
                                               ↓
                                          ŷ_final = Σ αᵢŷᵢ
 
@@ -19,8 +20,8 @@ Key Properties:
     1. Oracle inequality: Super Learner performs asymptotically
        as well as the best weighted combination of base models
     2. Cross-validated meta-features prevent information leakage
-    3. Non-negative weights (NNLS) ensure interpretability and
-       per-entity weight clamping prevents boundary artefacts
+    3. Ridge L2 regularization + positive weight constraint ensures
+       stability under correlated OOF predictions and interpretability
     4. Panel-aware temporal CV (``_PanelTemporalSplit``) uses the
        *median* entity length to size fold windows, preserving data
        from longer-history entities that the old min-based splitter
@@ -311,8 +312,8 @@ class SuperLearner:
 
     Parameters:
         base_models: Dictionary of {name: BaseForecaster} instances
-        meta_learner_type: Type of meta-learner ('elasticnet', 'ridge',
-                          'bayesian_stacking')
+        meta_learner_type: Type of meta-learner ('ridge' [default - RidgeCV],
+                          'elasticnet' [ElasticNetCV], 'bayesian_stacking' [softmax on R²])
         n_cv_folds: Number of CV folds for OOF predictions
         cv_min_train_years: Minimum year-label cohorts before first validation
             fold when using _WalkForwardYearlySplit.  Default 7 places the
@@ -376,9 +377,9 @@ class SuperLearner:
         self.random_state = random_state
         self.verbose = verbose
         # E-04: Group LASSO soft-sharing λ.  When > 0, each output criterion's
-        # per-output NNLS weight vector is softly nudged toward the cross-output
+        # per-output Ridge weight vector is softly nudged toward the cross-output
         # mean, borrowing strength across correlated criteria.
-        # '0.0' (default) = fully independent per-output NNLS (backward compat).
+        # '0.0' (default) = fully independent per-output Ridge (backward compat).
         self._meta_group_lasso_lambda: float = float(meta_group_lasso_lambda)
         self.max_total_stage3_minutes = max_total_stage3_minutes
         self.max_secondary_conformal_folds = max(1, int(max_secondary_conformal_folds))
@@ -399,10 +400,10 @@ class SuperLearner:
         self._oof_r2: Dict[str, float] = {}
 
         # F-02: Per-output meta-weight matrix.
-        # Shape: (n_outputs, n_models) — each row is the NNLS-optimal weight
-        # vector for one output criterion.  This supersedes the scalar
-        # ``_meta_weights`` dict, which holds the column-mean for backward
-        # compatibility only.  Populated by ``_fit_meta_learner()``.
+        # Shape: (n_outputs, n_models) — each row is the Ridge-optimal weight
+        # vector for one output criterion (L2-regularized, positive-constrained).
+        # This supersedes the scalar ``_meta_weights`` dict, which holds the
+        # column-mean for backward compatibility only. Populated by ``_fit_meta_learner()``.
         self._meta_weights_per_output_: Optional[np.ndarray] = None   # (n_outputs, n_models)
         self._meta_weights_col_names_: List[str] = []                 # model insertion order
 
@@ -524,7 +525,7 @@ class SuperLearner:
     ) -> np.ndarray:
         """Proximal soft-sharing step — group LASSO regularisation.
 
-        Given the per-output NNLS weight matrix ``W`` of shape
+        Given the per-output Ridge weight matrix ``W`` of shape
         ``(n_outputs, n_models)``, each row ``W[d, :]`` is the normalised
         weight vector for output criterion ``d``.  The soft-sharing step
         nudges every row toward the cross-output mean, borrowing strength
@@ -549,7 +550,7 @@ class SuperLearner:
         Parameters
         ----------
         W : ndarray, shape (n_outputs, n_models)
-            Per-output NNLS weight matrix, each row summing to 1.
+            Per-output Ridge weight matrix, each row summing to 1.
         lambda_group : float
             Soft-sharing strength λ > 0.  0 → no sharing.  1 → full
             equalisation toward the cross-output mean.
@@ -1554,7 +1555,7 @@ class SuperLearner:
 
         Handles partial OOF data gracefully: models whose OOF columns are
         entirely NaN (because they failed on every fold) are excluded from
-        the NNLS / meta-learner fit and receive weight 0.  Only models
+        the Ridge meta-learner fit and receive weight 0.  Only models
         with valid predictions participate, so one crashed model no longer
         poisons the meta-weight estimation for the remaining models.
         """
@@ -1668,7 +1669,7 @@ class SuperLearner:
         # E-04: Group LASSO soft-sharing — borrow strength across correlated
         # output criteria.  When _meta_group_lasso_lambda > 0, each criterion's
         # per-output weight vector is nudged toward the cross-output mean.
-        # λ = 0.0 (default) → pure per-output NNLS, backward-compatible.
+        # λ = 0.0 (default) → pure per-output Ridge, backward-compatible.
         if self._meta_group_lasso_lambda > 1e-15:
             normed_coefs_arr = self._apply_group_lasso_sharing(
                 normed_coefs_arr, self._meta_group_lasso_lambda
@@ -1718,7 +1719,7 @@ class SuperLearner:
 
         Parametrisation: w = softmax(logits) — guarantees w ∈ Δ_K without
         constraint handling.  Optimised via L-BFGS-B in unconstrained logit
-        space.  Falls back to NNLS if scipy is unavailable.
+        space.  Falls back to simple averaging if scipy.optimize is unavailable.
 
         Parameters
         ----------
