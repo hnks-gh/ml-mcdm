@@ -116,7 +116,7 @@ class SummaryPlotter(BasePlotter):
                 [f'{i+1}. {n}' for i, n in enumerate(names)], fontsize=10,
             )
             ax.invert_yaxis()
-            ax.set_xlabel('ER Score')
+            ax.set_xlabel('Rank Score')
             ax.set_title('Top 10 Provinces', fontsize=12)
 
         # Top 15 weights

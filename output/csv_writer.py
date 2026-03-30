@@ -205,7 +205,7 @@ class CsvWriter:
         Save final composite rankings to final_rankings.csv.
 
         Calculates percentiles, Z-scores, and tier assignments based on 
-        the composite ER scores.
+        the composite rank scores.
 
         Parameters
         ----------
@@ -339,7 +339,7 @@ class CsvWriter:
         Write composite MCDM scores for all years.
 
         Produces a single long-format file containing the average score 
-        per method across all criteria, plus the final ER composite score.
+        per method across all criteria, plus the final composite score.
 
         Parameters
         ----------
@@ -406,7 +406,7 @@ class CsvWriter:
                     row[method] = (
                         method_sums[method][prov] / cnt if cnt > 0 else float('nan')
                     )
-                # ER = final composite ER score
+                # ER = final composite rank score
                 if final_scores is not None and hasattr(final_scores, 'loc') and prov in final_scores.index:
                     row['ER'] = float(final_scores.loc[prov])
                 else:
@@ -852,8 +852,7 @@ class CsvWriter:
         """
         Save sensitivity and validation analysis outcomes.
 
-        Persists feature importance stability, model impact, and ER-specific 
-        uncertainties.
+        ranking-specific uncertainties.
 
         Parameters
         ----------
@@ -908,7 +907,7 @@ class CsvWriter:
         except Exception as _exc:
             _logger.debug('ml model section skipped: %s', _exc)
 
-        # ER Sensitivity
+        # Ranking Sensitivity
         try:
             er = getattr(sens, 'er_sensitivity', None)
             if er is not None and er.criterion_belief_sensitivity:
@@ -981,12 +980,12 @@ class CsvWriter:
     def save_er_uncertainty(self, ranking_result: Any,
                             provinces: List[str]) -> Optional[str]:
         """
-        Save Evidence Reasoning uncertainty metrics.
+        Save ranking aggregation uncertainty metrics.
 
         Parameters
         ----------
         ranking_result : RankingResult
-            Results containing the ER uncertainty dataframe.
+            Results containing the ranking uncertainty dataframe.
         provinces : List[str]
             List of province names for indexing.
 
@@ -1154,7 +1153,7 @@ class CsvWriter:
         except Exception as _exc:
             _logger.debug('all-years score/rank matrix skipped: %s', _exc)
 
-        # ── Long-format criterion-level ER utilities ─────────────────────
+        # ── Long-format criterion-level rank utilities ─────────────────────
         try:
             long_rows = []
             for yr in years:
@@ -1192,13 +1191,13 @@ class CsvWriter:
         """
         Write per-province, per-criterion belief distributions.
 
-        Exports the belief degrees for each grade from the Stage 1 ER 
+        Exports the belief degrees for each grade from the Stage 1 
         aggregation, providing visibility into the evidence structure.
 
         Parameters
         ----------
         ranking_result : RankingResult
-            The results containing the ER belief matrices.
+            The results containing the belief matrices.
         provinces : List[str]
             List of province names for iteration.
 

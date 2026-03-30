@@ -215,7 +215,7 @@ class ReportWriter:
         # Top 5
         L.append('**Table 1(a). Highest-ranked provinces.**')
         L.append('')
-        L.append('| Rank | Province | ER Score |')
+        L.append('| Rank | Province | Rank Score |')
         L.append('| ---: | :--- | ---: |')
         for i in range(min(5, n_prov)):
             idx = order[i]
@@ -416,7 +416,7 @@ class ReportWriter:
 
         # Criterion weights
         crit_w = ranking_result.criterion_weights_used
-        L.append('**Table 6. Criterion weights (Stage 2 ER).**')
+        L.append('**Table 6. Criterion weights (Stage 2 aggregation).**')
         L.append('')
         L.append('| Criterion | Weight |')
         L.append('| :--- | ---: |')

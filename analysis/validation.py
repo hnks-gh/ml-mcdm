@@ -2,12 +2,12 @@
 Pipeline Validation Framework.
 
 This module provides a comprehensive validation suite for the ML-MCDM 
-pipeline, covering Evidential Reasoning (ER) belief distributions, 
-ensemble forecasting performance, and end-to-end integration quality.
+pipeline, covering ranking aggregation quality, ensemble forecasting 
+performance, and end-to-end integration quality.
 
 Key Features
 ------------
-- **ER Validation**: Checks for belief validity, completeness, and 
+- **Ranking Validation**: Checks for score validity, completeness, and 
   aggregation quality across hierarchical levels.
 - **Forecast Validation**: Assesses cross-validation stability, 
   prediction interval coverage (conformal), and residual diagnostics.
@@ -44,7 +44,7 @@ def _silence(func):
 
 @dataclass
 class ERValidationResult:
-    """Validation results for Evidential Reasoning output."""
+    """Validation results for ranking aggregation output."""
     belief_validity: bool = True
     belief_completeness: float = 1.0
     mean_belief_entropy: float = 0.0
@@ -58,7 +58,7 @@ class ERValidationResult:
     def summary(self) -> str:
         lines = [
             "=" * 60,
-            "ER VALIDATION RESULTS",
+            "RANKING VALIDATION RESULTS",
             "=" * 60,
             f"Belief validity      : {self.belief_validity}",
             f"Belief completeness  : {self.belief_completeness:.4f}",
@@ -66,7 +66,7 @@ class ERValidationResult:
             f"Aggregation score    : {self.er_aggregation_score:.4f}",
             f"Cross-level consist. : {self.cross_level_consistency:.4f}",
             f"Mean util. interval  : {self.mean_utility_interval_width:.4f}",
-            f"ER valid             : {self.er_valid}",
+            f"Ranking valid       : {self.er_valid}",
         ]
         if self.validation_warnings:
             lines.append("Warnings:")
@@ -144,7 +144,7 @@ class ValidationResult:
 # ---------------------------------------------------------------------------
 
 class ERValidator:
-    """Validates Evidential Reasoning output."""
+    """Validates ranking aggregation output."""
 
     def __init__(
         self,
@@ -152,15 +152,15 @@ class ERValidator:
         utility_interval_threshold: float = 0.5,
     ):
         """
-        Initialize the ER validator.
+        Initialize the ranking validator.
 
         Parameters
         ----------
         entropy_threshold : float, default=2.0
-            Maximum allowable mean belief entropy before a warning is issued. 
+            Maximum allowable mean score entropy before a warning is issued. 
             High entropy indicates lack of consensus or high ambiguity.
         utility_interval_threshold : float, default=0.5
-            Maximum allowable mean utility interval width. Large widths 
+            Maximum allowable mean score interval width. Large widths 
             indicate high ignorance or missing data in the weighted criteria.
         """
         self.entropy_threshold = entropy_threshold
@@ -172,7 +172,7 @@ class ERValidator:
 
         if er_result is None:
             result.er_valid = False
-            result.validation_warnings = ["No ER result provided"]
+            result.validation_warnings = ["No ranking result provided"]
             return result
 
         bd = getattr(er_result, "belief_distributions", {}) or {}
@@ -461,7 +461,7 @@ class ForecastValidator:
 # ---------------------------------------------------------------------------
 
 class Validator:
-    """Runs full-pipeline validation (ER + forecasting)."""
+    """Runs full-pipeline validation (ranking + forecasting)."""
 
     def __init__(self, **kwargs):
         self._er_validator = ERValidator()
@@ -501,7 +501,6 @@ class Validator:
             validation_warnings=all_warnings,
         )
 
-    # Legacy shim so existing pipeline.py code still works
     def validate(self, *args, **kwargs) -> ValidationResult:
         return self.validate_full_pipeline(**kwargs)
 

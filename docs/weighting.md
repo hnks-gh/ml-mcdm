@@ -12,14 +12,14 @@
 The weighting phase determines how important each sub-criterion (SC) and each criterion (C) is relative to the others. It produces two sets of weights:
 
 - **Level 1 local weights** — within each of the 8 criterion groups (C01–C08), how much each SC contributes relative to the other SCs in that group. These drive the Stage 1 MCDM ranking.
-- **Level 2 criterion weights** — how important each of the 8 criteria is globally. These drive Stage 2 Evidential Reasoning aggregation.
+- **Level 2 criterion weights** — how important each of the 8 criteria is globally. These drive Stage 2 hierarchical aggregation.
 
 A third set, **global SC weights**, is derived by multiplying the two levels together: $w_j = u_{k,j} \times v_k$. These 29 global weights are what `pipeline.py` ultimately receives.
 
 ### Two-level hierarchy
 
 ```
-  LEVEL 2 (criterion weights — used by ER Stage 2)
+  LEVEL 2 (criterion weights — used by Stage 2 aggregation)
   +------+------+------+------+------+------+------+------+
   | C01  | C02  | C03  | C04  | C05  | C06  | C07  | C08  |
   | v_1  | v_2  | v_3  | v_4  | v_5  | v_6  | v_7  | v_8  |
@@ -36,7 +36,7 @@ A third set, **global SC weights**, is derived by multiplying the two levels tog
 | Level | Weights produced | Sum constraint | Used in |
 |---|---|---|---|
 | Level 1 | Local SC weights per group | Sums to 1 within each $C_k$ | Stage 1: MCDM ranking |
-| Level 2 | Criterion weights C01–C08 | Sums to 1 globally | Stage 2: ER aggregation |
+| Level 2 | Criterion weights C01–C08 | Sums to 1 globally | Stage 2: Hierarchical aggregation |
 | Global | 29 SC weights | Sums to 1 globally | `pipeline.py` (`WeightResult.weights`) |
 
 ### Method: Hierarchical Adaptive CRITIC
@@ -273,7 +273,7 @@ details = {
 | Read path | Used for |
 |---|---|
 | `details["global_sc_weights"][sc]` | SC weights for Stage 1 MCDM |
-| `details["level2"]["criterion_weights"][ck]` | Criterion weights for Stage 2 ER |
+| `details["level2"]["criterion_weights"][ck]` | Criterion weights for Stage 2 aggregation |
 | `details["stability"]["is_stable"]` | Temporal stability flag |
 
 ---

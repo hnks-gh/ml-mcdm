@@ -341,7 +341,7 @@ class TestModifiedEDASTrimmeanPath:
 
 
 class TestEvidentialReasoningKConstant:
-    """C2 — ER combine() must use correct normalisation constant K."""
+    """C2 — ranking aggregation combine() must use correct normalisation constant K."""
 
     def test_k_constant_correct_for_two_independent_sources(self):
         from ranking.evidential_reasoning.base import BeliefDistribution, EvidentialReasoningEngine

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Unit tests for analysis/sensitivity.py (ML + ER sensitivity).
+Unit tests for analysis/sensitivity.py (ML + ranking sensitivity).
 """
 import numpy as np
 import pandas as pd

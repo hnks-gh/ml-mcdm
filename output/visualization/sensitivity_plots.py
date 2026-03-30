@@ -4,7 +4,7 @@ Sensitivity, Robustness, and Uncertainty Visualizations.
 
 This module provides the `SensitivityPlotter` class, which generates 
 publication-quality diagnostic plots to evaluate the stability of MCDM 
-and ER rankings. It includes tornado charts for weight sensitivity, 
+and hierarchical rankings. It includes tornado charts for weight sensitivity, 
 temporal stability analysis, and Monte Carlo rank-volatility distributions.
 
 Key Figures
@@ -341,7 +341,7 @@ class SensitivityPlotter(BasePlotter):
         return self._save(fig, save_name)
 
     # ==================================================================
-    #  FIG 15 – ER Uncertainty Distribution
+    #  FIG 15 – Ranking Uncertainty Distribution
     # ==================================================================
 
     # ==================================================================

@@ -1,5 +1,5 @@
 """
-Stability Analysis for ML Forecasting and Evidential Reasoning.
+Stability Analysis for ML Forecasting and Hierarchical Ranking.
 
 This module provides tools for quantifying the temporal and cross-sectional 
 stability of the ML-MCDM pipeline. It enables comparison between 
@@ -10,7 +10,7 @@ Key Features
 ------------
 - **Forecast Stability**: Assesses the temporal consistency of ML 
   predictions across CV folds and agreement among ensemble members.
-- **ER Metric Compatibility**: Compares belief distributions and utility 
+- **Ranking Stability**: Compares scores and utility 
   rankings between different aggregations using cosine similarity and 
   rank correlation.
 - **Uncertainty Volatility**: Tracks the stability of prediction interval 
@@ -22,8 +22,8 @@ References
 ----------
 - Hyndman & Athanasopoulos (2021). "Forecasting: Principles and Practice." 
   OTexts.
-- Yang & Xu (2002). "On the evidential reasoning algorithm for multiple 
-  attribute decision analysis under uncertainty." IEEE Transactions.
+- Yang & Xu (2002). "On the ranking aggregation algorithm for multiple 
+  attribute decision analysis under uncertainty." IEEE Transactions. (Reference for ranking aggregation)
 """
 
 import numpy as np
@@ -65,11 +65,11 @@ class ForecastStabilityResult:
 
 @dataclass
 class ERStabilityResult:
-    """Result container for ER aggregation stability."""
+    """Result container for ranking aggregation stability."""
     is_stable: bool
-    belief_cosine_similarity: float        # Cosine similarity between two ER results
+    belief_cosine_similarity: float        # Cosine similarity between two results
     utility_rank_correlation: float        # Spearman rho of utility rankings
-    entropy_stability: float               # Stability of belief-entropy values
+    entropy_stability: float               # Stability of score-entropy values
     grade_consistency: float               # Fraction with same dominant grade
     entity_volatility: Dict[str, float]    # Per-entity Shannon entropy
     threshold: float
@@ -78,7 +78,7 @@ class ERStabilityResult:
     def summary(self) -> str:
         status = "STABLE" if self.is_stable else "UNSTABLE"
         return (
-            f"ER Stability: {status}\n"
+            f"Ranking Stability: {status}\n"
             f"  Belief Cosine Similarity: {self.belief_cosine_similarity:.4f}\n"
             f"  Utility Rank Correlation: {self.utility_rank_correlation:.4f}\n"
             f"  Entropy Stability:        {self.entropy_stability:.4f}\n"
@@ -235,23 +235,23 @@ class ForecastStabilityAnalyzer:
 
 
 # ============================================================================
-# ER Stability
+# Ranking Stability
 # ============================================================================
 
 class ERStabilityAnalyzer:
     """
-    Analyzes stability of Evidential Reasoning aggregations by comparing
-    two ER results (e.g., from split time periods or alternative parameterisations).
+    Analyzes stability of ranking aggregations by comparing
+    two ranking results (e.g., from split time periods or alternative parameterisations).
 
     Parameters
     ----------
     threshold : float, default=0.85
-        Minimum cosine similarity to declare ER results stable.
+        Minimum cosine similarity to declare results stable.
     """
 
     def __init__(self, threshold: float = 0.85):
         """
-        Initialize the ER stability analyzer.
+        Initialize the ranking stability analyzer.
 
         Parameters
         ----------
@@ -263,12 +263,12 @@ class ERStabilityAnalyzer:
 
     def analyze(self, er_result_1, er_result_2) -> ERStabilityResult:
         """
-        Compare two ER results to assess stability.
+        Compare two ranking results to assess stability.
 
         Parameters
         ----------
-        er_result_1 : ERResult or HierarchicalERResult
-        er_result_2 : ERResult or HierarchicalERResult
+        er_result_1 : RankingResult or HierarchicalRankingResult
+        er_result_2 : RankingResult or HierarchicalRankingResult
 
         Returns
         -------
@@ -369,5 +369,5 @@ def analyze_er_stability(
     er_result_2,
     threshold: float = 0.85,
 ) -> ERStabilityResult:
-    """Convenience function: compare two ER results for stability."""
+    """Convenience function: compare two ranking results for stability."""
     return ERStabilityAnalyzer(threshold=threshold).analyze(er_result_1, er_result_2)

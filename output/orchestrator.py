@@ -119,7 +119,7 @@ class OutputOrchestrator:
         self.csv.save_weights(weights, subcriteria)
         logger.info('Saved: weights_analysis.csv')
 
-        # 2. Final Rankings (ER composite ranking across all criteria)
+        # 2. Final Rankings (Composite ranking across all criteria)
         if ranking_result is not None and ranking_result.final_ranking is not None:
             try:
                 path_rank = self.csv.save_rankings(ranking_result, panel_data.provinces)
@@ -136,7 +136,7 @@ class OutputOrchestrator:
 
         # 4. Rank comparison matrix — skipped (mcdm_rank_comparison.csv removed per spec)
 
-        # 5. ER uncertainty — skipped (prediction_uncertainty_er.csv removed per spec)
+        # 5. Ranking uncertainty — skipped (prediction_uncertainty_er.csv removed per spec)
 
         # 6. Forecasting results
         if forecast_result is not None:
@@ -155,7 +155,7 @@ class OutputOrchestrator:
         # 8. All-years score / rank matrices — skipped (rankings_all_years.csv,
         #    ranks_all_years.csv, criterion_er_scores_all_years.csv removed per spec)
 
-        # 9. Belief distributions (Stage-1 ER)
+        # 9. Belief distributions (Stage-1 aggregation)
         try:
             path_bd = self.csv.save_belief_distributions(
                 ranking_result, panel_data.provinces)
@@ -164,7 +164,7 @@ class OutputOrchestrator:
         except Exception as _exc:
             logger.warning(f'save_belief_distributions failed: {_exc}')
 
-        # 10. MCDM composite scores (all methods + ER, all years)
+        # 10. MCDM composite scores (all methods + aggregate, all years)
         if multi_year_results:
             try:
                 path_mc = self.csv.save_mcdm_composite_scores_all_years(multi_year_results)

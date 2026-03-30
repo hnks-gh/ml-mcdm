@@ -21,7 +21,7 @@ Key Metrics
 - **Overall Robustness**: Combined score reflecting sensitivity to noise.
 - **Cross-Level Consistency**: Spearman correlation between hierarchical levels.
 - **Interval Coverage**: Empirical calibration of conformal predictions.
-- **Belief Entropy**: Quantification of ignorance and ambiguity in ER results.
+- **Belief Entropy**: Quantification of ignorance and ambiguity in ranking results.
 """
 
 # Sensitivity Analysis
@@ -47,7 +47,7 @@ from .validation import (
     run_validation,
 )
 
-# Bootstrap — ML + ER uncertainty quantification
+# Bootstrap — ML + ranking uncertainty quantification
 from .ml_er_bootstrap import (
     ForecastBootstrapResult,
     ERBootstrapResult,
@@ -57,7 +57,7 @@ from .ml_er_bootstrap import (
     er_bootstrap,
 )
 
-# Stability — ML + ER stability analysis
+# Stability — ML + ranking stability analysis
 from .stability import (
     ForecastStabilityResult,
     ERStabilityResult,

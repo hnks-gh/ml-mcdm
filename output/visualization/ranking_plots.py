@@ -1,16 +1,16 @@
 """
-Ranking and Evidential Reasoning Visualizations.
+Ranking and Aggregation Visualizations.
 
 This module provides the `RankingPlotter` class, which generates 
 publication-quality diagnostic plots for the final ranking phase. It 
-includes multi-year trajectories (slopegraphs), belief distribution 
+includes multi-year trajectories (slopegraphs), ranking aggregation 
 heatmaps, and uncertainty scatter plots to evaluate the robustness of 
 provincial rankings.
 
 Key Figures
 -----------
 - **fig01c (Slopegraph)**: Multi-year rank trajectories for top-N provinces.
-- **fig01d (Belief Heatmap)**: Distribution of fused belief degrees across 
+- **fig01d (Ranking Heatmap)**: Distribution of final rank scores across 
   grades for each province.
 - **fig01e (Uncertainty Scatter)**: Rank vs. entropy analysis with 
   quadrant-based risk assessment.
@@ -35,14 +35,14 @@ _logger = logging.getLogger(__name__)
 
 class RankingPlotter(BasePlotter):
     """
-    Generator for ranking and Evidential Reasoning visualizations.
+    Generator for ranking and aggregation visualizations.
 
     Handles the rendering of longitudinal trajectories, belief structures, 
     and Monte Carlo uncertainty metrics for prioritized analytical insight.
     """
 
     # ==================================================================
-    #  FIG 01 – Final ER Ranking  (horizontal lollipop + gradient fill)
+    #  FIG 01 – Final Ranking  (horizontal lollipop + gradient fill)
     # ==================================================================
 
     def plot_final_ranking_summary(self, provinces, scores, ranks, **kw):
@@ -147,7 +147,7 @@ class RankingPlotter(BasePlotter):
         return self._save(fig, save_name)
 
     # ==================================================================
-    #  FIG 01d – Final ER Belief Distribution Heatmap
+    #  FIG 01d – Final Ranking Distribution Heatmap
     # ==================================================================
 
     def plot_belief_heatmap(
@@ -157,19 +157,19 @@ class RankingPlotter(BasePlotter):
         save_name: str = 'fig01d_belief_heatmap.png',
     ) -> Optional[str]:
         """
-        Render a heatmap of fused belief degrees.
+        Render a heatmap of ranking aggregation results.
 
-        Visualizes the probability mass allocated to each evaluation grade 
-        for all active provinces, providing transparency into the ER 
+        Visualizes the distribution of scores across evaluation grades 
+        for all active provinces, providing transparency into the ranking 
         aggregation logic.
 
         Parameters
         ----------
         ranking_result : RankingResult
-            Aggregated results containing ER belief matrices.
+            Aggregated results containing ranking matrices.
         provinces : List[str]
             List of province names for indexing.
-        save_name : str, default='fig01d_belief_heatmap.png'
+        save_name : str, default='fig01d_ranking_heatmap.png'
             The output filename.
 
         Returns
@@ -191,7 +191,7 @@ class RankingPlotter(BasePlotter):
             n_grades    = len(first_bd.beliefs)
             grade_labels = [f'Grade {g+1}' for g in range(n_grades)]
 
-            # Sort provinces by ER rank
+            # Sort provinces by rank
             ranks = ranking_result.final_ranking
             sorted_provs = [p for p in
                             ranks.sort_values().index.tolist()
@@ -230,9 +230,9 @@ class RankingPlotter(BasePlotter):
                                 fontsize=6.5, color=txt_col)
 
             cbar = fig.colorbar(im, ax=ax, shrink=0.4, pad=0.02)
-            cbar.set_label('Belief Degree', fontsize=10)
-            ax.set_title('Final ER Belief Distribution per Province '
-                         '(Grade 1 = Excellent … Grade 5 = Bad)',
+            cbar.set_label('Score Degree', fontsize=10)
+            ax.set_title('Final Ranking Distribution per Province '
+                         '(Grade 1 = Best … Grade 5 = Bad)',
                          fontsize=13, fontweight='bold', pad=10)
             fig.tight_layout()
             return self._save(fig, save_name)
@@ -251,7 +251,7 @@ class RankingPlotter(BasePlotter):
         save_name: str = 'fig01e_rank_uncertainty_scatter.png',
     ) -> Optional[str]:
         """
-        Render a scatter plot of rank vs. belief-entropy uncertainty.
+        Render a scatter plot of rank vs. uncertainty.
 
         Identifies 'at-risk' provinces where high ranks might be unstable 
         due to high evidence conflict (entropy).
@@ -334,11 +334,11 @@ class RankingPlotter(BasePlotter):
                 )
 
             cbar = fig.colorbar(scatter, ax=ax, shrink=0.6, pad=0.02)
-            cbar.set_label('ER Rank (lower = better)', fontsize=10)
+            cbar.set_label('Rank (lower = better)', fontsize=10)
 
-            ax.set_xlabel('ER Rank  (1 = best)', fontsize=11)
-            ax.set_ylabel('Belief Entropy  (higher = more uncertain)', fontsize=11)
-            ax.set_title('Rank vs Belief-Entropy Uncertainty\n'
+            ax.set_xlabel('Rank  (1 = best)', fontsize=11)
+            ax.set_ylabel('Uncertainty (Entropy)  (higher = more uncertain)', fontsize=11)
+            ax.set_title('Rank vs Uncertainty\n'
                          '(marker size ∝ utility interval width)',
                          fontsize=13, fontweight='bold', pad=10)
             ax.legend(fontsize=9, loc='upper left')

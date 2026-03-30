@@ -17,7 +17,7 @@ This document provides a step-by-step description of the ML-MCDM analysis pipeli
 
 ## 1. Overview
 
-The ML-MCDM pipeline analyzes panel data (entities × time periods × criteria) using **Evidential Reasoning (ER)** for robust multi-criteria ranking with uncertainty quantification.
+The ML-MCDM pipeline analyzes panel data (entities × time periods × criteria) using a hierarchical multi-criteria ranking approach for robust performance assessment.
 
 ### Core Methodology
 
@@ -41,7 +41,7 @@ The ML-MCDM pipeline analyzes panel data (entities × time periods × criteria) 
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│            ML-MCDM: Evidential Reasoning Pipeline                       │
+│            ML-MCDM: Hierarchical Ranking Pipeline                       │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                          │
 │  Phase 1: Data Loading                                                  │
@@ -59,10 +59,9 @@ The ML-MCDM pipeline analyzes panel data (entities × time periods × criteria) 
 │  │ Stage 1: Within-criterion (per 8 criteria)              │           │
 │  │   • 5 MCDM methods (TOPSIS, VIKOR, PROMETHEE, COPRAS,   │           │
 │  │     EDAS) + Raw Sum Baseline                            │           │
-│  │   • ER belief aggregation (disabled by default)         │           │
 │  │                                                          │           │
 │  │ Stage 2: Global aggregation                             │           │
-│  │   • Weighted ER across 8 criterion beliefs (disabled)  │           │
+│  │   • Weighted aggregation across 8 criteria               │           │
 │  │   • Final ranking with concordance (Kendall's W)        │           │
 │  └────────────────────────┬─────────────────────────────────┘           │
 │                           │                                              │
@@ -167,9 +166,9 @@ PanelData
 
 ---
 
-### Phase 3: Hierarchical Ranking (ER)
+### Phase 3: Hierarchical Ranking
 
-**Purpose:** Two-stage aggregation using Evidential Reasoning.
+**Purpose:** Two-stage aggregation using hierarchical MCDM.
 
 #### 5 Traditional MCDM Methods + Baseline
 
@@ -192,21 +191,13 @@ For **each of 8 criteria** (C01 through C08):
    - Temporarily exclude from ranking
    - Restore after computation (assign worst rank)
 3. **Normalize scores** to [0, 1]
-4. **Construct belief structure:**
-   - Convert 6 method scores → 5-grade belief distribution
-   - Grades: {Excellent, Good, Fair, Poor, Bad}
-5. **ER combination** (**disabled by default**) → single criterion belief per entity
+4. **Aggregate scores** to produce criterion-level performance metrics.
 
 #### Stage 2: Global Aggregation
 
-1. **Inputs:** 8 criterion beliefs (one per C01-C08) + ensemble weights
-2. **Weighted ER aggregation** (**disabled by default**) using Yang & Xu (2002) algorithm:
-   $$
-   \beta_n = K \left[\beta_{1,n}\beta_{2,n} + \beta_{1,n}\beta_{2,H} + \beta_{1,H}\beta_{2,n}\right]
-   $$
-   Where K is normalization constant handling belief conflicts
-3. **Utility calculation** from final belief distribution
-4. **Final ranking** by utility scores (descending)
+1. **Inputs:** 8 criterion scores + weights
+2. **Weighted aggregation** to combine 8 criteria into a global score.
+3. **Final ranking** by global scores (descending)
 
 #### Validation
 
@@ -215,10 +206,9 @@ For **each of 8 criteria** (C01 through C08):
 - Actual: W ≈ 0.88 (very strong agreement)
 
 **Output Files:**
-- `final_rankings.csv`: Final ranks + ER utility scores
+- `final_rankings.csv`: Final ranks + aggregate scores
 - `mcdm_scores_C01.csv` ... `mcdm_scores_C08.csv`: Per-criterion method scores (8 files)
 - `mcdm_rank_comparison.csv`: Rank comparison across all 6 methods
-- `prediction_uncertainty_er.csv`: Hesitancy degrees (π) per entity
 
 ---
 
@@ -272,7 +262,7 @@ For **each of 8 criteria** (C01 through C08):
 **Purpose:** Generate high-resolution figures (300 DPI).
 
 **Generated Figures:**
-1. `01_final_ranking_summary.png` — Top 20 provinces with ER utility
+1. `01_final_ranking_summary.png` — Top 20 provinces with final rankings
 2. `02_score_distribution.png` — Histogram + KDE
 3. `03_weights_comparison.png` — Ensemble weights (8 criteria)
 4. `04_sensitivity_analysis.png` — Rank stability heatmap
@@ -296,7 +286,7 @@ See [Output Structure](#4-output-structure) below.
 output/result/
 ├── figures/                          # High-resolution visualizations, split by phase
 │   ├── ranking/
-│   │   ├── fig01_final_er_ranking.png
+│   │   ├── fig01_final_ranking.png
 │   │   └── fig02_score_distribution.png
 │   ├── weighting/
 │   │   ├── fig03_weights_comparison.png
@@ -312,7 +302,6 @@ output/result/
 │   │   ├── fig11_top_n_stability.png
 │   │   ├── fig12_temporal_stability.png
 │   │   ├── fig13_rank_volatility.png
-│   │   ├── fig15_er_uncertainty.png
 │   │   └── fig25_robustness_summary.png
 │   ├── forecasting/
 │   │   ├── fig18_feature_importance.png
@@ -329,8 +318,7 @@ output/result/
 │   │   ├── weights_analysis.csv       # Global + local weights per subcriteria
 │   │   └── criterion_weights.csv      # Ensemble criterion-level weights
 │   ├── ranking/
-│   │   ├── final_rankings.csv         # Main output: rank + ER utility + province
-│   │   └── prediction_uncertainty_er.csv  # Belief hesitancy degrees (π)
+│   │   └── final_rankings.csv         # Main output: rank + score + province
 │   ├── mcdm/
 │   │   ├── mcdm_scores_C01.csv        # 6-method scores for C_01
 │   │   ├── ...                        # one file per criterion
@@ -389,7 +377,7 @@ pipeline = MLMCDMPipeline(config)
 result = pipeline.run()
 
 # Access results
-rankings = result.ranking.final_er_scores
+rankings = result.ranking.final_scores
 print(f"Kendall's W: {result.ranking.kendall_w:.4f}")
 print(f"Robustness: {result.analysis['sensitivity'].overall_robustness:.4f}")
 ```
@@ -439,7 +427,7 @@ print(f"Robustness: {result.analysis['sensitivity'].overall_robustness:.4f}")
 
 ```
 ======================================================================
-  ML-MCDM: Evidential Reasoning Hierarchical Ranking
+  ML-MCDM: Hierarchical Ranking Pipeline
 ======================================================================
   Provinces         : 63
   Years             : 2011-2024 (14 years)
@@ -463,9 +451,9 @@ print(f"Robustness: {result.analysis['sensitivity'].overall_robustness:.4f}")
 
 ▶ Phase 3/7: Hierarchical Ranking
   Stage 1: 6 MCDM × 8 criteria with adaptive zero-handling
-  Stage 2: Weighted ER aggregation
+  Stage 2: Weighted aggregation
   Kendall's W: 0.8786 (strong agreement)
-  Top-ranked: P02 (utility = 0.8547)
+  Top-ranked: P02 (score = 0.8547)
   ✓ Completed in 7.02s
 
 ▶ Phase 4/7: ML Forecasting
@@ -501,7 +489,7 @@ Outputs: output/result/
 
 The ML-MCDM pipeline provides:
 
-1. **Rigorous Methodology**: Two-stage ER with adaptive zero-handling
+1. **Rigorous Methodology**: Two-stage hierarchical ranking with adaptive zero-handling
 2. **Objective Weighting**: CRITIC Two-Level deterministic pipeline
 3. **Multi-Method Consensus**: 6 MCDM methods (TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS, SAW)
 4. **ML Forecasting**: 5-model ensemble (CatBoost, Bayesian, QRF, KRR, SVR) + Super Learner
@@ -516,7 +504,7 @@ The ML-MCDM pipeline provides:
 - Weight Stability: > 0.95 (bootstrap cosine similarity)
 
 For methodology details, see:
-- [ranking.md](ranking.md) — ER hierarchical ranking
+- [ranking.md](ranking.md) — Hierarchical ranking methodology
 - [weighting.md](weighting.md) — CRITIC Two-Level weight calculation
 - [objective.md](objective.md) — project objectives
 

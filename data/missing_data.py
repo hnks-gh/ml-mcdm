@@ -12,8 +12,8 @@ in the forecasting/ML phase where supervised learning requires complete features
 
 **Ranking phase** (``ranking/hierarchical_pipeline.py``)
     NO IMPUTATION. All ranking methods (TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS)
-    handle partial NaN natively. Evidential Reasoning aggregates on method
-    rankings (not raw scores), naturally preserving uncertainty from missing data.
+    handle partial NaN natively. Ranking aggregation combines multiple 
+    MCDM methods for robustness, naturally preserving uncertainty from missing data.
 
 **Forecasting / ML phase** (``forecasting/features.py``, ``pipeline.py``)
     :func:`build_ml_panel_data` — build dataset for feature engineering.

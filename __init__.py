@@ -2,23 +2,23 @@
 ML-MCDM: Machine Learning Enhanced Multi-Criteria Decision Making.
 
 This hierarchical framework integrates traditional MCDM methods with 
-advanced Machine Learning forecasting and Evidential Reasoning (ER) 
-aggregation. It provides a multi-stage pipeline for assessing and 
-predicting regional performance metrics (e.g., provincial rankings).
+advanced Machine Learning forecasting. It provides a multi-stage 
+pipeline for assessing and predicting regional performance metrics 
+(e.g., provincial rankings).
 
 Architecture
 ------------
-The framework implements a two-stage evidential reasoning hierarchy:
+The framework implements a two-stage hierarchical ranking system:
 1. **Stage 1**: At the subcriteria level, 6 traditional MCDM methods 
-   (TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS, SAW) are combined via ER 
-   to generate criteria-level belief distributions.
-2. **Stage 2**: At the final level, 8 criteria are aggregated via ER 
-   using specific criterion weights to produce the overall ranking.
+   (TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS, SAW) are applied to 
+   generate per-criterion scores.
+2. **Stage 2**: At the final level, 8 criteria are aggregated using 
+   specific criterion weights to produce the overall ranking.
 
 Packages
 --------
 - **`weighting`**: Statistical and deterministic weight calculation (CRITIC).
-- **`ranking`**: Implementation of MCDM methods and the ER engine.
+- **`ranking`**: Implementation of MCDM methods and hierarchical ranking pipeline.
 - **`forecasting`**: ML ensemble (Super Learner) for predictive analytics.
 - **`analysis`**: Validation, bootstrap, and sensitivity diagnostics.
 - **`output`**: Result orchestration, reporting, and publication-quality 

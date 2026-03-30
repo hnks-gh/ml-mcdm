@@ -11,7 +11,7 @@
 This framework combines Multi-Criteria Decision Making (MCDM) with machine learning to analyze and forecast multi-dimensional performance across entities. It integrates three major components:
 
 1. **Objective Weighting** via Hierarchical CRITIC-based adaptive weighting (NaN-aware, two-level)
-2. **Hierarchical Ranking** using 5 Traditional MCDM methods + Raw Sum Baseline + Evidential Reasoning (ER)
+2. **Hierarchical Ranking** using 5 Traditional MCDM methods + Raw Sum Baseline
 3. **ML Forecasting (optional)** via 4-Model Ensemble (CatBoost, Bayesian Ridge, SVR, ElasticNet) + Super Learner + Conformal Prediction
 
 **Application:** Vietnam PAPI (Provincial Governance and Public Administration Performance Index) analysis across 63 provinces over 14 years (2011-2024).
@@ -24,7 +24,7 @@ This framework combines Multi-Criteria Decision Making (MCDM) with machine learn
 - **Pipeline orchestration**: `MLMCDMPipeline` drives seven phases (data load, weighting, ranking, forecasting, analysis, visualization, export) with phase-level metrics, timing, and configurable switches from a single `Config` dataclass tree.
 - **Data model**: Yearly panel matrices (63 provinces, 8 criteria, 29 subcriteria) are loaded as `YearContext` objects with explicit missingness semantics (NaN = missing, 0.0 = valid score), dynamic exclusion of all-NaN entities, and optional MICE-based imputation with full audit logs for the forecasting phase.
 - **Weighting**: Adaptive hierarchical CRITIC weighting is applied at both subcriteria and criteria levels using contrast intensity and inter-criteria conflict $C_j = \sigma_j \sum_k (1 - r_{jk})$, followed by normalization $w_j = C_j / \sum_k C_k$. NaN-aware preprocessing and year-regime analysis ensure stable weights in sparse years.
-- **Hierarchical ranking**: Six ranking models (TOPSIS, VIKOR, PROMETHEE II, COPRAS, EDAS, and a Raw Sum Baseline) run per criterion; their scores are individually reported with Kendall’s $W$ concordance. The framework supports evidential reasoning (ER) fusion into belief distributions and weighted ER aggregation across criteria, but ER is **disabled by default** (`use_evidential_reasoning = False`).
+- **Hierarchical ranking**: Six ranking models (TOPSIS, VIKOR, PROMETHEE II, COPRAS, EDAS, and a Raw Sum Baseline) run per criterion; their scores are individually reported with Kendall’s $W$ concordance. All methods are aggregated at the subcriteria and criteria levels using individual weights to produce the final rankings.
 - **Forecasting (optional)**: Four-model ensemble (CatBoost, Bayesian Ridge, Support Vector Regression, ElasticNet) with Super Learner meta-ensemble, panel-aware temporal CV, and conformal prediction for distribution-free $1-\alpha$ intervals (default $\alpha=0.05$).
 - **Analysis & validation**: Sensitivity analysis on weights and forecasts; bootstrap and perturbation uncertainty; diagnostics for belief completeness, entropy, residual behavior, and temporal stability.
 - **Outputs & visualization**: Phase-scoped CSV/JSON artifacts, 300 DPI figures, and text reports with reproducible directory layout under `output/result/` and full debug logs.
@@ -89,18 +89,16 @@ ml-mcdm/
 │   ├── normalization.py   # Min-max/vector/z-score normalization
 │   └── base.py            # Weighting entry points + result types
 │
-├── ranking/               # MCDM methods + ER aggregation
+├── ranking/               # MCDM methods + ranking aggregation
 │   ├── topsis.py
 │   ├── vikor.py
 │   ├── promethee.py
 │   ├── copras.py
 │   ├── edas.py
 │   ├── saw.py             # Simple Additive Weighting (available)
-│   └── evidential_reasoning/
-│       ├── base.py
-│       └── hierarchical_er.py
+│   └── hierarchical_pipeline.py # Core ranking architecture
 │
-├── ranking/               # Ranking orchestrator + ER aggregation
+├── ranking/               # Ranking orchestrator
 │   └── hierarchical_pipeline.py # Core ranking architecture
 │
 ├── analysis/              # Production-ready analysis
@@ -126,7 +124,6 @@ ml-mcdm/
 ├── tests/                 # Test suite (400+ tests)
 │   ├── test_mcdm_traditional.py
 │   ├── test_mcdm_textbook.py
-│   ├── test_evidential_reasoning.py
 │   ├── test_ranking_pipeline_nan.py
 │   ├── test_forecasting.py
 │   ├── test_missing_data.py
@@ -146,7 +143,7 @@ ml-mcdm/
     ├── dataset_description.md  # Data description
     ├── workflow.md        # Pipeline workflow
     ├── weighting.md       # Weight calculation details
-    ├── ranking.md         # ER ranking methodology
+    ├── ranking.md         # ranking methodology
     └── forecast.md        # ML forecasting methods
 ```
 
@@ -167,35 +164,14 @@ ml-mcdm/
 | Document | Description |
 |----------|-------------|
 | [weighting.md](docs/weighting.md) | Hierarchical Adaptive CRITIC methodology |
-| [ranking.md](docs/ranking.md) | Hierarchical MCDM + Evidential Reasoning details |
+| [ranking.md](docs/ranking.md) | Hierarchical MCDM methodology details |
 | [forecast.md](docs/forecast.md) | Ensemble ML forecasting architecture |
 
 ---
 
 ## Methodology Highlights
 
-### Evidential Reasoning (ER)
-
-> **Note:** ER aggregation is **disabled by default** (`use_evidential_reasoning = False`). The framework supports ER fusion but it is not active in the current pipeline configuration.
-
-The framework supports combining multiple assessments into belief distributions over evaluation grades:
-
-$$
-\text{Belief} = \{(\text{Excellent}, \beta_E), (\text{Good}, \beta_G), (\text{Fair}, \beta_F), (\text{Poor}, \beta_P), (\text{Bad}, \beta_B), (H, \beta_H)\}
-$$
-
-**Pairwise combination:**
-$$
-\beta_n = K \left[\beta_{1,n}\beta_{2,n} + \beta_{1,n}\beta_{2,H} + \beta_{1,H}\beta_{2,n}\right]
-$$
-
-Where K is normalization constant handling conflicts.
-
-**Two-stage architecture (available but disabled by default):**
-1. **Stage 1**: Within each criterion, combine method scores via ER
-2. **Stage 2**: Combine 8 criterion beliefs via weighted ER
-
-**Reference:** Yang, J.B., & Xu, D.L. (2002). On the evidential reasoning algorithm. *IEEE Trans. SMC-A*, 32(3), 289-304.
+---
 
 ---
 
@@ -259,9 +235,7 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 ### Core Methodologies
 
-1. **Yang, J.B., & Xu, D.L.** (2002). On the evidential reasoning algorithm for multiple attribute decision analysis under uncertainty. *IEEE Transactions on Systems, Man, and Cybernetics—Part A*, 32(3), 289-304.
-
-2. **Hwang, C.L., & Yoon, K.** (1981). *Multiple Attribute Decision Making: Methods and Applications*. Springer.
+1. **Hwang, C.L., & Yoon, K.** (1981). *Multiple Attribute Decision Making: Methods and Applications*. Springer.
 
 3. **Diakoulaki, D., Mavrotas, G., & Papayannakis, L.** (1995). Determining objective weights in multiple criteria problems: The CRITIC method. *Computers & Operations Research*, 22(7), 763-770.
 

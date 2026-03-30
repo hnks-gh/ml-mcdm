@@ -141,9 +141,9 @@ class TestMinMaxNormalizeNaN:
 #
 # Validates that:
 #   1. HierarchicalRankingPipeline defaults to use_evidential_reasoning=True.
-#   2. rank_fast() returns None immediately when ER is disabled.
+#   2. rank_fast() returns None immediately when ranking aggregation is disabled.
 #   3. HierarchicalRankingResult with er_result=None returns None from all
-#      ER-derived properties (final_ranking, final_scores, kendall_w, top_n).
+#      Ranking aggregation properties (final_ranking, final_scores, kendall_w, top_n).
 #   4. summary() returns a meaningful string even without er_result.
 # ---------------------------------------------------------------------------
 
@@ -164,7 +164,7 @@ class TestERToggle:
         assert pl.use_evidential_reasoning is False
 
     def test_rank_fast_returns_none_when_er_disabled(self):
-        """rank_fast() must return None immediately when ER is disabled."""
+        """rank_fast() must return None immediately when ranking aggregation is disabled."""
         pl = HierarchicalRankingPipeline(use_evidential_reasoning=False)
         result = pl.rank_fast(
             precomputed_scores={},
@@ -197,7 +197,7 @@ class TestERToggle:
     def test_kendall_w_is_nan_when_er_disabled(self):
         result = self._make_result_no_er()
         kw = result.kendall_w
-        # When ER is disabled, kendall_w is either None or NaN (no ER consensus)
+        # When ranking aggregation is disabled, kendall_w is either None or NaN (no ranking consensus)
         assert kw is None or (kw != kw)  # NaN != NaN is True
 
     def test_top_n_is_none_when_er_disabled(self):

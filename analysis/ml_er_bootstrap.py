@@ -1,8 +1,8 @@
 """
-Bootstrap Analysis for ML Forecasting and Evidential Reasoning.
+Bootstrap Analysis for ML Forecasting and Hierarchical Ranking.
 
 This module provides bootstrap-based uncertainty quantification for both 
-machine learning forecasts and Evidential Reasoning (ER) aggregations. It 
+machine learning forecasts and hierarchical ranking aggregations. It 
 enables the estimation of confidence intervals, feature importance 
 stability, and belief distribution sensitivity.
 
@@ -15,16 +15,16 @@ Key Features
   rankings across resampled data folds.
 - **Model Contribution Uncertainty**: Uses Dirichlet perturbation to 
   estimate variance in ensemble model weighting.
-- **ER Belief Bootstrap**: Quantifies the stability of final utility 
-  scores and dominant grade assignments under belief noise.
+- **Ranking Uncertainty**: Quantifies the stability of final utility 
+  scores and dominant grade assignments under score noise.
 
 References
 ----------
 - Efron & Tibshirani (1993). "An Introduction to the Bootstrap." Chapman & Hall.
 - Davison & Hinkley (1997). "Bootstrap Methods and Their Application." 
   Cambridge University Press.
-- Yang & Xu (2002). "On the evidential reasoning algorithm for multiple 
-  attribute decision analysis under uncertainty." IEEE Transactions.
+- Yang & Xu (2002). "On the ranking aggregation algorithm for multiple 
+  attribute decision analysis under uncertainty." IEEE Transactions. (Reference for ranking aggregation)
 """
 
 import numpy as np
@@ -77,7 +77,7 @@ class ForecastBootstrapResult:
 
 @dataclass
 class ERBootstrapResult:
-    """Result container for ER belief distribution bootstrap analysis."""
+    """Result container for ranking aggregation bootstrap analysis."""
     mean_beliefs: Dict[str, np.ndarray]        # entity → mean belief vector
     std_beliefs: Dict[str, np.ndarray]         # entity → std belief vector
     ci_lower_beliefs: Dict[str, np.ndarray]    # entity → lower CI per grade
@@ -93,7 +93,7 @@ class ERBootstrapResult:
     def summary(self) -> str:
         lines = [
             f"\n{'='*70}",
-            "EVIDENTIAL REASONING BOOTSTRAP RESULTS",
+            "RANKING AGGREGATION BOOTSTRAP RESULTS",
             f"{'='*70}",
             f"Effective iterations: {self.effective_iterations}",
             f"Convergence rate:     {self.convergence_rate:.1%}",
@@ -268,15 +268,15 @@ class ForecastBootstrap:
 
 
 # ============================================================================
-# ER Bootstrap
+# Ranking Aggregation Bootstrap
 # ============================================================================
 
 class ERBootstrap:
     """
-    Bootstrap uncertainty quantification for Evidential Reasoning aggregations.
+    Bootstrap uncertainty quantification for hierarchical ranking aggregations.
 
-    Perturbs input belief distributions using Gaussian noise then projects
-    back onto the probability simplex to estimate uncertainty in final ER scores.
+    Estimates uncertainty in final ranking scores by perturbing 
+    input distributions.
 
     Parameters
     ----------
@@ -298,7 +298,7 @@ class ERBootstrap:
         noise_scale: float = 0.05,
     ):
         """
-        Initialize the ER bootstrap analyzer.
+        Initialize the ranking bootstrap analyzer.
 
         Parameters
         ----------
@@ -320,14 +320,14 @@ class ERBootstrap:
 
     def run(self, er_result, engine=None) -> ERBootstrapResult:
         """
-        Bootstrap ER aggregation uncertainty.
+        Bootstrap ranking aggregation uncertainty.
 
         Parameters
         ----------
-        er_result : ERResult
-            Result from EvidentialReasoningEngine or HierarchicalER.
-        engine : EvidentialReasoningEngine, optional
-            ER engine (used to obtain grade labels). If None, inferred from
+        er_result : RankingResult
+            Result from ranking engine or HierarchicalRanking.
+        engine : RankingEngine, optional
+            Ranking engine (used to obtain grade labels). If None, inferred from
             er_result or defaults to 5-grade scale.
 
         Returns
@@ -348,7 +348,7 @@ class ERBootstrap:
         N_grades = len(grades)
 
         if not hasattr(er_result, 'final_scores'):
-            logger.warning("ERBootstrap: er_result has no final_scores")
+            logger.warning("RankingBootstrap: er_result has no final_scores")
             return self._empty_result(grades)
 
         entities = list(er_result.final_scores.index)
@@ -380,7 +380,7 @@ class ERBootstrap:
 
             except Exception as exc:
                 failed += 1
-                logger.warning(f"ER bootstrap iteration {b} failed: {exc}")
+                logger.warning(f"Ranking bootstrap iteration {b} failed: {exc}")
                 for i, entity in enumerate(entities):
                     boot_utilities[b, i] = float(
                         er_result.final_scores.get(entity, 0.5)
@@ -424,7 +424,7 @@ class ERBootstrap:
 
         convergence_rate = 1.0 - (failed / B)
         logger.info(
-            f"ERBootstrap: {B - failed}/{B} successful "
+            f"RankingBootstrap: {B - failed}/{B} successful "
             f"(convergence={convergence_rate:.1%})"
         )
 
@@ -475,7 +475,7 @@ def er_bootstrap(
     confidence: float = 0.95,
     noise_scale: float = 0.05,
 ) -> ERBootstrapResult:
-    """Convenience function: bootstrap uncertainty for ER belief distributions."""
+    """Convenience function: bootstrap uncertainty for ranking distributions."""
     return ERBootstrap(
         n_iterations=n_iterations, seed=seed,
         confidence=confidence, noise_scale=noise_scale,

@@ -1,9 +1,9 @@
 """
-Sensitivity Analysis for ML Forecasting and Evidential Reasoning.
+Sensitivity Analysis for ML Forecasting and Hierarchical Ranking.
 
 This module provides a comprehensive suite of sensitivity analysis tools to 
 evaluate the robustness of the ML-MCDM pipeline. It covers both the 
-machine learning forecasting track and the Evidential Reasoning (ER) 
+machine learning forecasting track and the hierarchical ranking 
 aggregation track, using techniques such as bootstrap resampling, 
 leave-one-out (LOO) impact assessment, and one-at-a-time (OAT) perturbations.
 
@@ -11,18 +11,18 @@ Key Features
 ------------
 - **ML Forecast Sensitivity**: Assesses feature importance stability, 
   model contribution impact, and temporal prediction consistency.
-- **ER Metric Sensitivity**: Evaluates the stability of belief 
+- **Ranking Metric Sensitivity**: Evaluates the stability of score 
   distributions, grade thresholds, and aggregation weights.
 - **Cross-Level Consistency**: Measures the alignment between local 
   criterion scores and final composite rankings.
 - **Uncertainty Propagation**: Quantifies how localized noise in feature 
-  data or belief assignments impacts global decision outcomes.
+  data or score assignments impacts global decision outcomes.
 
 References
 ----------
 - Saltelli et al. (2008). "Global Sensitivity Analysis: The Primer." Wiley.
-- Yang & Xu (2002). "On the evidential reasoning algorithm for multiple 
-  attribute decision analysis under uncertainty." IEEE Transactions.
+- Yang & Xu (2002). "On the ranking aggregation algorithm for multiple 
+  attribute decision analysis under uncertainty." IEEE Transactions. (Reference for ranking aggregation)
 - Gneiting & Raftery (2007). "Strictly Proper Scoring Rules, Prediction, 
   and Estimation." JASA.
 """
@@ -118,14 +118,14 @@ class MLSensitivityResult:
 
 @dataclass
 class ERSensitivityResult:
-    """Sensitivity analysis results for Evidential Reasoning."""
+    """Sensitivity analysis results for ranking aggregation."""
 
     # Per-criterion belief sensitivity
     criterion_belief_sensitivity: Dict[str, float]    # OAT rank disruption per criterion
     grade_threshold_sensitivity: Dict[str, float]     # rank change under grade utility shift
 
     # Aggregation weight sensitivity
-    weight_sensitivity: Dict[str, float]              # sensitivity to ER weight perturbations
+    weight_sensitivity: Dict[str, float]              # sensitivity to aggregation weight perturbations
 
     # Utility sensitivity
     utility_sensitivity: Dict[str, float]             # utility interval width per entity
@@ -139,17 +139,17 @@ class ERSensitivityResult:
     high_uncertainty_entities: List[str]
 
     # Overall
-    overall_er_robustness: float
+    overall_er_robustness: float  # Legacy field for ranking robustness
 
     def summary(self) -> str:
         lines = [
             f"\n{'='*70}",
-            "EVIDENTIAL REASONING SENSITIVITY ANALYSIS",
+            "RANKING AGGREGATION SENSITIVITY ANALYSIS",
             f"{'='*70}",
-            f"Overall ER Robustness: {self.overall_er_robustness:.4f}",
+            f"Overall Ranking Robustness: {self.overall_er_robustness:.4f}",
             f"Mean Belief Entropy:   {self.mean_belief_entropy:.4f}",
             f"\n{'-'*70}",
-            "CRITERION SENSITIVITY (higher = more sensitive to belief changes):",
+            "CRITERION SENSITIVITY (higher = more sensitive to ranking changes):",
             f"{'-'*70}",
         ]
         for crit, sens in sorted(
@@ -161,7 +161,7 @@ class ERSensitivityResult:
         if self.weight_sensitivity:
             lines.extend([
                 f"\n{'-'*70}",
-                "ER WEIGHT SENSITIVITY:",
+                "RANKING WEIGHT SENSITIVITY:",
                 f"{'-'*70}",
             ])
             for src, sens in sorted(
@@ -194,7 +194,7 @@ class ERSensitivityResult:
 
 @dataclass
 class CombinedSensitivityResult:
-    """Combined ML + ER sensitivity result returned by pipeline."""
+    """Combined ML + ranking sensitivity result returned by pipeline."""
     ml_sensitivity: Optional[MLSensitivityResult] = None
     er_sensitivity: Optional[ERSensitivityResult] = None
 
@@ -440,19 +440,19 @@ class MLSensitivityAnalysis:
 
 
 # ============================================================================
-# ER Sensitivity Analysis
+# Ranking Sensitivity Analysis
 # ============================================================================
 
 class ERSensitivityAnalysis:
     """
-    Comprehensive sensitivity analysis for Evidential Reasoning results.
+    Comprehensive sensitivity analysis for ranking aggregation results.
 
     Parameters
     ----------
     n_simulations : int, default=500
-        Monte Carlo simulations for belief perturbation.
+        Monte Carlo simulations for score perturbation.
     perturbation_range : float, default=0.10
-        Maximum belief perturbation magnitude.
+        Maximum score perturbation magnitude.
     seed : int, default=42
         Random seed.
     """
@@ -464,12 +464,12 @@ class ERSensitivityAnalysis:
         seed: int = 42,
     ):
         """
-        Initialize the ER sensitivity analyzer.
+        Initialize the ranking sensitivity analyzer.
 
         Parameters
         ----------
         n_simulations : int, default=500
-            Number of Monte Carlo simulations to run for belief and 
+            Number of Monte Carlo simulations to run for score and 
             threshold perturbations.
         perturbation_range : float, default=0.10
             The maximum relative perturbation magnitude (e.g., 0.10 = ±10%).
@@ -487,7 +487,7 @@ class ERSensitivityAnalysis:
         ranking_result=None,
     ) -> ERSensitivityResult:
         """
-        Run full ER sensitivity analysis.
+        Run full ranking sensitivity analysis.
 
         Parameters
         ----------
@@ -728,7 +728,7 @@ def run_er_sensitivity_analysis(
     perturbation_range: float = 0.10,
     seed: int = 42,
 ) -> ERSensitivityResult:
-    """Convenience function: ER sensitivity analysis."""
+    """Convenience function: ranking sensitivity analysis."""
     return ERSensitivityAnalysis(
         n_simulations=n_simulations,
         perturbation_range=perturbation_range,
@@ -746,7 +746,7 @@ def run_sensitivity_analysis(
     **kwargs,
 ) -> CombinedSensitivityResult:
     """
-    Unified sensitivity analysis for ML and/or ER results.
+    Unified sensitivity analysis for ML and/or ranking results.
 
     At least one of forecast_result or er_result must be provided.
 

@@ -4,8 +4,8 @@ ML-MCDM Pipeline Orchestrator.
 
 This module provides the central orchestration logic for the hierarchical 
 ML-MCDM analytical pipeline. It coordinates seven distinct phases of 
-analysis, from data loading to ensemble forecasting and publication-ready 
-reporting.
+analysis, from data loading to ensemble forecasting, ranking 
+aggregation, and publication-ready reporting.
 
 Phases
 ------
@@ -1729,7 +1729,7 @@ class MLMCDMPipeline:
         Dict[str, Any]
             Dictionary containing combined sensitivity and robustness metrics.
         """
-        self.logger.info("Running ML + ER sensitivity analysis")
+        self.logger.info("Running ML + hierarchical ranking sensitivity analysis")
 
         er_result = getattr(ranking_result, 'er_result', None)
         n_boot = getattr(getattr(self.config, 'validation', None), 'n_simulations', 200)
@@ -1756,11 +1756,11 @@ class MLMCDMPipeline:
                     n_simulations=n_boot, seed=seed
                 ).analyze(er_result, ranking_result=ranking_result)
                 self.logger.info(
-                    f"  ER robustness: {er_sens.overall_er_robustness:.4f} "
+                    f"  Ranking robustness: {er_sens.overall_er_robustness:.4f} "
                     f"(mean_entropy={er_sens.mean_belief_entropy:.4f})"
                 )
             except Exception as exc:
-                self.logger.warning(f"ER sensitivity failed (non-fatal): {exc}")
+                self.logger.warning(f"Ranking sensitivity failed (non-fatal): {exc}")
 
         sens_result = CombinedSensitivityResult(
             ml_sensitivity=ml_sens, er_sensitivity=er_sens
@@ -1782,7 +1782,7 @@ class MLMCDMPipeline:
         Validate the technical and statistical integrity of the pipeline.
 
         Performs sanity checks on rank distributions, conformal coverage, 
-        and evidential reasoning consistency.
+        and ranking aggregation consistency.
 
         Parameters
         ----------

@@ -378,7 +378,7 @@ class VisualizationOrchestrator:
                 top_n=getattr(self, '_ranking_top_n', 20),
             )
 
-        # fig01d and fig01e skipped (ER removed)
+        # fig01d and fig01e skipped (ranking details removed)
 
         # fig02b — MC rank-uncertainty error-bar chart
         mc_stats = weights.get('mc_province_stats', {})
