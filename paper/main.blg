@@ -1,68 +1,19 @@
-This is BibTeX, Version 0.99e
-Capacity: max_strings=200000, hash_size=200000, hash_prime=170003
-The top-level auxiliary file: main.aux
-Reallocating 'name_of_file' (item size: 1) to 9 items.
-The style file: plainnat.bst
-Reallocating 'name_of_file' (item size: 1) to 5 items.
-Database file #1: main.bib
-Warning--I didn't find a database entry for "scikit-learn"
-Warning--empty publisher in Bishop2006
-Warning--empty journal in Brans1985
-Warning--empty journal in Diakoulaki1995
-Warning--empty journal in Doove2014
-Warning--empty journal in Gibbs2021
-Warning--empty journal in Greco2019
-Warning--empty journal in Hwang1981
-Warning--empty journal in Kendall1948
-Warning--empty journal in Keshavarz2015
-Warning--empty journal in Opricovic2004
-Warning--empty journal in Romano2019
-Warning--empty publisher in Rubin1987
-Warning--empty publisher in Scholkopf2002
-Warning--empty publisher in vanBuuren2018
-Warning--empty journal in vanBuuren2011
-Warning--empty publisher in Vapnik1995
-Warning--empty publisher in Vovk2005
-Warning--empty journal in Zavadskas1994
-You've used 22 entries,
-            2773 wiz_defined-function locations,
-            701 strings with 7103 characters,
-and the built_in function-call counts, 7945 in all, are:
-= -- 636
-> -- 465
-< -- 15
-+ -- 160
-- -- 138
-* -- 548
-:= -- 1273
-add.period$ -- 65
-call.type$ -- 22
-change.case$ -- 105
-chr.to.int$ -- 22
-cite$ -- 62
-duplicate$ -- 427
-empty$ -- 682
-format.name$ -- 175
-if$ -- 1622
-int.to.chr$ -- 1
-int.to.str$ -- 1
-missing$ -- 27
-newline$ -- 117
-num.names$ -- 88
-pop$ -- 282
-preamble$ -- 1
-purify$ -- 89
-quote$ -- 0
-skip$ -- 321
-stack$ -- 0
-substring$ -- 44
-swap$ -- 10
-text.length$ -- 0
-text.prefix$ -- 0
-top$ -- 0
-type$ -- 212
-warning$ -- 18
-while$ -- 66
-width$ -- 0
-write$ -- 251
-(There were 19 warnings)
+[0] Config.pm:328> INFO - This is Biber 2.21
+[0] Config.pm:331> INFO - Logfile is 'main.blg'
+[332] biber-MSWIN64:342> INFO - === 
+[418] Biber.pm:421> INFO - Reading 'main.bcf'
+[1064] Biber.pm:1002> INFO - Found 23 citekeys in bib section 0
+[1121] Biber.pm:4487> INFO - Processing section 0
+[1150] Biber.pm:4678> INFO - Looking for bibtex file 'main.bib' for section 0
+[1263] bibtex.pm:1713> INFO - LaTeX decoding ...
+[1344] bibtex.pm:1519> INFO - Found BibTeX data source 'main.bib'
+[1904] UCollate.pm:68> INFO - Overriding locale 'en-US' defaults 'normalization = NFD' with 'normalization = prenormalized'
+[1905] UCollate.pm:68> INFO - Overriding locale 'en-US' defaults 'variable = shifted' with 'variable = non-ignorable'
+[1905] Biber.pm:4307> INFO - Sorting list 'apa/apasortcite//global/global/global' of type 'entry' with template 'apa' and locale 'en-US'
+[1905] Biber.pm:4313> INFO - No sort tailoring available for locale 'en-US'
+[2065] UCollate.pm:68> INFO - Overriding locale 'en-US' defaults 'normalization = NFD' with 'normalization = prenormalized'
+[2065] UCollate.pm:68> INFO - Overriding locale 'en-US' defaults 'variable = shifted' with 'variable = non-ignorable'
+[2065] Biber.pm:4307> INFO - Sorting list 'apa/global//global/global/global' of type 'entry' with template 'apa' and locale 'en-US'
+[2065] Biber.pm:4313> INFO - No sort tailoring available for locale 'en-US'
+[2201] bbl.pm:676> INFO - Writing 'main.bbl' with encoding 'UTF-8'
+[2338] bbl.pm:779> INFO - Output to main.bbl

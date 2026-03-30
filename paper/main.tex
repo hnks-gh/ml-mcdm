@@ -17,12 +17,14 @@
 
 % ---------- Encoding & Fonts ----------
 \usepackage{fontspec}
-\setmainfont[Path=./font/]{CharisSIL-Regular.ttf}
-\setmainfont[Path=./font/,Extension=.ttf,
+\setmainfont[
+  Path=./font/,
+  Extension=.ttf,
+  UprightFont=CharisSIL-Regular,
   ItalicFont=CharisSIL-Italic,
   BoldFont=CharisSIL-Bold,
-  BoldItalicFont=CharisSIL-BoldItalic]{CharisSIL-Regular}
-\usepackage[scaled=0.90]{helvet}
+  BoldItalicFont=CharisSIL-BoldItalic
+]{CharisSIL-Regular}
 \usepackage[%
   stretch=25,%
   shrink=25,%
@@ -114,8 +116,8 @@
 \renewcommand{\headrulewidth}{0.4pt}
 
 % ---------- Bibliography ----------
-\usepackage[numbers,sort&compress]{natbib}
-\bibliographystyle{plainnat}
+\usepackage[style=apa, backend=biber, natbib=true]{biblatex}
+\addbibresource{main.bib}
 
 % ---------- Miscellaneous ----------
 \usepackage{xspace}
@@ -152,7 +154,7 @@
 
 \begin{titlepage}
   \centering
-  \vspace*{2cm}
+  \vspace*{-2cm}
 
   {\LARGE\bfseries
     A Hybrid Multi-Criteria Decision Making and Ensemble Learning Framework for Performance Assessment: Evidence from Vietnam's PAPI
@@ -232,6 +234,8 @@
 
 \subsection{Data Description}
 \label{subsec:data}
+
+The Viet Nam Provincial Governance and Public Administration Performance Index (\PAPI) constitutes a comprehensive sociological surveillance instrument designed to evaluate the efficacy of state performance and public service delivery through the lived experiences of the Vietnamese citizenry. Methodologically grounded in representative household surveys, the index provides a multi-dimensional assessment of sub-national governance quality, encompassing critical domains such as transparency, vertical accountability, and the control of corruption \citep{PAPI2024}. Since its inception, \PAPI has evolved into a pivotal evidentiary roadmap for provincial authorities, offering standardized metrics to benchmark institutional progress and catalyze systemic administrative improvements within the national development context.
 
 % ================================================================
 % Section 2.1: PAPI Dataset as Multi-Level Longitudinal Structure
@@ -320,20 +324,22 @@ The hierarchical composition of criteria and sub-criteria is presented in Table~
 
 The PAPI sub-criteria capture multiple dimensions of provincial governance capacity and citizen perception. Criterion $C_1$ (Civic Participation) reflects the extent and inclusiveness of civic engagement in provincial affairs, encompassing electoral participation and consultation mechanisms. Criterion $C_2$ (Transparency of Local Decision-Making) assesses the accessibility of provincial government information and transparency of budget execution and policy decisions. Criterion $C_3$ (Vertical Accountability) measures government responsiveness to citizen grievances and access to justice mechanisms for redress. Criterion $C_4$ (Control of Corruption in the Public Sector) captures the perceived effectiveness of anti-corruption measures and equitable treatment in service delivery. Criterion $C_5$ (Public Administrative Procedures) evaluates the efficiency and simplification of administrative procedures and the burden of compliance on businesses and individuals. Criterion $C_6$ (Public Service Delivery) measures the quality and accessibility of province-delivered public services including healthcare, education, infrastructure, and utilities. Criterion $C_7$ (Environmental Governance) reflects environmental protection, sustainability of natural resources, and response to pollution and climate issues. Finally, Criterion $C_8$ (E-Governance) captures the availability of online government services, digital information systems, and internet accessibility.
 
-\subsection{Missing Data Structure and Imputation}
+\subsection{Missing Data Structure and Data Imputation}
 \label{subsec:missing}
 
 % ================================================================
 % Section 2.2: Missing Data Analysis and Robust Imputation Strategy
 % ================================================================
 
-The \PAPI dataset exhibits substantial structural missingness reflecting both design constraints and administrative disruptions. The data comprise a balanced panel of 63 Vietnamese provinces measured across 14 annual survey waves (2011--2024) with 29 governance sub-criteria per province-year observation, yielding a theoretical maximum of 25,578 data cells (63 $\times$ 14 $\times$ 29). Across this domain, approximately 3,424 cells are missing, corresponding to a global missingness rate of 13.4\%. While non-trivial, this missingness follows deterministic and partially predictable patterns that permit principled recovery. Understanding and properly addressing these missing data is essential to prevent bias propagation in downstream weighting, ranking, and forecasting analyses.
+The \PAPI dataset exhibits substantial structural missingness reflecting both design constraints and administrative disruptions. The data comprise a balanced panel of 63 Vietnamese provinces measured across 14 annual survey waves (2011--2024) with 29 governance sub-criteria per province-year observation, yielding a theoretical maximum of 25,578 data cells (63 $\times$ 14 $\times$ 29). Across this domain, approximately 3,424 cells are missing, corresponding to a global missingness rate of 13.4\%. While non-trivial, this missingness follows deterministic and partially predictable patterns that permit principled recovery. Understanding and properly addressing these missing data is essential to prevent bias propagation in the ensemble forecasting phase.
+
+It is imperative to distinguish the analytical scope of the data imputation procedure within this study's bifurcated framework. The reconstructed dataset, generated through the \MICE algorithm, is specifically and exclusively utilized to facilitate the ensemble machine learning forecasting phase, where maximum temporal and cross-sectional continuity is mathematically required for model training and stability. Conversely, the hierarchical \CRITIC weighting and multi-criteria ranking procedures (Section~\ref{subsec:critic} and~\ref{subsec:mcdm}) respect the empirical integrity of the initial dataset. These phases employ an adaptive exclusion mechanism that calculates composite indices based only on observed sub-criteria for each respective province-year observation, thereby ensuring that the resulting performance rankings are grounded in direct citizen experience rather than imputed values.
 
 \subsubsection{Missing Data Characterization and Quantification}
 
 Missing data in the \PAPI panel arise from three distinct mechanisms, each with different statistical properties and implications for imputation strategy. Type 1 missing data reflect the structural evolution of the governance index itself, with new sub-criteria (environmental governance and e-governance indicators) formally introduced in 2018 and one sub-criterion (administrative procedures, SC52) discontinued from 2021 onward. Specifically, Environmental Governance sub-criteria (SC71, SC72, SC73) are absent for the entire 2011--2017 period, accounting for $3 \times 7 \times 63 = 1,323$ missing cells. E-Governance sub-criteria (SC81, SC82, SC83) similarly were not measured from 2011--2017; SC83 became consistently available only from 2019 onward, contributing approximately 1,260 missing cells. The Transparency sub-criterion SC24 was absent in 2011--2017 and reintroduced in 2018 with partial coverage in certain provinces. Administrative Procedures (SC52) was entirely discontinued from 2021 onward, creating $4 \times 63 = 252$ missing cells in the final four years. Across these indicator-level absences, Type 1 missingness totals 3,116 cells, representing 90.9\% of all missing data. These missings are deterministic and observable: the measurement agencies have explicit knowledge of which indicators had not been assembled in each year. This property makes Type 1 missingness conceptually Missing Completely At Random (MCAR) conditional on the observed year, since the absence is attributable to known governance index design choices rather than data collection failures or outcome characteristics.
 
-Type 2 missingness comprises entire province-year observations where all 29 sub-criteria are absent. Nine such cases are identified, totaling 261 missing cells (Table~\ref{tab:missing_type2}). In 2014, provinces P15 and P56 are entirely missing. Three provinces (P14, P15, P18) lack complete data in 2021. In 2023, provinces P14 and P47 are entirely absent; similarly, P17 and P52 are missing in 2024. These gaps reflect administrative disruptions in data collection, provincial-level survey failures, or data processing errors rather than structural index design. Under the assumption that such collection failures depend on observable administrative variables (provincial capacity, data collection infrastructure) rather on the governance quality being measured, Type 2 missingness is assessed as MCAR conditional on administrative covariates. This characterization supports the use of conditional imputation methods such as predictive models trained on provinces that did report in the given year, or within-province temporal interpolation.
+Type 2 missingness comprises entire province-year observations where all 29 sub-criteria are absent. Nine such cases are identified, totaling 261 missing cells. In 2014, provinces P15 and P56 are entirely missing. Three provinces (P14, P15, P18) lack complete data in 2021. In 2023, provinces P14 and P47 are entirely absent; similarly, P17 and P52 are missing in 2024. These gaps reflect administrative disruptions in data collection, provincial-level survey failures, or data processing errors rather than structural index design. Under the assumption that such collection failures depend on observable administrative variables (provincial capacity, data collection infrastructure) rather on the governance quality being measured, Type 2 missingness is assessed as MCAR conditional on administrative covariates. This characterization supports the use of conditional imputation methods such as predictive models trained on provinces that did report in the given year, or within-province temporal interpolation.
 
 Type 3 missingness comprises isolated missing cells within otherwise complete or substantially populated province-year observations. Four province-year combinations exhibit this pattern. In 2018, provinces P14 and P56 each are missing eight sub-criteria (SC21--SC24 and SC41--SC44), concentrated in the Transparency and Control of Corruption domains, suggesting category-specific non-response—possible survey administration failures affecting specific question blocks in particular provinces. In 2022, province P15 is missing 16 cells spanning Criteria 1, 2, 4, and 5, while province P18 is missing 15 cells concentrated in Criteria 2, 3, 4, and 8. Type 3 consists of only 47 cells (1.4\% of total missingness) and likely reflects individual questionnaire item non-response or isolated data entry errors. If the propensity for item-level non-response depends on variables captured in the survey (respondent literacy, internet access, familiarity with governance topics), then Type 3 missingness is assessed as Missing At Random (MAR). Under this mechanism, MICE imputation including these auxiliary variables yields unbiased recovery \citep{Rubin1987}.
 
@@ -416,7 +422,7 @@ and (4) feature $j$ is updated with both observed and imputed values for use in 
 X_{\cdot j}^{(t)} = \begin{cases} X_{\text{obs}, j}^{(t-1)} & \text{observed cells} \\ X_{\text{miss}, j}^{(t)} & \text{imputed cells} \end{cases}
 \end{equation}
 
-For the regression component, this study employs ExtraTreesRegressor (Extremely Randomized Trees) following guidance in the imputation literature \citep{Doove2014}. ExtraTreesRegressor is selected because it captures nonlinear relationships among governance criteria without assuming parametric form; exhibits robustness to scale heterogeneity since governance metrics span different measurement scales and distributions; achieves rapid convergence with tree-based ensembles typically stabilizing by iterations 10--15; and integrates seamlessly with scikit-learn's \texttt{IterativeImputer} implementation \citep{scikit-learn}. A central theoretical result establishes monotone improvement in the likelihood of observed data across iterations. Under the assumption that the posterior distribution $p(X_{\text{miss}} \mid X_{\text{obs}})$ admits consistent estimation via the regression models employed, the log-likelihood of observed data satisfies \citep{vanBuuren2011, vanBuuren2018}:
+For the regression component, this study employs ExtraTreesRegressor (Extremely Randomized Trees) following guidance in the imputation literature \citep{Doove2014}. ExtraTreesRegressor is selected because it captures nonlinear relationships among governance criteria without assuming parametric form; exhibits robustness to scale heterogeneity since governance metrics span different measurement scales and distributions; achieves rapid convergence with tree-based ensembles typically stabilizing by iterations 10--15; and integrates seamlessly with scikit-learn's \texttt{IterativeImputer} implementation \citep{Pedregosa2011}. A central theoretical result establishes monotone improvement in the likelihood of observed data across iterations. Under the assumption that the posterior distribution $p(X_{\text{miss}} \mid X_{\text{obs}})$ admits consistent estimation via the regression models employed, the log-likelihood of observed data satisfies \citep{vanBuuren2011, vanBuuren2018}:
 \begin{equation}
 \label{eq:mice_monotone}
 \ell(X_{\text{obs}} \mid \hat{\theta}^{(t+1)}) \geq \ell(X_{\text{obs}} \mid \hat{\theta}^{(t)}) \quad \text{for all } t \geq 1
@@ -460,7 +466,7 @@ Random state & 42 & Reproducibility \\
 \end{tabular}
 \end{table}
 
-\subsubsection{Post-Imputation Data Quality and Robustness}
+\subsubsection{Post-Imputation Data Quality}
 
 After MICE imputation, the dataset contains no missing values. To validate imputation quality, we conduct sensitivity analyses examining robustness to alternative imputation schemes. Preliminary analyses confirm that:
 \begin{itemize}[itemsep=2pt]
@@ -473,7 +479,7 @@ These findings support the robustness and stability of results to imputation met
 
 \begin{table}[!ht]
 \centering
-\caption{Preliminary descriptive statistics of PAPI sub-criteria (post-imputation)}
+\caption{Post-imputation descriptive statistics of PAPI criteria)}
 \label{tab:descriptive}
 \small
 \begin{tabular}{c c c c c}
@@ -492,7 +498,7 @@ $C_8$ (E-Governance) & 2.12 & 0.37 & 0.52 & 3.05 \\
 \end{tabular}
 \end{table}
 
-Note: Statistics computed from the balanced panel after missing-value imputation. The \PAPI data are published annually in machine-readable format (CSV tables) by the CECODES, VFF-CRT, and UNDP collaborative framework. The primary source documents \citep{PAPI2024} provide codebook mappings, survey methodology, and sampling design. Data were sourced from official public releases covering 2011--2024. Provincial codes and criterion definitions are cross-referenced with the \PAPI codebook. Consistent with best practices in handling missing data in longitudinal governance indices, our imputation strategy ensures that downstream weighting and ranking analyses are not compromised by data quality issues, establishing a foundation for the reliable weighting and ranking procedures presented in Section~\ref{subsec:critic}.
+The adoption of a multivariate recursive partitioning approach for missing data recovery ensures that the \PAPI panel is transformed into a rigorous, balanced longitudinal structure suitable for high-precision performance assessment. By preserving the inherent cross-sectional and temporal correlation structures through \MICE with extremely randomized trees, the imputation strategy mitigates the risk of estimation bias and restores the statistical power of the dataset for the ensemble machine learning forecasting phase. As previously established, while the weighting and ranking analyses operate on the original dataset through adaptive missing-value handling, the forecasting phase leverages this fully populated evidentiary base to ensure predictive reliability and mathematical stability.
 
 \subsection{CRiteria Importance Through Inter-criteria Correlation}
 \label{subsec:critic}
@@ -577,7 +583,7 @@ Z_{i,k} = \sum_{j=1}^{n_k} u_{k,j} \cdot X_{i,k,j}
 
 where $u_{k,j}$ are the Level 1 local weights (from Equation~\eqref{eq:weights_level1}), and $X_{i,k,j}$ are the \emph{original} (pre-normalized) sub-criterion values for province $i$ in criterion $k$, sub-criterion $j$.
 
-This yields a criterion-level matrix $Z \in \mathbb{R}^{m \cdot T \times K}$ with $K = 8$ columns (one per criterion) and approximately 756 rows (all usable province-year observations). \textbf{Critical design choice: Using original values, not normalized values.} Equation~\eqref{eq:criterion_composite} deliberately uses the original $X_{i,k,j}$ values rather than the normalized $\tilde{X}_{k,ij}$ values. Why? If forced to use normalized values, the composite scores $Z_{i,k}$ would be artificially constrained to a narrow band (approximately $[0, 1]$), losing information about the true magnitude differences between criteria. Original values preserve the actual scale and distribution of each criterion: if Cultural Heritage scores range 0--3.5 and Economic Justice ranges 1.2--3.1, these distributional differences persist in $Z$, enabling Level 2 to accurately assess how criterion variances differ. This design prevents \emph{double normalization}, which would compress information and distort Level 2's correlation structure.
+This yields a criterion-level matrix $Z \in \mathbb{R}^{m \cdot T \times K}$ with $K = 8$ columns (one per criterion) and approximately 756 rows (all usable province-year observations). In cases where one or more sub-criteria are missing for a specific province-year $(i, t)$, the composite score $Z_{i,k}$ is computed by adaptively re-normalizing the local weights (\ie $u_{k,j} / \sum_{j \in \text{Obs}} u_{k,j}$ where $\text{Obs}$ is the set of observed indicators) to preserve the proportionality of the available measurements. \textbf{Critical design choice: Using original values, not normalized values.} Equation~\eqref{eq:criterion_composite} deliberately uses the original $X_{i,k,j}$ values rather than the normalized $\tilde{X}_{k,ij}$ values. Why? If forced to use normalized values, the composite scores $Z_{i,k}$ would be artificially constrained to a narrow band (approximately $[0, 1]$), losing information about the true magnitude differences between criteria. Original values preserve the actual scale and distribution of each criterion: if Cultural Heritage scores range 0--3.5 and Economic Justice ranges 1.2--3.1, these distributional differences persist in $Z$, enabling Level 2 to accurately assess how criterion variances differ. This design prevents \emph{double normalization}, which would compress information and distort Level 2's correlation structure.
 
 \textbf{Rationale and Separation of Information Layers:} The composite matrix $Z$ performs dimensionality reduction (from 29 dimensions to 8), guided by data-driven Level 1 weights rather than ad hoc averaging. This ensures two properties: (i)~within-criterion redundancy is accounted for (high internal correlation → lower composite weight), and (ii)~all 29 sub-criteria contribute to the final governance assessment (no criterion is entirely discarded). Level 2 then operates on this intelligently reduced representation, viewing inter-criterion information rather than raw sub-criterion information. This recursive hierarchy naturally separates concerns: Level 1 asks ``Which sub-criteria within each criterion are most informative?'' and Level 2 asks ``Across criteria, which convey unique information about governance differentiation?''
 
@@ -639,7 +645,7 @@ This product decomposes global importance into multiplicative components: each g
 
 \textbf{Proof sketch:} For each criterion $k$, by definition Level 1 weights satisfy $\sum_{j=1}^{n_k} u_{k,j} = 1$ (they are normalized on criterion $k$'s simplex). Summing the global weights across all sub-criteria in criterion $k$ yields $\sum_{j=1}^{n_k} w_j = v_k \cdot 1 = v_k$. Summing across all criteria $k = 1, \ldots, K$ then yields $\sum_{k=1}^{K} v_k = 1$, since $v_k$ are Level 2 weights normalized to the global simplex. Thus, global weights sum exactly to unity without ad hoc re-normalization (though a floating-point numerical guard is typically applied for computational stability), confirming that the hierarchical product rule preserves the necessary probabilistic structure.
 
-\textbf{Final Aggregation and Analysis Pipeline.} These 29 globally-normalized weightsare now passed to both the Hierarchical \MCDM ranking pipeline (Section~\ref{subsec:mcdm}) and to the ensemble forecasting pipeline (Sections~\ref{subsec:base_models} onwards). The two-level framework, represented by weights $\mathbf{w} = (w_1, \ldots, w_{29})^\top$, constitutes the objective, data-driven prioritization of information across all governance dimensions.
+\textbf{Final Aggregation and Analysis Pipeline.} These 29 globally-normalized weights are now passed to both the Hierarchical \MCDM ranking pipeline (Section~\ref{subsec:mcdm}) and to the ensemble forecasting pipeline (Section~\ref{subsec:ensemble_forecasting}). The two-level framework, represented by weights $\mathbf{w} = (w_1, \ldots, w_{29})^\top$, constitutes the objective, data-driven prioritization of information across all governance dimensions.
 
 \subsubsection{Weighting Analysis}
 
@@ -754,9 +760,9 @@ Values near 0 indicate ranking stability; larger values (up to $n-1 = 28$) indic
 \subsection{MCDM Ranking Methods}
 \label{subsec:mcdm}
 
-To construct a robust performance index that is invariant to methodological idiosyncrasies, we employ a multi-methodological framework comprising five distinct Multi-Criteria Decision Making (MCDM) algorithms. A known limitation of composite indexing is the sensitivity of the final ranking to the aggregation technique \citep{Greco2019}. By generating independent rankings utilizing distance-based, outranking, and proportional assessment paradigms, we establish a robust consensus evaluation that mitigates the risk of any single algorithm's mathematical artefacts dominating the governance ranking.
+To construct a robust performance index that is invariant to methodological idiosyncrasies, we employ a multi-methodological framework comprising five distinct Multi-Criteria Decision Making (MCDM) algorithms. A known limitation of composite indexing is the sensitivity of the final ranking to the aggregation technique \citep{Greco2016}. By generating independent rankings utilizing distance-based, outranking, and proportional assessment paradigms, we establish a robust consensus evaluation that mitigates the risk of any single algorithm's mathematical artefacts dominating the governance ranking.
 
-Let \( \tilde{X} \in \mathbb{R}^{m \times n} \) represent the performance matrix, where \( \tilde{x}_{ij} \in [0, 1] \) denotes the min-max normalized score of province \( i \) on sub-criterion \( j \) (as defined in Section~\ref{subsec:critic}), and \( w_j \) constitutes the corresponding global \CRITIC weight such that \( \sum_j w_j = 1 \). Given that the \PAPI assessment framework operates strictly with benefit-type indicators (as detailed in Table~\ref{tab:sc_properties}), cost-type formulations in the following algorithms are presented for generalized theoretical completeness but are effectively constrained to the benefit subspace in empirical application.
+Let \( \tilde{X} \in \mathbb{R}^{m \times n} \) represent the performance matrix, where \( \tilde{x}_{ij} \in [0, 1] \) denotes the min-max normalized score of province \( i \) on sub-criterion \( j \) (as defined in Section~\ref{subsec:critic}), and \( w_j \) constitutes the corresponding global \CRITIC weight such that \( \sum_j w_j = 1 \). Consistent with the weighting phase, the \MCDM ranking framework utilizes the original dataset, excluding missing values from the normalization and distance-based calculations. For province-year observations with missing data (primarily for environmental and e-governance indicators prior to 2018), the algorithms adaptively re-scale the global weights $\mathbf{w}$ to ensure that the composite index represents a valid weighted average of the observed performance dimensions. This methodology prevents the propagation of imputation uncertainty into the normative ranking of provincial governance performance. Given that the \PAPI assessment framework operates strictly with benefit-type indicators (as detailed in Table~\ref{tab:hierarchy}), cost-type formulations in the following algorithms are presented for generalized theoretical completeness but are effectively constrained to the benefit subspace in empirical application.
 
 \subsubsection{TOPSIS}
 \label{subsubsec:topsis}
@@ -1233,6 +1239,6 @@ the Breusch-Pagan test for heteroscedasticity, and the Shapiro-Wilk test for res
 %  REFERENCES
 % =============================================================
 
-\bibliography{main}
+\printbibliography
 
 \end{document}
