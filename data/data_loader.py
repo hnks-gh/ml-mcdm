@@ -51,6 +51,11 @@ class HierarchyMapping:
     subcriteria_names : Dict[str, str]
         Human-readable labels for each sub-criterion.
     """
+    
+    subcriteria_to_criteria: Dict[str, str]
+    criteria_to_subcriteria: Dict[str, List[str]]
+    criteria_names: Dict[str, str]
+    subcriteria_names: Dict[str, str]
 
     @property
     def all_subcriteria(self) -> List[str]:

@@ -726,6 +726,18 @@ class MLMCDMPipeline:
         HierarchicalRankingResult
             Rankings and scores for all alternatives.
         """
+        target_year = max(panel_data.years)
+        sc_weights = weights['global_sc_weights']
+        crit_weights = weights['criterion_weights']
+        
+        ranking_pipeline = HierarchicalRankingPipeline()
+        result = ranking_pipeline.rank(
+            panel_data=panel_data,
+            subcriteria_weights=sc_weights,
+            criterion_weights=crit_weights,
+            target_year=target_year,
+        )
+        return result
 
     def _run_hierarchical_ranking_all_years(
         self,
