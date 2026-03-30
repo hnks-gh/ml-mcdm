@@ -44,7 +44,7 @@ class TestImputationConfiguration:
         config = ImputationConfig()
         
         assert config.use_advanced_feature_imputation is True
-        assert config.mice_max_iter == 20
+        assert config.mice_max_iter == 40
         assert config.mice_n_nearest_features == 30
         assert config.temporal_imputation_min_periods == 2
         logger.info("✓ ImputationConfig default state correct")

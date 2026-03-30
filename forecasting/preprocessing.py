@@ -595,6 +595,7 @@ class PanelFeatureReducer:
         np.ndarray
             Reduced feature matrix.
         """
+        return self.fit(X, y, feature_names).transform(X)
 
     def inverse_importance(self, pc_importance: np.ndarray) -> np.ndarray:
         """

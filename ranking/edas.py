@@ -46,6 +46,16 @@ class EDASResult:
     weights : Dict[str, float]
         Criteria weights applied.
     """
+    PDA: pd.DataFrame
+    NDA: pd.DataFrame
+    SP: pd.Series
+    SN: pd.Series
+    NSP: pd.Series
+    NSN: pd.Series
+    AS: pd.Series
+    ranks: pd.Series
+    average_solution: pd.Series
+    weights: Dict[str, float]
     
     @property
     def final_ranks(self) -> pd.Series:

@@ -41,6 +41,14 @@ class TOPSISResult:
     weights : Dict[str, float]
         Criteria weights applied.
     """
+    scores: pd.Series
+    ranks: pd.Series
+    d_positive: pd.Series
+    d_negative: pd.Series
+    weighted_matrix: pd.DataFrame
+    ideal_solution: pd.Series
+    anti_ideal_solution: pd.Series
+    weights: Dict[str, float]
     
     @property
     def final_ranks(self) -> pd.Series:

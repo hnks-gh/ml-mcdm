@@ -50,6 +50,18 @@ class VIKORResult:
     v : float
         The 'weight of strategy' (majority of criteria) parameter.
     """
+    S: pd.Series
+    R: pd.Series
+    Q: pd.Series
+    ranks_S: pd.Series
+    ranks_R: pd.Series
+    ranks_Q: pd.Series
+    compromise_solution: str
+    advantage_condition: bool
+    stability_condition: bool
+    compromise_set: List[str]
+    weights: Dict[str, float]
+    v: float
     
     @property
     def final_ranks(self) -> pd.Series:

@@ -43,6 +43,15 @@ class COPRASResult:
     cost_sum : float
         Aggregate significance of all cost criteria.
     """
+    S_plus: pd.Series
+    S_minus: pd.Series
+    Q: pd.Series
+    utility_degree: pd.Series
+    ranks: pd.Series
+    weighted_matrix: pd.DataFrame
+    weights: Dict[str, float]
+    benefit_sum: float
+    cost_sum: float
     
     @property
     def final_ranks(self) -> pd.Series:

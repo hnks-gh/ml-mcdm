@@ -33,6 +33,10 @@ class SAWResult:
     weights : Dict[str, float]
         Criteria weights applied.
     """
+    scores: pd.Series
+    ranks: pd.Series
+    weighted_matrix: pd.DataFrame
+    weights: Dict[str, float]
 
     @property
     def final_ranks(self) -> pd.Series:

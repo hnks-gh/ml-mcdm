@@ -865,6 +865,13 @@ class CsvWriter:
         Dict[str, str]
             Dictionary mapping artifact keys to their absolute file paths.
         """
+        saved = {}
+        sens = analysis_results.get('sensitivity')
+        if sens is None:
+            return saved
+        
+        _dir = self.mcdm_dir / 'sensitivity'
+        _dir.mkdir(parents=True, exist_ok=True)
 
         # ML Sensitivity
         try:

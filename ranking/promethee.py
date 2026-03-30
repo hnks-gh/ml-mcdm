@@ -58,6 +58,15 @@ class PROMETHEEResult:
     preference_functions : Dict[str, str]
         The maps of preference function types used per criterion.
     """
+    phi_positive: pd.Series
+    phi_negative: pd.Series
+    phi_net: pd.Series
+    ranks_promethee_i: pd.DataFrame
+    ranks_promethee_ii: pd.Series
+    preference_matrix: pd.DataFrame
+    partial_preorder: Dict[str, List[str]]
+    weights: Dict[str, float]
+    preference_functions: Dict[str, str]
     
     @property
     def final_ranks(self) -> pd.Series:
