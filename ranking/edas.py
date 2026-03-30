@@ -11,7 +11,7 @@ ideal solutions.
 
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 from dataclasses import dataclass
 from scipy import stats
 
