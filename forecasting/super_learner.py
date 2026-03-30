@@ -2129,6 +2129,7 @@ class SuperLearner:
         Dict[str, float]
             Mapping of model names to their relative ensemble weights.
         """
+        return self._meta_weights
 
     def get_cv_scores(self) -> Dict[str, List[float]]:
         """
@@ -2139,6 +2140,7 @@ class SuperLearner:
         Dict[str, List[float]]
             Mapping of model names to lists of per-fold R² scores.
         """
+        return self._cv_scores
 
     def get_oof_performance(self) -> Dict[str, float]:
         """
@@ -2149,6 +2151,7 @@ class SuperLearner:
         Dict[str, float]
             Mapping of model names to their aggregate OOF R² scores.
         """
+        return self._oof_r2
 
     def get_diagnostics(self) -> Dict[str, Any]:
         """Get comprehensive diagnostics."""
