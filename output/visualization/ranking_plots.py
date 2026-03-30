@@ -1,17 +1,21 @@
-# -*- coding: utf-8 -*-
 """
-Ranking & ER Plots (fig01 – fig02)
-====================================
+Ranking and Evidential Reasoning Visualizations.
 
-Publication-quality figures for the Evidential Reasoning ranking phase.
+This module provides the `RankingPlotter` class, which generates 
+publication-quality diagnostic plots for the final ranking phase. It 
+includes multi-year trajectories (slopegraphs), belief distribution 
+heatmaps, and uncertainty scatter plots to evaluate the robustness of 
+provincial rankings.
 
-fig01  – Horizontal lollipop ranking chart with gradient fill
-fig01b – Tier-band chart with percentile band overlays
-fig01c – Multi-year slope graph (bumpchart) for top-N provinces
-fig01d – Final ER belief distribution heatmap (Province × Grade)
-fig01e – Rank-uncertainty scatter (rank vs entropy + interval width)
-fig02  – ER score distribution: histogram + KDE + rug
-fig02b – MC rank-uncertainty horizontal error-bar chart
+Key Figures
+-----------
+- **fig01c (Slopegraph)**: Multi-year rank trajectories for top-N provinces.
+- **fig01d (Belief Heatmap)**: Distribution of fused belief degrees across 
+  grades for each province.
+- **fig01e (Uncertainty Scatter)**: Rank vs. entropy analysis with 
+  quadrant-based risk assessment.
+- **fig02b (MC Rank Uncertainty)**: Error-bar chart showing Monte Carlo 
+  mean ranks and P(Top-K) probabilities.
 """
 
 from __future__ import annotations
@@ -30,14 +34,25 @@ _logger = logging.getLogger(__name__)
 
 
 class RankingPlotter(BasePlotter):
-    """Figures related to final ER ranking and score distribution."""
+    """
+    Generator for ranking and Evidential Reasoning visualizations.
+
+    Handles the rendering of longitudinal trajectories, belief structures, 
+    and Monte Carlo uncertainty metrics for prioritized analytical insight.
+    """
 
     # ==================================================================
     #  FIG 01 – Final ER Ranking  (horizontal lollipop + gradient fill)
     # ==================================================================
 
     def plot_final_ranking_summary(self, provinces, scores, ranks, **kw):
-        """Backward-compatible alias for multi-year compatibility."""
+        """
+        Legacy alias for historical compatibility.
+
+        Returns
+        -------
+        None
+        """
         return None
 
     # ==================================================================
@@ -51,9 +66,24 @@ class RankingPlotter(BasePlotter):
         save_name: str = 'fig01c_multiyear_slopegraph.png',
     ) -> Optional[str]:
         """
-        Bumpchart / slopegraph showing how the rank of the *top_n* provinces
-        (ranked by their mean rank across all years) evolves year by year.
-        Each province is a coloured line; rank 1 is at the top.
+        Produce a multi-year slopegraph (bumpchart) for top-N provinces.
+
+        Tracks the rank evolution of the highest-performing provinces over 
+        the entire temporal span of the panel data.
+
+        Parameters
+        ----------
+        multi_year_results : Dict[int, Any]
+            Dictionary mapping year to ranking results.
+        top_n : int, default=20
+            The number of provinces to include (ordered by mean rank).
+        save_name : str, default='fig01c_multiyear_slopegraph.png'
+            The output filename.
+
+        Returns
+        -------
+        str, optional
+            The absolute path to the saved figure, or None if failed.
         """
         if not HAS_MATPLOTLIB:
             return None
@@ -127,9 +157,25 @@ class RankingPlotter(BasePlotter):
         save_name: str = 'fig01d_belief_heatmap.png',
     ) -> Optional[str]:
         """
-        Heatmap of the final fused belief degrees (Grade 1–5) for every
-        province, sorted by ER rank.  Warmer colours indicate stronger
-        belief in higher (better) grades.
+        Render a heatmap of fused belief degrees.
+
+        Visualizes the probability mass allocated to each evaluation grade 
+        for all active provinces, providing transparency into the ER 
+        aggregation logic.
+
+        Parameters
+        ----------
+        ranking_result : RankingResult
+            Aggregated results containing ER belief matrices.
+        provinces : List[str]
+            List of province names for indexing.
+        save_name : str, default='fig01d_belief_heatmap.png'
+            The output filename.
+
+        Returns
+        -------
+        str, optional
+            The absolute path to the saved figure, or None if failed.
         """
         if not HAS_MATPLOTLIB:
             return None
@@ -205,10 +251,24 @@ class RankingPlotter(BasePlotter):
         save_name: str = 'fig01e_rank_uncertainty_scatter.png',
     ) -> Optional[str]:
         """
-        Scatter plot of ER rank (x) vs belief entropy (y) with point size
-        proportional to utility interval width.  Quadrant shading lets
-        analysts identify provinces with high rank *and* high uncertainty
-        (top-right quadrant) — a flag for additional scrutiny.
+        Render a scatter plot of rank vs. belief-entropy uncertainty.
+
+        Identifies 'at-risk' provinces where high ranks might be unstable 
+        due to high evidence conflict (entropy).
+
+        Parameters
+        ----------
+        ranking_result : RankingResult
+            The results containing uncertainty data.
+        provinces : List[str]
+            List of province names for iteration.
+        save_name : str, default='fig01e_rank_uncertainty_scatter.png'
+            The output filename.
+
+        Returns
+        -------
+        str, optional
+            The absolute path to the saved figure, or None if failed.
         """
         if not HAS_MATPLOTLIB:
             return None
@@ -299,10 +359,26 @@ class RankingPlotter(BasePlotter):
         save_name: str = 'fig02b_mc_rank_uncertainty.png',
     ) -> Optional[str]:
         """
-        Horizontal error-bar chart showing the Monte-Carlo mean rank ± 1 SD
-        for every province (or top *top_n* by mean rank).  Marker colour
-        encodes P(Top-K) — the empirical probability of appearing in the top
-        quartile across 10 000 MC draws.
+        Render a horizontal error-bar chart for Monte Carlo rank uncertainty.
+
+        Shows mean ranks and standard deviations across thousands of 
+        simulations, with color indicating the probability of the province 
+        remaining in the top quartile (P(Top-K)).
+
+        Parameters
+        ----------
+        mc_province_stats : Dict[str, Any]
+            Dictionary containing 'province_mean_rank', 'province_std_rank', 
+            and 'province_prob_topK'.
+        top_n : int, default=40
+            Number of top provinces to include in the plot.
+        save_name : str, default='fig02b_mc_rank_uncertainty.png'
+            The output filename.
+
+        Returns
+        -------
+        str, optional
+            The absolute path to the saved figure, or None if failed.
         """
         if not HAS_MATPLOTLIB:
             return None

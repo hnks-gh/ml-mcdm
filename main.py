@@ -1,22 +1,15 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-ML-MCDM Analysis — Main Entry Point
-=====================================
+ML-MCDM Analysis Framework — Application Entry Point.
+
+This script initializes and executes the complete hierarchical ML-MCDM 
+analytical pipeline. It configures the panel dimensions, coordinates 
+data processing, and manages the seven-phase workflow execution.
 
 Usage
 -----
-    python main.py
-
-Pipeline Phases
----------------
-1. Data Loading        – yearly CSVs from data/
-2. Weight Calculation  – Deterministic CRITIC two-level weighting
-3. Hierarchical Ranking – 6 MCDM methods
-4. ML Forecasting       – 4 base models + Meta Learner + Conformal Prediction
-5. Sensitivity Analysis  – Monte Carlo weight perturbation + temporal stability
-6. Visualisation         – high-resolution PNGs (300 DPI)
-7. Result Export         – CSV / JSON / text report
+$ python main.py
 """
 
 import sys
@@ -25,7 +18,13 @@ from typing import Any
 
 
 def main() -> None:
-    """Configure and execute the ML-MCDM pipeline."""
+    """
+    Initialize and execute the ML-MCDM hierarchical pipeline.
+
+    Sets up the default configuration for the 63-province/14-year panel 
+    and triggers the orchestrated Seven-Phase analysis, including 
+    forecasting and sensitivity reporting.
+    """
 
     # ------------------------------------------------------------------
     # Lazy imports (avoids heavy loading on --help)

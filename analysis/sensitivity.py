@@ -1,30 +1,30 @@
-# -*- coding: utf-8 -*-
 """
-Sensitivity Analysis for ML Forecasting and Evidential Reasoning
-================================================================
+Sensitivity Analysis for ML Forecasting and Evidential Reasoning.
 
-Comprehensive sensitivity analysis focused on:
+This module provides a comprehensive suite of sensitivity analysis tools to 
+evaluate the robustness of the ML-MCDM pipeline. It covers both the 
+machine learning forecasting track and the Evidential Reasoning (ER) 
+aggregation track, using techniques such as bootstrap resampling, 
+leave-one-out (LOO) impact assessment, and one-at-a-time (OAT) perturbations.
 
-1. ML Forecast Sensitivity
-   - Feature importance stability via bootstrap resampling
-   - Leave-one-model-out (LOO) contribution impact
-   - Prediction sensitivity per entity (uncertainty / range)
-   - Temporal prediction stability across CV folds
-   - Conformal prediction interval width sensitivity
-
-2. Evidential Reasoning Sensitivity
-   - Criterion belief distribution sensitivity (one-at-a-time OAT)
-   - Grade threshold sensitivity (utility mapping perturbation)
-   - ER aggregation weight sensitivity
-   - Utility interval width per entity (residual ignorance)
-   - Cross-level consistency (subcriteria → criteria → final ER)
-   - Belief Shannon entropy analysis
+Key Features
+------------
+- **ML Forecast Sensitivity**: Assesses feature importance stability, 
+  model contribution impact, and temporal prediction consistency.
+- **ER Metric Sensitivity**: Evaluates the stability of belief 
+  distributions, grade thresholds, and aggregation weights.
+- **Cross-Level Consistency**: Measures the alignment between local 
+  criterion scores and final composite rankings.
+- **Uncertainty Propagation**: Quantifies how localized noise in feature 
+  data or belief assignments impacts global decision outcomes.
 
 References
 ----------
-Saltelli et al. (2008). Global Sensitivity Analysis: The Primer.
-Yang & Xu (2002). Evidential reasoning rule under uncertainty.
-Gneiting & Raftery (2007). Strictly Proper Scoring Rules.
+- Saltelli et al. (2008). "Global Sensitivity Analysis: The Primer." Wiley.
+- Yang & Xu (2002). "On the evidential reasoning algorithm for multiple 
+  attribute decision analysis under uncertainty." IEEE Transactions.
+- Gneiting & Raftery (2007). "Strictly Proper Scoring Rules, Prediction, 
+  and Estimation." JASA.
 """
 
 import numpy as np
@@ -246,6 +246,20 @@ class MLSensitivityAnalysis:
         seed: int = 42,
         n_jobs: int = -1,
     ):
+        """
+        Initialize the ML sensitivity analyzer.
+
+        Parameters
+        ----------
+        n_bootstrap : int, default=200
+            Number of bootstrap samples to use for feature importance 
+            stability assessment.
+        seed : int, default=42
+            Seed for reproducible random sampling.
+        n_jobs : int, default=-1
+            Number of parallel workers. -1 uses all available processors 
+            except one.
+        """
         self.n_bootstrap = n_bootstrap
         self.seed = seed
         if n_jobs == -1:
@@ -449,6 +463,19 @@ class ERSensitivityAnalysis:
         perturbation_range: float = 0.10,
         seed: int = 42,
     ):
+        """
+        Initialize the ER sensitivity analyzer.
+
+        Parameters
+        ----------
+        n_simulations : int, default=500
+            Number of Monte Carlo simulations to run for belief and 
+            threshold perturbations.
+        perturbation_range : float, default=0.10
+            The maximum relative perturbation magnitude (e.g., 0.10 = ±10%).
+        seed : int, default=42
+            Seed for reproducible random perturbations.
+        """
         self.n_simulations = n_simulations
         self.perturbation_range = perturbation_range
         self.seed = seed

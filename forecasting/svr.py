@@ -1,32 +1,30 @@
-# -*- coding: utf-8 -*-
 """
-Support Vector Regression Forecaster
-=====================================
+Support Vector Regression Forecaster.
 
-ε-insensitive RBF kernel SVR via ``sklearn.svm.SVR`` wrapped in
-``MultiOutputRegressor``.  Complementary to ``KernelRidgeForecaster``
-despite sharing the same RBF kernel:
+This module provides an `SVRForecaster` that implements epsilon-insensitive 
+RBF kernel Support Vector Regression (SVR). It is optimized for robust 
+regression on panel data where sparse solutions in the dual space are 
+beneficial.
 
-* **Sparsity** — only support vectors (typically 30–60 % of training
-  samples) define the prediction function; the solution is sparse in
-  the dual space.  Kernel Ridge uses *all* training points.
-* **ε-insensitive loss** — residuals within ε contribute zero gradient,
-  biasing toward smooth fits and improving robustness to label noise.
-* **Different inductive bias** — SVR's Hinge-derived regularisation
-  path differs from KRR's L2 path, increasing ensemble diversity.
+Key Features
+------------
+- **Dual Sparsity**: Only a subset of training points (support vectors) 
+  define the prediction function, offering an alternative inductive bias 
+  to Kernel Ridge.
+- **Robustness to Noise**: The epsilon-insensitive loss function ignores 
+  small residuals, making the model resilient to minor label noise in 
+  governance datasets.
+- **Universal Approximation**: Uses the RBF kernel to capture non-linear 
+  relationships in the compressed feature space.
+- **Ensemble Diversity**: SVR's unique regularization path improves the 
+  total robustness of the super-learner ensemble.
 
-No ``sample_weight`` support
------------------------------
-``sklearn.svm.SVR`` does not accept sample weights in ``fit()``.
-``SuperLearner._fit_model()`` dispatches via ``inspect.signature``,
-so the absence of a ``sample_weight`` parameter is handled automatically.
-
-Feature track assignment (unified.py)
---------------------------------------
-``SVRForecaster`` is routed to the **PLS-reduced (PCA) track**,
-sharing the compressed linear subspace with ``BayesianForecaster`` and
-``KernelRidgeForecaster``.  Dimensionality reduction suppresses
-feature noise that would otherwise inflate the number of support vectors.
+References
+----------
+- Drucker et al. (1997). "Support Vector Regression Machines." Advances 
+  in Neural Information Processing Systems.
+- Smola & Schölkopf (2004). "A tutorial on support vector regression." 
+  Statistics and Computing 14.
 """
 
 import numpy as np
@@ -79,6 +77,24 @@ class SVRForecaster(BaseForecaster):
         gamma: object = "scale",
         random_state: Optional[int] = None,
     ):
+        """
+        Initialize the SVR forecaster.
+
+        Parameters
+        ----------
+        C : float, default=1.0
+            Regularization parameter. The strength of the regularization is 
+            inversely proportional to C.
+        epsilon : float, default=0.1
+            Epsilon in the epsilon-insensitive loss function. It specifies 
+            the epsilon-tube within which no penalty is associated in the 
+            training loss function.
+        gamma : str or float, default='scale'
+            Kernel coefficient for 'rbf', 'poly' and 'sigmoid'. 
+            'scale' uses 1 / (n_features * X.var()).
+        random_state : int, optional
+            Seed for reproducibility (unused but kept for API consistency).
+        """
         self.C = C
         self.epsilon = epsilon
         self.gamma = gamma

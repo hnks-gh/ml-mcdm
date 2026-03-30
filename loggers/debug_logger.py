@@ -1,14 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-Structured Debug Logger for ML-MCDM Pipeline
-=============================================
+Structured Debug Logger for ML-MCDM Pipeline forensics.
 
-Records **every** detail of a pipeline run into a single structured
-JSON array file (``output/result/logs/debug_<timestamp>.json``).  Designed
-for post-hoc inspection or automated quality-assurance tooling.
-
-Each entry carries: timestamp, level, module, function, line, phase,
-message, optional structured *data* payload, and optional duration_ms.
+This module provides the `DebugLogger` class, which records exhaustive 
+execution details into structured JSON arrays. It captures timestamps, 
+log levels, module/function context, and optional data payloads (NumPy/Pandas) 
+to enable deep post-hoc diagnostics and reproducibility audits.
 """
 
 from __future__ import annotations
@@ -25,15 +22,32 @@ from .context import Colors, LogContext
 
 
 class DebugLogger:
-    """Accumulates structured log entries and incrementally flushes to a JSON array file.
+    """
+    Accumulates structured log entries and flushes them to a JSON file.
 
-    Incremental flushing ensures that debug data is not lost on crash.
-    Entries are flushed to disk every *flush_every* entries and whenever
-    the pipeline phase changes (detected via :class:`LogContext`).
+    Maintains a secondary internal bridge to the standard library `logging` 
+    module to capture logs from third-party libraries or legacy modules.
+
+    Notes
+    -----
+    Entries are incrementally flushed to disk every `flush_every` records 
+    or whenever a pipeline phase boundary is detected via `LogContext`. 
+    This minimizes data loss in the event of a crash.
     """
 
     def __init__(self, output_dir: str = 'output/result/logs', *,
                  flush_every: int = 200):
+        """
+        Initialize the debug logger.
+
+        Parameters
+        ----------
+        output_dir : str, default='output/result/logs'
+            The directory where JSON log files will be saved.
+        flush_every : int, default=200
+            The number of entries to accumulate before triggering an 
+            incremental flush to disk.
+        """
         self._dir = Path(output_dir)
         self._dir.mkdir(parents=True, exist_ok=True)
         ts = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -64,6 +78,22 @@ class DebugLogger:
 
     def debug(self, message: str, *, data: Any = None,
               module: str = '', function: str = '', line: int = 0) -> None:
+        """
+        Record a DEBUG level entry.
+
+        Parameters
+        ----------
+        message : str
+            The log message.
+        data : Any, optional
+            A structured payload (dict, list, array) to include.
+        module : str, optional
+            The source module name.
+        function : str, optional
+            The source function name.
+        line : int, optional
+            The source line number.
+        """
         self._add('DEBUG', message, data=data, module=module,
                   function=function, line=line)
 
@@ -84,6 +114,22 @@ class DebugLogger:
 
     def exception(self, message: str, exc: Optional[BaseException] = None,
                   *, module: str = '', function: str = '', line: int = 0) -> None:
+        """
+        Record an ERROR level entry with full traceback.
+
+        Parameters
+        ----------
+        message : str
+            The log message describing the context of the failure.
+        exc : BaseException, optional
+            The exception object. If None, `sys.exc_info()` is used.
+        module : str, optional
+            Source module name.
+        function : str, optional
+            Source function name.
+        line : int, optional
+            Source line number.
+        """
         tb = traceback.format_exc() if exc is None else traceback.format_exception(
             type(exc), exc, exc.__traceback__)
         self._add('ERROR', message, data={'traceback': tb},
@@ -91,7 +137,20 @@ class DebugLogger:
 
     def log_data(self, label: str, payload: Any, *,
                  module: str = '', function: str = '') -> None:
-        """Store an arbitrary structured data payload (arrays, dicts, …)."""
+        """
+        Store an arbitrary structured data payload.
+
+        Parameters
+        ----------
+        label : str
+            A descriptive tag for the data entry.
+        payload : Any
+            The data to be serialized (usually a Dict or NumPy array).
+        module : str, optional
+            Source module name.
+        function : str, optional
+            Source function name.
+        """
         self._add('DATA', label, data=payload, module=module, function=function)
 
     # ------------------------------------------------------------------
@@ -99,14 +158,28 @@ class DebugLogger:
     # ------------------------------------------------------------------
 
     def flush(self) -> str:
-        """Write accumulated entries to disk and return the file path."""
+        """
+        Write all accumulated entries to disk.
+
+        Returns
+        -------
+        str
+            The absolute path to the generated JSON log file.
+        """
         with open(self._path, 'w', encoding='utf-8') as fh:
             json.dump(self._entries, fh, indent=2, default=_json_default,
                       ensure_ascii=False)
         return str(self._path)
 
     def close(self) -> str:
-        """Flush and detach the stdlib intercept handler."""
+        """
+        Flush all remaining entries and detach the intercept handler.
+
+        Returns
+        -------
+        str
+            The absolute path to the generated JSON log file.
+        """
         path = self.flush()
         self._stdlib_logger.removeHandler(self._handler)
         return path
@@ -180,7 +253,12 @@ class DebugLogger:
 # ------------------------------------------------------------------
 
 class _InterceptHandler(logging.Handler):
-    """Bridges stdlib ``logging`` records into :class:`DebugLogger`."""
+    """
+    Standard library logging handler that bridges records to DebugLogger.
+
+    Captures logs from modules using `logging.getLogger()` and routes 
+    them into the structured JSON stream.
+    """
 
     def __init__(self, debug_logger: DebugLogger):
         super().__init__(level=logging.DEBUG)
@@ -204,7 +282,12 @@ class _InterceptHandler(logging.Handler):
 # ------------------------------------------------------------------
 
 def _json_default(obj: Any) -> Any:
-    """Fallback serialiser for numpy / pandas objects."""
+    """
+    Fallback serializer for complex objects in JSON output.
+
+    Handles NumPy arrays, Pandas DataFrames/Series, and NumPy scalars 
+    by converting them to standard Python types.
+    """
     import numpy as np
     import pandas as pd
     if isinstance(obj, np.ndarray):

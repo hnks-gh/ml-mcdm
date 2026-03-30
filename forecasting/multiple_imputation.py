@@ -1,42 +1,28 @@
-# -*- coding: utf-8 -*-
 """
-Multiple Imputation with Rubin's Rules (Enhanced 2026-03-27)
-============================================================
+Multiple Imputation with Rubin's Rules (M-07).
 
-Enhancement M-07: Panel-aware multiple imputation with proper uncertainty
-propagation via Rubin's Rules (1987).
+This module provides a `MultipleImputationForecaster` that accounts for 
+missingness-induced uncertainty by training an ensemble of forecasters on 
+stochastically imputed datasets. Predictions and variances are pooled 
+using Rubin's Rules.
 
-**Updated 2026-03-27**: Now uses unified MICEImputer (data.imputation.MICEImputer)
-for all MICE operations. Configuration via ImputationConfig.
-
-Single imputation (mean, median, MICE point estimate) treats imputed values as
-observed, producing overconfident models. Multiple imputation correctly
-propagates missingness uncertainty into parameter estimates.
-
-Algorithm
----------
-1. Generate M=5 imputed datasets {X^(m), y^(m)} using MICE with
-   sample_posterior=True (stochastic draws from predictive distribution)
-   using unified MICEImputer (ExtraTreesRegressor-based)
-2. Train forecaster on each imputed dataset independently → M predictions
-3. Pool via Rubin's Rules:
-
-   ȳ = (1/M) Σ_m ŷ^(m)                    [pooled prediction]
-
-   Var_total = Var_within + (1+1/M) Var_between
-
-   where:
-   - Var_within = (1/M) Σ_m Var^(m)       [within-imputation variance]
-   - Var_between = (1/(M-1)) Σ_m (ŷ^(m) - ȳ)²  [between-imputation variance]
-
-The between-imputation variance quantifies missingness-induced uncertainty,
-invisible to single-imputation approaches.
+Key Features
+------------
+- **Uncertainty Propagation**: Corrects for the overconfidence of single 
+  imputation by quantifying the variance between different stochastic 
+  imputation draws.
+- **Rubin's Rules**: Implements the standard statistical framework for 
+  pooling point estimates and calculating total variance (within + between).
+- **Fraction of Missing Information (FMI)**: Quantifies the proportion of 
+  total predictive uncertainty attributable to missing data.
+- **Unified MICE Integration**: Leverages the `MICEImputer` from the data 
+  package for consistent stochastic imputation across the pipeline.
 
 References
 ----------
-Rubin, D. B. (1987). Multiple Imputation for Nonresponse in Surveys. Wiley.
-van Buuren, S., & Groothuis-Oudshoorn, K. (2011). mice: Multivariate
-Imputation by Chained Equations in R. Journal of Statistical Software, 45(3).
+- Rubin, D. B. (1987). "Multiple Imputation for Nonresponse in Surveys." 
+  Wiley.
+- van Buuren, S. (2018). "Flexible Imputation of Missing Data." CRC Press.
 """
 
 import numpy as np
@@ -137,6 +123,25 @@ class MultipleImputationForecaster:
         random_state: int = 42,
         verbose: bool = False,
     ):
+        """
+        Initialize the multiple imputation forecaster.
+
+        Parameters
+        ----------
+        base_forecaster : BaseForecaster
+            The underlying forecaster to wrap and clone for each imputation.
+        n_imputations : int, default=5
+            Number of stochastic imputations (M) to perform. 5-10 is typical.
+        mice_max_iter : int, default=20
+            Maximum iterations for the iterative imputer.
+        mice_n_nearest : int, default=20
+            Number of nearest features used for imputation in each MICE step.
+        random_state : int, default=42
+            Seed for reproducible stochastic imputation.
+        verbose : bool, default=False
+            Whether to print progress information during imputation and 
+            training.
+        """
         self.base_forecaster = base_forecaster
         self.n_imputations = n_imputations
         self.mice_max_iter = mice_max_iter

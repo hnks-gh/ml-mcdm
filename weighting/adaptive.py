@@ -1,36 +1,12 @@
 # -*- coding: utf-8 -*-
-"""NaN-aware adaptive weighting layer (weighting phase).
+"""
+Adaptive Weighting Layer
+========================
 
-**Core principle**: Weighting RESPECTS missing data structure. NO IMPUTATION.
-
-Architecture
------------
-The weighting phase filters all-NaN rows/columns but PRESERVES partial NaN
-cells, allowing the CRITIC weight calculator to operate on observed data only.
-This complete-case strategy reflects data availability patterns, which are
-themselves information about governance data reliability.
-
-- :class:`AdaptiveWeightResult` — extends :class:`~weighting.base.WeightResult`
-  with metadata about included/excluded rows and columns.
-- :class:`AdaptiveWeightCalculator` — filter all-NaN → CRITIC (no imputation).
-- :class:`WeightCalculator` — two-level wrapper (subcriteria + criteria).
-- :func:`calculate_adaptive_weights` — convenience entry point.
-
-Base Method
-----------
-- ``'critic'`` — CRITIC (contrast intensity × inter-criteria independence).
-
-Notes
------
-The dataset uses NaN (not zero) to represent missing observations. A value of
-exactly 0.0 is a legitimate governance score and is NEVER excluded. Partial NaN
-cells in the decision matrix are preserved and passed to CRITIC, which handles
-them via complete-case analysis: variance and mean computed only from observed
-(non-NaN) values in each column.
-
-See Also
---------
-data.missing_data : centralized NaN-handling utilities
+This module provides an adaptive weighting layer that respects the missing 
+data structure of governance panels. It avoids imputation in the weighting 
+phase, instead relying on complete-case analysis to preserve the statistical 
+integrity of variance and correlation estimates.
 """
 
 import numpy as np
@@ -56,26 +32,11 @@ class AdaptiveWeightResult(WeightResult):
 
 class AdaptiveWeightCalculator:
     """
-    Adaptive weight calculator that handles missing data (NaN) in the decision matrix.
+    Adaptive weight calculator with automated missing data handling.
 
-    Key features
-    ------------
-    - Automatically excludes provinces with *all-NaN* data across every criterion
-    - Excludes criteria where *every* province is NaN
-    - Imputes remaining partial NaN cells with the column mean (preserves variance)
-    - Recalculates weights based on the cleaned, complete sub-matrix
-    - Preserves weight normalisation (sum to 1)
-
-    Parameters
-    ----------
-    method : str
-        Base weighting method.  Currently only ``'critic'`` is supported.
-    epsilon : float
-        Small constant for numerical stability
-    min_alternatives : int
-        Minimum number of alternatives required for weight calculation
-    min_criteria : int
-        Minimum number of criteria required for weight calculation
+    Provides a robust interface for weight calculation that automatically 
+    filters all-NaN entities and criteria while preserving partial 
+    observations for complete-case statistical analysis.
     """
 
     def __init__(
@@ -98,26 +59,19 @@ class AdaptiveWeightCalculator:
         entity_col: str = "Province"
     ) -> AdaptiveWeightResult:
         """
-        Calculate weights with NaN-aware filtering and imputation.
-
-        Delegates matrix cleaning to :func:`data.missing_data.prepare_decision_matrix`,
-        then runs CRITIC on the cleaned sub-matrix, and finally expands the
-        resulting weights back to the original criterion set (excluded criteria
-        receive weight 0).
+        Compute adaptive weights for the provided decision matrix.
 
         Parameters
         ----------
         data : pd.DataFrame
-            Decision matrix with alternatives and criteria.
-            If it contains *entity_col* (or 'Province'), that column is
-            stripped before weight calculation.
+            The raw data matrix containing missing values.
         entity_col : str
-            Name of entity identifier column (if present).
+            The column name identifying individual provinces or entities.
 
         Returns
         -------
         AdaptiveWeightResult
-            Weights with NaN-filtering metadata.
+            The calculated weight results with inclusion/exclusion metadata.
         """
         original_criteria = [
             c for c in data.columns if c != entity_col

@@ -27,45 +27,16 @@ logger = logging.getLogger(__name__)
 
 class CRITICWeightCalculator:
     """
-    CRITIC (Criteria Importance Through Inter-criteria Correlation) weights.
-    
-    The CRITIC method considers both:
-    1. Contrast Intensity: Standard deviation of criterion values
-    2. Conflicting Character: Correlation with other criteria
-    
-    Criteria with high variation AND low correlation with others
-    receive higher weights as they provide unique information.
-    
-    Parameters
-    ----------
-    epsilon : float
-        Small constant to avoid division by zero
-    
-    Attributes
-    ----------
-    epsilon : float
-        Numerical stability constant
-    
-    Examples
-    --------
-    >>> import pandas as pd
-    >>> from weighting import CRITICWeightCalculator
-    >>> 
-    >>> data = pd.DataFrame({
-    ...     'C1': [0.8, 0.6, 0.9, 0.7],
-    ...     'C2': [0.75, 0.55, 0.85, 0.65],  # Highly correlated with C1
-    ...     'C3': [0.3, 0.9, 0.1, 0.7]       # Uncorrelated - higher weight
-    ... })
-    >>> 
-    >>> calc = CRITICWeightCalculator()
-    >>> result = calc.calculate(data)
-    >>> print(result.weights)
-    
-    References
-    ----------
-    Diakoulaki, D., Mavrotas, G., & Papayannakis, L. (1995).
-    Determining objective weights in multiple criteria problems: 
-    The CRITIC method. Computers & Operations Research.
+    Criteria Importance Through Inter-criteria Correlation (CRITIC) calculator.
+
+    Determines objective weights based on two fundamental dimensions:
+    1.  Contrast Intensity: Measured by the standard deviation of each 
+        criterion across alternatives.
+    2.  Conflicting Character: Measured by the correlation between 
+        criteria.
+
+    Criteria with high variation and low correlation with others are 
+    prioritized as providing more unique information.
     """
     
     def __init__(self, epsilon: float = 1e-10):
@@ -74,34 +45,23 @@ class CRITICWeightCalculator:
     def calculate(self, data: pd.DataFrame,
                   sample_weights: 'np.ndarray | None' = None) -> WeightResult:
         """
-        Calculate CRITIC weights.
-        
+        Execute the CRITIC weighting algorithm.
+
+        Applies complete-case exclusion to handle missing values, ensuring 
+        that variance and correlation estimates are not biased by imputation 
+        artifacts.
+
         Parameters
         ----------
         data : pd.DataFrame
-            Decision matrix (alternatives × criteria)
-        sample_weights : np.ndarray or None, optional
-            Observation weights (length = n_alternatives).  When provided,
-            the weighted covariance matrix is used to derive both the
-            weighted standard deviations and the weighted Pearson
-            correlation matrix.  Must sum to 1.
-            If *None*, the unweighted formula is used.
-        
+            The normalized decision matrix (provinces × criteria).
+        sample_weights : Optional[np.ndarray]
+            Weights for observations to compute a weighted covariance matrix.
+
         Returns
         -------
         WeightResult
-            Calculated weights with standard deviation, conflict, 
-            and correlation details
-            
-        Raises
-        ------
-        ValueError
-            If *data* is empty or the original (pre-NaN-exclusion) row count
-            is less than 2.  Note: if NaN rows are present and dropping them
-            leaves fewer than 2 complete-case rows, equal weights are returned
-            rather than raising (so that upstream pipelines degrade gracefully).
-        TypeError
-            If data contains non-numeric columns
+            Object containing normalized weights and detailed metrics.
         """
         # Input validation
         if data.empty:

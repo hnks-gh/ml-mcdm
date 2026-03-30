@@ -1,26 +1,27 @@
-# -*- coding: utf-8 -*-
 """
-ElasticNet Forecaster with Automatic Regularization Tuning
-===========================================================
+ElasticNet Forecaster with Automatic Regularization Tuning.
 
-L1+L2 penalized linear regression with explicit feature selection.
-Complementary to BayesianRidge despite both being linear:
+This module provides an `ElasticNetForecaster` that implements L1+L2 
+penalized linear regression. It is optimized for multi-output forecasting 
+on sparse panel data where explicit feature selection is desired.
 
-* **Explicit feature selection** — L1 penalty directly zeroes weak features
-  (LASSO effect); typically retains 40–60 % of features on sparse panel data.
-  BayesianRidge uses automatic relevance determination (Bayesian shrinkage),
-  which is softer but less interpretable.
+Key Features
+------------
+- **Explicit Feature Selection**: The L1 penalty (LASSO) directly zeroes out 
+  uninformative features, enhancing model interpretability.
+- **Hybrid Regularization**: Combines L1 and L2 penalties to handle 
+  multicollinearity while maintaining sparsity.
+- **Automated Parameter Search**: Uses `ElasticNetCV` to automatically tune 
+  the regularization strength (alpha) and penalty mix (l1_ratio) per target.
+- **Ensemble Diversity**: Provides a distinct linear regularization path 
+  compared to `BayesianForecaster`, increasing total ensemble robustness.
 
-* **L1+L2 regularization path** — ElasticNet's hybrid penalty differs
-  fundamentally from Ridge's pure L2 path, increasing ensemble diversity.
-
-* **Cross-validated alpha/l1_ratio** — ElasticNetCV automatically tunes the
-  regularization strength and L1/L2 balance per-output column via internal CV,
-  adapting to each criterion's signal-to-noise ratio.
-
-Multi-output regression via ``MultiOutputRegressor`` for C01–C08 targets.
-Feature track: **PLS-reduced (PCA track)** alongside BayesianForecaster and
-SVRForecaster.  Dimensionality reduction improves sparsity and interpretability.
+References
+----------
+- Zou & Hastie (2005). "Regularization and variable selection via the 
+  elastic net." JRSSB 67(2).
+- Friedman et al. (2010). "Regularization Paths for Generalized Linear 
+  Models via Coordinate Descent." JSS 33(1).
 """
 
 import numpy as np
@@ -84,6 +85,25 @@ class ElasticNetForecaster(BaseForecaster):
         max_iter: int = 5000,
         tol: float = 1e-3,
     ):
+        """
+        Initialize the ElasticNet forecaster.
+
+        Parameters
+        ----------
+        l1_ratios : List[float], optional
+            List of L1 mixing parameters to try (0 = Ridge, 1 = Lasso). 
+            Default: [0.2, 0.5, 0.8].
+        alphas : np.ndarray, optional
+            Array of regularization strengths to try.
+        cv : int, default=5
+            Number of folds for internal cross-validation.
+        random_state : int, optional
+            Seed for reproducible cross-validation splits.
+        max_iter : int, default=5000
+            Maximum iterations for the coordinate descent solver.
+        tol : float, default=1e-3
+            Convergence tolerance for the solver.
+        """
         if l1_ratios is None:
             l1_ratios = [0.2, 0.5, 0.8]
         if alphas is None:

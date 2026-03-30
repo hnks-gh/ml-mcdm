@@ -1,23 +1,20 @@
 # -*- coding: utf-8 -*-
 """
-Centralised Configuration for ML-MCDM Pipeline
-================================================
+Centralized Configuration for the ML-MCDM Pipeline.
 
-All configurable parameters are defined here as typed dataclasses.
-The master ``Config`` class composes every sub-config and provides
-serialisation, summary printing, and global singleton management.
+This module defines the configuration schema for the entire ML-MCDM 
+orchestrator using typed dataclasses. It provides a hierarchical structure 
+for managing resource paths, panel dimensions, reproducibility seeds, 
+and method-specific hyperparameters for weighting, ranking, and 
+ensemble forecasting.
 
-Configuration Groups
---------------------
-- PathConfig               — directory structure
-- PanelDataConfig          — entity / time / hierarchy dimensions
-- RandomConfig             — reproducibility seeds
-- TOPSISConfig             — TOPSIS method parameters
-- VIKORConfig              — VIKOR compromise parameter
-- WeightingConfig          — Hybrid MC Ensemble + Bayesian Bootstrap
-- ForecastConfig           — ML forecasting ensemble settings
-- ValidationConfig         — sensitivity / robustness analysis
-- VisualizationConfig      — figure appearance defaults
+Main Components
+---------------
+- **Config**: The master orchestrator configuration composing all sub-configs.
+- **PathConfig**: Directory and file system abstraction.
+- **PanelDataConfig**: Dimensions and metadata for the provincial dataset.
+- **ForecastConfig**: Extensive parameters for SOTA ensemble modeling.
+- **MCDM Configs**: Specialized settings for TOPSIS, VIKOR, and CRITIC.
 """
 
 from dataclasses import dataclass, field
@@ -35,7 +32,7 @@ from data.imputation import ImputationConfig
 # =========================================================================
 
 class NormalizationType(Enum):
-    """Supported normalization methods for traditional MCDM."""
+    """Supported normalization strategies for traditional MCDM methods."""
     VECTOR = "vector"
     MINMAX = "minmax"
     ZSCORE = "zscore"
@@ -43,13 +40,13 @@ class NormalizationType(Enum):
 
 
 class WeightMethod(Enum):
-    """Supported weighting method families."""
+    """Supported criteria weighting methodology families."""
     CRITIC = "critic"
     EQUAL = "equal"
 
 
 class AggregationType(Enum):
-    """Supported global rank aggregation."""
+    """Supported global rank aggregation strategies."""
     EVIDENTIAL_REASONING = "evidential_reasoning"
 
 
@@ -59,7 +56,12 @@ class AggregationType(Enum):
 
 @dataclass
 class PathConfig:
-    """File and directory paths, all derived from *base_dir*."""
+    """
+    Filesystem and directory management for the ML-MCDM project.
+
+    Centralizes all path logic to ensure consistent access to data inputs, 
+    intermediate artifacts, and final reports across different environments.
+    """
     base_dir: Path = field(default_factory=lambda: Path.cwd())
 
     @property
@@ -120,7 +122,12 @@ class PathConfig:
 
 @dataclass
 class PanelDataConfig:
-    """Panel data dimensions and naming conventions."""
+    """
+    Structural definitions for the provincial panel dataset.
+
+    Defines the spatial (provinces) and temporal (years) dimensions of 
+    the study, along with the hierarchical mapping of subcriteria to criteria.
+    """
     n_provinces: int = 63
     years: List[int] = field(default_factory=lambda: list(range(2011, 2025)))
     province_col: str = "Province"
@@ -186,7 +193,7 @@ class PanelDataConfig:
 
 @dataclass
 class RandomConfig:
-    """Random-state and resampling defaults."""
+    """Global reproducibility and stochastic simulation parameters."""
     seed: int = 42
 
 
@@ -214,18 +221,11 @@ class VIKORConfig:
 
 @dataclass
 class WeightingConfig:
-    """CRITIC Weighting configuration.
+    """
+    Configuration for CRITIC-based criteria weighting.
 
-    Two-level deterministic design
-    ──────────────────────────────
-    Level 1 : CRITIC on each criterion group (m × n_k matrices)
-              → local SC weights summing to 1 within each group
-    Level 2 : CRITIC on criterion composite matrix
-              → criterion weights summing to 1 globally
-    Global  : global_SC_weight = local_SC_weight × criterion_weight
-
-    Fully deterministic — no Monte Carlo, no Beta blending, no tuning grid.
-    Temporal stability analysis is handled separately in ``analysis/``.
+    Supports a two-level deterministic design that calculates weights 
+    for both sub-criteria (local) and criterion groups (global).
     """
     # ── Numerics ────────────────────────────────────────────────────────
     epsilon: float = 1e-10
@@ -236,28 +236,17 @@ class WeightingConfig:
 
 
 # =========================================================================
-# =========================================================================
 # ML Forecasting (State-of-the-Art Ensemble)
 # =========================================================================
 
 @dataclass
 class ForecastConfig:
     """
-    State-of-the-art forecasting configuration for UnifiedForecaster.
+    Configuration for the state-of-the-art ML Forecasting ensemble.
 
-    Uses diverse base models + Meta-Learner ensemble + Conformal
-    Prediction calibration.  Optimised for small-to-medium panel data (N < 1000).
-
-    Model hyperparameters
-    ---------------------
-    gb_max_depth / gb_n_estimators
-        CatBoostForecaster (oblivious symmetric trees, MultiRMSE objective).
-        ``max_depth=5`` is the principled midpoint between the underfitting
-        depth-4 and the overfitting depth-6 at n≈756: depth-5 yields
-        32 leaves ≈ 24 samples/leaf, providing a healthy bias-variance
-        trade-off.  ``n_estimators=200`` aligns the ensemble build with
-        the standalone class default (previously hardcoded to 100 in
-        ``_create_models``).
+    Governs the Super Learner architecture, feature engineering filters 
+    (MI/VIF), MICE imputation strategies, and conformal uncertainty 
+    calibration techniques (CQR, Mondrian, LWCP).
     """
     enabled: bool = True
     """Enable/disable ensemble ML forecasting (Phase 4).
@@ -270,6 +259,37 @@ class ForecastConfig:
 
     # ===== PHASE 4: Feature Selection & Multicollinearity =====
     max_vif_threshold: float = 10.0
+    """VIF threshold for feature selection (legacy field, kept for backward
+    compatibility). Prefer ``tree_track_max_vif`` for the tree track filter.
+    """
+    tree_track_max_vif: Optional[float] = 10.0
+    """VIF threshold applied to the tree track (CatBoost / QRF) only.
+
+    Phase 2 §2.3 — Enforce VIF threshold for tree track
+    ----------------------------------------------------
+    After the MI pre-filter (§2.1) has reduced tree-track features to ≤ 200,
+    this VIF filter removes the remaining multicollinear features by iteratively
+    dropping the feature with the highest VIF until all VIF values fall below
+    this threshold.
+
+    VIF_j = 1 / (1 − R²_j) measures how much of feature j's variance is
+    explained by the other features. VIF > 10 implies R²_j > 0.90, meaning
+    the feature carries essentially no unique information relative to its peers.
+
+    For CatBoost's information-gain split heuristics, near-identical features
+    compete for the same split, producing unstable importance scores and
+    suboptimal tree structures. Removing them improves:
+    - Feature importance interpretability
+    - Tree structure stability across CV folds
+    - Ensemble weight consistency
+
+    Applied ONLY to mode='threshold_only' (tree track) via stage2_reduce_features().
+    PLS/PCA tracks are unaffected (PLS inherently handles collinearity via
+    latent projections; VIF filtering before PLS is redundant and harmful).
+
+    ``None`` disables VIF filtering for the tree track.
+    Default 10.0 (removes features with R²_j > 0.90 w.r.t. other features).
+    """
     target_max_features: int = 80
 
     # ===== PHASE B Enhancement: MICE-Only Imputation Configuration =====
@@ -1042,7 +1062,12 @@ class VisualizationConfig:
 
 @dataclass
 class Config:
-    """Master configuration composing every sub-config."""
+    """
+    The master configuration orchestrator for the ML-MCDM framework.
+
+    Composes all specialized sub-configurations into a single unified 
+    schema for pipeline execution and serialization.
+    """
     paths: PathConfig = field(default_factory=PathConfig)
     panel: PanelDataConfig = field(default_factory=PanelDataConfig)
     random: RandomConfig = field(default_factory=RandomConfig)
@@ -1076,6 +1101,14 @@ class Config:
     # --- serialisation ---
 
     def to_dict(self) -> Dict:
+        """
+        Serialize the entire configuration hierarchy to a dictionary.
+
+        Returns
+        -------
+        Dict
+            A JSON-compatible dictionary representation.
+        """
         def _cvt(obj):
             if hasattr(obj, '__dataclass_fields__'):
                 d = {k: _cvt(v) for k, v in obj.__dict__.items()}
@@ -1099,6 +1132,14 @@ class Config:
         return _cvt(self)
 
     def save(self, filepath: Path) -> None:
+        """
+        Save the configuration to a JSON file.
+
+        Parameters
+        ----------
+        filepath : Path
+            The destination path for the config file.
+        """
         with open(filepath, 'w') as f:
             json.dump(self.to_dict(), f, indent=2)
 
@@ -1138,7 +1179,16 @@ _config: Optional[Config] = None
 
 
 def get_config() -> Config:
-    """Return global config (create default on first call)."""
+    """
+    Retrieve the global configuration singleton.
+
+    Creates a default instance on the first call.
+
+    Returns
+    -------
+    Config
+        The active configuration instance.
+    """
     global _config
     if _config is None:
         _config = Config()

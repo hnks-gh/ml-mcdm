@@ -1,23 +1,29 @@
-# -*- coding: utf-8 -*-
 """
-Window-Based Temporal Stability Analysis for CRITIC Weights
-============================================================
+Window-Based Temporal Stability Analysis for CRITIC Weights.
 
-Implements temporal stability assessment using 5-year sliding windows
-with 1-year overlap. Metrics include:
-  - Spearman's rho: rank correlation between consecutive windows
-  - Kendall's W: omnibus agreement across all windows
-  - Coefficient of Variation: per-criterion weight stability
+This module provides tools for assessing the stability of criterion weights 
+over time using a sliding window approach. It quantifies rank consistency 
+between consecutive periods and overall agreement across the entire panel 
+duration.
 
-Production-hardened implementation with full docstring coverage and
-type hints. Cross-validated against scipy.stats implementations for
-all statistical measures.
+Key Features
+------------
+- **Sliding Window Analysis**: Evaluates weight vectors in 5-year windows 
+  with configurable overlap to capture temporal evolution.
+- **Spearman's Rho Rolling**: Measures the correlation of criterion 
+  rankings between adjacent time periods.
+- **Kendall's W Accuracy**: Provides an omnibus statistic for the overall 
+  concordance of weight rankings across multiple time windows.
+- **Coefficient of Variation (CV)**: Quantifies the relative volatility 
+  of individual criterion weights.
 
 References
 ----------
-- Spearman, C. (1904). The Proof and Measurement of Association.
-- Kendall, M. G. & Babington Smith, B. (1939). Randomness and Random Sampling Numbers.
-- Saltelli, A., Ratto, M., Andres, T., et al. (2008). Global Sensitivity Analysis.
+- Spearman, C. (1904). "The Proof and Measurement of Association." American 
+  Journal of Psychology.
+- Kendall, M. G. (1939). "The problem of m rankings." Annals of Mathematical 
+  Statistics.
+- Saltelli et al. (2008). "Global Sensitivity Analysis." Wiley.
 """
 
 from __future__ import annotations
@@ -86,10 +92,13 @@ class TemporalStabilityResult:
     @property
     def is_stable(self) -> bool:
         """
-        Heuristic stability indicator.
+        Check if the weights are temporally stable.
 
-        Returns True if mean Spearman's rho > 0.70 and Kendall's W > 0.60.
-        This is a production heuristic; interpret results in context.
+        Returns
+        -------
+        bool
+            True if mean Spearman's rho > 0.70 and Kendall's W > 0.60, 
+            indicating reliable weight ordering over time.
         """
         return (self.spearman_rho_mean > 0.70 and self.kendalls_w > 0.60)
 
@@ -140,7 +149,20 @@ class WindowedTemporalStabilityAnalyzer:
         overlap_years: int = 1,
         seed: Optional[int] = None,
     ):
-        """Initialize analyzer with window parameters."""
+        """
+        Initialize the temporal stability analyzer.
+
+        Parameters
+        ----------
+        window_size : int, default=5
+            The number of continuous years included in each analysis window.
+        overlap_years : int, default=1
+            The number of years that overlap between consecutive sliding 
+            windows.
+        seed : int, optional
+            Seed for reproducibility (reserved for future stochastic 
+            extensions).
+        """
         self.window_size = window_size
         self.overlap_years = overlap_years
         self.seed = seed

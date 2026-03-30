@@ -1,3 +1,12 @@
+"""
+Offline Recursive Feature Elimination (RFE) for ML Forecasting.
+
+This utility script performs an automated, permutation-importance based 
+feature selection process to reduce the high-dimensional panel feature 
+space to a production-hardened core subset. It evaluates subsets using 
+Hold-One-Province-Out (HOPO) cross-validation to prevent spatial leakage.
+"""
+
 import logging
 import json
 import numpy as np
@@ -15,7 +24,16 @@ from forecasting.unified import UnifiedForecaster
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("offline_rfe")
 
-def run_rfe():
+def run_rfe() -> None:
+    """
+    Execute the recursive feature elimination pipeline.
+
+    Steps:
+    1. Load and preprocess the provincial panel data.
+    2. Engineer the primary feature matrix (EWMA, lags, cross-entity).
+    3. Iteratively drop features with the lowest permutation importance.
+    4. Save the optimized feature subset to 'selected_features.json'.
+    """
     config = get_config()
     target_count = config.forecast.target_max_features
     

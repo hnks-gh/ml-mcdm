@@ -1,44 +1,34 @@
-# -*- coding: utf-8 -*-
 """
-Incremental Ensemble Updater (E-10)
-=====================================
+Incremental Ensemble Updater (E-10).
 
-After the SuperLearner is trained on years 2012–2023 and validated on 2024,
-this module performs a lightweight update to incorporate the 2024 observations
-before generating the 2025 forecast.  Two complementary strategies ensure
-that all available data is exploited for the final prediction.
+This module provides the `IncrementalEnsembleUpdater` class, which performs 
+lightweight model updates to incorporate new observations (e.g., the most 
+recent year) into a pre-trained ensemble. This allows the system to 
+exploit 100% of available data for final predictions without re-running 
+the full multi-fold training pipeline.
 
 Strategies
 ----------
-``'auto'`` (default)
-    Chooses the best strategy per model type:
+- **Gradient Continuation**: For CatBoost models, resumes training from the 
+  existing booster for a small number of iterations with a reduced 
+  learning rate.
+- **Full Retrain**: For linear and kernel models, performs a quick refit on 
+  the complete historical dataset (if provided) or just the new observations.
+- **Meta-Weight Blending**: Recalibrates ensemble weights using a 
+  secondary Non-Negative Least Squares (NNLS) fit on the new data, 
+  blended with historical meta-weights to maintain stability.
 
-    * **CatBoost**: gradient continuation — load existing model via
-      ``init_model`` and continue boosting on new data (additional iterations
-      at a reduced learning-rate, preventing over-fitting to 2024).
-    * **BayesianForecaster / others**: full retrain on all available data
-      when ``X_all`` is supplied, otherwise fine-tune on new data.
-
-``'full_retrain'``
-    All base models refitted on ``(X_all, y_all)`` if provided; falls back
-    to new data only when ``X_all`` is ``None``.
-
-Meta-weight Update
-------------------
-After base model updates, predictions on the new observations are used to
-re-calibrate ensemble weights:
-
-    w_updated = (1 − γ) · w_prev  +  γ · w_new_calibration
-
-where γ=0.3 (configurable).  ``w_new_calibration`` is computed via NNLS on
-the new-year predictions (secondary calibration blend only — the primary
-meta-learner is Ridge, updated via _fit_meta_learner in SuperLearner).
-The blend retains historical stability while absorbing the most recent signal.
+Key Parameters
+--------------
+- `gamma`: Controls the balance between historical weights and new 
+  calibration signal (default 0.3).
+- `catboost_lr_factor`: Scales the learning rate for continuation to 
+  prevent overfitting to the newest year.
 
 References
 ----------
-Ljung & Söderström (1983). Theory and Practice of Recursive Identification.
-    MIT Press.
+- Ljung & Söderström (1983). "Theory and Practice of Recursive 
+  Identification." MIT Press.
 """
 from __future__ import annotations
 
@@ -82,6 +72,24 @@ class IncrementalEnsembleUpdater:
         catboost_lr_factor: float = 0.5,
         verbose: bool = True,
     ):
+        """
+        Initialize the incremental ensemble updater.
+
+        Parameters
+        ----------
+        strategy : {'auto', 'full_retrain'}, default='auto'
+            The update strategy to use for base models. 'auto' selects 
+            per-model optimal strategies.
+        gamma : float, default=0.3
+            Blending weight for meta-weight calibration. Higher values put 
+            more weight on the most recent data.
+        catboost_extra_iter : int, default=50
+            Number of additional boosting iterations for CatBoost continuation.
+        catboost_lr_factor : float, default=0.5
+            Scaling factor for the learning rate during continuation.
+        verbose : bool, default=True
+            Whether to print progress information.
+        """
         self.strategy            = strategy
         self.gamma               = float(np.clip(gamma, 0.0, 1.0))
         self.catboost_extra_iter = catboost_extra_iter

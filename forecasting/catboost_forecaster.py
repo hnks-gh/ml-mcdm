@@ -1,13 +1,24 @@
-# -*- coding: utf-8 -*-
 """
-CatBoost Forecaster
-===================
+CatBoost Forecaster for Joint Multi-Output Targets.
 
-Joint multi-output gradient boosting via CatBoost MultiRMSE.
+This module provides a `CatBoostForecaster` that implements joint 
+multi-output gradient boosting via the CatBoost 'MultiRMSE' loss. 
 
-Phase 2 enhancement: chronological early stopping is applied by reserving
-the most recent validation_fraction of each training fold as a temporal
-holdout monitor set.
+Key Features
+------------
+- **Joint Multi-Output**: Optimizes a shared ensemble for multiple criterion 
+  simultaneously, preserving inter-target correlations.
+- **Temporal Early Stopping**: Reserves the most recent fraction of training 
+  data as a monitor set to prevent overfitting.
+- **Adaptive Hyperparameters**: Automatically scales tree depth, iterations, 
+  and leaf constraints based on the size of the individual cross-validation 
+  folds.
+
+References
+----------
+- Prokhorenkova et al. (2018). "CatBoost: unbiased boosting with 
+  categorical features." NeurIPS.
+- CatBoost Documentation: https://catboost.ai/en/docs/concepts/loss-functions-regression#multirmse
 """
 
 import warnings
@@ -77,6 +88,29 @@ class CatBoostForecaster(BaseForecaster):
         validation_fraction: float = 0.20,
         random_state: int = 42,
     ):
+        """
+        Initialize the CatBoost forecaster.
+
+        Parameters
+        ----------
+        iterations : int, default=300
+            Maximum number of boosting iterations.
+        depth : int, default=6
+            Depth of the trees.
+        learning_rate : float, default=0.05
+            Boosting learning rate.
+        l2_leaf_reg : float, default=3.0
+            L2 regularization coefficient for the leaves.
+        subsample : float, default=0.8
+            Subsampling rate for Bernoulli bootstrap.
+        early_stopping_rounds : int, default=20
+            Stop training if validation loss does not improve for this many 
+            rounds.
+        validation_fraction : float, default=0.20
+            Fraction of recent training data to reserve for early stopping.
+        random_state : int, default=42
+            Random seed for reproducibility.
+        """
         self.iterations = iterations
         self.depth = depth
         self.learning_rate = learning_rate

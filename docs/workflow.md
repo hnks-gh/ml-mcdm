@@ -21,11 +21,11 @@ The ML-MCDM pipeline analyzes panel data (entities × time periods × criteria) 
 
 ### Core Methodology
 
-- **6 MCDM Methods**: TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS, SAW
-- **Two-Stage Aggregation**: Within-criterion ER → Global ER
-- **CRITIC Two-Level Weighting**: Deterministic two-level CRITIC pipeline
-- **ML Forecasting**: 6-model ensemble + Super Learner + Conformal Prediction
-- **Temporal Stability**: Split-half validation for robustness
+- **5 Traditional MCDM Methods**: TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS
+- **Raw Sum Baseline**: Transparent additive baseline (Stage 1 and 2)
+- **Hierarchical Adaptive CRITIC**: Two-level weighting with year-regime analysis
+- **ML Forecasting**: 4-model ensemble (CatBoost, Bayesian Ridge, SVR, ElasticNet) + Super Learner + Conformal Prediction
+- **Quality Verification**: Temporal stability and sensitivity analysis for robustness
 
 ### Key Features
 
@@ -54,24 +54,24 @@ The ML-MCDM pipeline analyzes panel data (entities × time periods × criteria) 
 │  │ CRITIC Two-Level: Deterministic two-level CRITIC pipeline  │           │
 │  └────────────────────────┬─────────────────────────────────┘           │
 │                           │                                              │
-│  Phase 3: Hierarchical Ranking (ER)                                     │
+│  Phase 3: Hierarchical Ranking                                          │
 │  ┌──────────────────────────────────────────────────────────┐           │
 │  │ Stage 1: Within-criterion (per 8 criteria)              │           │
-│  │   • 6 MCDM methods (TOPSIS, VIKOR, PROMETHEE, COPRAS,   │           │
-│  │     EDAS, SAW) with adaptive zero-handling               │           │
+│  │   • 5 MCDM methods (TOPSIS, VIKOR, PROMETHEE, COPRAS,   │           │
+│  │     EDAS) + Raw Sum Baseline                            │           │
 │  │   • ER belief aggregation (disabled by default)         │           │
 │  │                                                          │           │
 │  │ Stage 2: Global aggregation                             │           │
 │  │   • Weighted ER across 8 criterion beliefs (disabled)  │           │
-│  │   • Final ranking with uncertainty (Kendall's W)        │           │
+│  │   • Final ranking with concordance (Kendall's W)        │           │
 │  └────────────────────────┬─────────────────────────────────┘           │
 │                           │                                              │
-│  Phase 4: ML Forecasting (State-of-the-Art Ensemble)                   │
+│  Phase 4: ML Forecasting (TIER 3 Architecture)                         │
 │  ┌──────────────────────────────────────────────────────────┐           │
-│  │ 5 Models: CatBoost + Bayesian + QRF + KRR + SVR │       │
+│  │ 4 Models: CatBoost + Bayesian + SVR + ElasticNet        │           │
 │  │ Impute panel → Super Learner meta-ensemble              │           │
 │  │ → Conformal Prediction intervals                        │           │
-│  └────────────────────────┬─────────────────────────────────┘           │
+│  └───────────────────────┬──────────────────────────────────┘           │
 │                           │                                              │
 │  Phase 5: Sensitivity Analysis                                          │
 │  ┌──────────────────────────────────────────────────────────┐           │
@@ -171,7 +171,7 @@ PanelData
 
 **Purpose:** Two-stage aggregation using Evidential Reasoning.
 
-#### 6 MCDM Methods
+#### 5 Traditional MCDM Methods + Baseline
 
 | Method | Key Innovation |
 |--------|----------------|
@@ -180,7 +180,7 @@ PanelData
 | **PROMETHEE** | Pairwise outranking |
 | **COPRAS** | Stepwise comparison |
 | **EDAS** | Distance from average |
-| **SAW** | Simple weighted sum |
+| **Base** | Raw sum baseline |
 
 #### Stage 1: Within-Criterion Aggregation
 
@@ -228,16 +228,15 @@ For **each of 8 criteria** (C01 through C08):
 
 **Pre-processing:** A fully ML-imputed copy of the panel (`build_ml_panel_data` — 3-stage: linear interpolation → ffill/bfill → median) is passed to the forecaster. The raw `panel_data` used by MCDM phases is never mutated.
 
-**Ensemble Architecture:**
-- **5 Always-On Base Models:**
+**Ensemble Architecture (TIER 3):**
+- **4 Core Base Models:**
   1. **CatBoost Gradient Boosting** — Joint multi-output tree-based model (MultiRMSE loss)
   2. **Bayesian Ridge** — Probabilistic linear model (PLS-compressed features)
-  3. **Quantile Random Forest** — Distributional forecasting (QRF quantile intervals)
-  4. **Kernel Ridge Regression** — RBF kernel, L2 regularised
-  5. **Support Vector Regression** — ε-insensitive tube, RBF kernel
+  3. **Support Vector Regression** — ε-insensitive tube, RBF kernel
+  4. **ElasticNet** — Regularized linear model (L1+L2)
 
 - **Meta-Ensemble:** Super Learner (per-output meta-weights via `PanelWalkForwardCV`)
-- **Uncertainty Quantification:** Conformal Prediction (distribution-free 95% intervals)
+- **Uncertainty Quantification:** Conformal Prediction (distribution-free intervals, choice of Method)
 
 **Cross-Validation:**
 - **Method:** `PanelWalkForwardCV` — panel-aware walk-forward splitter (annual folds)

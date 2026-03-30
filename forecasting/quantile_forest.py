@@ -1,69 +1,33 @@
-# -*- coding: utf-8 -*-
 """
-Quantile Regression Forests Forecaster
-=======================================
+Quantile Regression Forests Forecaster.
 
-Extends Random Forest to predict the full conditional distribution
-rather than just the conditional mean. Provides distributional forecasts
-with asymmetric prediction intervals and heteroscedastic uncertainty.
+This module provides a `QuantileRandomForestForecaster` that extends Random 
+Forests to predict the full conditional distribution of targets. It is 
+optimized for generating asymmetric prediction intervals and estimating 
+heteroscedastic uncertainty.
 
-Built on ``sklearn_quantile.RandomForestQuantileRegressor``, which
-implements the Meinshausen (2006) QRF algorithm at the C level —
-10–100× faster than a pure-Python leaf-weight implementation and more
-memory-efficient (no dense (n_test × n_train) weight matrix).
+Key Features
+------------
+- **Distributional Forecasting**: Predicts arbitrary quantiles of the 
+  conditional distribution, not just the mean.
+- **Efficient Leaf Processing**: Built on `sklearn-quantile` for fast, 
+  C-level leaf-weight aggregation.
+- **Adaptive Regularization**: Automatically scales `min_samples_leaf` based 
+  on the training set size to prevent overfitting on small cross-validation 
+  folds.
+- **Heteroscedasticity**: Naturally identifies regions of the feature space 
+  with higher or lower predictive variance.
 
-Instead of averaging tree predictions (point estimate), QRF retains
-the full set of training observations that fall in each leaf, allowing
-estimation of arbitrary quantiles of the conditional distribution.
+Architecture
+------------
+The forecaster maintains the conditional mean through standard RF averaging 
+for compatibility with MSE-based meta-learners, while providing 
+specialized methods for median (MAE-optimal) and quantile predictions.
 
-Algorithm:
-    1. Train Random Forest as usual
-    2. For each test point x:
-       - Identify all training samples y_i in the same leaf as x
-       - Estimate quantiles from the empirical distribution of {y_i}
-    3. Output: Q(τ|x) for τ ∈ {0.05, 0.10, ..., 0.95}
-
-Point-prediction semantics:
-    ``predict(X)``        → conditional **mean** (standard RF average)
-                            Used by Super Learner meta-learner (MSE criterion)
-    ``predict_median(X)`` → conditional **median** at q=0.5
-    ``predict_mean(X)``   → identical to ``predict()``
-
-Phase 2 Stabilization (Phase 2.4)
-----------------------------------
-Two changes eliminate the negative CV R² (−0.088 observed in the audit):
-
-1. **RobustScaler removed** — ``RandomForestQuantileRegressor`` is a tree
-   model and is invariant to monotone feature transformations.  The scaler
-   added unnecessary computation, made feature importances less
-   interpretable, and could introduce train-test distribution shift when
-   the prediction set is out-of-distribution.  ``X`` is now passed directly.
-
-2. **Adaptive min_samples_leaf** — with n_train ≈ 150–500, the default
-   ``min_samples_leaf=3`` allows highly specific leaf nodes that memorise
-   fold-specific noise.  ``fit()`` now auto-scales the leaf threshold:
-
-   +-------------+---------------------+
-   | n_train     | effective_min_leaf  |
-   +=============+=====================+
-   | < 200       | max(5, n // 20)     |
-   | 200 – 399   | max(3, n // 30)     |
-   | ≥ 400       | min_samples_leaf    |
-   +-------------+---------------------+
-
-   Auto-scaling only fires when ``min_samples_leaf`` retains the default
-   value (3); explicit overrides are always honoured.
-
-Key Advantages:
-    - Non-parametric: No distributional assumptions
-    - Heteroscedastic: Uncertainty varies with input
-    - Asymmetric intervals: Captures skewness in predictions
-    - Naturally calibrated: Well-calibrated uncertainty
-    - No additional training cost beyond standard RF
-
-References:
-    - Meinshausen (2006). "Quantile Regression Forests" JMLR
-    - Athey, Tibshirani & Wager (2019). "Generalized Random Forests"
+References
+----------
+- Meinshausen (2006). "Quantile Regression Forests." JMLR 7.
+- Athey et al. (2019). "Generalized Random Forests." Annals of Statistics.
 """
 
 import numpy as np
@@ -129,6 +93,29 @@ class QuantileRandomForestForecaster(BaseForecaster):
         random_state: int = 42,
         n_jobs: int = -1,
     ):
+        """
+        Initialize the Quantile Random Forest forecaster.
+
+        Parameters
+        ----------
+        n_estimators : int, default=200
+            Number of trees in the forest.
+        max_depth : int, optional
+            Maximum depth of each tree. If None, nodes are expanded until 
+            all leaves are pure or contain less than min_samples_split 
+            samples.
+        min_samples_split : int, default=5
+            Minimum number of samples required to split an internal node.
+        min_samples_leaf : int, default=3
+            Minimum number of samples required to be at a leaf node. 
+            Auto-scaled if left at default.
+        quantiles : List[float], optional
+            Quantile levels to estimate. Default: common density quantiles.
+        random_state : int, default=42
+            Seed for reproducible forest construction.
+        n_jobs : int, default=-1
+            Number of jobs to run in parallel. -1 uses all processors.
+        """
         if not _SKLEARN_QUANTILE_AVAILABLE:
             raise ImportError(
                 "QuantileRandomForestForecaster requires the 'sklearn-quantile' package.\n"

@@ -1,10 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-Base Classes for ML Forecasting
-===============================
+Forecasting Base Architecture
+=============================
 
-This module provides abstract base classes and result containers
-for all forecasting methods.
+Provides the foundational abstract interfaces and standard result containers 
+for the ML ensemble forecasting system. All specific forecasting models 
+(e.g., CatBoost, Ridge, SuperLearner) inherit from these base classes to 
+ensure a consistent API for training, prediction, and feature importance 
+analysis.
 """
 
 import numpy as np
@@ -16,48 +19,58 @@ from abc import ABC, abstractmethod
 
 class BaseForecaster(ABC):
     """
-    Abstract base class for all forecasting models.
-    
-    All forecasters must implement:
-    - fit(): Train the model
-    - predict(): Make predictions
-    - get_feature_importance(): Return feature importance scores
+    Abstract base interface for all forecasting models in the pipeline.
+
+    Defines the standard protocol for model training, inference, and 
+    interpretability (feature importance). This ensures that base models and 
+    the meta-ensemble can be used interchangeably in evaluation loops.
     """
     
     @abstractmethod
     def fit(self, X: np.ndarray, y: np.ndarray) -> 'BaseForecaster':
         """
-        Fit the model to training data.
-        
-        Args:
-            X: Feature matrix of shape (n_samples, n_features)
-            y: Target values of shape (n_samples,) or (n_samples, n_outputs)
-        
-        Returns:
-            Self for method chaining
+        Train the model on supervised historical data.
+
+        Parameters
+        ----------
+        X : np.ndarray
+            Feature matrix of shape (n_samples, n_features).
+        y : np.ndarray
+            Target values or matrix of shape (n_samples,) or (n_samples, n_outputs).
+
+        Returns
+        -------
+        BaseForecaster
+            Self for method chaining.
         """
         pass
     
     @abstractmethod
     def predict(self, X: np.ndarray) -> np.ndarray:
         """
-        Make predictions on new data.
-        
-        Args:
-            X: Feature matrix of shape (n_samples, n_features)
-        
-        Returns:
-            Predictions of shape (n_samples,) or (n_samples, n_outputs)
+        Produce target estimates for new observations.
+
+        Parameters
+        ----------
+        X : np.ndarray
+            Feature matrix of shape (n_samples, n_features).
+
+        Returns
+        -------
+        np.ndarray
+            Predictions of shape (n_samples,) or (n_samples, n_outputs).
         """
         pass
     
     @abstractmethod
     def get_feature_importance(self) -> np.ndarray:
         """
-        Get feature importance scores.
-        
-        Returns:
-            Array of shape (n_features,) with importance scores
+        Retrieve relative importance scores for input features.
+
+        Returns
+        -------
+        np.ndarray
+            Array of shape (n_features,) containing positive importance weights.
         """
         pass
     

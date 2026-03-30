@@ -1,16 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-MICE Imputation Validation and Testing
-=======================================
+Legacy Missing Data Mechanism Diagnostics (DEPRECATED)
+=====================================================
 
-Production-ready validation suite for MICE imputation ensuring:
-1. No data leakage across train/test boundaries
-2. Proper handling of missing data mechanisms (MCAR/MAR/MNAR)
-3. Convergence diagnostics
-4. Performance benchmarking
+This module contains deprecated components for missing data diagnostics. 
+The current implementation has been unified in :mod:`data.missing_data`.
 
-Author: ML-MCDM Team
-Date: 2026-03-27
+Note: This file is retained for backward compatibility and is scheduled 
+for removal in a future release.
 """
 
 import numpy as np
@@ -23,36 +20,33 @@ logger = logging.getLogger('ml_mcdm')
 
 
 class MICEValidation:
-    """Production-ready validation suite for MICE imputation.
+    """
+    Validation suite for MICE imputation integrity.
 
-    Validates:
-    ✓ No leakage (fit on training only)
-    ✓ Convergence (missingness reduced)
-    ✓ Distribution preservation (imputed ≈ observed)
-    ✓ Mechanism compliance (MCAR/MAR/MNAR diagnostics)
+    Provides static methods to verify convergence, distribution 
+    preservation, and the absence of data leakage in the imputation 
+    pipeline.
     """
 
     @staticmethod
     def validate_no_leakage(X_train: np.ndarray, X_test: np.ndarray,
                            imputer) -> Dict[str, bool]:
         """
-        Validate leakage-free design: imputer fitted ONLY on training data.
+        Verify that the imputer was fitted exclusively on training data.
 
         Parameters
         ----------
-        X_train : ndarray
-            Training features (with NaN)
-        X_test : ndarray
-            Test features (with NaN)
+        X_train : np.ndarray
+            The training feature matrix.
+        X_test : np.ndarray
+            The test feature matrix.
         imputer : MICEImputer
-            Fitted imputer instance
+            The imputer instance to validate.
 
         Returns
         -------
-        checks : dict
-            'is_fitted' : True if imputer fitted
-            'uses_training_statistics' : True if using training means
-            'no_target_leakage' : True (MICE doesn't use targets)
+        Dict[str, bool]
+            A dictionary of boolean flags for various leakage checks.
         """
         checks = {
             'is_fitted': imputer.is_fitted_,

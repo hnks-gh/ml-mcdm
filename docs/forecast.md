@@ -2,22 +2,22 @@
 
 ## Overview
 
-This framework implements a **statistically-principled 3-tier ensemble learning system** optimized for small-to-medium panel data (N < 1000). It combines 5 diverse machine learning models with Super Learner meta-learning and distribution-free conformal prediction to forecast future criterion values.
+This framework implements a **statistically-principled 3-tier ensemble learning system** optimized for small-to-medium panel data (N < 1000). It combines 4 primary machine learning models with Super Learner meta-learning and distribution-free conformal prediction to forecast future criterion values.
 
 **Key Design Principles:**
-- **Model diversity over quantity**: 5 diverse models outperform larger correlated sets
-- **Statistical appropriateness**: Optimized for N < 1000 (your dataset: ~756 training rows)
+- **Model diversity over quantity**: 4 diverse models outperform larger correlated sets
+- **Statistical appropriateness**: Optimized for N < 1000 (your dataset: ~882 training rows)
 - **Automatic optimal weighting**: Super Learner learns best combination
 - **Guaranteed coverage**: Conformal prediction provides 95% valid intervals
-- **No redundancy**: Each model captures different patterns (tree, linear, panel, Bayesian)
+- **No redundancy**: Each model captures different patterns (gradient boosting, Bayesian linear, SVR, ElasticNet)
 
 **Key Features:**
-- **5 Model Types**: CatBoost (joint multi-output), Bayesian linear, kernel methods, and quantile forests
+- **4 Model Types**: CatBoost (joint multi-output), Bayesian linear, SVR (RBF), and ElasticNet
 - **Super Learner**: Automatic optimal weighting via meta-learning (`PanelWalkForwardCV`)
 - **Conformal Prediction**: Distribution-free 95% prediction intervals
-- **Distributional Forecasting**: Full predictive distributions via quantile forests
+- **Baseline Comparison**: Optional Persistence forecaster baseline
 - **Enhanced Feature Engineering**: 12 feature blocks — lag, rolling, stationarity, EWMA, diversity, region dummies (Phase 1)
-- **Target Transformation**: Logit/Yeo-Johnson reversible transform for improved Gaussianity (Phase 5)
+- **Target Transformation**: Yeo-Johnson reversible transform for improved Gaussianity (Phase 5)
 - **HP Optimisation**: Optional Optuna one-time search for CatBoost (Phase 4)
 
 ---
@@ -30,7 +30,7 @@ This framework implements a **statistically-principled 3-tier ensemble learning 
 Input: Panel Data (N entities × p components × T years)
   ↓
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-TIER 1: BASE MODELS (5 diverse models)
+TIER 1: BASE MODELS (4 core models)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   ↓
 Temporal Feature Engineering (12 feature blocks — Phase 1)
@@ -47,7 +47,7 @@ Temporal Feature Engineering (12 feature blocks — Phase 1)
   ├── Block 11: Panel-relative — percentile, z-score, rank-change Δpercentile
   └── Block 12: Geographic cluster dummies (5 Vietnam regions)
   ↓
-Target Transformation (Phase 5) — logit [SAW] or Yeo-Johnson [raw] → ℝ
+Target Transformation (Phase 5) — Yeo-Johnson [raw] → ℝ
   ↓
 Base Model Training (DIVERSE MODEL TYPES)
   │
@@ -57,12 +57,11 @@ Base Model Training (DIVERSE MODEL TYPES)
   ├── Bayesian Linear (1 model)
   │   └── Bayesian Ridge (posterior uncertainty, PLS-compressed features)
   │
-  ├── Kernel Methods (2 models)
-  │   ├── Kernel Ridge Regression (RBF kernel, L2 regularised)
-  │   └── Support Vector Regression (ε-insensitive tube)
+  ├── Kernel Methods (1 model)
+  │   └── Support Vector Regression (ε-insensitive tube, RBF kernel)
   │
-  ├── Distributional (1 model)
-  │   └── Quantile Random Forest (distributional forecasts)
+  ├── Regularized Linear (1 model)
+  │   └── ElasticNet (L1+L2 regularization)
   ↓
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 TIER 2: SUPER LEARNER META-ENSEMBLE
@@ -103,12 +102,11 @@ Output: Predictions + Calibrated Intervals + Diagnostics
 
 The system uses a **single optimized configuration** designed for small-to-medium panel data (N < 1000):
 
-**Base Models (5, always-on):**
+**Base Models (4, always-on):**
 - CatBoost Gradient Boosting (oblivious trees, joint multi-output `MultiRMSE`)
 - Bayesian Ridge (linear with posterior uncertainty, PLS-compressed features)
-- Quantile RF (distributional forecasts, QRF quantile intervals)
-- Kernel Ridge Regression (RBF kernel, L2 regularised)
 - Support Vector Regression (ε-insensitive tube, RBF kernel)
+- ElasticNet (regularized linear, L1+L2)
 
 **Meta-Ensemble:** Super Learner (`PanelWalkForwardCV` panel-aware CV, NNLS meta-weights)
 
@@ -120,7 +118,7 @@ The system uses a **single optimized configuration** designed for small-to-mediu
 
 **HP Optimisation:** One-time Optuna TPE search for CatBoost when `auto_tune_gb=True` (Phase 4)
 
-**Rationale:** For ~756 training rows (63 provinces × ~12 usable year pairs, 2011–2024 with missingness), five complementary models with Super Learner per-output weighting provide a robust bias-variance tradeoff.
+**Rationale:** For ~882 training rows (63 provinces × 14 usable year pairs, 2011–2024), four complementary models with Super Learner per-output weighting provide a robust bias-variance tradeoff.
 
 ---
 
@@ -751,19 +749,11 @@ region_0, region_1, region_2, region_3, region_4
 … (Blocks 2–11 repeated for C02–C08)
 ```
 
-#### SAW Normalisation
+#### Target Normalisation
 
-When `use_saw_targets=True` (production default), year-level targets are per-year
-column-wise minmax-normalised to `[0, 1]` before training.  This:
+When `use_saw_targets=False` (production default), targets are preserved in their raw scale or transformed via Yeo-Johnson to improve normality before training. This preserves extrapolation information that would be lost if clipping to [0, 1].
 
-1. Removes cross-year level differences (each year rescaled independently)
-2. Preserves within-year ordinal structure
-3. Avoids CRITIC-weighting bias in raw composites
-
-The Phase 5 **target transformer** further maps these `[0, 1]` values through the
-logit function (`log(y/(1-y)) → ℝ`) before Super Learner training, improving the
-Gaussianity assumption of BayesianRidge and the Ridge meta-learner.  Conformal bound
-validity is preserved because logit is strictly monotone.
+The Phase 5 **target transformer** maps these values through the Yeo-Johnson function before Super Learner training, improving the Gaussianity assumption of BayesianRidge and the Ridge meta-learner. Conformal bound validity is preserved because the transform is strictly monotone.
 
 ### 5.2 Quick Start Guide
 

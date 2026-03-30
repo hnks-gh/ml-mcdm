@@ -10,8 +10,8 @@
 
 This framework combines Multi-Criteria Decision Making (MCDM) with machine learning to analyze and forecast multi-dimensional performance across entities. It integrates three major components:
 
-1. **Objective Weighting** via CRITIC-based adaptive weighting (NaN-aware, two-level)
-2. **Hierarchical Ranking** using 6 Traditional MCDM methods + Evidential Reasoning (ER)
+1. **Objective Weighting** via Hierarchical CRITIC-based adaptive weighting (NaN-aware, two-level)
+2. **Hierarchical Ranking** using 5 Traditional MCDM methods + Raw Sum Baseline + Evidential Reasoning (ER)
 3. **ML Forecasting (optional)** via 4-Model Ensemble (CatBoost, Bayesian Ridge, SVR, ElasticNet) + Super Learner + Conformal Prediction
 
 **Application:** Vietnam PAPI (Provincial Governance and Public Administration Performance Index) analysis across 63 provinces over 14 years (2011-2024).
@@ -22,11 +22,11 @@ This framework combines Multi-Criteria Decision Making (MCDM) with machine learn
 
 ### Technical Summary
 - **Pipeline orchestration**: `MLMCDMPipeline` drives seven phases (data load, weighting, ranking, forecasting, analysis, visualization, export) with phase-level metrics, timing, and configurable switches from a single `Config` dataclass tree.
-- **Data model**: Yearly panel matrices (63 provinces, 8 criteria, 29 subcriteria) are loaded as `YearContext` objects with explicit missingness semantics (NaN = missing, 0.0 = valid score), dynamic exclusion of all-NaN entities, and optional MICE-based imputation with full audit logs.
-- **Weighting**: Adaptive CRITIC weighting is applied at both subcriteria and criteria levels using contrast intensity and inter-criteria conflict $C_j = \sigma_j \sum_k (1 - r_{jk})$, followed by normalization $w_j = C_j / \sum_k C_k$. NaN-aware preprocessing ensures stable weights in sparse years.
-- **Hierarchical ranking**: Six MCDM methods (TOPSIS, VIKOR, PROMETHEE II, COPRAS, EDAS, SAW) run per criterion; their scores are individually reported with Kendall’s $W$ concordance. The framework supports evidential reasoning (ER) fusion into belief distributions and weighted ER aggregation across criteria, but ER is **disabled by default** (`use_evidential_reasoning = False`).
-- **Forecasting (optional)**: Five-model ensemble (CatBoost, Bayesian Ridge, Quantile Random Forest, Kernel Ridge Regression, Support Vector Regression) with Super Learner meta-ensemble, panel-aware temporal CV, and conformal prediction for distribution-free $1-\alpha$ intervals (default $\alpha=0.05$).
-- **Analysis & validation**: Sensitivity analysis on weights, beliefs, and forecasts; bootstrap and perturbation uncertainty; diagnostics for belief completeness, entropy, residual behavior, and temporal stability.
+- **Data model**: Yearly panel matrices (63 provinces, 8 criteria, 29 subcriteria) are loaded as `YearContext` objects with explicit missingness semantics (NaN = missing, 0.0 = valid score), dynamic exclusion of all-NaN entities, and optional MICE-based imputation with full audit logs for the forecasting phase.
+- **Weighting**: Adaptive hierarchical CRITIC weighting is applied at both subcriteria and criteria levels using contrast intensity and inter-criteria conflict $C_j = \sigma_j \sum_k (1 - r_{jk})$, followed by normalization $w_j = C_j / \sum_k C_k$. NaN-aware preprocessing and year-regime analysis ensure stable weights in sparse years.
+- **Hierarchical ranking**: Six ranking models (TOPSIS, VIKOR, PROMETHEE II, COPRAS, EDAS, and a Raw Sum Baseline) run per criterion; their scores are individually reported with Kendall’s $W$ concordance. The framework supports evidential reasoning (ER) fusion into belief distributions and weighted ER aggregation across criteria, but ER is **disabled by default** (`use_evidential_reasoning = False`).
+- **Forecasting (optional)**: Four-model ensemble (CatBoost, Bayesian Ridge, Support Vector Regression, ElasticNet) with Super Learner meta-ensemble, panel-aware temporal CV, and conformal prediction for distribution-free $1-\alpha$ intervals (default $\alpha=0.05$).
+- **Analysis & validation**: Sensitivity analysis on weights and forecasts; bootstrap and perturbation uncertainty; diagnostics for belief completeness, entropy, residual behavior, and temporal stability.
 - **Outputs & visualization**: Phase-scoped CSV/JSON artifacts, 300 DPI figures, and text reports with reproducible directory layout under `output/result/` and full debug logs.
 
 ---
@@ -40,16 +40,16 @@ This framework combines Multi-Criteria Decision Making (MCDM) with machine learn
                  │
         ┌────────┴────────┐
         ▼                 ▼
-┌──────────────┐   ┌─────────────────┐
-│  WEIGHTING   │   │    RANKING      │
-│              │   │                 │
-│  CRITIC      │   │ Stage 1: Within │
-│  Adaptive    │──►│  - 6 MCDM Mtds  │
-│  Weighting   │   │  - ER Combine   │
-│ (NaN-aware)  │   │ Stage 2: Global │
-│              │   │  - ER Aggregate │
-│              │   │  - Final Rank   │
-└──────────────┘   └────────┬────────┘
+        ┌──────────────┐   ┌─────────────────┐
+        │  WEIGHTING   │   │    RANKING      │
+        │              │   │                 │
+        │  CRITIC      │   │ Stage 1: Within │
+        │  Adaptive    │──►│  - 5 MCDM Mtds  │
+        │  Hierarch.   │   │  - Raw Sum Base │
+        │ (NaN-aware)  │   │                 │
+        │              │   │ Stage 2: Global │
+        │              │   │  - Final Rank   │
+        └──────────────┘   └────────┬────────┘
                             │
                ┌────────────┼────────────┐
                ▼            ▼            ▼
@@ -57,7 +57,7 @@ This framework combines Multi-Criteria Decision Making (MCDM) with machine learn
         │ML FORECAST│ │ ANALYSIS  │ │ VISUALISE │
         │ (OPTIONAL)│ │           │ │ & EXPORT  │
         │           │ │• Sensitiv.│ │           │
-        │• 5 Models │ │• Robust.  │ │• 7+ charts│
+        │• 4 Models │ │• Robust.  │ │• 7+ charts│
         │• Super L  │ │• Kendall W│ │• 14 files │
         └───────────┘ └───────────┘ └───────────┘
 ```
@@ -83,9 +83,9 @@ ml-mcdm/
 ├── output/                # Results export + report writers
 │
 ├── weighting/             # Weight calculation
-│   ├── critic.py          # CRITIC weighting
-│   ├── adaptive.py        # NaN-aware adaptive weights
-│   ├── bootstrap.py       # Bayesian bootstrap utilities
+│   ├── critic.py          # CRITIC weighting core
+│   ├── critic_weighting.py # Hierarchical CRITIC engine
+│   ├── adaptive.py        # NaN-aware adaptive layer
 │   ├── normalization.py   # Min-max/vector/z-score normalization
 │   └── base.py            # Weighting entry points + result types
 │
@@ -95,13 +95,13 @@ ml-mcdm/
 │   ├── promethee.py
 │   ├── copras.py
 │   ├── edas.py
-│   ├── saw.py
+│   ├── saw.py             # Simple Additive Weighting (available)
 │   └── evidential_reasoning/
 │       ├── base.py
 │       └── hierarchical_er.py
 │
 ├── ranking/               # Ranking orchestrator + ER aggregation
-│   └── hierarchical_pipeline.py
+│   └── hierarchical_pipeline.py # Core ranking architecture
 │
 ├── analysis/              # Production-ready analysis
 │   ├── sensitivity.py     # Hierarchical sensitivity (565 lines)
@@ -113,16 +113,15 @@ ml-mcdm/
 │   ├── preprocessing.py   # Scaling, transforms, splits
 │   ├── catboost_forecaster.py # CatBoost (joint MultiRMSE boosting)
 │   ├── bayesian.py        # Bayesian Ridge
-│   ├── quantile_forest.py # Quantile RF
-│   ├── kernel_ridge.py    # Kernel Ridge Regression
 │   ├── svr.py             # Support Vector Regression
+│   ├── elasticnet_forecaster.py # ElasticNet (L1+L2 linear)
 │   ├── panel_mice.py      # PanelSequentialMICE (opt-in)
 │   ├── augmentation.py    # ConditionalPanelAugmenter (opt-in)
 │   ├── shift_detection.py # MMD² covariate shift detection (opt-in)
 │   ├── incremental_update.py # IncrementalEnsembleUpdater (opt-in)
 │   ├── super_learner.py   # Meta-ensemble (OOF + Dirichlet stacking)
 │   ├── conformal.py       # Conformal prediction (split / CV+ / ACI)
-│   └── unified.py         # Ensemble orchestrator (6-stage pipeline)
+│   └── unified.py         # Ensemble orchestrator (TIER 3 architecture)
 │
 ├── tests/                 # Test suite (400+ tests)
 │   ├── test_mcdm_traditional.py
@@ -167,7 +166,7 @@ ml-mcdm/
 
 | Document | Description |
 |----------|-------------|
-| [weighting.md](docs/weighting.md) | Monte Carlo Entropy–CRITIC Ensemble methodology |
+| [weighting.md](docs/weighting.md) | Hierarchical Adaptive CRITIC methodology |
 | [ranking.md](docs/ranking.md) | Hierarchical MCDM + Evidential Reasoning details |
 | [forecast.md](docs/forecast.md) | Ensemble ML forecasting architecture |
 
@@ -193,29 +192,29 @@ $$
 Where K is normalization constant handling conflicts.
 
 **Two-stage architecture (available but disabled by default):**
-1. **Stage 1**: Within each criterion, combine 6 method scores via ER
+1. **Stage 1**: Within each criterion, combine method scores via ER
 2. **Stage 2**: Combine 8 criterion beliefs via weighted ER
 
 **Reference:** Yang, J.B., & Xu, D.L. (2002). On the evidential reasoning algorithm. *IEEE Trans. SMC-A*, 32(3), 289-304.
 
 ---
 
-### CRITIC-Based Adaptive Weighting
+### Hierarchical CRITIC Weighting
 
-The weighting module uses the CRITIC method with NaN-aware preprocessing and two-level aggregation:
+The weighting module uses a two-level objective weighting process with NaN-aware preprocessing and year-regime analysis:
 
 1. **Contrast intensity**: standard deviation $\sigma_j$ captures variability of criterion $j$
 2. **Conflict**: $(1 - r_{jk})$ measures disagreement with other criteria
 3. **CRITIC score**: $C_j = \sigma_j \sum_k (1 - r_{jk})$
 4. **Normalization**: $w_j = C_j / \sum_k C_k$
-5. **Two-level weights**: subcriteria weights roll up into criterion-level weights for ER aggregation
+5. **Adaptive regimes**: Weights are blended across different data-availability regimes to ensure temporal stability.
 
 ---
 
 ### ML Forecasting
 
-The pipeline integrates a five-model ensemble (CatBoost, Bayesian Ridge,
-Quantile Random Forest, Kernel Ridge Regression, Support Vector Regression). A Super Learner
+The pipeline integrates a four-model ensemble (CatBoost, Bayesian Ridge,
+Support Vector Regression, ElasticNet). A Super Learner
 meta-ensemble optimizes per-output model weights from out-of-fold predictions, while
 conformal prediction provides distribution-free uncertainty intervals. An ML-imputed
 copy of the panel (`build_ml_panel_data`) is passed to the forecaster so the MCDM
@@ -230,8 +229,8 @@ phases remain on observed data.
 | Phase | Example Files | Description |
 |------|----------------|-------------|
 | **weighting/** | `weights_analysis.csv`, `critic_weights_YYYY.csv`, `sc_global_weights_all_years.csv` | CRITIC diagnostics and per-year weights |
-| **mcdm/** | `mcdm_scores_C01-C08.csv`, `mcdm_scores_composite.csv` | Per-criterion scores from 6 MCDM methods |
-| **ranking/** | `mcdm_criteria_C01-C08_ranking.csv`, `mcdm_scores_composite_ranking.csv` | ER aggregation results and method comparisons |
+| **mcdm/** | `mcdm_scores_C01-C08.csv`, `mcdm_scores_composite.csv` | Per-criterion scores from 5 MCDM methods + Base |
+| **ranking/** | `mcdm_criteria_C01-C08_ranking.csv`, `mcdm_scores_composite_ranking.csv` | Hierarchical aggregation results and method comparisons |
 | **forecasting/** | `forecast_predictions_target_year.csv`, `forecast_model_comparison.csv`, `forecast_cv_metrics.csv` | Forecast outputs and CV metrics (optional) |
 | **sensitivity/** | `sensitivity_summary.json` | Robustness summaries and perturbation diagnostics |
 

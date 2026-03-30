@@ -1,26 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-SAW: Simple Additive Weighting (Weighted Sum Model)
+SAW (Simple Additive Weighting)
+===============================
 
-The simplest MCDM method — serves as a transparent baseline.
-
-    Score_i = Σ_j  w_j × r_ij
-
-where r_ij is the normalised value and w_j is the criterion weight.
-
-Properties
-----------
-- Linear aggregation (fully compensatory).
-- Assumes preference independence among criteria.
-- Computationally O(m × n).
-
-References
-----------
-[1] Fishburn, P.C. (1967). "Additive Utilities with Incomplete Product
-    Sets: Application to Priorities and Assignments."
-    Operations Research, 15(3), 537–542.
-[2] MacCrimmon, K.R. (1968). "Decision Making among Multiple-Attribute
-    Alternatives." RAND Corporation, RM-4823-ARPA.
+The most basic multi-criteria decision-making method, also known as the 
+Weighted Sum Model. It provides a linear, fully compensatory aggregation 
+of normalized criterion scores. In this pipeline, it serves as a 
+transparent baseline for comparing more complex outranking methods.
 """
 
 import numpy as np
@@ -33,11 +19,20 @@ from weighting import WeightResult, CRITICWeightCalculator
 
 @dataclass
 class SAWResult:
-    """Result container for SAW."""
-    scores: pd.Series
-    ranks: pd.Series
-    weighted_matrix: pd.DataFrame
-    weights: Dict[str, float]
+    """
+    Container for SAW calculation results and diagnostics.
+
+    Attributes
+    ----------
+    scores : pd.Series
+        The final weighted sum scores.
+    ranks : pd.Series
+        Final preference rankings (1 = best).
+    weighted_matrix : pd.DataFrame
+        The weighted normalized decision matrix.
+    weights : Dict[str, float]
+        Criteria weights applied.
+    """
 
     @property
     def final_ranks(self) -> pd.Series:
@@ -71,14 +66,10 @@ class SAWResult:
 
 class SAWCalculator:
     """
-    Simple Additive Weighting calculator.
+    Calculator for the Simple Additive Weighting outranking method.
 
-    Parameters
-    ----------
-    normalization : str
-        Normalisation method: 'minmax' (default), 'max', 'sum'.
-    cost_criteria : list, optional
-        Criteria where lower values are preferred.
+    Provides a straightforward linear combination of normalized scores, 
+    useful as a reference baseline for model validation.
     """
 
     def __init__(self,
@@ -89,21 +80,23 @@ class SAWCalculator:
 
     def calculate(self,
                   data: pd.DataFrame,
-                  weights: Union[Dict[str, float], WeightResult, None] = None,
+                  weights: Union[Dict[str, float], WeightResult, Optional[Any]] = None,
                   ) -> SAWResult:
         """
-        Calculate SAW scores and rankings.
+        Execute the SAW ranking algorithm.
 
         Parameters
         ----------
         data : pd.DataFrame
-            Decision matrix (alternatives × criteria).
-        weights : dict or WeightResult
-            Criterion weights.
+            The decision matrix with alternatives as rows.
+        weights : Union[Dict[str, float], WeightResult], optional
+            Weights for each criterion. If None, defaults to equal weights 
+            or pre-calculated CRITIC weights.
 
         Returns
         -------
         SAWResult
+            Object containing final scores and ranks.
         """
         if weights is None:
             wc = CRITICWeightCalculator()

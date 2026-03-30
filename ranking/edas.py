@@ -1,17 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-EDAS: Evaluation based on Distance from Average Solution
+EDAS (Evaluation based on Distance from Average Solution)
+==========================================================
 
-A method that uses the average solution as a reference point rather than
-ideal solutions. More robust to outliers and extreme values.
-
-Mathematical Steps:
-1. Calculate Average Solution (AV)
-2. Calculate Positive Distance from Average (PDA)
-3. Calculate Negative Distance from Average (NDA)
-4. Weighted sum: SP_i = Σw_j × PDA_ij, SN_i = Σw_j × NDA_ij
-5. Normalize: NSP_i, NSN_i
-6. Appraisal Score: AS_i = (NSP_i + (1 - NSN_i)) / 2
+A multi-criteria decision-making method that uses the average solution 
+as a reference point for evaluation. It is particularly robust to 
+outliers and extreme values compared to methods that rely strictly on 
+ideal solutions.
 """
 
 import numpy as np
@@ -25,17 +20,32 @@ from weighting import WeightResult, CRITICWeightCalculator
 
 @dataclass
 class EDASResult:
-    """Result container for EDAS calculation."""
-    PDA: pd.DataFrame              # Positive Distance from Average
-    NDA: pd.DataFrame              # Negative Distance from Average
-    SP: pd.Series                  # Weighted sum of PDA
-    SN: pd.Series                  # Weighted sum of NDA
-    NSP: pd.Series                 # Normalized SP
-    NSN: pd.Series                 # Normalized SN
-    AS: pd.Series                  # Appraisal Score
-    ranks: pd.Series               # Final rankings
-    average_solution: pd.Series    # Average solution values
-    weights: Dict[str, float]
+    """
+    Container for EDAS calculation results and diagnostics.
+
+    Attributes
+    ----------
+    PDA : pd.DataFrame
+        Positive Distance from Average matrix.
+    NDA : pd.DataFrame
+        Negative Distance from Average matrix.
+    SP : pd.Series
+        Sum of weighted PDA values for each alternative.
+    SN : pd.Series
+        Sum of weighted NDA values for each alternative.
+    NSP : pd.Series
+        Normalized SP scores in range [0, 1].
+    NSN : pd.Series
+        Normalized SN scores in range [0, 1].
+    AS : pd.Series
+        Final appraisal scores (higher is better).
+    ranks : pd.Series
+        Final preference rankings (1 = best).
+    average_solution : pd.Series
+        The calculated average solution vector used as reference.
+    weights : Dict[str, float]
+        Criteria weights applied.
+    """
     
     @property
     def final_ranks(self) -> pd.Series:
@@ -79,39 +89,11 @@ class EDASResult:
 
 class EDASCalculator:
     """
-    EDAS (Evaluation based on Distance from Average Solution) calculator.
-    
-    Unlike TOPSIS which uses ideal solutions, EDAS uses the average solution
-    as a reference point. This makes it more robust to outliers and extreme values.
-    
-    Parameters
-    ----------
-    benefit_criteria : List[str], optional
-        Criteria where higher values are better
-    cost_criteria : List[str], optional
-        Criteria where lower values are better
-    
-    Examples
-    --------
-    >>> import pandas as pd
-    >>> from ranking import EDASCalculator
-    >>> 
-    >>> data = pd.DataFrame({
-    ...     'Quality': [0.8, 0.6, 0.9, 0.7],
-    ...     'Price': [100, 150, 120, 80],  # Cost criterion
-    ...     'Speed': [5, 3, 4, 6]
-    ... }, index=['A', 'B', 'C', 'D'])
-    >>> 
-    >>> weights = {'Quality': 0.4, 'Price': 0.3, 'Speed': 0.3}
-    >>> calc = EDASCalculator(cost_criteria=['Price'])
-    >>> result = calc.calculate(data, weights)
-    >>> print(result.AS)
-    
-    References
-    ----------
-    Ghorabaee, M.K., Zavadskas, E.K., Olfat, L., & Turskis, Z. (2015).
-    Multi-criteria inventory classification using a new method of evaluation 
-    based on distance from average solution (EDAS). Informatica.
+    Calculator for the EDAS outranking method.
+
+    Evaluates alternatives by measuring their positive and negative 
+    deviations from the arithmetic mean (average solution) of the entire 
+    dataset.
     """
     
     def __init__(self,
@@ -121,23 +103,24 @@ class EDASCalculator:
         self.cost_criteria = cost_criteria or []
     
     def calculate(self,
-                 data: pd.DataFrame,
-                 weights: Union[Dict[str, float], WeightResult, None] = None
-                 ) -> EDASResult:
+                  data: pd.DataFrame,
+                  weights: Union[Dict[str, float], WeightResult, Optional[Any]] = None
+                  ) -> EDASResult:
         """
-        Calculate EDAS scores and rankings.
-        
+        Execute the EDAS ranking algorithm.
+
         Parameters
         ----------
         data : pd.DataFrame
-            Decision matrix (alternatives × criteria)
-        weights : Dict or WeightResult
-            Criteria weights
-        
+            The decision matrix with alternatives as rows.
+        weights : Union[Dict[str, float], WeightResult], optional
+            Weights for each criterion. If None, defaults to equal weights 
+            or pre-calculated CRITIC weights.
+
         Returns
         -------
         EDASResult
-            Complete EDAS results
+            Object containing appraisal scores, ranks, and distance matrices.
         """
         # Get weights
         if weights is None:

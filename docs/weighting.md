@@ -39,13 +39,16 @@ A third set, **global SC weights**, is derived by multiplying the two levels tog
 | Level 2 | Criterion weights C01–C08 | Sums to 1 globally | Stage 2: ER aggregation |
 | Global | 29 SC weights | Sums to 1 globally | `pipeline.py` (`WeightResult.weights`) |
 
-### Method: Deterministic Two-Level CRITIC
+### Method: Hierarchical Adaptive CRITIC
 
-Each level is computed independently via the **CRITIC** (CRiteria Importance Through Intercriteria Correlation) objective weighting method:
+The weighting phase uses the **CRITIC** (CRiteria Importance Through Intercriteria Correlation) method, enhanced with hierarchical aggregation and adaptive year-regime handling:
 
-- **CRITIC** — rewards criteria that are both highly variable *and* uncorrelated with other criteria, ensuring that redundant criteria receive lower joint weight.
+- **CRITIC core**: Rewards criteria that are both highly variable (contrast intensity $\sigma_j$) *and* uncorrelated with others (conflict $\sum(1-r_{jk})$).
+- **Hierarchical**: Sub-criteria weights sum to 1 within each group (Level 1); group weights sum to 1 globally (Level 2).
+- **Adaptive Regimes**: Handles structural missing data by identifying "year regimes" with consistent criterion availability and blending results across them.
+- **Statistical Integrity**: Uses complete-case exclusion to avoid variance attenuation and spurious correlations caused by imputation.
 
-The deterministic pipeline applies CRITIC once on the full (un-perturbed) data matrix at each level. There is no Monte Carlo simulation, no bootstrap resampling, and no entropy blending. The result is fully reproducible for a given input panel.
+The pipeline is deterministic and highly reproducible for a given input panel. Robustness is verified through secondary temporal stability and sensitivity analysis.
 
 ### Input / Output summary
 
@@ -65,27 +68,28 @@ The deterministic pipeline applies CRITIC once on the full (un-perturbed) data m
 
 ```mermaid
 flowchart TD
-    A["panel_df\nProvince × Year × SC columns\n(pre-cleaned by pipeline.py)"]
-    --> B["Step 1 · Data Preparation\nBuild wide matrix X (m×T rows × 29 cols)"]
+    A["panel_df\nProvince × Year × SC columns"]
+    --> B["Step 1 · Year-Regime Analysis\nIdentify years with consistent data patterns"]
 
     subgraph L1["Step 2 · Level 1 CRITIC (×8 groups)"]
-      B --> C["For each C_k: extract m × n_k sub-matrix X_k"]
-      --> D["Normalize X_k with GlobalMinMax"]
-      --> E["CRITIC weights u_k — n_k weights summing to 1"]
+      B --> C["For each C_k: extract SC columns"]
+      --> D["Complete-case exclusion per group"]
+      --> E["Normalize with GlobalMinMax"]
+      --> F["Level 1 weights u_k (Local)"]
     end
 
-    E --> F["Step 3 · Build Criterion Composite Matrix m×8\nz_ik = Σ_j u_kj · x_ij"]
+    F --> G["Step 3 · Renormalized Composite Matrix\nWeighted average over available SCs per row"]
 
-    subgraph L2["Step 4 · Level 2 CRITIC"]
-        F --> G["Normalize Z with GlobalMinMax"]
-        --> H["CRITIC weights v — 8 weights summing to 1"]
+    subgraph L2["Step 4 · Level 2 CRITIC (Per Regime)"]
+        G --> H["Group rows into missingness regimes"]
+        --> I["Run Level 2 CRITIC per regime"]
+        --> J["Obs-weighted average → Global Criterion Weights v"]
     end
 
-    H --> I["Step 5 · Global SC Weights\nglobal_w_j = u_kj × v_k"]
+    J --> K["Step 5 · Global SC Weights\nglobal_w_j = u_kj × v_k"]
 
-    I --> J["Step 6 · Temporal Stability Verification\nSplit-half cosine similarity — threshold 0.95"]
-
-    J --> K["Step 7 · Return WeightResult"]
+    K --> L["Step 6 · Quality Verification\nTemporal Stability & Sensitivity Analysis"]
+    L --> M["Step 7 · Return WeightResult"]
 ```
 
 ---
@@ -132,36 +136,32 @@ local_weights = {
 
 ### Step 3 — Build Criterion Composite Matrix
 
-**Purpose:** Collapse the $m \times 29$ SC panel into an $m \times 8$ criterion-level panel, where each column is a single score representing one criterion per province.
+**Purpose:** Collapse the SC panel into an $m \times 8$ criterion-level panel.
 
-Using the Level 1 posterior-mean local weights, each criterion's composite score for province $i$ is the weighted sum of its SC values:
+To handle structural year-gaps, we use a **renormalized weighted average** over available sub-criteria:
 
-$$z_{ik} = \sum_{j \in \text{SC}_k} \bar{u}_{k,j} \cdot x_{ij}, \quad i = 1,\ldots,m, \quad k = 1,\ldots,K$$
+$$z_{ik} = \frac{\sum_{j \in \text{avail}_k(i)} u_{k,j} \cdot x_{ij}}{\sum_{j \in \text{avail}_k(i)} u_{k,j}}$$
 
-where $x_{ij}$ are the raw (pre-normalization) SC values and $\bar{u}_{k,j}$ are the Level 1 local weights.
+where $\text{avail}_k(i)$ is the set of non-NaN sub-criteria for criterion $k$ in row $i$.
 
-> **Design rationale:** The composite matrix $Z \in \mathbb{R}^{m \times 8}$ represents each criterion as a single score that already encodes the relative importance of its sub-criteria. Level 2 then determines how important each criterion is *relative to the others*, independently of the SC-level weights. This ensures the two levels are conceptually orthogonal.
+> **Statistical Integrity:** This approach prevents the entire row from being dropped if only one sub-criterion is missing, while ensuring that the composite score remains representative of the available information. $z_{ik}$ is NaN only if the *entire* criterion group is absent for that year/province.
 
 ---
 
-### Step 4 — Level 2: Criterion CRITIC Weights
+### Step 4 — Level 2: Criterion Weights via Regime Analysis
 
-**Purpose:** Determine the global importance of each criterion C01–C08 relative to one another.
+Level 2 handles the $m \times 8$ composite matrix through a **regime-aware CRITIC** process:
 
-Apply the same CRITIC procedure to the composite matrix $Z \in \mathbb{R}^{(m \cdot T) \times 8}$, treating each criterion column as a single feature:
+1. **Regime Detection**: Rows are grouped by their missingness pattern (which criteria are present).
+2. **Per-Regime CRITIC**:
+   - For each regime, extract active criteria.
+   - Run CRITIC and normalize weights to sum to 1 within the regime.
+3. **Global Aggregation**:
+   - Compute observation-count-weighted average across all regimes:
+     $v_k = \frac{\sum_r w_{r,k} \cdot n_r}{\sum_r n_r}$
+   - Re-normalize global criterion weights $v$ to sum to 1.
 
-1. **Normalize** $\tilde{Z} = \text{GlobalMinMax}(Z, \varepsilon)$.
-2. **Apply CRITIC** — compute contrast and correlation across the 8 criterion columns:
-
-$$C_k = \sigma_k \sum_{k'} (1 - r_{kk'}), \quad v_k = \frac{C_k}{\sum_{k''} C_{k''}}$$
-
-**Output of this step:**
-
-```
-criterion_weights = {
-    "C01": float, "C02": float, ..., "C08": float   # sums to 1
-}
-```
+**Output:** Global criterion weights $v_{C01} \dots v_{C08}$ reflecting the information content across the entire 14-year panel.
 
 ---
 
@@ -299,13 +299,13 @@ class WeightingConfig:
 
 | File | Role |
 |---|---|
-| `weighting/critic_weighting.py` | `CRITICWeightingCalculator` — main two-level deterministic CRITIC pipeline |
-| `weighting/critic.py` | `CRITICWeightCalculator` — per-level CRITIC weights |
-| `weighting/adaptive.py` | `AdaptiveWeightCalculator` — NaN-aware utility |
-| `weighting/bootstrap.py` | Bootstrap utilities (used by sensitivity analysis) |
-| `weighting/validation.py` | `temporal_stability_verification` — split-half cosine metric |
-| `weighting/normalization.py` | `global_min_max_normalize`, `GlobalNormalizer` |
-| `weighting/base.py` | `WeightResult` dataclass; `calculate_weights` convenience function |
+| `weighting/critic_weighting.py` | `CRITICWeightingCalculator` — main two-level hierarchical engine |
+| `weighting/critic.py` | `CRITICWeightCalculator` — per-level CRITIC statistics |
+| `weighting/adaptive.py` | `AdaptiveWeightCalculator` — NaN-aware filtering logic |
+| `weighting/normalization.py` | `global_min_max_normalize` |
+| `weighting/base.py` | `WeightResult` dataclass; entry points |
+| `analysis/critic_temporal_stability.py` | Temporal stability analyzer |
+| `analysis/critic_sensitivity_analysis.py` | Weights perturbation analyzer |
 | `weighting/__init__.py` | Module exports |
 | `config.py` | `WeightingConfig` dataclass |
 | `pipeline.py` | Orchestration — calls `CRITICWeightingCalculator`, reads `details` |

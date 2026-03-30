@@ -1,18 +1,15 @@
 # -*- coding: utf-8 -*-
 """
-CRITIC Weighting for Panel MCDM Data
-=====================================
+Hierarchical CRITIC Weighting Engine
+====================================
 
-Primary class
--------------
-``CRITICWeightingCalculator``
-    Two-level deterministic CRITIC weighting.
-    Level 1 — local SC weights per criterion group (sum to 1 within group).
-    Level 2 — criterion weights over composite matrix (sum to 1 globally).
-    Global  — global_w[SC_j] = local_w[SC_j | C_k] × criterion_w[C_k].
+Orchestrates a two-level objective weighting process for panel data:
+1.  Level 1: Local sub-criteria weights within each criterion group.
+2.  Level 2: Criterion weights across composite criterion scores.
 
-No Monte Carlo, no tuning, no Beta blending — fully deterministic.
-Temporal stability analysis is delegated to ``analysis/``.
+The resulting global weights are the product of these two levels, 
+ensuring a mathematically grounded and balanced weighting scheme that 
+respects the hierarchical structure of the governance model.
 """
 
 import numpy as np
@@ -31,19 +28,12 @@ logger = logging.getLogger(__name__)
 
 class CRITICWeightingCalculator:
     """
-    Two-level deterministic CRITIC weighting for panel MCDM data.
+    Two-level deterministic CRITIC weighting system.
 
-    Level 1  : CRITIC weights per criterion group → local SC weights
-               (sum to 1 within each group).
-    Level 2  : CRITIC weights over criterion composite matrix → criterion
-               weights (sum to 1 globally).
-    Global   : global_w[SC_j] = local_w[SC_j | C_k] × criterion_w[C_k],
-               re-normalised to sum to 1.
-
-    Parameters
-    ----------
-    config : WeightingConfig
-        Configuration object.  Only ``config.epsilon`` is used.
+    Implements a hierarchical approach where sub-criteria are first 
+    weighted within their respective functional groups, and groups are 
+    subsequently weighted based on their information content across the 
+    entire panel.
     """
 
     def __init__(self, config: Any) -> None:
@@ -65,55 +55,33 @@ class CRITICWeightingCalculator:
         weight_all_years: Dict[int, Dict[str, float]] = None,
     ) -> WeightResult:
         """
-        Run two-level deterministic CRITIC weighting.
+        Execute the hierarchical weighting process on panel data.
+
+        Coordinates Level 1 (local) and Level 2 (global) weighting steps, 
+        handling structural gaps in the panel through year-regime analysis.
 
         Parameters
         ----------
         panel_df : pd.DataFrame
-            Long-format panel (entity_col, time_col, SC columns).
-            Pre-cleaned by caller; further NaN guards applied internally.
-        criteria_groups : dict
-            ``{criterion_id: [sc_col1, …]}`` — criterion groups.
-        entity_col : str, default 'Province'
-        time_col   : str, default 'Year'
-        run_temporal_stability : bool, default=True
-            If True, compute window-based temporal stability metrics.
-            Results attached to WeightResult.temporal_stability.
-        run_sensitivity_analysis : bool, default=True
-            If True, compute three-tier perturbation sensitivity metrics.
-            Results attached to WeightResult.sensitivity_analysis.
-        weight_all_years : Dict[int, Dict[str, float]], optional
-            Per-year weight histories (required if running temporal/sensitivity analyses).
-            Format: {year: {criterion: weight}}
+            The long-format panel data.
+        criteria_groups : Dict[str, List[str]]
+            Definition of which sub-criteria belong to which criterion.
+        entity_col : str
+            The column name for entities (provinces).
+        time_col : str
+            The column name for the temporal dimension (years).
+        run_temporal_stability : bool
+            Whether to perform stability metrics across windows.
+        run_sensitivity_analysis : bool
+            Whether to perform perturbation audits.
+        weight_all_years : Optional[Dict[int, Dict[str, float]]]
+            Historical weights for comparative diagnostics.
 
         Returns
         -------
         WeightResult
-            weights = {sc: float} — global SC weights summing to 1.
-            method  = 'critic_weighting'
-            details = diagnostics dict (see Notes).
-
-        Notes
-        -----
-        Details dict schema::
-
-            level1: {crit_id: {local_sc_weights: {sc: float}}}
-            level2:
-              criterion_weights: {crit_id: float}   # obs-weighted aggregate
-              regimes: list of {
-                pattern_code: int,          # bitmask of absent-criteria columns
-                n_obs:        int,          # observations in this regime
-                active_criteria: [str],     # criteria with valid composite scores
-                criterion_weights: {crit_id: float}  # sums to 1 within regime
-              }
-            global_sc_weights:       {sc: float}
-            critic_sc_weights:       {sc: float}   # alias of global_sc_weights
-            critic_criterion_weights:{crit_id: float} # alias of level2 criterion_weights
-            n_observations:    int
-            n_criteria_groups: int
-            n_subcriteria:     int
-            n_provinces:       int
-            n_years:           int
+            The final result containing global sub-criteria weights and 
+            hierarchical diagnostics.
         """
         eps = self.config.epsilon
         panel_df = panel_df.copy()

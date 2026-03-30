@@ -1,16 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-COPRAS: Complex Proportional Assessment
+COPRAS (Complex Proportional Assessment)
+========================================
 
-A method based on direct and proportional dependence of significance 
-and utility degree on criterion values and weights.
-
-Mathematical Steps:
-1. Normalize the decision matrix (sum normalization)
-2. Calculate weighted normalized matrix
-3. Sum benefit criteria (S+) and cost criteria (S-)
-4. Calculate relative significance: Q_i = S+_i + (S-_min × ΣS-) / (S-_i × Σ(1/S-))
-5. Calculate utility degree: N_i = (Q_i / Q_max) × 100%
+A multi-criteria decision-making method that evaluates alternatives 
+based on their relative significance and utility degree. It accounts 
+for both benefit and cost criteria through a proportional dependence 
+model.
 """
 
 import numpy as np
@@ -23,16 +19,30 @@ from weighting import WeightResult, CRITICWeightCalculator
 
 @dataclass
 class COPRASResult:
-    """Result container for COPRAS calculation."""
-    S_plus: pd.Series            # Sum of weighted normalized benefit criteria
-    S_minus: pd.Series           # Sum of weighted normalized cost criteria
-    Q: pd.Series                 # Relative significance (priority)
-    utility_degree: pd.Series    # Utility degree N (percentage)
-    ranks: pd.Series             # Final rankings
-    weighted_matrix: pd.DataFrame
-    weights: Dict[str, float]
-    benefit_sum: float           # Total benefit contribution
-    cost_sum: float              # Total cost contribution
+    """
+    Container for COPRAS calculation results and diagnostics.
+
+    Attributes
+    ----------
+    S_plus : pd.Series
+        Sum of weighted normalized benefit criteria scores.
+    S_minus : pd.Series
+        Sum of weighted normalized cost criteria scores.
+    Q : pd.Series
+        Relative significance (priority) values.
+    utility_degree : pd.Series
+        Final utility scores as a percentage of the best alternative.
+    ranks : pd.Series
+        Final preference rankings (1 = best).
+    weighted_matrix : pd.DataFrame
+        The weighted normalized decision matrix.
+    weights : Dict[str, float]
+        Criteria weights applied.
+    benefit_sum : float
+        Aggregate significance of all benefit criteria.
+    cost_sum : float
+        Aggregate significance of all cost criteria.
+    """
     
     @property
     def final_ranks(self) -> pd.Series:
@@ -73,40 +83,11 @@ class COPRASResult:
 
 class COPRASCalculator:
     """
-    COPRAS (Complex Proportional Assessment) calculator.
-    
-    COPRAS assumes direct and proportional dependence of significance 
-    and utility degree on criterion values and weights. It's particularly
-    effective when dealing with both benefit and cost criteria.
-    
-    Parameters
-    ----------
-    benefit_criteria : List[str], optional
-        Criteria where higher values are better
-    cost_criteria : List[str], optional
-        Criteria where lower values are better
-    
-    Examples
-    --------
-    >>> import pandas as pd
-    >>> from ranking import COPRASCalculator
-    >>> 
-    >>> data = pd.DataFrame({
-    ...     'Quality': [0.8, 0.6, 0.9, 0.7],
-    ...     'Price': [100, 150, 120, 80],  # Cost criterion
-    ...     'Speed': [5, 3, 4, 6]
-    ... }, index=['A', 'B', 'C', 'D'])
-    >>> 
-    >>> weights = {'Quality': 0.4, 'Price': 0.3, 'Speed': 0.3}
-    >>> calc = COPRASCalculator(cost_criteria=['Price'])
-    >>> result = calc.calculate(data, weights)
-    >>> print(result.utility_degree)
-    
-    References
-    ----------
-    Zavadskas, E.K., & Kaklauskas, A. (1996). Determination of an efficient
-    contractor by using the new method of multicriteria assessment. 
-    International Symposium for "The Organisation and Management of Construction".
+    Calculator for the COPRAS outranking method.
+
+    Operates on sum-normalized data to determine the relative utility of 
+    alternatives by balancing positive (benefit) and negative (cost) 
+    criterion impacts.
     """
     
     def __init__(self,
@@ -116,23 +97,25 @@ class COPRASCalculator:
         self.cost_criteria = cost_criteria or []
     
     def calculate(self,
-                 data: pd.DataFrame,
-                 weights: Union[Dict[str, float], WeightResult, None] = None
-                 ) -> COPRASResult:
+                  data: pd.DataFrame,
+                  weights: Union[Dict[str, float], WeightResult, Optional[Any]] = None
+                  ) -> COPRASResult:
         """
-        Calculate COPRAS scores and rankings.
-        
+        Execute the COPRAS ranking algorithm.
+
         Parameters
         ----------
         data : pd.DataFrame
-            Decision matrix (alternatives × criteria)
-        weights : Dict or WeightResult
-            Criteria weights
-        
+            The decision matrix with alternatives as rows.
+        weights : Union[Dict[str, float], WeightResult], optional
+            Weights for each criterion. If None, defaults to equal weights 
+            or pre-calculated CRITIC weights.
+
         Returns
         -------
         COPRASResult
-            Complete COPRAS results
+            Object containing utility degrees, ranks, and significance 
+            metrics.
         """
         # Get weights
         if weights is None:

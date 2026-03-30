@@ -1,31 +1,20 @@
-# -*- coding: utf-8 -*-
 """
-MCDM Ranking Result Visualization Package
-==========================================
+Advanced MCDM Ranking Analysis Visualizations.
 
-Professional visualization suite for analyzing and validating MCDM ranking results
-across multiple methods and time periods.
+This module provides the `MCDMRankingPlotter` class, which offers a 
+professional suite for validating and comparing MCDM results across 
+multiple methods (TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS) over time.
 
-Features:
-  • Distribution analysis: 6 charts for individual MCDM method score distributions
-  • Method agreement: Spearman rank correlation heatmap (6x6 methods matrix)
-  • Concordance: Kendall's tau, Kendall's W for inter-method agreement
-  • Comparison: Rank profile plots, boxplots, scatter plots
-  • Robustness: Perturbation sensitivity analysis
-
-Charts produced:
-  fig09_distribution_TOPSIS.png
-  fig09_distribution_VIKOR.png
-  fig09_distribution_PROMETHEE.png
-  fig09_distribution_COPRAS.png
-  fig09_distribution_EDAS.png
-  fig09_distribution_SAW.png
-  fig10_method_agreement_matrix.png
-  fig11_kendall_w_analysis.png
-  fig12_rank_profiles.png
-  fig13_method_boxplots.png
-  fig14_method_scatter.png
-  fig15_perturbation_sensitivity.png
+Key Features
+-----------
+- **Distribution Analysis**: Visualizes individual method score spreads 
+  using histograms and KDE.
+- **Method Agreement**: Clustered Spearman matrices and Kendall's W 
+  concordance analysis.
+- **Comparative Profiling**: Rank profiles, boxplots, and pairwise scatter 
+  plot matrices.
+- **Robustness Testing**: Perturbation sensitivity analysis to evaluate 
+  ranking stability under weight changes.
 """
 
 from __future__ import annotations
@@ -57,17 +46,10 @@ _METHOD_COLORS = {
 
 class MCDMRankingPlotter(BasePlotter):
     """
-    Professional figures for validating and comparing MCDM ranking results.
-    
-    Analyzes results across 6 traditional MCDM methods (TOPSIS, VIKOR, PROMETHEE,
-    COPRAS, EDAS, SAW) spanning multiple years (2011-2024) and multiple alternatives
-    (63 provinces).
-    
-    Design philosophy:
-      - Colorful, elegant, publication-quality visualizations
-      - For comparison charts: clear axis scales for discrimination
-      - For agreement/consensus charts: emphasis on agreement patterns
-      - Mathematically sound, statistically rigorous
+    Generator for advanced comparative MCDM ranking figures.
+
+    Provides high-resolution diagnostics for evaluating the consistency, 
+    resolution, and robustness of multi-method decision rankings.
     """
 
     # ==================================================================
@@ -82,32 +64,26 @@ class MCDMRankingPlotter(BasePlotter):
         save_name: Optional[str] = None,
     ) -> Optional[str]:
         """
-        Distribution of composite scores for a single MCDM method across all
-        years (2011-2024) and all provinces.
-        
-        Visualizes:
-          • Histogram with density overlay (KDE)
-          • Rug plot showing individual values
-          • Statistics box (mean, std, median)
-          • Min-Max range shading
-          
-        One chart per method to enable direct visual comparison.
+        Render the score distribution for a specific method across all years.
+
+        Includes histogram, KDE overlay, rug plot, and summary statistics 
+        (mean, median, std).
 
         Parameters
         ----------
         multi_year_results : Dict[int, Any]
-            Dict mapping year -> HierarchicalRankingResult
-        method : str
-            One of: 'TOPSIS', 'VIKOR', 'PROMETHEE', 'COPRAS', 'EDAS', 'SAW'
+            Dictionary mapping year to ranking results.
+        method : str, default='TOPSIS'
+            The MCDM method to analyze.
         title : str, optional
-            Chart title (auto-generated if None)
+            The plot title.
         save_name : str, optional
-            Filename (auto-generated if None)
+            The output filename.
 
         Returns
         -------
-        str | None
-            Path to saved figure or None if matplotlib unavailable
+        str, optional
+            The absolute path to the saved figure, or None if failed.
         """
         if not HAS_MATPLOTLIB or not HAS_SCIPY:
             _logger.warning('plot_method_distribution_all_years: matplotlib/scipy unavailable')
@@ -224,9 +200,17 @@ Max = {all_scores.max():.4f}'''
         multi_year_results: Dict[int, Any],
     ) -> Optional[List[str]]:
         """
-        Create distribution charts for all 6 MCDM methods.
-        
-        Returns list of saved figure paths.
+        Generate distribution charts for all configured MCDM methods.
+
+        Parameters
+        ----------
+        multi_year_results : Dict[int, Any]
+            Historical results across all years.
+
+        Returns
+        -------
+        List[str], optional
+            Paths to all successfully saved figures.
         """
         paths = []
         for method in _METHODS:
@@ -247,18 +231,24 @@ Max = {all_scores.max():.4f}'''
         save_name: str = 'fig10_method_agreement_matrix.png',
     ) -> Optional[str]:
         """
-        Spearman rank correlation heatmap showing pairwise agreement between
-        all 6 MCDM methods.
-        
-        Aggregates rankings across all years and provinces to compute
-        inter-method correlation.
-        
-        Design:
-          • Clustered heatmap with dendrogram (if scipy available)
-          • Diverging colormap (RdBu_r) emphasizing correlation strength
-          • Values range [-1, 1] with color scale centered at 0
-          • Higher ρ = stronger agreement (redder)
-          • Lower ρ = weaker agreement (bluer)
+        Produce a Spearman rank-correlation heatmap across all methods.
+
+        Aggregates rankings across all years and provinces to identify 
+        inter-method consensus.
+
+        Parameters
+        ----------
+        multi_year_results : Dict[int, Any]
+            Historical results across all years.
+        title : str, default='MCDM Method Rank Agreement (Spearman ρ)'
+            The plot title.
+        save_name : str, default='fig10_method_agreement_matrix.png'
+            The output filename.
+
+        Returns
+        -------
+        str, optional
+            The absolute path to the saved figure, or None if failed.
         """
         if not HAS_MATPLOTLIB or not HAS_SCIPY:
             _logger.warning('plot_method_agreement_matrix: scipy unavailable')
@@ -416,18 +406,22 @@ Max = {all_scores.max():.4f}'''
         save_name: str = 'fig11_kendall_w_analysis.png',
     ) -> Optional[str]:
         """
-        Kendall's coefficient of concordance (W) analysis showing inter-method
-        agreement over time and across criteria.
-        
-        Kendall's W ∈ [0, 1]:
-          • W = 0: no agreement (methods rank differently)
-          • W = 1: perfect agreement (methods rank identically)
-          
-        Visualizes:
-          • Kendall's W per criterion
-          • Kendall's W per year
-          • Overall W with confidence interval
-          • Interpretation zones (poor, moderate, good agreement)
+        Execute Kendall's W concordance analysis.
+
+        Assesses inter-method agreement over time and across criteria using 
+        Kendall's coefficient of concordance (W).
+
+        Parameters
+        ----------
+        multi_year_results : Dict[int, Any]
+            Historical results across all years.
+        save_name : str, default='fig11_kendall_w_analysis.png'
+            The output filename.
+
+        Returns
+        -------
+        str, optional
+            The absolute path to the saved figure, or None if failed.
         """
         if not HAS_MATPLOTLIB or not HAS_SCIPY:
             return None
@@ -604,15 +598,24 @@ Conclusion:
         save_name: str = 'fig12_rank_profiles.png',
     ) -> Optional[str]:
         """
-        Multi-method rank profiles for top-N alternatives.
-        
-        Shows how each method ranks the same alternatives, revealing consensus
-        and disagreement patterns.
-        
-        Visualizes:
-          • Parallel lines for top-N alternatives
-          • One vertical axis per method
-          • Line color/thickness indicates ranking consistency
+        Produce rank profile parallel plots for top-N alternatives.
+
+        Shows how different methods rank the same high-performing 
+        alternatives to reveal consistency patterns.
+
+        Parameters
+        ----------
+        multi_year_results : Dict[int, Any]
+            Historical results across all years.
+        top_n : int, default=15
+            Number of top alternatives to include.
+        save_name : str, default='fig12_rank_profiles.png'
+            The output filename.
+
+        Returns
+        -------
+        str, optional
+            The absolute path to the saved figure, or None if failed.
         """
         if not HAS_MATPLOTLIB:
             return None
@@ -714,16 +717,22 @@ Conclusion:
         save_name: str = 'fig13_method_boxplots.png',
     ) -> Optional[str]:
         """
-        Boxplots comparing score distributions across all 6 MCDM methods.
-        
-        Shows:
-          • Median (line in box)
-          • Q1-Q3 range (box)
-          • Whiskers (1.5*IQR)
-          • Outliers (points)
-          
-        Design for discrimination: individual method scales enabled for
-        better comparison of discriminatory power.
+        Compare score distributions across methods using boxplots.
+
+        Highlights differences in median, variance, and discriminatory 
+        power between methods.
+
+        Parameters
+        ----------
+        multi_year_results : Dict[int, Any]
+            Historical results across all years.
+        save_name : str, default='fig13_method_boxplots.png'
+            The output filename.
+
+        Returns
+        -------
+        str, optional
+            The absolute path to the saved figure, or None if failed.
         """
         if not HAS_MATPLOTLIB:
             return None
@@ -786,13 +795,22 @@ Conclusion:
         save_name: str = 'fig14_method_scatter.png',
     ) -> Optional[str]:
         """
-        Pairwise scatter plots comparing methods (6×6 grid of scatter plots).
-        
-        Shows:
-          • Relationship between method scores
-          • Strength of agreement (diagonal = perfect agreement)
-          • Regression line for trend
-          • Spearman correlation coefficient
+        Generate a pairwise scatter plot matrix for all methods.
+
+        Includes regression lines and Spearman correlation coefficients 
+        for every method pair.
+
+        Parameters
+        ----------
+        multi_year_results : Dict[int, Any]
+            Historical results across all years.
+        save_name : str, default='fig14_method_scatter.png'
+            The output filename.
+
+        Returns
+        -------
+        str, optional
+            The absolute path to the saved figure, or None if failed.
         """
         if not HAS_MATPLOTLIB or not HAS_SCIPY:
             return None
@@ -904,13 +922,24 @@ Conclusion:
         save_name: str = 'fig15_perturbation_sensitivity.png',
     ) -> Optional[str]:
         """
-        Perturbation sensitivity analysis: impact of criterion weight changes
-        on method stability.
-        
-        Shows:
-          • Tolerance bands: how much weight can change without changing rank
-          • Method robustness: which methods are most stable
-          • Critical criteria: which criteria most affect results
+        Analyze ranking sensitivity under criterion weight perturbations.
+
+        Evaluates the robustness of different methods by measuring how much 
+        weight change is required to alter provincial rankings.
+
+        Parameters
+        ----------
+        multi_year_results : Dict[int, Any]
+            Historical results across all years.
+        perturbation_results : Dict[int, Any], optional
+            Results from explicit sensitivity simulations.
+        save_name : str, default='fig15_perturbation_sensitivity.png'
+            The output filename.
+
+        Returns
+        -------
+        str, optional
+            The absolute path to the saved figure, or None if failed.
         """
         if not HAS_MATPLOTLIB:
             return None

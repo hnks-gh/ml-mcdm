@@ -1,12 +1,21 @@
-# -*- coding: utf-8 -*-
 """
-ML Forecasting + Evidential Reasoning Validation
-=================================================
+Pipeline Validation Framework.
 
-Validates:
-1. ER belief distributions (validity, completeness, aggregation quality)
-2. ML Forecasting (CV stability, interval coverage, residual diagnostics)
-3. End-to-end pipeline (combines both validators)
+This module provides a comprehensive validation suite for the ML-MCDM 
+pipeline, covering Evidential Reasoning (ER) belief distributions, 
+ensemble forecasting performance, and end-to-end integration quality.
+
+Key Features
+------------
+- **ER Validation**: Checks for belief validity, completeness, and 
+  aggregation quality across hierarchical levels.
+- **Forecast Validation**: Assesses cross-validation stability, 
+  prediction interval coverage (conformal), and residual diagnostics.
+- **Integrated Health Checks**: Combines multiple validation metrics 
+  into a single "pass/fail" result with detailed warnings for localized 
+  failures.
+- **Diagnostic Summaries**: Generates human-readable reports of 
+  statistical health and calibration accuracy.
 """
 
 import logging
@@ -142,6 +151,18 @@ class ERValidator:
         entropy_threshold: float = 2.0,
         utility_interval_threshold: float = 0.5,
     ):
+        """
+        Initialize the ER validator.
+
+        Parameters
+        ----------
+        entropy_threshold : float, default=2.0
+            Maximum allowable mean belief entropy before a warning is issued. 
+            High entropy indicates lack of consensus or high ambiguity.
+        utility_interval_threshold : float, default=0.5
+            Maximum allowable mean utility interval width. Large widths 
+            indicate high ignorance or missing data in the weighted criteria.
+        """
         self.entropy_threshold = entropy_threshold
         self.utility_interval_threshold = utility_interval_threshold
 
@@ -273,6 +294,18 @@ class ForecastValidator:
     """Validates ML forecasting output."""
 
     def __init__(self, r2_threshold: float = 0.0, coverage_target: float = 0.90):
+        """
+        Initialize the forecast validator.
+
+        Parameters
+        ----------
+        r2_threshold : float, default=0.0
+            Minimum allowable mean R² score for the forecast to be 
+            considered valid.
+        coverage_target : float, default=0.90
+            Target empirical coverage for prediction intervals. Warnings 
+            are issued if coverage falls significantly below this value.
+        """
         self.r2_threshold = r2_threshold
         self.coverage_target = coverage_target
 

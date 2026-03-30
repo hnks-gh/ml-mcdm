@@ -1,17 +1,21 @@
 # -*- coding: utf-8 -*-
 """
-Visualization Package
-=====================
+Visualization Orchestration Layer.
 
-Modular, publication-quality figure generation split into six
-phase-specific plotter classes coordinated by a single
-``VisualizationOrchestrator``.
+This package provides the `VisualizationOrchestrator`, which manages the 
+instantiation and execution of all phase-specific plotters. It acts as a 
+facade, delegating specific plotting tasks to specialized classes for 
+weighting, ranking, and forecasting.
 
-Quick start::
-
-    from output.visualization import VisualizationOrchestrator
-    viz = VisualizationOrchestrator('output/result/figures')
-    count = viz.generate_all(panel_data, weights, ranking_result, ...)
+Key Features
+------------
+- **Centralized Control**: Manages unified output directories and DPI 
+  settings across all visualization modules.
+- **Fail-Safe Execution**: Provides a `generate_all` entry point with 
+  per-figure error isolation, ensuring one plotting failure doesn't 
+  block the entire pipeline.
+- **Delegated Interface**: Exposes individual plotting methods from 
+  sub-plotters for granular result exploration.
 """
 
 from __future__ import annotations
@@ -34,12 +38,25 @@ from .summary_plots import SummaryPlotter
 
 class VisualizationOrchestrator:
     """
-    Coordinate all phase-specific plotters and expose a single
-    ``generate_all()`` entry point that replaces the old monolithic
-    ``PanelVisualizer.generate_all()`` and ``pipeline._generate_all_visualizations()``.
+    Central coordinator for all analytical visualizations.
 
-    Also exposes every individual ``plot_*`` method via delegation so
-    that callers do not need to know which sub-plotter owns which figure.
+    Manages a suite of specialized plotters and provides a unified 
+    `generate_all` interface for the main execution pipeline.
+
+    Attributes
+    ----------
+    output_dir : str
+        The root directory for all saved figures.
+    ranking : RankingPlotter
+        Plotter for stage-specific ranking diagnostics.
+    mcdm_ranking : MCDMRankingPlotter
+        Plotter for comparative MCDM method distributions.
+    weighting : WeightingPlotter
+        Plotter for criteria and sub-criteria weights.
+    mcdm : MCDMPlotter
+        Plotter for method agreement and stability.
+    forecast : ForecastPlotter
+        Plotter for ML model performance and intervals.
     """
 
     def __init__(
@@ -48,6 +65,19 @@ class VisualizationOrchestrator:
         dpi: int = 300,
         ranking_top_n: int = 20,
     ):
+        """
+        Initialize the orchestrator and its sub-plotters.
+
+        Parameters
+        ----------
+        output_dir : str, default='output/result/figures'
+            Root path for figure storage. Sub-directories will be created 
+            automatically (e.g., 'ranking/', 'weighting/').
+        dpi : int, default=300
+            Resolution for all generated plots.
+        ranking_top_n : int, default=20
+            The number of alternatives to display in various top-N charts.
+        """
         self.output_dir = output_dir
 
         # How many provinces to show in top-N charts (from VisualizationConfig)
@@ -245,7 +275,14 @@ class VisualizationOrchestrator:
     # ------------------------------------------------------------------
 
     def get_generated_figures(self) -> List[str]:
-        """All figure paths across every sub-plotter."""
+        """
+        Retrieve a list of all figures generated across all plotters.
+
+        Returns
+        -------
+        List[str]
+            Absolute paths to all saved PNG files.
+        """
         out: List[str] = []
         for p in self._plotters:
             out.extend(p.get_generated_figures())
@@ -265,7 +302,36 @@ class VisualizationOrchestrator:
         multi_year_results: Optional[Dict[int, Any]] = None,
         weight_all_years: Optional[Dict[int, Any]] = None,
     ) -> int:
-        """Generate every applicable figure. Returns count produced."""
+        """
+        Execute the full visualization suite.
+
+        Iteratively calls plotting methods for weighting, ranking, 
+        stability, and forecasting results. Figures are skipped 
+        gracefully if their required data is missing or if an 
+        plotting-specific error occurs.
+
+        Parameters
+        ----------
+        panel_data : PanelData
+            Data containing temporal context for multi-year charts.
+        weights : Dict[str, Any]
+            Calculated weights from the CRITIC engine.
+        ranking_result : RankingResult
+            MCDM aggregation outcomes.
+        analysis_results : Dict[str, Any]
+            Sensitivity and validation metrics.
+        forecast_result : UnifiedForecastResult, optional
+            ML prediction intervals and performance stats.
+        multi_year_results : Dict[int, Any], optional
+            Results across all years for longitudinal charts.
+        weight_all_years : Dict[int, Any], optional
+            Weight variations over time.
+
+        Returns
+        -------
+        int
+            The total number of figures successfully saved to disk.
+        """
         count = 0
 
         def _inc(path):
@@ -452,6 +518,9 @@ class VisualizationOrchestrator:
 
         # ── Forecast ──────────────────────────────────────────────
         if forecast_result is not None:
+            if hasattr(forecast_result, 'forecast_metadata') and forecast_result.forecast_metadata:
+                self.forecast.set_metadata(forecast_result.forecast_metadata)
+                
             # Extract all data up-front; each figure call is independent via
             # _safe() — one failure never aborts the remaining figures.
             _fr = forecast_result  # convenience alias
@@ -634,6 +703,19 @@ class VisualizationOrchestrator:
 
 # Backward-compatible factory
 def create_visualizer(output_dir: str = 'output/result/figures') -> VisualizationOrchestrator:
+    """
+    Factory function for VisualizationOrchestrator.
+
+    Parameters
+    ----------
+    output_dir : str, default='output/result/figures'
+        Root path for storage.
+
+    Returns
+    -------
+    VisualizationOrchestrator
+        A configured instance of the orchestrator.
+    """
     return VisualizationOrchestrator(output_dir=output_dir)
 
 

@@ -1,32 +1,27 @@
-# -*- coding: utf-8 -*-
 """
-Analysis Module
-===============
+Analysis and Validation Suite for ML-MCDM.
 
-Focused analysis layer for ML Forecasting and Evidential Reasoning.
+This package provides a comprehensive set of diagnostic and validation tools 
+for assessing the reliability, stability, and sensitivity of the forecasting 
+and ranking pipelines.
 
-Components
-----------
-Sensitivity Analysis (ML + ER)
-    - ML: feature importance stability, LOO model impact, prediction sensitivity,
-      temporal fold stability, conformal interval width sensitivity
-    - ER: criterion belief sensitivity (OAT), grade threshold sensitivity,
-      aggregation weight sensitivity, utility interval analysis, cross-level
-      consistency, belief entropy diagnostics
+Package Structure
+-----------------
+1. **Sensitivity Analysis**: Evaluates the impact of data perturbations and 
+   model omissions on the final outputs (OOS performance, weight stability).
+2. **Validation Framework**: Implements rigorous health checks for belief 
+   distributions, forecast residuals, and cross-level ranking consistency.
+3. **Bootstrap Uncertainty**: Quantifies confidence intervals for forecasts 
+   and belief aggregations using residual and Dirichlet resampling.
+4. **Temporal Stability**: Tracks the evolution of model performance and 
+   weight rankings across sliding time windows.
 
-Validation (ML + ER)
-    - ML: CV fold diagnostics, conformal interval calibration, OOS evaluation,
-      ensemble diversity, residual normality / autocorrelation / homoscedasticity
-    - ER: belief admissibility, aggregation quality, utility interval widths,
-      cross-level Spearman consistency, grade distribution diagnostics
-
-Bootstrap (ML + ER)
-    - ML: residual bootstrap for prediction uncertainty + feature importance stability
-    - ER: belief distribution bootstrap via simplex-projected Gaussian perturbations
-
-Stability (ML + ER)
-    - ML: temporal fold-to-fold consistency, entity rank volatility, model agreement
-    - ER: belief cosine similarity, utility rank correlation, grade consistency
+Key Metrics
+-----------
+- **Overall Robustness**: Combined score reflecting sensitivity to noise.
+- **Cross-Level Consistency**: Spearman correlation between hierarchical levels.
+- **Interval Coverage**: Empirical calibration of conformal predictions.
+- **Belief Entropy**: Quantification of ignorance and ambiguity in ER results.
 """
 
 # Sensitivity Analysis

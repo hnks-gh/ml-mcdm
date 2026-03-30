@@ -1,11 +1,21 @@
 # -*- coding: utf-8 -*-
 """
-Sensitivity & Robustness Plots (fig09–fig15, fig25)
-====================================================
+Sensitivity, Robustness, and Uncertainty Visualizations.
 
-Figures for sensitivity analysis: tornado charts, subcriteria bars,
-top-N stability, temporal stability, rank volatility,
-ER uncertainty distribution, and the composite robustness summary.
+This module provides the `SensitivityPlotter` class, which generates 
+publication-quality diagnostic plots to evaluate the stability of MCDM 
+and ER rankings. It includes tornado charts for weight sensitivity, 
+temporal stability analysis, and Monte Carlo rank-volatility distributions.
+
+Key Figures
+-----------
+- **fig09/09b (Tornado Charts)**: Criteria and subcriteria weight 
+  sensitivity analysis.
+- **fig11 (Top-N Stability)**: Overlap ratios indicating how many 
+  alternatives remain in the top-N tier under perturbation.
+- **fig12 (Temporal Stability)**: Year-to-year Spearman rank correlations.
+- **fig14/14b (Rank Volatility)**: Quadrant analysis and violin plots 
+  showing rank deviation distributions.
 """
 
 from __future__ import annotations
@@ -26,7 +36,12 @@ except ImportError:
 
 
 class SensitivityPlotter(BasePlotter):
-    """Figures for sensitivity, robustness, and ER uncertainty."""
+    """
+    Generator for sensitivity and robustness visualizations.
+
+    Handles the rendering of weight sensitivity indices, temporal rank 
+    consistency, and stochastic uncertainty profiles.
+    """
 
     # ==================================================================
     #  FIG 09 – Criteria Sensitivity Tornado
@@ -38,6 +53,26 @@ class SensitivityPlotter(BasePlotter):
         title: str = 'Criteria Sensitivity Analysis',
         save_name: str = 'fig09_criteria_sensitivity.png',
     ) -> Optional[str]:
+        """
+        Produce a tornado chart of criteria weight sensitivity.
+
+        Identifies which criteria most significantly impact the final 
+        ranking when their weights are perturbed.
+
+        Parameters
+        ----------
+        sensitivity : Dict[str, float]
+            Mapping of criterion name to its sensitivity index.
+        title : str, default='Criteria Sensitivity Analysis'
+            The plot title.
+        save_name : str, default='fig09_criteria_sensitivity.png'
+            The output filename.
+
+        Returns
+        -------
+        str, optional
+            The absolute path to the saved figure, or None if failed.
+        """
         if not HAS_MATPLOTLIB:
             return None
 
@@ -75,6 +110,13 @@ class SensitivityPlotter(BasePlotter):
 
     # Backward-compatible alias
     def plot_sensitivity_analysis(self, sensitivity, **kw):
+        """
+        Legacy alias for historical compatibility.
+
+        See Also
+        --------
+        plot_sensitivity_tornado
+        """
         return self.plot_sensitivity_tornado(sensitivity, **kw)
 
     # ==================================================================
@@ -87,6 +129,26 @@ class SensitivityPlotter(BasePlotter):
         top_n: int = 20,
         save_name: str = 'fig10_subcriteria_sensitivity.png',
     ) -> Optional[str]:
+        """
+        Produce a horizontal bar chart of subcriteria sensitivity.
+
+        Focuses on the top-N most sensitive subcriteria to guide 
+        targeted data quality audits.
+
+        Parameters
+        ----------
+        sensitivity : Dict[str, float]
+            Mapping of subcriterion name to sensitivity index.
+        top_n : int, default=20
+            The number of subcriteria to display.
+        save_name : str, default='fig10_subcriteria_sensitivity.png'
+            The output filename.
+
+        Returns
+        -------
+        str, optional
+            The absolute path to the saved figure, or None if failed.
+        """
         if not HAS_MATPLOTLIB:
             return None
 
@@ -120,6 +182,24 @@ class SensitivityPlotter(BasePlotter):
         stability: Dict[int, float],
         save_name: str = 'fig11_top_n_stability.png',
     ) -> Optional[str]:
+        """
+        Produce a stability chart for top-N tiers.
+
+        Measures the overlap ratio of alternatives in the top performance 
+        bands under stochastic perturbation.
+
+        Parameters
+        ----------
+        stability : Dict[int, float]
+            Mapping of N (tier size) to stability ratio (0-1).
+        save_name : str, default='fig11_top_n_stability.png'
+            The output filename.
+
+        Returns
+        -------
+        str, optional
+            The absolute path to the saved figure, or None if failed.
+        """
         if not HAS_MATPLOTLIB:
             return None
 
@@ -158,6 +238,24 @@ class SensitivityPlotter(BasePlotter):
         temporal: Dict[str, float],
         save_name: str = 'fig12_temporal_stability.png',
     ) -> Optional[str]:
+        """
+        Produce a temporal stability bar chart.
+
+        Calculates year-to-year Spearman rank correlations to assess 
+        the longitudinal consistency of provincial rankings.
+
+        Parameters
+        ----------
+        temporal : Dict[str, float]
+            Mapping of year-pair (e.g. '2022-2023') to correlation.
+        save_name : str, default='fig12_temporal_stability.png'
+            The output filename.
+
+        Returns
+        -------
+        str, optional
+            The absolute path to the saved figure, or None if failed.
+        """
         if not HAS_MATPLOTLIB:
             return None
 
@@ -197,6 +295,24 @@ class SensitivityPlotter(BasePlotter):
         rank_stability: Dict[str, float],
         save_name: str = 'fig13_rank_volatility.png',
     ) -> Optional[str]:
+        """
+        Produce a horizontal bar chart of rank stability per province.
+
+        Identifies provinces with the most (and least) stable rankings 
+        across simulation trials.
+
+        Parameters
+        ----------
+        rank_stability : Dict[str, float]
+            Mapping of province name to stability score (0-1).
+        save_name : str, default='fig13_rank_volatility.png'
+            The output filename.
+
+        Returns
+        -------
+        str, optional
+            The absolute path to the saved figure, or None if failed.
+        """
         if not HAS_MATPLOTLIB:
             return None
 
@@ -238,12 +354,25 @@ class SensitivityPlotter(BasePlotter):
         perturbation_analysis: Optional[Dict[str, Any]] = None,
         save_name: str = 'fig09b_tornado_butterfly.png',
     ) -> Optional[str]:
-        """Two-sided diverging butterfly tornado chart.
+        """
+        Produce a two-sided butterfly tornado chart.
 
-        Right bars show the raw sensitivity index (destabilising potential).
-        Left bars show the complementary stability contribution
-        (mean sensitivity − individual criterion sensitivity), giving a
-        visual asymmetry that makes the most sensitive criteria obvious.
+        Compares raw sensitivity (destabilizing potential) against stability 
+        contribution, making high-impact criteria visually distinct.
+
+        Parameters
+        ----------
+        criteria_sensitivity : Dict[str, float]
+            Mapping of criterion name to sensitivity index.
+        perturbation_analysis : Dict[str, Any], optional
+            Detailed results from stochastic simulations.
+        save_name : str, default='fig09b_tornado_butterfly.png'
+            The output filename.
+
+        Returns
+        -------
+        str, optional
+            The absolute path to the saved figure, or None if failed.
         """
         if not HAS_MATPLOTLIB:
             return None
@@ -322,12 +451,23 @@ class SensitivityPlotter(BasePlotter):
         subcriteria_sensitivity: Dict[str, float],
         save_name: str = 'fig09c_subcriteria_dotstrip.png',
     ) -> Optional[str]:
-        """Jittered dot/strip plot of SC sensitivity grouped by criterion.
+        """
+        Produce a jittered dot/strip plot of subcriteria sensitivity.
 
-        SC names are expected to follow the SCxy convention where the digit
-        immediately after 'SC' identifies the parent criterion (e.g. SC11 →
-        criterion 1, SC21 → criterion 2).  Fallback: first character if
-        pattern does not match.
+        Groups subcriteria by their parent criterion to reveal patterns of 
+        instability within specific thematic areas.
+
+        Parameters
+        ----------
+        subcriteria_sensitivity : Dict[str, float]
+            Mapping of subcriterion ID to sensitivity index.
+        save_name : str, default='fig09c_subcriteria_dotstrip.png'
+            The output filename.
+
+        Returns
+        -------
+        str, optional
+            The absolute path to the saved figure, or None if failed.
         """
         if not HAS_MATPLOTLIB:
             return None
@@ -410,11 +550,25 @@ class SensitivityPlotter(BasePlotter):
         ci_width: float = 0.05,
         save_name: str = 'fig13b_stability_line_ci.png',
     ) -> Optional[str]:
-        """Sorted province rank-stability line with confidence-band shading.
+        """
+        Produce a stability line chart with confidence intervals.
 
-        Four stability zones are shaded:
-          Very Stable ≥ 0.85 |  Stable ≥ 0.70 | Moderate ≥ 0.50 | Volatile <0.50
-        ci_width : half-width of the ±CI band drawn around each point.
+        Visualizes provincial stability scores across a sorted plateau, 
+        emphasizing zones of volatility vs. robustness.
+
+        Parameters
+        ----------
+        rank_stability : Dict[str, float]
+            Mapping of province name to stability score.
+        ci_width : float, default=0.05
+            The half-width of the confidence band.
+        save_name : str, default='fig13b_stability_line_ci.png'
+            The output filename.
+
+        Returns
+        -------
+        str, optional
+            The absolute path to the saved figure, or None if failed.
         """
         if not HAS_MATPLOTLIB:
             return None
@@ -495,13 +649,27 @@ class SensitivityPlotter(BasePlotter):
         top_n_label: int = 10,
         save_name: str = 'fig14_rank_stability_scatter.png',
     ) -> Optional[str]:
-        """Province rank (x-axis) vs stability score (y-axis) with quadrant shading.
+        """
+        Produce a rank vs. stability quadrant scatter plot.
 
-        Quadrants (split at median rank and median stability):
-          Q1 top-left  — Good rank + High stability (Elite)
-          Q2 top-right — Poor rank + High stability (Stable underperformers)
-          Q3 bot-left  — Good rank + Volatile       (At-risk leaders)
-          Q4 bot-right — Poor rank + Volatile       (Underperformers)
+        Identifies 'Elite' leaders (high rank, high stability) vs. 'At-risk' 
+        leaders (high rank, low stability).
+
+        Parameters
+        ----------
+        final_ranking : Dict[str, int]
+            Map of province to its final integer rank.
+        rank_stability : Dict[str, float]
+            Map of province to its stability score.
+        top_n_label : int, default=10
+            Number of extreme points to label.
+        save_name : str, default='fig14_rank_stability_scatter.png'
+            The output filename.
+
+        Returns
+        -------
+        str, optional
+            The absolute path to the saved figure, or None if failed.
         """
         if not HAS_MATPLOTLIB:
             return None
@@ -604,11 +772,25 @@ class SensitivityPlotter(BasePlotter):
         provinces: Optional[List[str]] = None,
         save_name: str = 'fig14b_rank_change_violin.png',
     ) -> Optional[str]:
-        """Violin plot of rank-change distributions from Monte Carlo simulations.
+        """
+        Produce violin plots of rank-change distributions.
 
-        Uses ``perturbation_analysis['simulated_rankings']`` (shape
-        n_sim × n_provinces) to derive per-province rank deviation from
-        the baseline mean.  One violin per province (top_n by std shown).
+        Visualizes the full probability distribution of rank deviations 
+        for the most volatile provinces across Monte Carlo trials.
+
+        Parameters
+        ----------
+        perturbation_analysis : Dict[str, Any]
+            Output from the stochastic simulation engine.
+        provinces : List[str], optional
+            Ordered list of province names for indexing.
+        save_name : str, default='fig14b_rank_change_violin.png'
+            The output filename.
+
+        Returns
+        -------
+        str, optional
+            The absolute path to the saved figure, or None if failed.
         """
         if not HAS_MATPLOTLIB:
             return None

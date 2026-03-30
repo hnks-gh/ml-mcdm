@@ -1,18 +1,19 @@
-# -*- coding: utf-8 -*-
 """
-Panel Evaluation Diagnostics (E-07)
-=====================================
+Panel Evaluation Diagnostics (E-07).
 
-Advanced diagnostic tools for assessing ensemble generalization in the
-panel setting (N=63 provinces × T=14 years).
+This module provides advanced diagnostic tools for assessing model 
+generalization across entities in a panel data setting. It focuses on 
+identifying entity-specific overfitting and measuring cross-provincial 
+transferability.
 
-Classes
--------
-LeaveOneEntityOutCV
-    Leave-one-entity-out cross-validation for measuring cross-entity
-    generalisability of the Super Learner ensemble.  Identifies provinces
-    that are consistently hard to predict (potential outliers / atypical
-    provinces).
+Key Features
+------------
+- **Cross-Entity Generalization**: Measures how well the ensemble performs 
+  on entities it has never seen during training.
+- **Outlier Identification**: Identifies specific provinces that are 
+  structurally atypical or consistently hard to predict.
+- **Overfitting Detection**: Quantifies the gap between standard 
+  walk-forward CV and Leave-One-Entity-Out (LOEO) performance.
 
 Usage Example
 -------------
@@ -88,6 +89,20 @@ class LeaveOneEntityOutCV:
         min_valid_obs: int = 3,
         n_jobs: int = 1,
     ):
+        """
+        Initialize the leave-one-entity-out diagnostic.
+
+        Parameters
+        ----------
+        verbose : bool, default=True
+            Whether to print progress information during the run.
+        min_valid_obs : int, default=3
+            Minimum number of valid observations required per entity to 
+            calculate metrics.
+        n_jobs : int, default=1
+            Number of parallel jobs for entity-level fits (not currently 
+            implemented, reserved for future use).
+        """
         self.verbose      = verbose
         self.min_valid_obs = min_valid_obs
         self.n_jobs       = n_jobs

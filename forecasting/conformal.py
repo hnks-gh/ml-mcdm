@@ -1,9 +1,7 @@
-# -*- coding: utf-8 -*-
 """
-Conformal Prediction for Uncertainty Calibration
-=================================================
+Conformal Prediction for Uncertainty Calibration.
 
-Provides distribution-free, finite-sample valid prediction intervals
+This module provides distribution-free, finite-sample valid prediction intervals
 that guarantee coverage at any desired level (e.g., 95%), regardless
 of the underlying model or data distribution.
 
@@ -15,39 +13,30 @@ conformal prediction intervals have a theoretical coverage guarantee:
 This guarantee holds for any model, any distribution, and any
 finite sample size, under the (weak) assumption of exchangeability.
 
-Algorithm (Split Conformal):
-    1. Split data into proper training and calibration sets
-    2. Train base model on proper training set
-    3. Compute conformity scores on calibration set:
-       s_i = |y_i - ŷ_i| (absolute residual)
-    4. Compute q = (1-α)(1 + 1/n_cal)-quantile of {s_i}
-    5. Prediction interval: [ŷ_new - q, ŷ_new + q]
+Algorithms
+----------
+Split Conformal
+    1. Split data into proper training and calibration sets.
+    2. Train base model on proper training set.
+    3. Compute conformity scores on calibration set: s_i = |y_i - ŷ_i|.
+    4. Compute q = (1-α)(1 + 1/n_cal)-quantile of {s_i}.
+    5. Prediction interval: [ŷ_new - q, ŷ_new + q].
 
-Adaptive Conformal Inference (ACI) for Time Series:
-    Implements the *additive* gradient step from Gibbs & Candès (2021, Eq. 3):
-
-        α_{t+1} = α_t + γ(α − err_t)
-
-    where ``err_t ∈ {0, 1}`` is the miscoverage indicator.  The default
-    γ = 0.02 is appropriate for moderate distribution shifts (literature
-    recommends γ ∈ [0.005, 0.05]).  The old default of 0.95 was incorrectly
-    borrowed from exponential-smoothing forgetting factors (multiplicative
-    formula) and caused wild oscillation with this additive update rule.
+Adaptive Conformal Inference (ACI) for Time Series
+    Implements the additive gradient step from Gibbs & Candès (2021, Eq. 3):
+    α_{t+1} = α_t + γ(α − err_t), where err_t ∈ {0, 1} is the miscoverage indicator.
 
 Additional calibration path:
-    ``calibrate_residuals(residuals)`` accepts pre-computed OOF residuals
+    calibrate_residuals(residuals) accepts pre-computed OOF residuals
     so the full model never needs to be re-fitted or deep-copied during
-    conformal calibration (used by ``UnifiedForecaster``).
+    conformal calibration (used by UnifiedForecaster).
 
-References:
-    - Vovk, Gammerman & Shafer (2005). "Algorithmic Learning in a
-      Random World" Springer
-    - Barber et al. (2023). "Conformal Prediction Beyond
-      Exchangeability" Annals of Statistics
-    - Xu & Xie (2021). "Conformal Prediction Interval for Dynamic
-      Time-Series" ICML
-    - Romano, Patterson & Candès (2019). "Conformalized Quantile
-      Regression" NeurIPS
+References
+----------
+- Vovk, Gammerman & Shafer (2005). "Algorithmic Learning in a Random World" Springer.
+- Barber et al. (2023). "Conformal Prediction Beyond Exchangeability" Annals of Statistics.
+- Xu & Xie (2021). "Conformal Prediction Interval for Time-Series" ICML.
+- Romano, Patterson & Candès (2019). "Conformalized Quantile Regression" NeurIPS.
 """
 
 import numpy as np
@@ -444,11 +433,21 @@ class ConformalPredictor:
         self._calibrated = True
         return self
 
-    def _calibrate_split(self, model, X: np.ndarray, y: np.ndarray):
-        """Calibrate using split conformal method.
+    def _calibrate_split(self, model, X: np.ndarray, y: np.ndarray) -> None:
+        """
+        Calibrate using the split conformal method.
         
-        Re-fits the model on the proper training portion so that
+        Re-fits the model on the proper training portion to ensure
         calibration residuals are computed on truly held-out data.
+
+        Parameters
+        ----------
+        model : object
+            Base forecaster to be re-fitted.
+        X : np.ndarray
+            Feature matrix for the entire calibration dataset.
+        y : np.ndarray
+            Target values for the entire calibration dataset.
         """
         import copy
 
@@ -516,9 +515,9 @@ class ConformalPredictor:
         cv_folds: int,
         year_labels: Optional[np.ndarray] = None,
         entity_indices: Optional[np.ndarray] = None,
-    ):
+    ) -> None:
         """
-        Calibrate using a panel-aware CV+ adaptation for time-series data.
+        Calibrate using a panel-aware CV+ adaptation.
 
         **Panel-aware splitting (E-04 fix)**
 
@@ -547,10 +546,25 @@ class ConformalPredictor:
         :meth:`calibrate_residuals`.  Marginal coverage is guaranteed
         under temporal exchangeability within each fold.
 
+        Parameters
+        ----------
+        model : object
+            Base forecaster to be used for CV-style residual generation.
+        X : np.ndarray
+            Full feature matrix for calibration.
+        y : np.ndarray
+            Full target vector for calibration.
+        cv_folds : int
+            Number of CV folds (only used if year_labels is None).
+        year_labels : np.ndarray, optional
+            Calendar year labels for panel-aware splitting.
+        entity_indices : np.ndarray, optional
+            Entity indices for panel-aware splitting.
+
         References
         ----------
-        * Barber et al. (2023), "Conformal Prediction Beyond Exchangeability"
-        * Gibbon et al. (2023), "Online Conformal Prediction for PAL"
+        - Barber et al. (2023), "Conformal Prediction Beyond Exchangeability".
+        - Gibbon et al. (2023), "Online Conformal Prediction for PAL".
         """
         import copy
 
@@ -666,18 +680,26 @@ class ConformalPredictor:
 
         self._n_cal = n_cal
 
-    def _calibrate_adaptive(self, model, X: np.ndarray, y: np.ndarray):
+    def _calibrate_adaptive(self, model, X: np.ndarray, y: np.ndarray) -> None:
         """
         Calibrate using Adaptive Conformal Inference (ACI).
 
-        For time series data where the distribution may drift over time.
+        Suitable for time series data where the distribution may drift.
         Tracks effective coverage and adapts the quantile threshold.
 
         Splits the data into a proper-training portion and a calibration
-        portion.  The model is re-fitted on the training portion so that
+        portion. The model is re-fitted on the training portion so that
         conformity scores are computed on genuinely held-out data (audit
-        fix H6: the previous version used in-sample residuals, which
-        produced anti-conservative / too-tight intervals).
+        fix H6).
+
+        Parameters
+        ----------
+        model : object
+            Base forecaster to be re-fitted.
+        X : np.ndarray
+            Full feature matrix for calibration.
+        y : np.ndarray
+            Full target vector for calibration.
         """
         import copy
 

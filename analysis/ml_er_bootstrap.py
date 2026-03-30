@@ -1,25 +1,30 @@
-# -*- coding: utf-8 -*-
 """
-Bootstrap Analysis for ML Forecasting and Evidential Reasoning
-==============================================================
+Bootstrap Analysis for ML Forecasting and Evidential Reasoning.
 
-Bootstrap-based uncertainty quantification for:
+This module provides bootstrap-based uncertainty quantification for both 
+machine learning forecasts and Evidential Reasoning (ER) aggregations. It 
+enables the estimation of confidence intervals, feature importance 
+stability, and belief distribution sensitivity.
 
-1. ML Forecast Bootstrap
-   - Residual bootstrap prediction confidence intervals
-   - Feature importance stability across bootstrap samples
-   - Model contribution uncertainty via Dirichlet perturbation
-
-2. Evidential Reasoning Bootstrap
-   - Belief distribution uncertainty quantification
-   - ER aggregation sensitivity to belief perturbations
-   - Grade assignment stability across resamples
+Key Features
+------------
+- **Forecast Residual Bootstrap**: Generates prediction confidence 
+  intervals by perturbing forecasts based on historical error 
+  distributions.
+- **Feature Importance Stability**: Assesses the reliability of feature 
+  rankings across resampled data folds.
+- **Model Contribution Uncertainty**: Uses Dirichlet perturbation to 
+  estimate variance in ensemble model weighting.
+- **ER Belief Bootstrap**: Quantifies the stability of final utility 
+  scores and dominant grade assignments under belief noise.
 
 References
 ----------
-Efron, B. & Tibshirani, R.J. (1993). An Introduction to the Bootstrap.
-Davison, A.C. & Hinkley, D.V. (1997). Bootstrap Methods and Their Application.
-Yang, J.B. & Xu, D.L. (2002). Evidential reasoning under uncertainty.
+- Efron & Tibshirani (1993). "An Introduction to the Bootstrap." Chapman & Hall.
+- Davison & Hinkley (1997). "Bootstrap Methods and Their Application." 
+  Cambridge University Press.
+- Yang & Xu (2002). "On the evidential reasoning algorithm for multiple 
+  attribute decision analysis under uncertainty." IEEE Transactions.
 """
 
 import numpy as np
@@ -135,6 +140,18 @@ class ForecastBootstrap:
         seed: int = 42,
         confidence: float = 0.95,
     ):
+        """
+        Initialize the forecast bootstrap analyzer.
+
+        Parameters
+        ----------
+        n_iterations : int, default=500
+            Number of bootstrap replicates to generate.
+        seed : int, default=42
+            Seed for reproducible random sampling.
+        confidence : float, default=0.95
+            The width of the credible interval (e.g., 0.95 for 95% CI).
+        """
         self.n_iterations = n_iterations
         self.seed = seed
         self.confidence = confidence
@@ -280,6 +297,21 @@ class ERBootstrap:
         confidence: float = 0.95,
         noise_scale: float = 0.05,
     ):
+        """
+        Initialize the ER bootstrap analyzer.
+
+        Parameters
+        ----------
+        n_iterations : int, default=300
+            Number of bootstrap replicates to generate.
+        seed : int, default=42
+            Seed for reproducible random sampling.
+        confidence : float, default=0.95
+            The width of the utility confidence interval.
+        noise_scale : float, default=0.05
+            Standard deviation of the Gaussian noise added to belief 
+            distributions during perturbation.
+        """
         self.n_iterations = n_iterations
         self.seed = seed
         self.confidence = confidence

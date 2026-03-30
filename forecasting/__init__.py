@@ -1,46 +1,35 @@
-# -*- coding: utf-8 -*-
 """
-ML Forecasting Module
-=====================
+Ensemble Forecasting System for Multi-Target Panel Data.
 
-State-of-the-art ensemble forecasting system optimized for small-to-medium
-panel data (N < 1000), emphasizing model diversity over quantity.
+This package provides a state-of-the-art ensemble forecasting system optimized 
+for small-to-medium panel data (N < 1000). It emphasizes model diversity, 
+statistical rigor, and guaranteed uncertainty coverage through a multi-tier 
+stacked generalization architecture.
 
-Architecture:
-    Tier 1 - Base Models (5 diverse models):
-        - catboost_forecaster: CatBoost (oblivious trees, MultiRMSE)
-        - bayesian: Bayesian Ridge regression (uncertainty quantification)
-        - quantile_forest: Distributional forecasting via quantile RF
+Package Structure
+-----------------
+1. **Base Models (Tier 1)**: A diverse set of learners including gradient 
+   boosting (CatBoost), Bayesian linear models, kernel-based regression (SVR, 
+   Kernel Ridge), and distributional forests (Quantile RF).
+2. **Meta-Ensemble (Tier 2)**: A `SuperLearner` that implements stacked 
+   generalization with automatic per-criterion weight optimization using 
+   temporal walk-forward cross-validation.
+3. **Uncertainty & Calibration (Tier 3)**: A `ConformalPredictor` that 
+   provides distribution-free prediction intervals with 95% coverage 
+   guarantees, and comprehensive evaluation tools for ablation and diagnostics.
 
-    Tier 2 - Meta-Ensemble:
-        - super_learner: Stacked generalization with automatic weighting
-          (PanelWalkForwardCV; per-criterion RMSE tracking)
+Orchestration
+-------------
+The `UnifiedForecaster` serves as the central entry point, managing the full 
+pipeline from temporal feature engineering to final calibrated forecasts 
+and diagnostic artifact generation.
 
-    Tier 3 - Calibration:
-        - conformal: Distribution-free prediction intervals (95% coverage)
-        - evaluation: Comprehensive evaluation and ablation
-
-    Orchestration:
-        - features: Temporal feature engineering
-        - unified: Full pipeline orchestration (Phase 4: Optuna HP search,
-                   Phase 5: reversible target transformation)
-
-Design Philosophy:
-    - Model diversity over quantity (5 diverse > many correlated)
-    - Statistical appropriateness for N < 1000
-    - Automatic optimal weighting (Super Learner)
-    - Guaranteed uncertainty coverage (Conformal Prediction)
-
-Example Usage:
-    >>> from forecasting import UnifiedForecaster
-    >>>
-    >>> # State-of-the-art configuration (Super Learner + Conformal)
-    >>> forecaster = UnifiedForecaster()
-    >>> result = forecaster.fit_predict(panel_data, target_year=2025)
-    >>>
-    >>> # Custom conformal settings
-    >>> forecaster = UnifiedForecaster(conformal_alpha=0.10, cv_folds=5)
-    >>> result = forecaster.fit_predict(panel_data, target_year=2025)
+Example Usage
+-------------
+>>> from forecasting import UnifiedForecaster
+>>> forecaster = UnifiedForecaster()
+>>> result = forecaster.fit_predict(df, target_year=2025)
+>>> print(result.predictions)
 """
 
 # Feature engineering

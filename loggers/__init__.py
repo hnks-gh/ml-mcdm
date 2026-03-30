@@ -1,16 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-ML-MCDM Logging Package
-========================
+Logging and Monitoring Infrastructure.
 
-Two-channel logging system:
-  * **ConsoleLogger** — concise, colour-coded monitoring output
-  * **DebugLogger** — exhaustive structured JSON for post-hoc inspection
+This package provides a dual-channel logging system:
+- **ConsoleLogger**: Concise, color-coded output for real-time monitoring.
+- **DebugLogger**: Exhaustive, structured JSON logging for post-hoc inspection.
 
-Usage::
-
-    from ml_mcdm.loggers import setup_logging
-    console, debug = setup_logging('outputs')
+It also includes decorators and context managers for performance profiling 
+and exception tracking across the ML-MCDM pipeline.
 """
 
 from .context import Colors, LogContext, PhaseMetrics
@@ -24,16 +21,19 @@ from typing import Tuple
 def setup_logging(
     output_dir: str = 'outputs',
 ) -> Tuple[ConsoleLogger, DebugLogger]:
-    """Create and return both loggers.
+    """
+    Initialize the dual-channel logging system.
 
     Parameters
     ----------
-    output_dir : str
-        Root output directory; debug JSON goes to ``<output_dir>/logs/``.
+    output_dir : str, default='outputs'
+        The root directory for outputs. Debug logs will be saved to 
+        ``<output_dir>/logs/``.
 
     Returns
     -------
-    tuple[ConsoleLogger, DebugLogger]
+    Tuple[ConsoleLogger, DebugLogger]
+        A pair of (console_logger, debug_logger) instances.
     """
     console = ConsoleLogger()
     debug = DebugLogger(output_dir=f'{output_dir}/logs')
@@ -43,23 +43,67 @@ def setup_logging(
 # Backward-compat shims so existing ``from .logger import ...`` still work
 # when migration is in progress.
 def setup_logger(name: str = 'ml_mcdm', **kwargs):
-    """Legacy shim — returns a stdlib Logger wired to the debug backend."""
+    """
+    Legacy shim for stdlib logging initialization.
+
+    Parameters
+    ----------
+    name : str, default='ml_mcdm'
+        The logger name.
+    **kwargs
+        Additional arguments passed to legacy callers.
+
+    Returns
+    -------
+    logging.Logger
+        A standard library logger instance.
+    """
     import logging
     return logging.getLogger(name)
 
 
 def get_logger(name: str = 'ml_mcdm'):
+    """
+    Retrieve a standard library logger by name.
+
+    Parameters
+    ----------
+    name : str, default='ml_mcdm'
+        The logger name.
+
+    Returns
+    -------
+    logging.Logger
+        The requested logger instance.
+    """
     import logging
     return logging.getLogger(name)
 
 
 def get_module_logger(module_name: str):
+    """
+    Retrieve a logger for a specific ML-MCDM module.
+
+    Parameters
+    ----------
+    module_name : str
+        The short name of the module (e.g., 'ranking').
+
+    Returns
+    -------
+    logging.Logger
+        A logger scoped to 'ml_mcdm.<module_name>'.
+    """
     import logging
     return logging.getLogger(f'ml_mcdm.{module_name}')
 
 
 class ProgressLogger:
-    """Legacy shim wrapping :class:`ConsoleLogger.phase`."""
+    """
+    Legacy shim wrapping ConsoleLogger phase transitions.
+
+    Provides a context manager interface for tracking operation progress.
+    """
 
     def __init__(self, logger, operation, **kwargs):
         self._logger = logger

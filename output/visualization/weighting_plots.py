@@ -1,16 +1,26 @@
-# -*- coding: utf-8 -*-
 """
-Weighting Plots (fig03 – fig05)
-================================
+Weighting Phase Visualizations.
 
-Professional publication-quality figures for the objective-weighting phase.
-Five figures are produced:
+This module provides the `WeightingPlotter` class, which generates 
+publication-quality diagnostic plots for the objective criteria weighting 
+phase. It covers sub-criteria weight comparisons, uncertainty analysis via 
+Monte Carlo simulations, and hierarchical breakdowns using radar and rose 
+charts.
 
-fig03  – CRITIC subcriteria bar chart (single method)
-fig03b – Weight uncertainty: per-SC error bars with CI ribbons (if CI supplied)
-fig03c – Criterion-level CRITIC horizontal bar + donut
-fig04  – Radar (spider) with CRITIC method
-fig05  – Annotated weight heatmap with optional dendrogram clustering
+Key Figures
+-----------
+- **fig03 (Weights Comparison)**: Grouped bar chart comparing weighting 
+  methods with optional confidence intervals.
+- **fig03b (MC Uncertainty)**: Error-bar chart showing Monte Carlo means, 
+  standard deviations, and 95% CIs.
+- **fig03c (Criterion Weights)**: Horizontal bar and donut chart for 
+  higher-level criteria importance.
+- **fig04 (Weight Radar)**: Multi-axis radar plots for sub-criteria 
+  profiles across years.
+- **fig04c (Hierarchical Rose)**: Coxcomb/Rose charts for nested weight 
+  distributions.
+- **fig05 (Weight Heatmap)**: Annotated heatmaps of weights over time or 
+  across methods.
 """
 
 from __future__ import annotations
@@ -34,7 +44,12 @@ _logger = logging.getLogger(__name__)
 
 
 class WeightingPlotter(BasePlotter):
-    """Figures for the objective-weighting phase."""
+    """
+    Generator for criteria weighting visualizations.
+
+    Handles the rendering of bar, radar, rose, and heatmap charts to 
+    illustrate the distribution and stability of sub-criteria weights.
+    """
 
     # ==================================================================
     #  FIG 03 – Three-method grouped bar with MC CI ribbons
@@ -50,10 +65,30 @@ class WeightingPlotter(BasePlotter):
         ci_upper: Optional[np.ndarray] = None,
     ) -> Optional[str]:
         """
-        Grouped bar chart comparing up to three weighting methods.  SCs are
-        sorted by the Hybrid weight descending so the most influential
-        sub-criteria appear on the left.  Optional MC 95 % CI ribbons are
-        drawn on Hybrid bars when *ci_lower* / *ci_upper* are supplied.
+        Produce a grouped bar chart comparing weighting methods.
+
+        Sub-criteria are sorted by weight magnitude (descending) to 
+        highlight the most influential factors. 
+
+        Parameters
+        ----------
+        weights : Dict[str, np.ndarray]
+            Dictionary mapping method names to weight arrays.
+        component_names : List[str]
+            Names of the sub-criteria (e.g., 'SC11').
+        title : str, default='Subcriteria Weight Comparison — CRITIC'
+            The plot title.
+        save_name : str, default='fig03_weights_comparison.png'
+            The output filename.
+        ci_lower : np.ndarray, optional
+            Lower bound of the 95% confidence interval for CRITIC.
+        ci_upper : np.ndarray, optional
+            Upper bound of the 95% confidence interval for CRITIC.
+
+        Returns
+        -------
+        str, optional
+            The absolute path to the saved figure, or None if failed.
         """
         if not HAS_MATPLOTLIB:
             return None
@@ -142,9 +177,32 @@ class WeightingPlotter(BasePlotter):
         save_name: str = 'fig03b_mc_weight_uncertainty.png',
     ) -> Optional[str]:
         """
-        Error-bar chart showing Monte-Carlo weight mean ± 1 SD and 95 % CI
-        band for every sub-criterion.  Alternating background shading groups
-        sub-criteria by their parent criterion, aiding readability.
+        Visualize Monte-Carlo weight uncertainty with error bars and CI ribbons.
+
+        Uses alternating vertical background stripes to group sub-criteria 
+        by their parent criteria, providing clear hierarchical context.
+
+        Parameters
+        ----------
+        subcriteria : List[str]
+            List of sub-criteria IDs.
+        mc_means : np.ndarray
+            Mean weights across Monte-Carlo simulations.
+        mc_stds : np.ndarray
+            Standard deviation of weights across simulations.
+        ci_lower : np.ndarray
+            95% confidence interval lower bound.
+        ci_upper : np.ndarray
+            95% confidence interval upper bound.
+        criteria_groups : Dict[str, List[str]], optional
+            Mapping of criteria IDs to their constituent sub-criteria.
+        save_name : str, default='fig03b_mc_weight_uncertainty.png'
+            The output filename.
+
+        Returns
+        -------
+        str, optional
+            The absolute path to the saved figure, or None if failed.
         """
         if not HAS_MATPLOTLIB:
             return None
@@ -223,8 +281,19 @@ class WeightingPlotter(BasePlotter):
         save_name: str = 'fig03c_criterion_weights.png',
     ) -> Optional[str]:
         """
-        Horizontal bar chart of CRITIC criterion weights plus a donut chart
-        showing weight shares at a glance.
+        Plot criterion-level weights using horizontal bars and a donut chart.
+
+        Parameters
+        ----------
+        critic_crit : Dict[str, float]
+            Mapping of criterion IDs to their aggregated CRITIC weights.
+        save_name : str, default='fig03c_criterion_weights.png'
+            The output filename.
+
+        Returns
+        -------
+        str, optional
+            The absolute path to the saved figure, or None if failed.
         """
         if not HAS_MATPLOTLIB:
             return None
@@ -287,7 +356,13 @@ class WeightingPlotter(BasePlotter):
         subcriteria: List[str],
         save_name: str = 'fig03d_weight_deviation.png',
     ) -> Optional[str]:
-        """Removed — no Hybrid baseline in deterministic CRITIC pipeline."""
+        """
+        Legacy method for weight deviation plots. (Currently disabled).
+
+        Returns
+        -------
+        None
+        """
         return None
 
     # ==================================================================
@@ -301,11 +376,27 @@ class WeightingPlotter(BasePlotter):
         weight_all_years: Optional[Dict[int, Any]] = None,
         save_name: str = 'fig04_weight_radar.png',
     ) -> Optional[str]:
-        """Radar chart(s) of CRITIC sub-criterion weights.
+        """
+        Produce a radar chart of sub-criterion weights.
 
-        With *weight_all_years*: produce a 14-panel grid (2 rows × 7 cols),
-        one radar per year, sharing a common radial scale.
-        Fallback (no *weight_all_years*): single radar for the supplied *weights*.
+        If longitudinal data is provided, generates a multi-panel grid 
+        spanning all years.
+
+        Parameters
+        ----------
+        weights : Dict[str, np.ndarray]
+            Current weights to plot.
+        component_names : List[str]
+            Sub-criteria labels.
+        weight_all_years : Dict[int, Any], optional
+            Longitudinal weight data for multi-year grids.
+        save_name : str, default='fig04_weight_radar.png'
+            The output filename.
+
+        Returns
+        -------
+        str, optional
+            The absolute path to the saved figure, or None if failed.
         """
         if not HAS_MATPLOTLIB:
             return None
@@ -429,11 +520,24 @@ class WeightingPlotter(BasePlotter):
         weight_all_years: Optional[Dict[int, Any]] = None,
         save_name: str = 'fig05_weight_heatmap.png',
     ) -> Optional[str]:
-        """Annotated weight heatmap.
+        """
+        Render an annotated heatmap of sub-criteria weights.
 
-        With *weight_all_years*: Years × sub-criteria grid covering all 14
-        years (rows = years, columns = sub-criteria sorted sequentially).
-        Fallback: method × sub-criteria grid for the current *weights*.
+        Parameters
+        ----------
+        weights : Dict[str, np.ndarray]
+            Weights mapped by method name.
+        component_names : List[str]
+            Sub-criteria names.
+        weight_all_years : Dict[int, Any], optional
+            Historical weights for Year x SC heatmap.
+        save_name : str, default='fig05_weight_heatmap.png'
+            The output filename.
+
+        Returns
+        -------
+        str, optional
+            The absolute path to the saved figure, or None if failed.
         """
         if not HAS_MATPLOTLIB:
             return None
@@ -782,11 +886,27 @@ class WeightingPlotter(BasePlotter):
         weight_all_years: Optional[Dict[int, Any]] = None,
         save_name: str = 'fig04c_weight_hierarchical_rose.png',
     ) -> Optional[str]:
-        """Hierarchical Coxcomb / Rose chart.
+        """
+        Produce a hierarchical Rose (Coxcomb) chart.
 
-        With *weight_all_years*: 14-panel grid (2 rows × 7 cols), one rose
-        per year, clearly labelled.
-        Fallback: single rose panel for the supplied *weights*.
+        Visualizes nested weight distributions where the outer petals 
+        represent sub-criteria and inner blocks represent criteria shares.
+
+        Parameters
+        ----------
+        weights : Dict[str, np.ndarray]
+            Weights mapped by method.
+        component_names : List[str]
+            Sub-criteria names.
+        weight_all_years : Dict[int, Any], optional
+            Historical weights for multi-year rose grids.
+        save_name : str, default='fig04c_weight_hierarchical_rose.png'
+            The output filename.
+
+        Returns
+        -------
+        str, optional
+            The absolute path to the saved figure, or None if failed.
         """
         if not HAS_MATPLOTLIB:
             return None

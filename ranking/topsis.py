@@ -1,16 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-TOPSIS: Technique for Order Preference by Similarity to Ideal Solution
+TOPSIS (Technique for Order Preference by Similarity to Ideal Solution)
+=======================================================================
 
-A distance-based MCDM method that ranks alternatives based on their
-geometric distance from ideal and anti-ideal solutions.
-
-Mathematical Steps:
-1. Normalize the decision matrix
-2. Calculate weighted normalized matrix  
-3. Determine ideal (A+) and anti-ideal (A-) solutions
-4. Calculate distances to ideal and anti-ideal
-5. Calculate relative closeness: C_i = D_i^- / (D_i^+ + D_i^-)
+A distance-based MCDM method that ranks alternatives based on their 
+geometric distance from both the ideal (best) and anti-ideal (worst) 
+solutions. Alternatives closer to the ideal and further from the 
+anti-ideal receive higher scores.
 """
 
 import numpy as np
@@ -23,15 +19,28 @@ from weighting import WeightResult, CRITICWeightCalculator
 
 @dataclass
 class TOPSISResult:
-    """Result container for TOPSIS calculation."""
-    scores: pd.Series                    # Closeness coefficients
-    ranks: pd.Series                     # Final rankings
-    d_positive: pd.Series                # Distance to ideal
-    d_negative: pd.Series                # Distance to anti-ideal
-    weighted_matrix: pd.DataFrame        # Weighted normalized matrix
-    ideal_solution: pd.Series            # Ideal solution values
-    anti_ideal_solution: pd.Series       # Anti-ideal solution values
-    weights: Dict[str, float]            # Weights used
+    """
+    Container for TOPSIS calculation results and diagnostics.
+
+    Attributes
+    ----------
+    scores : pd.Series
+        The relative closeness coefficients (C_i) in range [0, 1].
+    ranks : pd.Series
+        Final preference rankings (1 = best).
+    d_positive : pd.Series
+        Euclidean distance to the ideal solution.
+    d_negative : pd.Series
+        Euclidean distance to the anti-ideal solution.
+    weighted_matrix : pd.DataFrame
+        The weighted normalized decision matrix.
+    ideal_solution : pd.Series
+        Coordinates of the ideal solution in the feature space.
+    anti_ideal_solution : pd.Series
+        Coordinates of the anti-ideal solution.
+    weights : Dict[str, float]
+        Criteria weights applied.
+    """
     
     @property
     def final_ranks(self) -> pd.Series:
@@ -60,41 +69,11 @@ class TOPSISResult:
 
 class TOPSISCalculator:
     """
-    Standard TOPSIS calculator for cross-sectional data.
-    
-    TOPSIS (Technique for Order Preference by Similarity to Ideal Solution)
-    ranks alternatives by measuring their Euclidean distance from ideal
-    and anti-ideal solutions.
-    
-    Parameters
-    ----------
-    normalization : str
-        Normalization method: 'vector', 'minmax', or 'max'
-    benefit_criteria : List[str], optional
-        Criteria where higher values are better (default: all)
-    cost_criteria : List[str], optional
-        Criteria where lower values are better
-    
-    Examples
-    --------
-    >>> import pandas as pd
-    >>> from ranking import TOPSISCalculator
-    >>> 
-    >>> data = pd.DataFrame({
-    ...     'Quality': [0.8, 0.6, 0.9, 0.7],
-    ...     'Price': [100, 150, 120, 80],  # Cost criterion
-    ...     'Speed': [5, 3, 4, 6]
-    ... }, index=['A', 'B', 'C', 'D'])
-    >>> 
-    >>> weights = {'Quality': 0.4, 'Price': 0.3, 'Speed': 0.3}
-    >>> calc = TOPSISCalculator(cost_criteria=['Price'])
-    >>> result = calc.calculate(data, weights)
-    >>> print(result.ranks)
-    
-    References
-    ----------
-    Hwang, C.L., & Yoon, K. (1981). Multiple Attribute Decision Making: 
-    Methods and Applications. Springer-Verlag.
+    Calculator for the TOPSIS outranking method.
+
+    Implements the standard Euclidean distance-based logic for cross-sectional 
+    data, supporting multiple normalization strategies and benefit/cost 
+    distinctions.
     """
     
     def __init__(self, 
@@ -106,23 +85,24 @@ class TOPSISCalculator:
         self.cost_criteria = cost_criteria or []
     
     def calculate(self, 
-                 data: pd.DataFrame,
-                 weights: Union[Dict[str, float], WeightResult, None] = None
-                 ) -> TOPSISResult:
+                  data: pd.DataFrame,
+                  weights: Union[Dict[str, float], WeightResult, Optional[Any]] = None
+                  ) -> TOPSISResult:
         """
-        Calculate TOPSIS scores and rankings.
-        
+        Execute the TOPSIS ranking algorithm.
+
         Parameters
         ----------
         data : pd.DataFrame
-            Decision matrix (alternatives × criteria)
-        weights : Dict or WeightResult
-            Criteria weights (if None, uses ensemble weights)
-        
+            The decision matrix with alternatives as rows.
+        weights : Union[Dict[str, float], WeightResult], optional
+            Weights for each criterion. If None, equal weights or 
+            pre-calculated CRITIC weights are used.
+
         Returns
         -------
         TOPSISResult
-            Complete TOPSIS results
+            Object containing final scores, ranks, and distance metrics.
         """
         # Get weights
         if weights is None:

@@ -447,7 +447,7 @@ Monte Carlo approach with $R$ replicates provides:
 - **Stability Estimation**: Variance of disruption metric across replicates
 - **Coverage**: Explores (approximately) perturbation space uniformly
 
-Recommended: $R = 1000$ replicates (balance between accuracy and runtime)
+Recommended: $R = 50$ replicates per year (default) for a total of 700 perturbations per tier across the 14-year panel. For high-precision research, $R = 1000$ can be configured in `WeightingConfig`.
 
 ---
 
@@ -545,9 +545,11 @@ $$\text{Disruption}_{r}^{(t)} = 1 - \frac{6 \sum_{j=1}^{8} (\Delta \text{rank}_{
 | Disruption Range | Interpretation |
 |------------------|-----------------|
 | $= 0$ | No rank change (weights maintain exact ordering) |
-| $\leq 0.20$ | Minimal disruption (at most 1-2 adjacent swaps) |
-| $0.20 < \cdot \leq 0.50$ | Moderate disruption (several reorderings) |
-| $> 0.50$ | Severe disruption (major ranking reversal) |
+| $\leq 0.10$ | Minimal disruption (Standard Production Threshold) |
+| $0.10 < \cdot \leq 0.30$ | Moderate disruption (several reorderings) |
+| $> 0.30$ | Severe disruption (major ranking reversal) |
+
+Lower disruption = higher robustness ✓
 
 Lower disruption = higher robustness ✓
 

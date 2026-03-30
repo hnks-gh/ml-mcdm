@@ -1,10 +1,17 @@
 # -*- coding: utf-8 -*-
 """
-Summary / Executive Dashboard Plots (fig24)
-============================================
+Summary and Executive Dashboard Visualizations.
 
-High-level summary visualisation combining KPIs, top-10 bar,
-weight distribution, robustness text, and optional agreement heatmap.
+This module provides the `SummaryPlotter` class, which generates 
+high-level executive dashboards. These figures aggregate Key Performance 
+Indicators (KPIs), top-performing alternatives, weight distributions, 
+and method agreement metrics into a single unified view for decision-makers.
+
+Key Figures
+-----------
+- **fig24 (Executive Dashboard)**: Multi-panel summary containing KPI cards, 
+  top-10 provincial rankings, subcriteria weight analysis, and 
+  robustness summaries.
 """
 
 from __future__ import annotations
@@ -24,7 +31,12 @@ except ImportError:
 
 
 class SummaryPlotter(BasePlotter):
-    """Executive dashboard and high-level summary figures."""
+    """
+    Generator for high-level executive summary visualizations.
+
+    Combines disparate metrics from weighting, forecasting, and ranking 
+    phases into integrated dashboards for at-a-glance oversight.
+    """
 
     # ==================================================================
     #  FIG 24 – Executive Dashboard
@@ -35,6 +47,30 @@ class SummaryPlotter(BasePlotter):
         results: Dict[str, Any],
         save_name: str = 'fig24_executive_dashboard.png',
     ) -> Optional[str]:
+        """
+        Produce a multi-panel executive dashboard.
+
+        Aggregates the most critical results from the entire pipeline into 
+        a publication-quality summary figure.
+
+        Parameters
+        ----------
+        results : Dict[str, Any]
+            A dictionary containing:
+            - 'kpis': Dict of label -> value.
+            - 'top_10': List of (name, score) tuples.
+            - 'fused_weights': Array of subcriteria weights.
+            - 'subcriteria_names': List of names for weight labeling.
+            - 'robustness_text': String summary of stability.
+            - 'agreement_matrix': Spearman correlation matrix.
+        save_name : str, default='fig24_executive_dashboard.png'
+            The output filename.
+
+        Returns
+        -------
+        str, optional
+            The absolute path to the saved figure, or None if failed.
+        """
         if not HAS_MATPLOTLIB or FancyBboxPatch is None:
             return None
 

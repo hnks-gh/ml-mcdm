@@ -1,27 +1,20 @@
-# -*- coding: utf-8 -*-
 """
-Forecasting Plots (fig16–fig23) — Phase 4 Compatibility Facade
+Forecasting Visualization Facade (Phase 4).
 
-This module serves as a compatibility layer between the legacy ForecastPlotter API
-and the new modular chart architecture (Phase 2/3).
+This module provides the `ForecastPlotter` class, which serves as a 
+backward-compatible interface for the new modular forecasting chart 
+architecture. It preserves the legacy API while delegating actual 
+rendering to specialized sub-modules.
 
-Old callers invoke ForecastPlotter.plot_*() with raw numpy arrays and dicts.
-Each method now delegates to the appropriate chart module class after constructing
-a type-safe ForecastVizPayload contract.
-
-Charts are organized into 7 modular classes:
-- AccuracyCharts: F-01, F-02, F-03, F-13 (actual vs predicted, residuals, holdout)
-- EnsembleCharts: F-04, F-05, F-06, F-22, F-15, F-20b (weights, performance, architecture)
-- UncertaintyCharts: F-07, F-08, F-09, F-16 (intervals, conformal, bootstrap CI)
-- InterpretabilityCharts: F-12, F-14 (feature importance, per-model importance)
-- ImpactCharts: F-10, F-11, F-21 (rank change, province comparison, score trajectory)
-- DiversityCharts: F-17, F-18 (prediction correlation, scatter matrix)
-- TemporalCharts: F-19, F-20 (entity error analysis, temporal training curve)
-
-PHASE 4 NOTE:
-- All 24 original ForecastPlotter method signatures are preserved
-- Method bodies delegate to modular chart modules via ForecastVizPayload
-- See PHASE4_IMPLEMENTATION_SPEC.md and PHASE4_METHOD_MAPPING.md for details
+Chart Categories
+----------------
+- **Accuracy**: Actual vs. Predicted, residuals, and holdout diagnostics.
+- **Ensemble**: Model weights, performance comparison, and architecture.
+- **Uncertainty**: Prediction intervals, conformal coverage, and bootstrap CI.
+- **Interpretability**: Feature importance and per-model heatmaps.
+- **Impact**: Rank change bubbles, province comparisons, and trajectories.
+- **Diversity**: Prediction correlations and scatter matrices.
+- **Temporal**: Entity error analysis and walk-forward training curves.
 """
 
 from __future__ import annotations
@@ -75,15 +68,23 @@ def _build_payload(**kwargs) -> ForecastVizPayload:
 
 class ForecastPlotter(BasePlotter):
     """
-    Phase 4 Facade: Forward-compatible wrapper for modular chart architecture.
+    Facade for the modular forecasting visualization suite.
 
-    All method signatures remain unchanged for backward compatibility with
-    existing code. Each method creates a ForecastVizPayload and delegates
-    to the appropriate chart module (Accuracy, Ensemble, Uncertainty, etc.).
+    Maintains backward compatibility with legacy calls while leveraging 
+    the production-hardened Phase 3 chart modules.
     """
 
     def __init__(self, output_dir: str = '.', dpi: int = 300):
-        """Initialize facade with chart module instances."""
+        """
+        Initialize the plotter with delegated chart modules.
+
+        Parameters
+        ----------
+        output_dir : str, default='.'
+            The directory where figures will be saved.
+        dpi : int, default=300
+            The resolution of generated images.
+        """
         super().__init__(output_dir, dpi)
         self._accuracy = AccuracyCharts(output_dir, dpi)
         self._ensemble = EnsembleCharts(output_dir, dpi)
@@ -104,9 +105,31 @@ class ForecastPlotter(BasePlotter):
         lower: Optional[np.ndarray] = None,
         upper: Optional[np.ndarray] = None,
         entity_names: Optional[List[str]] = None,
-        save_name: str = 'fig16_forecast_scatter.png',
+        save_name: str = 'forecast_scatter.png',
     ) -> Optional[str]:
-        """F-01: Actual vs Predicted scatter with fit line and stats."""
+        """
+        Produce an actual vs. predicted scatter plot (F-01).
+
+        Parameters
+        ----------
+        actual : np.ndarray
+            Observed ground truth values.
+        predicted : np.ndarray
+            Ensemble point predictions.
+        lower : np.ndarray, optional
+            Lower interval bounds.
+        upper : np.ndarray, optional
+            Upper interval bounds.
+        entity_names : List[str], optional
+            Names of the alternatives.
+        save_name : str, default='forecast_scatter.png'
+            The output filename.
+
+        Returns
+        -------
+        str, optional
+            The absolute path to the saved figure, or None if failed.
+        """
         payload = _build_payload(y_test=actual, y_pred_ensemble=predicted,
                                 entity_names=entity_names)
         return self._accuracy.plot_forecast_scatter(payload, save_name=save_name)
@@ -115,9 +138,28 @@ class ForecastPlotter(BasePlotter):
         self,
         actual: np.ndarray,
         predicted: np.ndarray,
-        save_name: str = 'fig17_forecast_residuals.png',
+        save_name: str = 'forecast_residual_distribution.png',
     ) -> Optional[str]:
-        """F-02: 4-panel residual diagnostics."""
+        """
+        Produce a 4-panel residual diagnostic plot (F-02).
+
+        Visualizes residual histograms, Q-Q plots, and residuals vs. 
+        predicted values to assess model bias.
+
+        Parameters
+        ----------
+        actual : np.ndarray
+            Observed values.
+        predicted : np.ndarray
+            Predicted values.
+        save_name : str, default='forecast_residual_distribution.png'
+            The output filename.
+
+        Returns
+        -------
+        str, optional
+            The absolute path to the saved figure, or None if failed.
+        """
         payload = _build_payload(y_test=actual, y_pred_ensemble=predicted)
         return self._accuracy.plot_forecast_residuals(payload, save_name=save_name)
 
@@ -159,16 +201,30 @@ class ForecastPlotter(BasePlotter):
     def plot_model_weights_donut(
         self,
         weights: Dict[str, float],
-        save_name: str = 'fig19_model_weights.png',
+        save_name: str = 'forecast_model_contribution_donut.png',
     ) -> Optional[str]:
-        """F-04: Model contribution weight donut chart."""
+        """
+        Produce a donut chart of ensemble model weights (F-04).
+
+        Parameters
+        ----------
+        weights : Dict[str, float]
+            Dictionary mapping model names to their ensemble weights.
+        save_name : str, default='forecast_model_contribution_donut.png'
+            The output filename.
+
+        Returns
+        -------
+        str, optional
+            The absolute path to the saved figure, or None if failed.
+        """
         payload = _build_payload(model_contributions=weights)
         return self._ensemble.plot_model_weights_donut(payload, save_name=save_name)
 
     def plot_model_performance(
         self,
         model_metrics: Dict[str, Dict[str, float]],
-        save_name: str = 'fig20_model_performance.png',
+        save_name: str = 'forecast_model_performance.png',
     ) -> Optional[str]:
         """F-05: Per-model performance comparison."""
         payload = _build_payload(model_performance=model_metrics)
@@ -225,9 +281,33 @@ class ForecastPlotter(BasePlotter):
         upper: Optional[pd.DataFrame] = None,
         entity_names: Optional[List[str]] = None,
         top_n: int = 15,
-        save_name: str = 'fig23_prediction_intervals.png',
+        save_name: str = 'forecast_interval_coverage.png',
     ) -> Optional[str]:
-        """F-07: Prediction interval chart for top entities."""
+        """
+        Produce a prediction interval chart for top alternatives (F-07).
+
+        Parameters
+        ----------
+        actual : np.ndarray
+            Observed values.
+        predicted : np.ndarray
+            Predicted values.
+        lower : pd.DataFrame, optional
+            Lower bounds for error bars.
+        upper : pd.DataFrame, optional
+            Upper bounds for error bars.
+        entity_names : List[str], optional
+            Names of the alternatives.
+        top_n : int, default=15
+            Number of top alternatives to display.
+        save_name : str, default='forecast_interval_coverage.png'
+            The output filename.
+
+        Returns
+        -------
+        str, optional
+            The absolute path to the saved figure, or None if failed.
+        """
         payload = _build_payload(
             y_test=actual, y_pred_ensemble=predicted,
             interval_lower_df=lower, interval_upper_df=upper,
@@ -240,7 +320,7 @@ class ForecastPlotter(BasePlotter):
         predicted: np.ndarray,
         lower: Optional[pd.DataFrame] = None,
         upper: Optional[pd.DataFrame] = None,
-        save_name: str = 'fig24_conformal_coverage.png',
+        save_name: str = 'forecast_calibration_curve.png',
     ) -> Optional[str]:
         """F-08: Conformal coverage calibration curve."""
         payload = _build_payload(
@@ -254,7 +334,7 @@ class ForecastPlotter(BasePlotter):
         predicted: np.ndarray,
         lower: Optional[pd.DataFrame] = None,
         upper: Optional[pd.DataFrame] = None,
-        save_name: str = 'fig25_interval_calibration_scatter.png',
+        save_name: str = 'forecast_interval_widths.png',
     ) -> Optional[str]:
         """F-09: Interval calibration scatter (width vs historical error)."""
         payload = _build_payload(
@@ -288,9 +368,27 @@ class ForecastPlotter(BasePlotter):
         importance: Dict[str, float],
         top_n: int = 20,
         title: str = 'Feature Importance — Top Features',
-        save_name: str = 'fig18_feature_importance.png',
+        save_name: str = 'forecast_feature_importance.png',
     ) -> Optional[str]:
-        """F-12: Feature importance lollipop chart."""
+        """
+        Produce a feature importance lollipop chart (F-12).
+
+        Parameters
+        ----------
+        importance : Dict[str, float]
+            Mapping of feature names to importance scores.
+        top_n : int, default=20
+            Number of top features to display.
+        title : str, default='Feature Importance — Top Features'
+            The plot title.
+        save_name : str, default='forecast_feature_importance.png'
+            The output filename.
+
+        Returns
+        -------
+        str, optional
+            The absolute path to the saved figure, or None if failed.
+        """
         # Note: Feature importance is a Dict, not part of ForecastVizPayload
         # For now, we accept it and delegate without payload (chart handles Dict directly)
         # This is a limitation of Phase 4 - will be addressed in Phase 5
@@ -340,7 +438,7 @@ class ForecastPlotter(BasePlotter):
         actual: np.ndarray,
         predicted: np.ndarray,
         entity_names: Optional[List[str]] = None,
-        save_name: str = 'fig_province_comparison.png',
+        save_name: str = 'forecast_prediction_comparison.png',
     ) -> Optional[str]:
         """F-11: Province/entity comparison (current vs forecast with CI)."""
         payload = _build_payload(
@@ -373,7 +471,7 @@ class ForecastPlotter(BasePlotter):
         self,
         per_model_predictions: Dict[str, np.ndarray],
         entity_names: Optional[List[str]] = None,
-        save_name: str = 'fig_prediction_correlation_heatmap.png',
+        save_name: str = 'forecast_error_heatmap.png',
     ) -> Optional[str]:
         """F-17: Prediction correlation heatmap (with clustering)."""
         payload = _build_payload(
@@ -403,7 +501,7 @@ class ForecastPlotter(BasePlotter):
         predicted: np.ndarray,
         entity_names: Optional[List[str]] = None,
         top_n: int = 20,
-        save_name: str = 'fig_entity_error_analysis.png',
+        save_name: str = 'forecast_entity_error_rank.png',
     ) -> Optional[str]:
         """F-19: Entity-wise error analysis with signed bias annotation."""
         payload = _build_payload(
@@ -415,9 +513,25 @@ class ForecastPlotter(BasePlotter):
         self,
         cv_scores: Dict[str, List[float]],
         fold_labels: Optional[List[str]] = None,
-        save_name: str = 'fig_temporal_training_curve.png',
+        save_name: str = 'forecast_training_curve.png',
     ) -> Optional[str]:
-        """F-20: Walk-forward temporal CV curve (fold/year trajectory)."""
+        """
+        Produce a walk-forward temporal CV training curve (F-20).
+
+        Parameters
+        ----------
+        cv_scores : Dict[str, List[float]]
+            Mapping of model/fold to historical accuracy.
+        fold_labels : List[str], optional
+            Labels for the X-axis (years).
+        save_name : str, default='forecast_training_curve.png'
+            The output filename.
+
+        Returns
+        -------
+        str, optional
+            The absolute path to the saved figure, or None if failed.
+        """
         payload = _build_payload(cv_scores=cv_scores)
         return self._temporal.plot_temporal_training_curve(payload, save_name=save_name)
 

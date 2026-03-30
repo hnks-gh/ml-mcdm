@@ -1,33 +1,32 @@
-# -*- coding: utf-8 -*-
 """
-Conditional Panel Augmentation (E-06)
-=======================================
+Conditional Panel Augmentation (E-06).
 
-Generates synthetic panel trajectories that preserve three key statistical
-properties:
+This module generates synthetic panel trajectories that preserve the 
+statistical properties of observed data, including cross-sectional 
+correlations, within-entity dynamics, and empirical marginal distributions.
 
-1. **Cross-sectional correlation structure** (Gaussian copula over annual
-   feature means; optional D-vine copula when pyvinecopulib is installed)
-2. **Within-entity autocorrelation** (per-entity VAR(1) marginal dynamics
-   estimated from observed trajectories)
-3. **Empirical marginal distributions** (probability integral transform maps
-   copula uniform samples back through the empirical CDF of each feature)
+Key Features
+------------
+1. **Cross-Sectional Correlation**: Uses a Gaussian copula over annual feature 
+   means to preserve inter-feature dependencies.
+2. **Within-Entity Dynamics**: Estimates per-entity VAR(1) marginal dynamics 
+   to maintain temporal autocorrelation.
+3. **Empirical Marginals**: Applies probability integral transforms (PIT) 
+   to map copula samples back to empirical feature distributions.
 
-Production safety:
-    - **Synthetic rows are NEVER placed in validation folds** (enforced by
-      ``SyntheticAwareCV``).
-    - **5-fold gain gate**: a lightweight Ridge-proxy CV evaluates whether
-      augmented training improves mean walk-forward R².  Augmentation is
-      committed only when the gain exceeds ``gain_threshold`` (default 0.005).
+Production Integrity
+--------------------
+- **Synthetic-Aware CV**: Ensures synthetic rows are never used for validation, 
+  only for training augmentation within earlier year windows.
+- **Gain Gate**: A lightweight proxy evaluation (Ridge-proxy CV) validates 
+  the benefit of augmentation before committing to modified training sets.
 
 References
 ----------
-Aas, Czado, Frigessi & Bakken (2009).
-    "Pair-copula constructions of multiple dependence." Insurance Mathematics
-    and Economics 44(2), 182–198.
-Yoon, Jordon & van der Schaar (2018).
-    "GAIN: Missing Data Imputation using Generative Adversarial Networks."
-    ICML 2018.
+- Aas et al. (2009). "Pair-copula constructions of multiple dependence." 
+  Insurance Mathematics and Economics 44(2).
+- Yoon et al. (2018). "GAIN: Missing Data Imputation using Generative 
+  Adversarial Networks." ICML 2018.
 """
 from __future__ import annotations
 
@@ -39,29 +38,27 @@ from scipy.stats import norm as _scipy_norm
 from sklearn.linear_model import Ridge, RidgeCV
 from sklearn.metrics import r2_score
 
-
 class SyntheticAwareCV:
-    """Walk-forward CV splitter that marks synthetic rows training-only.
+    """
+    Walk-forward CV splitter that marks synthetic rows training-only.
 
-    Inherits the calendar-year-aligned expanding-window structure of
-    ``_WalkForwardYearlySplit`` and adds the synthetic-row contract:
-
-    * Validation indices contain **only real observations** (``synthetic_mask``
-      rows are never in val_idx).
-    * Training indices *include all real rows + all synthetic rows whose
-      synthetic year < val_year* (earlier synthetic years are in-distribution
-      for the fold's training window).
-
-    Parameters
-    ----------
-    min_train_years : int
-        Minimum calendar years in the training window before the first
-        validation fold (default 6).
-    max_folds : int
-        Maximum number of folds (default 999 → exhaust all years).
+    Validation indices contain only real observations, while training indices
+    include original real rows plus synthetic rows whose label is before the
+    current validation year.
     """
 
     def __init__(self, min_train_years: int = 6, max_folds: int = 999):
+        """
+        Initialize the synthetic-aware CV splitter.
+
+        Parameters
+        ----------
+        min_train_years : int, default=6
+            Minimum calendar years in the training window before the first 
+            validation fold.
+        max_folds : int, default=999
+            Maximum number of folds to generate.
+        """
         self.min_train_years = min_train_years
         self.max_folds       = max_folds
 
@@ -171,13 +168,31 @@ class ConditionalPanelAugmenter:
 
     def __init__(
         self,
-        n_synth_years:   int   = 14,
-        gain_threshold:  float = 0.005,
-        min_entity_years: int  = 4,
-        noise_std:       float = 0.02,
-        random_state:    int   = 42,
-        verbose:         bool  = True,
+        n_synth_years: int = 14,
+        gain_threshold: float = 0.005,
+        min_entity_years: int = 4,
+        noise_std: float = 0.02,
+        random_state: int = 42,
+        verbose: bool = True,
     ):
+        """
+        Initialize the augmenter.
+
+        Parameters
+        ----------
+        n_synth_years : int, default=14
+            Number of synthetic years to generate per entity.
+        gain_threshold : float, default=0.005
+            Minimum gain in proxy R² required to commit to augmentation.
+        min_entity_years : int, default=4
+            Minimum historical years per entity required for VAR(1) estimation.
+        noise_std : float, default=0.02
+            Standard deviation of white noise added to synthetic features.
+        random_state : int, default=42
+            Seed for reproducible synthetic generation.
+        verbose : bool, default=True
+            Whether to print progress information.
+        """
         self.n_synth_years    = n_synth_years
         self.gain_threshold   = gain_threshold
         self.min_entity_years = min_entity_years

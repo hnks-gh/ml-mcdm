@@ -131,11 +131,19 @@ For detailed variable descriptions, provincial names, and sub-criteria definitio
 
 Analysis of all 14 annual CSV files (2011–2024) reveals three categories of missing data, totalling approximately **3,424 missing cells** out of 25,578 possible data points (63 provinces × 29 sub-criteria × 14 years) — a **13.4% overall missingness rate**.
 
-| Category | Description |
-|---|---|
-| **Type 1 — Entire column missing** | A sub-criterion column is absent or all-null for an entire year |
-| **Type 2 — Entire province missing** | A province row exists but all 29 sub-criteria cells are blank |
-| **Type 3 — Partial province missing** | A province is present but specific sub-criteria cells are blank |
+| Type 3 — Partial province missing | A province is present but specific sub-criteria cells are blank |
+
+---
+
+### Handling Missingness: Year-Regime Analysis
+
+To maintain statistical integrity without imputation bias in the weighting phase, the pipeline employs a **Hierarchical Adaptive CRITIC** mechanism. This approach handles the missingness categories above as follows:
+
+1. **Type 1 (Structural Gaps)**: The engine automatically identifies "Year Regimes"—periods where the set of active sub-criteria remains constant (e.g., 2011–2017 vs. 2018–2020). Weights are computed per regime and blended to reflect the information content of the entire panel.
+2. **Type 2 (Blank Provinces)**: These rows are excluded from the correlation and variance calculations for the affected years through **complete-case exclusion**, preventing noise from empty observations.
+3. **Type 3 (Partial Gaps)**: Handled via **renormalized weighted averaging** in the Stage 1 composite calculation, ensuring the criterion score remains representative of the available sub-criteria.
+
+This deterministic approach ensures that the resulting weights are driven by actual reported data rather than imputation artifacts.
 
 ---
 

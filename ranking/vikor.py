@@ -1,15 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-VIKOR: Multi-criteria Optimization and Compromise Solution
+VIKOR (Multi-criteria Optimization and Compromise Solution)
+===========================================================
 
-A compromise ranking method that focuses on ranking and selecting from
-a set of alternatives in the presence of conflicting criteria.
-
-Mathematical Steps:
-1. Determine best (f*) and worst (f-) values for each criterion
-2. Calculate S_i (group utility) and R_i (individual regret)
-3. Calculate Q_i = v × (S_i - S*) / (S- - S*) + (1-v) × (R_i - R*) / (R- - R*)
-4. Rank by Q values (lower is better)
+A compromise ranking method that focuses on ranking and selecting from 
+a set of alternatives in the presence of conflicting criteria. It 
+is based on an aggregating function representing 'closeness to the 
+ideal' solution.
 """
 
 import numpy as np
@@ -23,19 +20,36 @@ from weighting import WeightResult, CRITICWeightCalculator
 
 @dataclass
 class VIKORResult:
-    """Result container for VIKOR calculation."""
-    S: pd.Series                    # Group utility (maximum group utility)
-    R: pd.Series                    # Individual regret (minimum individual regret)
-    Q: pd.Series                    # Compromise index
-    ranks_S: pd.Series              # Ranking by S
-    ranks_R: pd.Series              # Ranking by R
-    ranks_Q: pd.Series              # Ranking by Q (final)
-    compromise_solution: str        # Best compromise alternative
-    advantage_condition: bool       # C1: Acceptable advantage
-    stability_condition: bool       # C2: Acceptable stability
-    compromise_set: List[str]       # Set of compromise solutions
-    weights: Dict[str, float]
-    v: float                        # Weight of group utility
+    """
+    Container for VIKOR calculation results and diagnostics.
+
+    Attributes
+    ----------
+    S : pd.Series
+        Group utility values (lower is better).
+    R : pd.Series
+        Individual regret values (lower is better).
+    Q : pd.Series
+        The VIKOR compromise index (lower is better).
+    ranks_S : pd.Series
+        Rankings based on group utility S.
+    ranks_R : pd.Series
+        Rankings based on individual regret R.
+    ranks_Q : pd.Series
+        The final compromise rankings based on Q (1 = best).
+    compromise_solution : str
+        The best candidate following the VIKOR decision rule.
+    advantage_condition : bool
+        Whether the 'Acceptable Advantage' condition (C1) is met.
+    stability_condition : bool
+        Whether the 'Acceptable Stability' condition (C2) is met.
+    compromise_set : List[str]
+        The set of alternatives belonging to the compromise solution space.
+    weights : Dict[str, float]
+        Criteria weights applied.
+    v : float
+        The 'weight of strategy' (majority of criteria) parameter.
+    """
     
     @property
     def final_ranks(self) -> pd.Series:
@@ -59,44 +73,11 @@ class VIKORResult:
 
 class VIKORCalculator:
     """
-    VIKOR (VIseKriterijumska Optimizacija I Kompromisno Resenje) calculator.
-    
-    VIKOR focuses on ranking alternatives with conflicting criteria,
-    providing a maximum group utility and minimum individual regret
-    compromise solution.
-    
-    Parameters
-    ----------
-    v : float
-        Weight of the maximum group utility (0-1)
-        - v=0.5: consensus by majority (recommended)
-        - v>0.5: emphasizes group utility
-        - v<0.5: emphasizes individual regret
-    benefit_criteria : List[str], optional
-        Criteria where higher values are better
-    cost_criteria : List[str], optional
-        Criteria where lower values are better
-    
-    Examples
-    --------
-    >>> import pandas as pd
-    >>> from ranking import VIKORCalculator
-    >>> 
-    >>> data = pd.DataFrame({
-    ...     'Quality': [0.8, 0.6, 0.9, 0.7],
-    ...     'Price': [100, 150, 120, 80],
-    ...     'Speed': [5, 3, 4, 6]
-    ... }, index=['A', 'B', 'C', 'D'])
-    >>> 
-    >>> weights = {'Quality': 0.4, 'Price': 0.3, 'Speed': 0.3}
-    >>> calc = VIKORCalculator(v=0.5, cost_criteria=['Price'])
-    >>> result = calc.calculate(data, weights)
-    >>> print(result.compromise_solution)
-    
-    References
-    ----------
-    Opricovic, S., & Tzeng, G.H. (2004). Compromise solution by MCDM methods:
-    A comparative analysis of VIKOR and TOPSIS. EJOR.
+    Calculator for the VIKOR outranking method.
+
+    Focuses on ranking alternatives with conflicting criteria by providing 
+    a solution that is closest to the ideal and furthest from the 
+    anti-ideal, balancing group utility and individual regret.
     """
     
     def __init__(self, 
@@ -110,23 +91,25 @@ class VIKORCalculator:
         self.cost_criteria = cost_criteria or []
     
     def calculate(self,
-                 data: pd.DataFrame,
-                 weights: Union[Dict[str, float], WeightResult, None] = None
-                 ) -> VIKORResult:
+                  data: pd.DataFrame,
+                  weights: Union[Dict[str, float], WeightResult, Optional[Any]] = None
+                  ) -> VIKORResult:
         """
-        Calculate VIKOR scores and rankings.
-        
+        Execute the VIKOR ranking algorithm.
+
         Parameters
         ----------
         data : pd.DataFrame
-            Decision matrix (alternatives × criteria)
-        weights : Dict or WeightResult
-            Criteria weights
-        
+            The decision matrix with alternatives as rows.
+        weights : Union[Dict[str, float], WeightResult], optional
+            Weights for each criterion. If None, defaults to equal weights 
+            or pre-calculated CRITIC weights.
+
         Returns
         -------
         VIKORResult
-            Complete VIKOR results with compromise analysis
+            Object containing final compromise index, rankings, and 
+            decision-rule outcomes.
         """
         # Get weights
         if weights is None:

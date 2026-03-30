@@ -1,29 +1,26 @@
-# -*- coding: utf-8 -*-
 """
-Kernel Ridge Regression Forecaster
-====================================
+Kernel Ridge Regression Forecaster.
 
-Closed-form L2-regularised regression in a Reproducing Kernel Hilbert
-Space via the RBF (Gaussian) kernel.  Complementary to GBM-based models
-because:
+This module provides a `KernelRidgeForecaster` that implements non-parametric 
+closed-form L2-regularized regression in a Reproducing Kernel Hilbert Space 
+(RKHS).
 
-* Non-parametric — can capture any smooth relationship without specifying
-  a functional form.
-* Closed-form dual solution — no iterative optimisation; exact fit.
-* RBF kernel = ensemble of Gaussian bumps → universal approximator.
-* Internal ``StandardScaler`` prevents scale sensitivity.
-
-Feature track assignment (unified.py)
---------------------------------------
-``KernelRidgeForecaster`` is routed to the **PLS-reduced (PCA) track**,
-sharing the compressed linear subspace with ``BayesianForecaster``.
-This exploits the fact that smooth kernel methods benefit from
-dimensionality reduction (fewer eigen-directions to interpolate across).
+Key Features
+------------
+- **Non-Parametric Flexibility**: Captures complex non-linear relationships 
+  without requiring a specified functional form.
+- **Universal Approximation**: Uses the RBF (Gaussian) kernel to approximate 
+  arbitrary smooth functions.
+- **Closed-Form Solution**: Computes the exact global minimum in the dual 
+  space using efficient linear algebra.
+- **Scale Invariance**: Includes an internal `StandardScaler` to ensure 
+  consistent kernel evaluation across features with different units.
 
 References
 ----------
-Saunders et al. (1998).  "Ridge regression learning algorithm in dual
-variables."  In *Proceedings of the 15th ICML*, pp. 515–521.
+- Saunders et al. (1998). "Ridge regression learning algorithm in dual 
+  variables." Proceedings of the 15th ICML.
+- Schölkopf et al. (2001). "Learning with Kernels." MIT Press.
 """
 
 import numpy as np
@@ -66,6 +63,22 @@ class KernelRidgeForecaster(BaseForecaster):
         kernel: str = "rbf",
         random_state: Optional[int] = None,
     ):
+        """
+        Initialize the Kernel Ridge forecaster.
+
+        Parameters
+        ----------
+        alpha : float, default=1.0
+            Tikhonov regularization strength. Larger values increase 
+            regularization (smoothness).
+        gamma : str or float, default='scale'
+            Kernel coefficient for 'rbf', 'poly' and 'sigmoid'. 
+            'scale' uses 1 / (n_features * X.var()).
+        kernel : str, default='rbf'
+            Kernel mapping to use.
+        random_state : int, optional
+            Seed for reproducibility (unused but kept for API consistency).
+        """
         self.alpha = alpha
         self.gamma = gamma
         self.kernel = kernel

@@ -1,32 +1,28 @@
-# -*- coding: utf-8 -*-
 """
-Panel Covariate Shift Detection (E-08)
-=======================================
+Panel Covariate Shift Detection (E-08).
 
-Detects and corrects for covariate distribution shifts between CV training
-and validation folds in the panel walk-forward setting.
+This module provides tools for detecting and correcting distribution shifts 
+between training and validation sets in a temporal panel context. It uses 
+Maximum Mean Discrepancy (MMD) for detection and density ratio estimation 
+for importance weighting.
 
-Algorithm
----------
-1. Compute MMD² (Maximum Mean Discrepancy) with Gaussian RBF kernel:
-       MMD²(P, Q) = E[k(x,x')] + E[k(z,z')] − 2·E[k(x,z)]
-   Unbiased estimator with diagonal zeroing; median-heuristic bandwidth σ².
-
-2. Bootstrap permutation null distribution (n_boot=200 resamples of pooled
-   X_train ∪ X_val) → (1−α)-th quantile threshold δ.
-   Shift is flagged when MMD² > δ.
-
-3. Logistic-regression density ratio estimator (classifier approach):
-       w(x) ≈ P̂(val|x) / P̂(train|x) × (n_train / n_val)
-   Clipped to [1/max_weight_ratio, max_weight_ratio] and normalised so
-   mean(w) = 1 (unbiased estimator for the training distribution).
+Key Features
+------------
+- **Maximum Mean Discrepancy (MMD)**: Uses a non-parametric kernel-based 
+  test to detect significant differences between feature distributions.
+- **Bootstrap Permutation Test**: Efficiently estimates the null 
+  distribution of the MMD statistic to determine shifting significance.
+- **Density Ratio Correction**: Implements logistic-regression based 
+  importance weighting (KLIEP-style) to re-weight training samples for 
+  better validation alignment.
+- **Scale-Aware Weighting**: Clips and normalizes weights to prevent 
+  variance explosion while maintaining unbiasedness.
 
 References
 ----------
-Gretton, Borgwardt, Rasch, Schölkopf & Smola (2012).
-    "A Kernel Two-Sample Test." JMLR 13, 723–773.
-Sugiyama, Suzuki & Kanamori (2008).
-    "Direct importance estimation with model selection." Neural Computation 20(10).
+- Gretton et al. (2012). "A Kernel Two-Sample Test." JMLR 13.
+- Sugiyama et al. (2008). "Direct importance estimation with model 
+  selection." Neural Computation 20.
 """
 from __future__ import annotations
 
@@ -87,6 +83,28 @@ class PanelCovariateShiftDetector:
         random_state: int = 42,
         verbose: bool = False,
     ):
+        """
+        Initialize the covariate shift detector.
+
+        Parameters
+        ----------
+        alpha : float, default=0.05
+            Significance level for the permutation test. Smaller values 
+            require stronger evidence of shift before correction triggers.
+        n_bootstrap : int, default=200
+            Number of bootstrap samples to estimate the MMD null distribution.
+        max_weight_ratio : float, default=10.0
+            Maximum ratio allowed for density ratio weights (clips extremes).
+        min_train_for_shift : int, default=30
+            Minimum training samples required to attempt shift detection.
+        reduce_dim : int, optional
+            If set, projects high-dimensional data into a smaller random 
+            subspace to accelerate MMD calculation.
+        random_state : int, default=42
+            Seed for reproducible bootstrap sampling.
+        verbose : bool, default=False
+            Whether to print MMD statistics per fold.
+        """
         self.alpha                = alpha
         self.n_bootstrap          = n_bootstrap
         self.max_weight_ratio     = max_weight_ratio

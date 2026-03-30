@@ -1,34 +1,17 @@
 # -*- coding: utf-8 -*-
-"""Hierarchical Ranking Pipeline
+"""
+Hierarchical Ranking Architecture
+=================================
 
-**Core principle**: Ranking RESPECTS missing data structure. NO IMPUTATION.
+Orchestrates a two-stage Multi-Criteria Decision Making (MCDM) process:
+1.  Criterion-Level: Alternatives are ranked within each functional 
+    criterion group (e.g., C01-C08) using multiple outranking methods.
+2.  Global Aggregation: Local utility scores are aggregated using 
+    hierarchical weights to produce the final composite ranking.
 
-Single-stage ranking system that runs 6 traditional MCDM methods within each
-criterion group, then aggregates results using criterion-weighted averaging.
-All methods handle partial NaN natively on observed (non-missing) values.
-
-Architecture
------------
-Criterion-Level Ranking (NO IMPUTATION)
-    For each criterion C_k (k = 1…8):
-        • Filter all-NaN rows/columns (preserve partial NaN)
-        • Extract and rank on observed values only
-        • Run 6 MCDM methods (TOPSIS, VIKOR, PROMETHEE II, COPRAS, EDAS, SAW)
-        • Normalize scores to [0, 1]
-
-Global Aggregation
-    For each alternative:
-        • Compute criterion-level composite scores (average of method scores)
-        • Apply criterion weights to get final composite score
-        • Rank alternatives by composite score
-
-Missing Data Handling
----------------------
-As of 2026-03-28, no imputation occurs in the ranking phase. All methods
-(TOPSIS, VIKOR, PROMETHEE II, COPRAS, EDAS, SAW) handle NaN via:
-    • Complete-case distance/preference computations (pairwise on observed)
-    • NaN skipping in dimension-wise calculations
-    • No artificial 0.5 neutral score imputation
+The pipeline enforces complete-case exclusion and dynamic entity filtering 
+to ensure that ranking results reflect actual data availability patterns 
+without the biasing effects of imputation.
 """
 
 import numpy as np
@@ -53,26 +36,27 @@ logger = logging.getLogger('ml_mcdm')
 
 @dataclass
 class HierarchicalRankingResult:
-    """Container for the result of :class:`HierarchicalRankingPipeline`.
+    """
+    Container for the aggregated results of a hierarchical ranking run.
 
     Attributes
     ----------
     final_ranking : pd.Series
-        Rank order (1 = best).
+        The final preference order (1 = best).
     final_scores : pd.Series
-        Composite criterion-weighted mean scores.
-    criterion_method_scores : dict
-        {criterion: {method: pd.Series}} — raw normalized scores.
-    criterion_method_ranks : dict
-        {criterion: {method: pd.Series}} — per-method ranks.
-    criterion_weights_used : dict
-        {criterion: float} — weights applied in aggregation.
-    subcriteria_weights_used : dict
-        {criterion: {subcrit: float}} — subcriteria weights within each group.
-    methods_used : list
-        Names of all methods (TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS, SAW).
+        Criterion-weighted composite mean utility scores.
+    criterion_method_scores : Dict
+        Nested mapping of normalized scores per criterion and method.
+    criterion_method_ranks : Dict
+        Nested mapping of rankings per criterion and method.
+    criterion_weights_used : Dict
+        The Level 2 (global) weights applied to each criterion group.
+    subcriteria_weights_used : Dict
+        The Level 1 (local) weights applied within each group.
+    methods_used : List[str]
+        Identifiers for the specific outranking methods executed.
     target_year : int
-        Year for which ranking was computed.
+        The snapshot year for which the ranking was calculated.
     """
 
     final_ranking: 'pd.Series'
@@ -216,25 +200,27 @@ class HierarchicalRankingPipeline:
         criterion_weights: Optional[Dict[str, float]] = None,
     ) -> HierarchicalRankingResult:
         """
-        Execute the full two-stage hierarchical ranking.
+        Execute the full hierarchical ranking process for a specific year.
 
-        Dynamic exclusion: the ``YearContext`` stored inside *panel_data*
-        dictates which provinces and sub-criteria are treated as *existing*
-        for *target_year*.  Missing entities are completely absent from the
-        ranking — they are not assigned placeholder scores.
+        Coordinates the two-stage process: fitting local outranking models 
+        under dynamic exclusion rules and aggregating them into a 
+        governance composite.
 
         Parameters
         ----------
         panel_data : PanelData
-            Hierarchical panel dataset (must contain ``year_contexts``).
-        subcriteria_weights : dict
-            {SC_code: weight} — fused sub-criteria weights from hybrid MC ensemble.
+            Hierarchical dataset with yearly contexts.
+        subcriteria_weights : Dict[str, float]
+            Local sub-criteria weights (Level 1).
         target_year : int, optional
-            Year to rank (default: latest year).
+            The year to analyze; defaults to the latest available year.
+        criterion_weights : Dict[str, float], optional
+            Override global criterion weights (Level 2).
 
         Returns
         -------
         HierarchicalRankingResult
+            The fully populated result container with scores and ranks.
         """
         if target_year is None:
             target_year = max(panel_data.years)

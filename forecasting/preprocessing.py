@@ -1,47 +1,39 @@
-# -*- coding: utf-8 -*-
 """
-Feature Preprocessing for Panel Forecasting
-============================================
+Feature Preprocessing for Panel Forecasting.
 
-Provides two complementary dimensionality-reduction tracks for the
-dual-model architecture in UnifiedForecaster.
+This module provides dimensionality reduction tracks optimized for different
+model families in the `UnifiedForecaster` architecture.
 
-LINEAR TRACK — mode='pls'
-    VarianceThreshold(0.005) → StandardScaler → [MI pre-filter] → PLSRegression
-    Supervised compression: PLSRegression (PLS2) finds the linear combinations
-    of X with maximum covariance with all targets simultaneously.
-    [ARCHITECTURALLY ADAPTIVE] Handles both 8 criteria (target_level='criteria')
-    and 28 sub-criteria (target_level='subcriteria') via dimensionality-aware
-    component calculation: n_components = min(n_samples // 10, 20).
-    Target-aware compression is strictly superior to PCA for forecasting tasks
-    where the objective is prediction accuracy, not explained feature variance.
-    n_components = min(n_samples // 10, 20) → p/n ≤ 0.024.
+Linear Track (mode='pls')
+-------------------------
+1. VarianceThreshold(0.005)
+2. StandardScaler
+3. MI pre-filter
+4. PLSRegression (Supervised compression)
 
-TREE TRACK — mode='threshold_only'
-    VarianceThreshold(0.005) → raw features (no scaling, no compression).
-    Tree-based models (CatBoost, QRF) are scale-invariant.  StandardScaler
-    has been removed to prevent double-scaling with models that apply their own
-    internal scaling (QRF: RobustScaler; CatBoost: scale-invariant by design).
+Finds linear combinations of features that maximize covariance with all 
+targets simultaneously.
 
-LEGACY — mode='pca'
-    VarianceThreshold → StandardScaler → PCA.
-    Retained for backward compatibility.  Prefer mode='pls' for new usage.
+Tree Track (mode='threshold_only')
+----------------------------------
+1. VarianceThreshold(0.005)
+2. MI pre-filter (capped at 200 features)
+3. VIF filter (Collinearity removal)
 
-IMPUTATION — use_mice_imputation=True
-    Prepends IterativeImputer(RandomForestRegressor) before VarianceThreshold
-    in any mode.  Activated only when residual NaN values are detected after
-    Phase-1 median-imputation (edge case; not active in normal operation).
+Maintains raw features (no scaling/compression) to preserve tree-based 
+model interpretability and performance.
 
-MI Pre-filter (P-03) — mi_prefilter=True (default, active in 'pls' mode only)
-    SelectKBest(mutual_info_regression) applied per output column; union of
-    top-k features kept.  Removes ~50 % of low-signal features before PLS,
-    improving component alignment with the prediction objective.
+Imputation (Tier 1 MICE)
+------------------------
+Applies `IterativeImputer` with `ExtraTreesRegressor` to handle residual 
+missing data after variance filtering, ensuring a complete feature set 
+for downstream models.
 
 References
 ----------
 - Mevik & Wehrens (2007). "The pls Package." JSS 18(2).
 - Bair et al. (2006). "Prediction by Supervised Principal Components." JASA.
-- Groen & Kapetanios (2016). "Revisiting Useful Approaches to Data-Rich
+- Groen & Kapetanios (2016). "Revisiting Useful Approaches to Data-Rich 
   Macroeconomic Forecasting." Computational Statistics & Data Analysis.
 """
 
@@ -135,7 +127,9 @@ class PanelFeatureReducer:
         self._imputer: Optional[IterativeImputer] = None
         self._mice_imputer: Optional[IterativeImputer] = None  # PHASE A: Tier 1 MICE
         self._vif_drop_mask: Optional[np.ndarray] = None       # Phase 4.3
-        self._mi_mask: Optional[np.ndarray] = None   # bool (n_kept_after_var,)
+        self._mi_mask: Optional[np.ndarray] = None   # bool (n_kept_after_var,) — PLS track
+        self._tree_mi_mask_: Optional[np.ndarray] = None  # Phase 2 §2.1 bool (n_kept_after_var,) tree track
+        self._tree_vif_drop_mask_: Optional[np.ndarray] = None  # Phase 2 §2.3 tree-only VIF
         self._pls_evr_: float = 0.0                  # estimated X-variance ratio for PLS
         self._original_feature_names: Optional[List[str]] = None
         self._kept_feature_mask: Optional[np.ndarray] = None
@@ -229,54 +223,6 @@ class PanelFeatureReducer:
 
         # ========================= End TIER 1 MICE ========================
 
-        # ===== PHASE 4.3 Enhancement: VIF Filter =====
-        self._vif_drop_mask = np.zeros(X_var.shape[1], dtype=bool)
-        if self.max_vif_threshold is not None and X_var.shape[1] > 1:
-            logger.info(f"Applying VIF filter (threshold={self.max_vif_threshold}). Initial features={X_var.shape[1]}")
-            
-            # 1. Drop perfectly collinear (r > 0.98) to ensure invertibility
-            # For 1000 features, np.corrcoef is fast
-            corr = np.corrcoef(X_var, rowvar=False)
-            upper = np.triu(np.abs(corr), k=1)
-            drop_corr = [i for i in range(upper.shape[1]) if np.any(upper[:, i] > 0.98)]
-            kept = [i for i in range(X_var.shape[1]) if i not in drop_corr]
-            
-            # 2. Iterative VIF computation over remaining using inverse correlation
-            X_s = StandardScaler().fit_transform(X_var)
-            drop_vif = []
-            
-            while len(kept) > 2:
-                c = np.corrcoef(X_s[:, kept], rowvar=False)
-                c += np.eye(c.shape[0]) * 1e-4  # Marginal ridge for stability
-                try:
-                    vif = np.diag(np.linalg.inv(c))
-                except np.linalg.LinAlgError:
-                    break
-                
-                # Identify items exceeding threshold
-                exceed_indices = np.where(vif > self.max_vif_threshold)[0]
-                if len(exceed_indices) == 0:
-                    break
-                    
-                exceed_sorted = sorted([(vif[i], i) for i in exceed_indices], reverse=True)
-                # Drop batch of top 5 highest VIF to speed up convergence
-                batch_drop = min(5, len(exceed_sorted))
-                indices_to_drop = sorted([exceed_sorted[k][1] for k in range(batch_drop)], reverse=True)
-                for idx in indices_to_drop:
-                    drop_vif.append(kept.pop(idx))
-            
-            all_dropped = drop_corr + drop_vif
-            self._vif_drop_mask[all_dropped] = True
-            
-            # Update working array and the permanent feature mask
-            X_var = X_var[:, ~self._vif_drop_mask]
-            kept_indices = np.where(self._kept_feature_mask)[0]
-            self._kept_feature_mask[kept_indices[all_dropped]] = False
-            
-            logger.info(f"VIF filter removed {len(drop_corr)} collinear, {len(drop_vif)} high-VIF. "
-                        f"Remaining features={X_var.shape[1]}")
-        # ========================= End VIF =============================
-
         # ── TREE TRACK ────────────────────────────────────────────────────
         if self.mode == 'threshold_only':
             # No scaling, no compression.  Trees are scale-invariant; adding
@@ -286,14 +232,165 @@ class PanelFeatureReducer:
             self._scaler = None
             self._pls = None
             self._pca = None
-            self._mi_mask = None
-            self._n_components_fitted = X_var.shape[1]
 
-            # E-01: store post-threshold feature names so that
+            # ── Phase 2 §2.1: MI pre-filter for tree track (cap at 200) ──
+            # After variance threshold + MICE imputation, apply a union-of-
+            # per-output MI filter. SelectKBest(mutual_info_regression) selects
+            # the top min(200, p) features for each output dimension; the union
+            # across all outputs is kept. This addresses BUG-1: p/n ≥ 1 with
+            # raw ~790 features causes CatBoost information-gain heuristics to
+            # fail (split-finding picks noise splits in equally-informative
+            # features when p/n ≥ 1). Target: p ≤ 200 → p/n ≤ 0.27.
+            #
+            # Union over outputs: consistent with CatBoost's MultiRMSE objective
+            # (all output criteria optimised jointly). A feature with high MI to
+            # any criterion is retained, preserving multi-output coverage.
+            self._tree_mi_mask_ = None
+            self._tree_vif_drop_mask_ = None
+            X_tree = X_var.copy()
+
+            if self.mi_prefilter and y is not None:
+                y_2d = y if y.ndim == 2 else y[:, np.newaxis]
+                n_keep_tree = min(200, X_tree.shape[1])  # hard cap at 200
+                union_mask_tree = np.zeros(X_tree.shape[1], dtype=bool)
+                valid_cols = 0
+                for col_idx in range(y_2d.shape[1]):
+                    y_col = y_2d[:, col_idx]
+                    valid = ~np.isnan(y_col)
+                    if valid.sum() < 10:
+                        continue  # insufficient data for MI estimation
+                    sel = SelectKBest(mutual_info_regression, k=n_keep_tree)
+                    # MI regression requires non-NaN X rows too; use valid rows
+                    valid_rows = valid & ~np.any(np.isnan(X_tree), axis=1)
+                    if valid_rows.sum() < 10:
+                        continue
+                    sel.fit(X_tree[valid_rows], y_col[valid_rows])
+                    union_mask_tree |= sel.get_support()
+                    valid_cols += 1
+
+                n_selected = int(union_mask_tree.sum())
+                if n_selected >= 2 and valid_cols > 0:
+                    self._tree_mi_mask_ = union_mask_tree
+                    # Update the composite _kept_feature_mask so it accurately
+                    # reflects which ORIGINAL features survive into the tree track.
+                    # _kept_feature_mask is a bool array of shape (n_original_features,).
+                    # Among the variance-kept features (indices = np.where(mask)[0]),
+                    # keep only those also selected by MI.
+                    kept_by_var_indices = np.where(self._kept_feature_mask)[0]
+                    new_original_mask = np.zeros(len(self._kept_feature_mask), dtype=bool)
+                    kept_by_var_and_mi = kept_by_var_indices[union_mask_tree]
+                    new_original_mask[kept_by_var_and_mi] = True
+                    self._kept_feature_mask = new_original_mask
+                    X_tree = X_tree[:, union_mask_tree]
+                    logger.info(
+                        f"[Tree MI §2.1] MI pre-filter: {X_var.shape[1]} → {n_selected} "
+                        f"features (cap={n_keep_tree}, n_outputs_used={valid_cols})"
+                    )
+                else:
+                    # Degenerate: keep all post-variance features (safe fallback)
+                    logger.info(
+                        f"[Tree MI §2.1] MI pre-filter skipped: union selected "
+                        f"{n_selected} features (< 2) or no valid output columns. "
+                        f"Retaining all {X_tree.shape[1]} post-variance features."
+                    )
+            else:
+                if self.mi_prefilter and y is None:
+                    logger.debug(
+                        "[Tree MI §2.1] MI pre-filter skipped: y=None "
+                        "(tree MI requires targets; call fit(X, y=...) to enable)."
+                    )
+
+            # ── Phase 2 §2.3: VIF filter — TREE TRACK ONLY, post MI ──────
+            # VIF is moved from the shared code path (which incorrectly applied
+            # it to PLS/PCA modes) to inside the tree branch, sequenced AFTER
+            # the MI filter so VIF acts on the already-reduced p ≤ 200 space.
+            #
+            # VIF_j = 1 / (1 − R²_j) where R²_j is the R² from regressing
+            # feature j on all other features. VIF > 10 ⟹ R²_j > 0.90,
+            # i.e., 90% of feature j's variance is explained by other features.
+            # For tree information-gain splits, two features with VIF > 10
+            # compete for the same split, inflating one's importance and
+            # deflating the other's arbitrarily. Removing them stabilises
+            # CatBoost's feature-importance estimates.
+            self._tree_vif_drop_mask_ = np.zeros(X_tree.shape[1], dtype=bool)
+            if self.max_vif_threshold is not None and X_tree.shape[1] > 2:
+                logger.info(
+                    f"[Tree VIF §2.3] Applying VIF filter (threshold={self.max_vif_threshold}). "
+                    f"Input features={X_tree.shape[1]}"
+                )
+                # Step 1: Drop perfectly collinear (|r| > 0.98) to ensure
+                # matrix invertibility. np.corrcoef is O(p²n) but p ≤ 200 here.
+                corr = np.corrcoef(X_tree, rowvar=False)
+                upper_tri = np.triu(np.abs(corr), k=1)
+                drop_corr: List[int] = [
+                    i for i in range(upper_tri.shape[1])
+                    if np.any(upper_tri[:, i] > 0.98)
+                ]
+                kept: List[int] = [
+                    i for i in range(X_tree.shape[1]) if i not in drop_corr
+                ]
+
+                # Step 2: Iterative VIF via inverse correlation matrix.
+                # Uses StandardScaler for correlation computation only
+                # (VIF is scale-invariant so scaling is just for numerical
+                # stability in the inversion).
+                X_vif_s = StandardScaler().fit_transform(X_tree)
+                drop_vif: List[int] = []
+
+                while len(kept) > 2:
+                    c_mat = np.corrcoef(X_vif_s[:, kept], rowvar=False)
+                    c_mat += np.eye(c_mat.shape[0]) * 1e-4  # ridge for stability
+                    try:
+                        vif = np.diag(np.linalg.inv(c_mat))
+                    except np.linalg.LinAlgError:
+                        logger.warning(
+                            "[Tree VIF §2.3] Correlation matrix singular — "
+                            "VIF iteration halted; retaining current feature set."
+                        )
+                        break
+
+                    exceed_indices = np.where(vif > self.max_vif_threshold)[0]
+                    if len(exceed_indices) == 0:
+                        break  # All remaining features below threshold
+
+                    # Drop top-5 highest-VIF features in batch (speeds convergence)
+                    exceed_sorted = sorted(
+                        [(vif[i], i) for i in exceed_indices], reverse=True
+                    )
+                    batch_drop = min(5, len(exceed_sorted))
+                    indices_to_drop_local = sorted(
+                        [exceed_sorted[k][1] for k in range(batch_drop)], reverse=True
+                    )
+                    for idx in indices_to_drop_local:
+                        drop_vif.append(kept.pop(idx))
+
+                all_dropped_vif = drop_corr + drop_vif
+                if all_dropped_vif:
+                    self._tree_vif_drop_mask_[all_dropped_vif] = True
+                    # Back-propagate VIF drops into _kept_feature_mask
+                    # (original-feature space). _kept_feature_mask currently
+                    # reflects variance + MI filters. We now mark VIF-dropped
+                    # features (in X_tree / post-MI space) as False.
+                    kept_indices_in_original = np.where(self._kept_feature_mask)[0]
+                    original_indices_to_drop = kept_indices_in_original[all_dropped_vif]
+                    self._kept_feature_mask[original_indices_to_drop] = False
+                    X_tree = X_tree[:, ~self._tree_vif_drop_mask_]
+                    logger.info(
+                        f"[Tree VIF §2.3] Removed {len(drop_corr)} near-collinear + "
+                        f"{len(drop_vif)} high-VIF. Remaining features={X_tree.shape[1]}"
+                    )
+                else:
+                    logger.info("[Tree VIF §2.3] VIF filter: no features exceeded threshold.")
+
+            # ── Finalise tree track ───────────────────────────────────────
+            self._mi_mask = None  # PLS-track MI mask; unused in tree mode
+            self._vif_drop_mask = np.zeros(1, dtype=bool)  # unused in tree mode
+            self._n_components_fitted = X_tree.shape[1]
+
+            # E-01: store final post-MI+VIF feature names so that
             # ``get_demeaned_column_indices`` can identify which columns
             # in the reduced matrix correspond to ``_demeaned`` and
-            # ``_demeaned_momentum`` features without a full feature
-            # name scan outside this class.
+            # ``_demeaned_momentum`` features without a full feature-name scan.
             _selected_idxs = np.where(self._kept_feature_mask)[0]
             if self._original_feature_names is not None:
                 self._selected_feature_names_ = [
@@ -301,7 +398,18 @@ class PanelFeatureReducer:
                 ]
             else:
                 self._selected_feature_names_ = [
-                    f"f{i}" for i in range(X_var.shape[1])
+                    f"f{i}" for i in range(X_tree.shape[1])
+                ]
+
+            # Sanity check: selected names count must equal X_tree columns
+            if len(self._selected_feature_names_) != X_tree.shape[1]:
+                logger.warning(
+                    f"[Tree track] Feature name count mismatch after MI+VIF: "
+                    f"names={len(self._selected_feature_names_)}, "
+                    f"X_tree.shape[1]={X_tree.shape[1]}. Using generic names."
+                )
+                self._selected_feature_names_ = [
+                    f"f{i}" for i in range(X_tree.shape[1])
                 ]
 
             self._fitted = True
@@ -440,17 +548,16 @@ class PanelFeatureReducer:
         # raises "Input contains NaN" crashing downstream transforms.
         if np.isnan(X_var).any():
             _means = getattr(self, '_var_col_means_', np.zeros(X_var.shape[1]))
-            # Handle dimension mismatch if VIF filtering dropped some means
-            if self._vif_drop_mask is not None:
-                _means = _means[~self._vif_drop_mask]
             X_var = np.where(np.isnan(X_var), _means[np.newaxis, :], X_var)
 
-        # Phase 4.3 VIF Drop (if enabled)
-        if self._vif_drop_mask is not None:
-            X_var = X_var[:, ~self._vif_drop_mask]
-
         if self.mode == 'threshold_only':
-            # Raw variance-filtered features — no scaling for tree models
+            # Apply tree-track MI mask (Phase 2 §2.1)
+            if self._tree_mi_mask_ is not None:
+                X_var = X_var[:, self._tree_mi_mask_]
+            # Apply tree-track VIF mask (Phase 2 §2.3)
+            if self._tree_vif_drop_mask_ is not None and self._tree_vif_drop_mask_.any():
+                # _tree_vif_drop_mask_ is in post-MI space
+                X_var = X_var[:, ~self._tree_vif_drop_mask_]
             return X_var
 
         X_scaled = self._scaler.transform(X_var)
@@ -471,9 +578,23 @@ class PanelFeatureReducer:
         y: Optional[np.ndarray] = None,
         feature_names: Optional[List[str]] = None,
     ) -> np.ndarray:
-        """Fit and transform in one call."""
-        self.fit(X, y=y, feature_names=feature_names)
-        return self.transform(X)
+        """
+        Fit and transform in one call.
+
+        Parameters
+        ----------
+        X : np.ndarray, shape (n_samples, n_features)
+            Training feature matrix.
+        y : np.ndarray, shape (n_samples, n_outputs), optional
+            Training target matrix.
+        feature_names : List[str], optional
+            Original feature names.
+
+        Returns
+        -------
+        np.ndarray
+            Reduced feature matrix.
+        """
 
     def inverse_importance(self, pc_importance: np.ndarray) -> np.ndarray:
         """
@@ -581,21 +702,46 @@ class PanelFeatureReducer:
         return 0.0
 
     def get_summary(self) -> str:
-        """Human-readable summary of the reduction pipeline."""
+        """
+        Get a human-readable summary of the reduction pipeline.
+
+        Returns
+        -------
+        str
+            Summary of feature counts and transformation steps.
+        """
         if not self._fitted:
             return "PanelFeatureReducer: not fitted"
         n_orig = len(self._original_feature_names)
-        n_kept = int(self._kept_feature_mask.sum())
+        _var_support = (
+            self._var_selector.get_support()
+            if self._var_selector is not None
+            else np.ones(n_orig, dtype=bool)
+        )
+        n_kept_var = int(_var_support.sum())
+        n_kept_final = int(self._kept_feature_mask.sum()) if self._kept_feature_mask is not None else 0
         if self.mode == 'threshold_only':
+            n_mi = (
+                int(self._tree_mi_mask_.sum())
+                if self._tree_mi_mask_ is not None
+                else n_kept_var
+            )
+            n_vif_dropped = (
+                int(self._tree_vif_drop_mask_.sum())
+                if self._tree_vif_drop_mask_ is not None
+                else 0
+            )
             return (
                 f"PanelFeatureReducer (threshold_only): "
-                f"{n_orig} → {n_kept} features (variance filter, no scaling)"
+                f"{n_orig} → {n_kept_var} (variance) "
+                f"→ {n_mi} (MI §2.1) "
+                f"→ {n_kept_final} features (VIF §2.3 dropped {n_vif_dropped})"
             )
         if self.mode == 'pls' and self._pls is not None:
-            n_mi = int(self._mi_mask.sum()) if self._mi_mask is not None else n_kept
+            n_mi = int(self._mi_mask.sum()) if self._mi_mask is not None else n_kept_final
             return (
                 f"PanelFeatureReducer (pls): "
-                f"{n_orig} → {n_kept} (variance) "
+                f"{n_orig} → {n_kept_final} (variance) "
                 f"→ {n_mi} (MI filter) "
                 f"→ {self._n_components_fitted} PLS components "
                 f"(≈{self._pls_evr_:.1%} X-variance)"
@@ -604,7 +750,7 @@ class PanelFeatureReducer:
         evr_str = f"{evr:.1%}" if not (evr != evr) else "n/a"  # NaN check
         return (
             f"PanelFeatureReducer ({self.mode}): "
-            f"{n_orig} → {n_kept} (variance filter) "
+            f"{n_orig} → {n_kept_final} (variance filter) "
             f"→ {self._n_components_fitted} components "
             f"({evr_str} variance retained)"
         )

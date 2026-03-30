@@ -1,45 +1,18 @@
 # -*- coding: utf-8 -*-
-"""Panel data loading with hierarchical structure and dynamic missing-data exclusion.
+"""
+Hierarchical Panel Data Loader
+==============================
 
-This module handles:
-1. Loading multiple CSV files from ``data/csv/`` (one file per year, YYYY.csv)
-2. Hierarchical structure: Subcriteria → Criteria → Final Score
-3. **Dynamic exclusion** via :class:`YearContext`: missing provinces/sub-criteria
-   are completely removed from each year's analysis rather than filled or imputed.
-   - Province excluded for year Y  → not an alternative in MCDM or ML for Y
-   - Sub-criterion excluded for Y  → not a column in the year's hierarchy
-   - Criterion excluded for Y      → not a node in the ER aggregation tree
-4. ``YearContext`` objects record exactly what was active vs. excluded per year.
-5. Composite calculation at each hierarchy level (using only active sub-criteria)
+This module implements the loading and structural initialization of the 
+ML-MCDM panel dataset. It coordinates the ingestion of multi-year CSV files 
+and the associated hierarchical mapping between sub-criteria and criteria.
 
-Directory layout expected by :class:`DataLoader`::
-
-    data/
-    ├── csv/
-    │   ├── 2011.csv
-    │   ├── 2012.csv
-    │   │   …
-    │   └── 2024.csv
-    └── codebook/
-        ├── codebook_criteria.csv
-        ├── codebook_subcriteria.csv
-        └── codebook_provinces.csv
-
-Notes
------
-The dataset uses NaN (not zero) to represent missing observations.  A value of
-exactly 0.0 is treated as a legitimate governance score.  All missing-data
-detection relies on ``pd.notna()`` / ``pd.isnull()`` rather than comparisons
-against zero.
-
-Downstream consumers **must** use ``panel_data.year_contexts[year]`` to
-discover the active set of provinces / sub-criteria for each year instead of
-assuming a fixed panel dimension.
-
-See Also
---------
-data.missing_data : centralised NaN-filtering utilities shared with the
-    weighting, ranking, and forecasting phases.
+Key Capabilities:
+-----------------
+1.  CSV Ingestion: Loads yearly observations from tabular sources.
+2.  Hierarchy Mapping: Links sub-criteria to parent criteria groups.
+3.  Dynamic Exclusion: Calibrates active analytical scopes per year via YearContext.
+4.  View Generation: Assembles long-form and cross-sectional data views.
 """
 
 import warnings
@@ -63,11 +36,21 @@ except ImportError:
 
 @dataclass
 class HierarchyMapping:
-    """Mapping between subcriteria and criteria."""
-    subcriteria_to_criteria: Dict[str, str]   # SC11 → C01
-    criteria_to_subcriteria: Dict[str, List[str]]  # C01 → [SC11, SC12, …]
-    criteria_names: Dict[str, str]            # C01 → "Participation"
-    subcriteria_names: Dict[str, str]         # SC11 → "Civic Knowledge"
+    """
+    Mapping between sub-criteria and criteria levels of the hierarchy.
+
+    Attributes
+    ----------
+    subcriteria_to_criteria : Dict[str, str]
+        Direct mapping from sub-criterion code (e.g., 'SC11') to parent 
+        criterion code (e.g., 'C01').
+    criteria_to_subcriteria : Dict[str, List[str]]
+        Inverse mapping from criterion code to its child sub-criteria.
+    criteria_names : Dict[str, str]
+        Human-readable labels for each criterion.
+    subcriteria_names : Dict[str, str]
+        Human-readable labels for each sub-criterion.
+    """
 
     @property
     def all_subcriteria(self) -> List[str]:
@@ -80,41 +63,36 @@ class HierarchyMapping:
 
 @dataclass
 class YearContext:
-    """Per-year data availability for dynamic exclusion.
+    """
+    Year-specific data availability and exclusion contexts.
 
-    Tracks which provinces and sub-criteria have *valid* (non-NaN) data for a
-    specific year so that MCDM, weighting and ML components can exclude missing
-    entities entirely instead of filling or imputing values.
+    Tracks active provinces, sub-criteria, and criteria for a specific year 
+    in the panel. Enables dynamic exclusion to handle structural gaps 
+    and missing data without biasing calculations.
 
     Attributes
     ----------
     year : int
-        The calendar year this context describes.
-    active_provinces : list of str
-        Provinces with **at least one** valid sub-criterion entry.  These are
-        the only alternatives used in MCDM ranking and ML forecasting for this
-        year.
-    active_subcriteria : list of str
-        Sub-criteria columns with **at least one** valid province value.
-        Completely missing SCs are dropped from the hierarchy for this year.
-    active_criteria : list of str
-        Criteria that have **at least one** active sub-criterion.
-    excluded_provinces : list of str
-        Provinces whose every sub-criterion is NaN this year.
-    excluded_subcriteria : list of str
-        Sub-criteria whose every province value is NaN this year.
-    excluded_criteria : list of str
-        Criteria where every sub-criterion is excluded this year.
-    criterion_alternatives : dict
-        ``{criterion_id: [province_list]}`` — per-criterion province sets that
-        have **complete** valid data across **all** active SCs for that
-        criterion.  This guarantees a NaN-free decision matrix per criterion.
-    criterion_subcriteria : dict
-        ``{criterion_id: [sc_list]}`` — per-criterion active (non-missing) SCs
-        after global SC exclusion.
-    valid_pairs : set of (province, sc) tuples
-        Fine-grained per-cell availability used by ML forecasting to build
-        per-sub-criterion temporal series without missing-year gaps.
+        The calendar year.
+    active_provinces : List[str]
+        Provinces with at least one valid observation.
+    active_subcriteria : List[str]
+        Sub-criteria with at least one valid observation.
+    active_criteria : List[str]
+        Criteria with at least one active sub-criterion.
+    excluded_provinces : List[str]
+        Provinces entirely missing data for this year.
+    excluded_subcriteria : List[str]
+        Sub-criteria entirely missing data for this year.
+    excluded_criteria : List[str]
+        Criteria with no active child sub-criteria.
+    criterion_alternatives : Dict[str, List[str]]
+        Map of criteria to provinces that have complete data for all active 
+        sub-criteria in that group.
+    criterion_subcriteria : Dict[str, List[str]]
+        Map of criteria to their active child sub-criteria.
+    valid_pairs : Set[Tuple[str, str]]
+        Set of (province, sub-criterion) pairs with valid data.
     """
     year: int
     active_provinces: List[str]
@@ -153,7 +131,14 @@ class YearContext:
 
 @dataclass
 class PanelData:
-    """Container for hierarchical panel data with multiple views."""
+    """
+    Comprehensive container for hierarchical panel data.
+
+    Maintains multiple views of the dataset:
+    - Long-form DataFrames for sub-criteria, criteria, and final scores.
+    - Yearly cross-sections for matrix-style analysis.
+    - Dynamic YearContext objects for NaN-aware processing.
+    """
     # Raw subcriteria data
     subcriteria_long: pd.DataFrame              # Long format: (n*T) × (2 + K_sub)
     subcriteria_cross_section: Dict[int, pd.DataFrame]  # Year → subcriteria data
@@ -230,12 +215,18 @@ class PanelData:
     # ------------------------------------------------------------------
 
     def get_province(self, province: str) -> pd.DataFrame:
-        """Get a province's subcriteria data across all years, indexed by year.
+        """
+        Retrieve sub-criteria data for a specific province across all years.
 
-        Returns a DataFrame indexed by year.  Cells may be NaN for years where
-        that (province, sub-criterion) pair had no data.  ML components should
-        use :meth:`get_valid_temporal_series` or consult
-        ``year_contexts[year].is_valid(province, sc)`` to skip missing cells.
+        Parameters
+        ----------
+        province : str
+            The name of the province.
+
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame indexed by Year with sub-criteria columns.
         """
         long = self.subcriteria_long
         prov_data = long[long['Province'] == province].copy()
@@ -285,24 +276,24 @@ class PanelData:
         return pd.Series(result, dtype=float)
 
     def get_criterion_matrix(self, year: int, criterion: str) -> pd.DataFrame:
-        """Return the **clean** (zero-NaN) decision matrix for one criterion-year.
+        """
+        Extract a clean (NaN-free) decision matrix for a specific criterion-year.
 
-        Uses the :class:`YearContext` to select only the provinces and
-        sub-criteria that have *complete* valid data for this criterion in the
-        requested year.  The returned DataFrame is guaranteed to be NaN-free
-        and ready for MCDM/weighting computation.
+        Consults the YearContext to identify the intersection of active 
+        provinces and sub-criteria that provide complete data for the 
+        analytical phase.
 
         Parameters
         ----------
         year : int
+            The analysis year.
         criterion : str
-            Criterion code, e.g. ``'C01'``.
+            The criterion code (e.g., 'C01').
 
         Returns
         -------
         pd.DataFrame
-            Shape ``(n_active_alternatives, n_active_subcriteria)``; may be
-            empty if no provinces or SCs are available.
+            A clean decision matrix ready for weighting or ranking.
         """
         ctx = self.year_contexts.get(year)
         if ctx is None:
@@ -385,7 +376,17 @@ class DataLoader:
         self.logger = get_logger('ml_mcdm.data_loader')
 
     def load(self) -> PanelData:
-        """Load and assemble the full hierarchical panel dataset."""
+        """
+        Execute the full data loading and assembly process.
+
+        Loads hierarchy mappings, imports yearly CSV files, and creates 
+        hierarchical views with associated YearContexts.
+
+        Returns
+        -------
+        PanelData
+            The complete, structured panel dataset.
+        """
         data_dir = self.config.paths.data_dir
         csv_dir  = self.config.paths.data_csv_dir
 
@@ -418,10 +419,18 @@ class DataLoader:
     # ------------------------------------------------------------------
 
     def _load_hierarchy_mapping(self, data_dir: Path) -> HierarchyMapping:
-        """Load hierarchy mapping from codebook files.
-        
-        NOTE: Includes SC52 (year-active: present 2011-2020, absent 2021-2024).
-        YearContext handles year-by-year exclusion based on data availability.
+        """
+        Extract the hierarchical structure from codebook CSV files.
+
+        Parameters
+        ----------
+        data_dir : Path
+            The base directory containing the codebook/ folder.
+
+        Returns
+        -------
+        HierarchyMapping
+            The linked mapping of sub-criteria and criteria.
         """
         codebook_dir = data_dir / "codebook"
 
@@ -516,21 +525,23 @@ class DataLoader:
         csv_dir: Path,
         hierarchy: HierarchyMapping,
     ) -> Dict[int, pd.DataFrame]:
-        """Load all yearly CSV files from *csv_dir*.
+        """
+        Import and validate annual CSV data files.
 
-        Expects files named ``YYYY.csv`` (four-digit year).  If *csv_dir* is
-        empty the method falls back to ``csv_dir.parent`` and emits a
-        :class:`DeprecationWarning` so operators are prompted to migrate to the
-        new layout.
+        Collects files matching 'YYYY.csv' and enforces structural consistency 
+        checks for province names and sub-criteria columns.
 
-        Input data audit
-        ----------------
-        * Sub-criterion columns are coerced to ``float64`` via
-          ``pd.to_numeric(errors='coerce')``: stray string values become NaN
-          rather than crashing the pipeline.
-        * The ``Province`` column is stripped of leading/trailing whitespace.
-        * Missing sub-criterion columns are warned about (not raised), because
-          earlier years legitimately lack later-introduced indicators.
+        Parameters
+        ----------
+        csv_dir : Path
+            Directory containing the yearly CSV files.
+        hierarchy : HierarchyMapping
+            The structure to validate against.
+
+        Returns
+        -------
+        Dict[int, pd.DataFrame]
+            A dictionary of DataFrames keyed by year.
         """
         year_files = sorted(csv_dir.glob("[0-9][0-9][0-9][0-9].csv"))
 

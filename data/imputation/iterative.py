@@ -16,53 +16,13 @@ logger = logging.getLogger('ml_mcdm')
 
 class MICEImputer:
     """
-    Production-Ready MICE Imputation Engine
-    =====================================
+    Multivariate Imputation by Chained Equations (MICE) engine.
 
-    Unified imputation for all missing data in ML forecasting pipeline.
-    Uses IterativeImputer with ExtraTreesRegressor (MissForest algorithm).
+    Implements the MissForest approach using IterativeImputer with 
+    ExtraTreesRegressor to handle high-dimensional governance panel data.
 
-    **Algorithm: Iterative Imputation by Chained Equations (MICE)**
-
-    For each iteration, cycles through features with missing values:
-    1. Set feature with missing data as target (y)
-    2. Use remaining features as predictors (X)
-    3. Fit ExtraTreesRegressor: Ŷ = f(X)
-    4. Predict missing values: y_filled = f(X_missing)
-
-    Repeats until convergence (imputed values stabilize) or max iterations reached.
-
-    **Why ExtraTreesRegressor?**
-    - Handles nonlinear relationships in governance panel data
-    - Robust to high-dimensional feature spaces
-    - Fast inference compared to RandomForest
-    - Extreme randomization reduces tree correlation (lower variance)
-
-    **Leakage-Free Design**
-    - Fit on training data ONLY (no target information)
-    - Transform applied to holdout/test data using fitted imputer
-    - Missingness indicators (_was_missing) track imputed values
-
-    Parameters
-    ----------
-    config : ImputationConfig
-        Configuration object with MICE parameters:
-        - mice_max_iter: Convergence iterations (default 40)
-        - mice_n_nearest_features: Correlation-based feature subset (default 30)
-        - mice_estimator: "extra_trees" (default), "random_forest", or "bayesian_ridge"
-        - mice_add_indicator: Append _was_missing flags (default True)
-        - random_state: Reproducibility (default 42)
-
-    Attributes
-    ----------
-    is_fitted_ : bool
-        True if imputer has been fitted on training data
-    missingness_rate_ : float
-        Fraction of NaN in training data (0.0 to 1.0)
-    n_features_in_ : int
-        Number of input features
-    imputer_ : IterativeImputer
-        Fitted sklearn IterativeImputer instance
+    Coordinates the fitting of multivariate models and the subsequent 
+    transformation of missing data into estimated values.
     """
 
     def __init__(self, config: "ImputationConfig"):
@@ -119,19 +79,19 @@ class MICEImputer:
 
     def fit(self, X: np.ndarray, feature_names: Optional[List[str]] = None) -> "MICEImputer":
         """
-        Fit MICE imputer on training data.
+        Fit the MICE imputer on a training feature matrix.
 
         Parameters
         ----------
-        X : array-like, shape (n_samples, n_features)
-            Training feature matrix with NaN for missing values.
-        feature_names : list of str, optional
-            Column names for logging and diagnostics.
+        X : np.ndarray
+            The training data with NaN values.
+        feature_names : Optional[List[str]]
+            Optional labels for the features.
 
         Returns
         -------
-        self : MICEImputer
-            Fitted imputer instance.
+        MICEImputer
+            The fitted instance.
         """
         X = np.asarray(X, dtype=float)
         n_samples, n_features = X.shape
@@ -195,22 +155,17 @@ class MICEImputer:
 
     def transform(self, X: np.ndarray) -> np.ndarray:
         """
-        Apply fitted MICE imputation to new data.
+        Impute missing values in a new feature matrix using the fitted model.
 
         Parameters
         ----------
-        X : array-like, shape (n_samples, n_features)
-            Feature matrix with NaN for missing values.
+        X : np.ndarray
+            The data to impute.
 
         Returns
         -------
-        X_imputed : ndarray, shape (n_samples, n_features | n_features+k)
-            Imputed feature matrix. If add_indicator=True, includes k _was_missing columns.
-
-        Raises
-        ------
-        ValueError
-            If not fitted or feature dimension mismatch.
+        np.ndarray
+            The imputed matrix, possibly including missingness indicators.
         """
         if not self.is_fitted_:
             raise ValueError("[MICE] Imputer not fitted. Call fit() first.")

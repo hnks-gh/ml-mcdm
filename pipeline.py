@@ -1,17 +1,21 @@
 # -*- coding: utf-8 -*-
 """
-ML-MCDM Pipeline Orchestrator
-==============================
+ML-MCDM Pipeline Orchestrator.
 
-Seven-phase production pipeline:
+This module provides the central orchestration logic for the hierarchical 
+ML-MCDM analytical pipeline. It coordinates seven distinct phases of 
+analysis, from data loading to ensemble forecasting and publication-ready 
+reporting.
 
-  Phase 1  Data Loading
-  Phase 2  Weight Calculation       (Hybrid Weighting — two-level MC Ensemble)
-  Phase 3  Hierarchical Ranking     (6 traditional MCDM methods)
-  Phase 4  ML Forecasting           (base models + Meta-Learner + Conformal)
-  Phase 5  Sensitivity Analysis     (Hierarchical multi-level robustness)
-  Phase 6  Visualization            (high-resolution figures)
-  Phase 7  Result Export            (CSV / JSON / text report)
+Phases
+------
+1. **Data Loading**: Import multi-year provincial panel data.
+2. **Weighting**: Compute criteria importance via adaptive CRITIC.
+3. **Ranking**: Hierarchical MCDM (TOPSIS, VIKOR, etc.) with ER aggregation.
+4. **Forecasting**: SOTA ML ensemble predictions with conformal intervals.
+5. **Sensitivity**: Robustness testing and model validation.
+6. **Visualization**: High-resolution performance and stability plots.
+7. **Export**: Multi-channel reporting (CSV, JSON, Markdown).
 """
 
 import numpy as np
@@ -47,8 +51,20 @@ except ImportError:
     from output import OutputOrchestrator
 
 
-def _to_array(x) -> np.ndarray:
-    """Convert Series / list / array to plain ndarray."""
+def _to_array(x: Any) -> np.ndarray:
+    """
+    Safely convert an input to a NumPy ndarray.
+
+    Parameters
+    ----------
+    x : Any
+        The input data (Series, list, or array).
+
+    Returns
+    -------
+    np.ndarray
+        The converted array.
+    """
     if x is None:
         return np.array([])
     if hasattr(x, 'values'):
@@ -62,37 +78,49 @@ def _to_array(x) -> np.ndarray:
 
 @dataclass
 class PipelineResult:
-    """Container for all pipeline results."""
-    # Data
+    """
+    Container for all results generated during a pipeline execution.
+
+    Internal diagnostics, historical rankings, and forecast intervals are 
+    all captured here for subsequent reporting and visualization.
+
+    Attributes
+    ----------
+    panel_data : PanelData
+        The complete panel data object used for analysis.
+    decision_matrix : np.ndarray
+        Snapshot of the latest year's decision matrix (provinces × sub-criteria).
+    sc_weights : np.ndarray
+        Global sub-criteria weights derived from Phase 2.
+    criterion_weights_dict : Dict[str, float]
+        Normalized weights for each top-level criterion.
+    weight_details : Dict[str, Any]
+        Comprehensive diagnostic information from the weighting phase.
+    ranking_result : Optional[HierarchicalRankingResult], optional
+        Primary MCDM ranking results for the target year.
+    multi_year_results : Dict[int, Any], optional
+        Historical ranking results for all years in the panel.
+    forecast_result : Optional[Any], optional
+        Predictions and intervals from the ML ensemble phase.
+    sensitivity_result : Any, optional
+        Outcomes from robustness and stability analysis.
+    mc_ensemble_diagnostics : Optional[Dict], optional
+        Detailed diagnostics for the Monte Carlo ensemble.
+    execution_time : float, default=0.0
+        Total pipeline runtime in seconds.
+    config : Optional[Config], optional
+        The configuration settings used for this run.
+    """
     panel_data: PanelData
-    decision_matrix: np.ndarray   # latest-year snapshot (avail_provs × avail_scs);
-                                  # may contain NaN for Type 1/3 structural gaps —
-                                  # no imputation applied.  MCDM phases use
-                                  # panel_data directly and are unaffected.
-
-    # Weights (new — two-level hierarchical MC ensemble)
-    sc_weights: np.ndarray               # global SC weights array (p,)
-    criterion_weights_dict: Dict[str, float]  # {C01..C08: float}, sums to 1
-    weight_details: Dict[str, Any]       # full WeightResult.details dict
-
-    # Hierarchical Ranking (Traditional MCDM)
-    # Optional so the pipeline can return partial results if this phase fails
+    decision_matrix: np.ndarray
+    sc_weights: np.ndarray
+    criterion_weights_dict: Dict[str, float]
+    weight_details: Dict[str, Any]
     ranking_result: Optional[HierarchicalRankingResult] = None
-
-    # Multi-year rankings — {year: HierarchicalRankingResult} for all panel years.
-    # Present when config.ranking.run_all_years is True.
     multi_year_results: Dict[int, Any] = None  # type: ignore[assignment]
-
-    # ML Forecasting (UnifiedForecaster)
     forecast_result: Optional[Any] = None
-
-    # Analysis
     sensitivity_result: Any = None
-
-    # MC diagnostics (Level 2 mc_diagnostics from weight_details)
     mc_ensemble_diagnostics: Optional[Dict] = None
-
-    # Meta
     execution_time: float = 0.0
     config: Optional[Config] = None
 
@@ -120,17 +148,17 @@ class PipelineResult:
 
 class MLMCDMPipeline:
     """
-    Production-grade ML-MCDM pipeline for panel data analysis.
+    Integrated ML-MCDM Pipeline Orchestrator.
 
-    Integrates
+    Coordinates data loading, adaptive weighting, hierarchical ranking, 
+    ensemble forecasting, and sensitivity analysis into a single workflow. 
+    It maintains the technical integrity of the Vietnamese provincial 
+    performance assessment framework.
+
+    Parameters
     ----------
-    * Two-Level Deterministic CRITIC Weighting (NaN-aware, adaptive)
-    * 6 Traditional MCDM Methods per Criterion Group:
-        TOPSIS, VIKOR, PROMETHEE II, COPRAS, EDAS, SAW
-    * Criterion-Weighted Aggregation with Composite Scoring
-    * ML Forecasting: 4-Model Ensemble (CatBoost, Bayesian Ridge, SVR, ElasticNet)
-        + Super Learner Meta-Ensemble + Conformal Prediction (optional)
-    * Hierarchical Sensitivity Analysis & Temporal Stability Assessment
+    config : Optional[Config], optional
+        The configuration schema to use. If None, uses default settings.
     """
 
     def __init__(self, config: Optional[Config] = None):
@@ -175,7 +203,28 @@ class MLMCDMPipeline:
     # -----------------------------------------------------------------
 
     def run(self, data_path: Optional[str] = None) -> PipelineResult:
-        """Execute full analysis pipeline and return results."""
+        """
+        Execute the complete analysis pipeline.
+
+        This method orchestrates the sequential execution of all seven phases:
+        1. Data Loading: Imports panel data.
+        2. Weighting: Calibrates criteria weights via adaptive CRITIC.
+        3. Ranking: Executes hierarchical MCDM for latest and historical years.
+        4. Forecasting: Generates 2025 predictions via Meta-Learner ensemble.
+        5. Analysis: Performs robustness and validation checks.
+        6. Visualization: Creates high-resolution performance plots.
+        7. Export: Persists all results to disk.
+
+        Parameters
+        ----------
+        data_path : Optional[str]
+            Override path for input data. If None, uses config.data_dir.
+
+        Returns
+        -------
+        PipelineResult
+            All results, diagnostics, and configurations from the run.
+        """
         start_time = time.time()
 
         try:
@@ -407,6 +456,14 @@ class MLMCDMPipeline:
     # -----------------------------------------------------------------
 
     def _load_data(self) -> PanelData:
+        """
+        Initialize the DataLoader and import the panel dataset.
+
+        Returns
+        -------
+        PanelData
+            The structured panel data containing sub-criteria and hierarchy.
+        """
         loader = DataLoader(self.config)
         panel_data = loader.load()
         self.logger.info(
@@ -422,23 +479,26 @@ class MLMCDMPipeline:
     # -----------------------------------------------------------------
 
     def _calculate_weights(self, panel_data: PanelData) -> Dict[str, Any]:
-        """Run two-level deterministic CRITIC weighting on the full panel.
+        """
+        Execute two-level deterministic CRITIC weighting on the full panel.
 
-        Dynamic exclusion rules applied **before** weighting:
+        Applies dynamic exclusion rules to handle structural gaps (Type-1) 
+        and missing data (Type-3) without introducing imputation bias.
 
-        1. Sub-criteria columns that are all-NaN across the *entire* panel are
-           dropped (``CRITICWeightingCalculator`` also guards internally).
-        2. Province-year rows where **any** *year-active* SC is NaN are
-           dropped.  A SC is year-active if it has ≥1 valid value for that
-           specific year (per ``YearContext``).  Rows from years with
-           structural Type-1 SC gaps (e.g. SC71-SC83 absent 2011-2017, SC52
-           absent 2021-2024) are **kept** — those rows carry NaN only for the
-           absent SCs, which the downstream CRITIC calculator handles via
-           column-mean imputation.  Using a naïve global
-           ``notna().all()`` across all 29 SCs would reduce the effective
-           weighting panel to ~2 years and severely bias the weights.
+        Rules:
+        1. Drop sub-criteria that are entirely missing across the panel.
+        2. Exclude province-year observations where year-active sub-criteria are NaN.
 
-        The resulting weight vector spans only *active* sub-criteria.
+        Parameters
+        ----------
+        panel_data : PanelData
+            The input dataset containing historical observations.
+
+        Returns
+        -------
+        Dict[str, Any]
+            Dictionary containing global SC weights, criterion-group weights, 
+            and calculation details.
         """
         from .weighting import CRITICWeightingCalculator
 
@@ -546,22 +606,22 @@ class MLMCDMPipeline:
     def _calculate_weights_all_years(
         self, panel_data: PanelData
     ) -> Dict[int, Dict[str, Any]]:
-        """Compute per-year CRITIC weights from each year's cross-section.
+        """
+        Compute per-year CRITIC weights from yearly cross-sections.
 
-        Each year is treated independently: only the provinces that reported
-        data in that specific year (per ``YearContext``) are included.  The
-        two-level CRITIC computation is identical to ``_calculate_weights``
-        but operates on a single-year slice rather than the full panel.
+        Independently calculates weights for each year in the panel, using 
+        only provinces that reported data in that specific year.
+
+        Parameters
+        ----------
+        panel_data : PanelData
+            The input dataset containing historical observations.
 
         Returns
         -------
-        Dict[int, Dict]
-            Keyed by year.  Each value has the same structure as the dict
-            returned by ``_calculate_weights``:
-            ``global_sc_weights``, ``criterion_weights``,
-            ``critic_criterion_weights``, ``sc_array``,
-            ``subcriteria``, ``criteria_groups``, ``details``.
-            Failed years are omitted and logged as warnings.
+        Dict[int, Dict[str, Any]]
+            Dictionary keyed by year, containing weight results for each 
+            computed year.
         """
         from .weighting import CRITICWeightingCalculator
 
@@ -651,12 +711,21 @@ class MLMCDMPipeline:
         panel_data: PanelData,
         weights: Dict[str, Any],
     ) -> HierarchicalRankingResult:
-        pipeline = HierarchicalRankingPipeline()
-        return pipeline.rank(
-            panel_data          = panel_data,
-            subcriteria_weights = weights['global_sc_weights'],
-            criterion_weights   = weights['criterion_weights'],
-        )
+        """
+        Rank alternatives using hierarchical criteria weights.
+
+        Parameters
+        ----------
+        panel_data : PanelData
+            The dataset to rank.
+        weights : Dict[str, Any]
+            The criteria and sub-criteria weights to apply.
+
+        Returns
+        -------
+        HierarchicalRankingResult
+            Rankings and scores for all alternatives.
+        """
 
     def _run_hierarchical_ranking_all_years(
         self,
@@ -664,21 +733,23 @@ class MLMCDMPipeline:
         weights: Dict[str, Any],
     ) -> Dict[int, HierarchicalRankingResult]:
         """
-        Run hierarchical ranking for every year in *panel_data.years* using
-        thread-level parallelism.
+        Run hierarchical ranking for all years in the panel in parallel.
 
-        Each year-ranking is independent (its own ``YearContext`` governs which
-        provinces and sub-criteria are active), so they can run concurrently.
-        ``ThreadPoolExecutor`` is used rather than ``ProcessPoolExecutor`` to
-        avoid pickling issues with complex dataclass objects;  numpy operations
-        release the GIL so meaningful parallelism is achieved for the
-        matrix-heavy MCDM stages.
+        Utilizes thread-level parallelism to independently rank each year. 
+        Historical rankings are required for temporal stability and 
+        sensitivity visualizations.
+
+        Parameters
+        ----------
+        panel_data : PanelData
+            The complete multi-year panel dataset.
+        weights : Dict[str, Any]
+            The weights to apply (derived from Phase 2).
 
         Returns
         -------
         Dict[int, HierarchicalRankingResult]
-            Keyed by year.  Missing years (errors) are silently omitted and
-            logged as warnings.
+            A dictionary mapping each year to its corresponding HRP result.
         """
         import concurrent.futures as _cf
         import os as _os
@@ -929,44 +1000,23 @@ class MLMCDMPipeline:
         panel_data: PanelData,
     ) -> Any:
         """
-        Run state-of-the-art forecasting using UnifiedForecaster.
+        Generate predictions for the target year using an ensemble ML model.
 
-        **Phase 5 Integration (Orchestration)**:
-        This method now performs comprehensive end-to-end forecasting for 2025:
-
-        1. **Data Imputation** (Step 5, Phase 2)
-           - Applies MICE imputation to 2011–2024 training panel
-           - Outputs fully NaN-free subcriteria cross-sections
-           - Validates all 29 SCs present (SC52 included, year-active), all 63 provinces active
-
-        2. **ML Training & Prediction** (Steps 7–8, Phase 3)
-           - Forecaster configured to predict 28 sub-criteria (not 8 criteria)
-           - 4 diverse base models: CatBoost + BayesianRidge + SVR + ElasticNet
-           - Super Learner meta-ensemble + Conformal Prediction for 95% intervals
-
-        3. **Post-Forecast Aggregation** (Step 10, Phase 4)
-           - Aggregates 28 SC predictions to 8 criteria using critic weights
-           - Uses two-level weighting: SC weights × criteria weights
-           - Output: (63 × 8) criteria predictions for 2025
-
-        4. **Forecast Year Context & Integration** (Steps 13–14, Phase 5)
-           - Creates YearContext for 2025 mirroring 2024's structure
-           - Wraps 2025 criteria predictions in decision matrix format
-           - Ready for downstream weighting & ranking phases
+        Performs end-to-end forecasting:
+        1. Imputes the training panel using MICE.
+        2. Fits a diverse ensemble of base models.
+        3. Calibrates predictions via conformal prediction.
+        4. Aggregates results to the criteria level.
 
         Parameters
         ----------
         panel_data : PanelData
-            Original raw panel (2011–2024, with NaN for missing data)
+            The historical panel dataset.
 
         Returns
         -------
-        UnifiedForecastResult
-            Results including:
-            - predictions: 28 SC predictions shape (63, 28)
-            - criteria_predictions: 8 criteria predictions shape (63, 8)
-            - 2025_decision_matrix: wrapped 8 criteria as (63, 8) DataFrame
-            - 2025_year_context: YearContext matching 2024's structure
+        Any
+            The comprehensive forecast result object.
         """
         if not self.config.forecast.enabled:
             self.logger.info("Forecasting disabled in config")
@@ -1283,62 +1333,26 @@ class MLMCDMPipeline:
         local_weights: Optional[Dict[str, Dict[str, float]]] = None,
     ) -> pd.DataFrame:
         """
-        Aggregate 29 sub-criteria predictions to 8 criteria using critic weights.
+        Aggregate sub-criteria predictions to the criterion level.
 
-        **Step 10 (Phase 4)**: After UnifiedForecaster produces 29 SC predictions
-        for 2025 (including SC52 for cross-temporal consistency), aggregate to
-        8 criteria via two-level critic weighting:
-        - Level 1: Local SC weights per criterion group (normalized within C_k)
-        - Level 2: Criterion weights (derived from composite matrix)
-        - Global: global_w[SC_j] = local_w[SC_j | C_k] × criterion_w[C_k]
-
-        Note: For 2025 forecasts, SC52 will be zero-filled (no future data), but
-        is included in aggregation for consistency with historical MCDM phases.
-
-        The weighting uses critic values computed from the full 2011–2024 panel
-        (available in pipeline.py:_calculate_weights as a cached result), ensuring
-        stable, historically-grounded aggregation rather than single-year fitting.
+        Uses two-level CRITIC weights to compute weighted averages of 
+        sub-criteria within each hierarchical group.
 
         Parameters
         ----------
         sc_predictions : pd.DataFrame
-            Shape (n_entities, 29) sub-criteria predictions for 2025.
-            Index = province names; columns = SC11, SC12, ..., SC53, SC54, SC61...SC83
-            (29 total, including SC52).  SC52 will be zero or forward-filled.
-
+            The predicted sub-criteria values.
         hierarchy : HierarchyMapping
-            Hierarchy with criteria_to_subcriteria mapping: {C_k: [SCs]}.
-
+            The criteria-to-sub-criteria mapping.
         target_year : int
-            The forecast year (typically 2025). Used for logging only.
+            The year being predicted (for logging).
+        local_weights : Optional[Dict]
+            Pre-calculated local weights for aggregation.
 
         Returns
         -------
         pd.DataFrame
-            Shape (n_entities, 8) aggregated criteria predictions.
-            Index = same as sc_predictions; columns = ['C01', 'C02', ..., 'C08'].
-            All cells are valid floats (no NaN).
-
-        Raises
-        ------
-        AssertionError
-            If input does not have exactly 28 columns or is missing expected SCs.
-
-        Notes
-        -----
-        Aggregation formula for criterion k:
-            C_k(prov) = Σ_i∈C_k w_i(C_k) × SC_i(prov)
-
-        where:
-        - w_i(C_k) = local weight of SC_i within criterion C_k  (normalized to sum 1 within C_k)
-        - SC_i(prov) = predicted value of SC_i for the province
-
-        Example
-        -------
-        >>> sc_pred = pd.DataFrame(random values, shape=(63, 29))  # 63 provinces, SC52 included
-        >>> crit_pred = self._aggregate_sc_to_criteria(sc_pred, hierarchy, 2025)
-        >>> assert crit_pred.shape == (63, 8)
-        >>> assert all(col in crit_pred.columns for col in ['C01', ..., 'C08'])
+            Aggregated criteria scores.
         """
         import numpy as np
         import pandas as pd
@@ -1428,41 +1442,24 @@ class MLMCDMPipeline:
         hierarchy: HierarchyMapping,
     ) -> YearContext:
         """
-        Create a YearContext for the forecast year (2025).
-
-        **Step 13 (Phase 5)**: The ranking pipeline requires a YearContext
-        to determine which provinces and criteria are "active" (have valid data).
-        For the forecast year, we create a synthetic context that mirrors
-        the most recent historical year's structure (mirroring 2024).
+        Construct a YearContext for a future forecast year.
 
         Parameters
         ----------
         target_year : int
-            Forecast year (e.g., 2025).
-
+            The future year.
         criteria_predictions : pd.DataFrame
-            Shape (n_entities, n_criteria) predictions.
-            Index = province names. All cells present (no NaN).
-
-        template_year_context : YearContext or None
-            YearContext from the most recent historical year (e.g., 2024).
-            Used as a template for the new 2025 context.
-            If None, will construct from scratch.
-
+            The predicted values.
+        template_year_context : Optional[YearContext]
+            Historical context to use as a structural template.
         hierarchy : HierarchyMapping
-            Criterion/subcriteria hierarchy.
+            The criteria hierarchy.
 
         Returns
         -------
         YearContext
-            A new YearContext instance with:
-            - year = target_year
-            - active_provinces = all provinces in criteria_predictions
-            - active_criteria = all criteria in criteria_predictions
-            - active_subcriteria = all SCs in hierarchy (mirroring template)
-            - criterion_alternatives = {C_k: all provinces} for each criterion
-            - criterion_subcriteria = {C_k: [SCs]} from hierarchy
-            - valid_pairs = all (province, SC) pairs (full completeness)
+            A context object defining active entities and criteria for the 
+            forecast year.
         """
         # Extract provinces from predictions
         active_provinces = list(criteria_predictions.index)
@@ -1533,40 +1530,22 @@ class MLMCDMPipeline:
         """
         Create decision matrix for forecast year, ready for MCDM ranking.
 
-        **Step 14 (Phase 5)**: Wraps the aggregated 8 criteria predictions
-        (63 × 8 array) in a decision matrix format compatible with
-        HierarchicalRankingPipeline.rank(), which expects a pristine
-        (NaN-free) decision matrix indexed by province and criterion.
-
         Parameters
         ----------
         criteria_predictions : pd.DataFrame
             Shape (n_entities, 8) aggregated criteria predictions.
             Index = province names; columns = ['C01', ..., 'C08'].
-
         year_context : YearContext
-            YearContext for the forecast year (from _create_forecast_year_context).
-
+            YearContext for the forecast year.
         target_year : int
             Forecast year for logging.
-
         hierarchy : HierarchyMapping
-            (Not directly used; present for consistency with other helpers.)
+            The criteria hierarchy.
 
         Returns
         -------
         pd.DataFrame
-            Same as input (criteria_predictions) — a validated, NaN-free decision matrix.
-            Shape (n_active_alternatives, n_active_criteria).
-            Ready to be passed to HierarchicalRankingPipeline.rank().
-
-        Notes
-        -----
-        This method primarily serves as a validation and logging checkpoint.
-        In future phases, it could:
-        - Apply additional normalizations (SAW, minmax, etc.)
-        - Enforce consistency with year_context (drop inactive entities/criteria)
-        - Store metadata (timestamps, version info, etc.)
+            Validated, NaN-free decision matrix ready for ranking.
         """
         # Validate consistency with year_context
         assert set(criteria_predictions.index) == set(year_context.active_provinces), (
@@ -1609,13 +1588,26 @@ class MLMCDMPipeline:
         forecast_result: Optional[Any] = None,
     ) -> Dict[str, Any]:
         """
-        Run ML + ER sensitivity analysis.
+        Execute comprehensive sensitivity analysis across ML and ER phases.
 
-        ML analysis covers: feature importance stability, LOO model impact,
-        prediction sensitivity, temporal fold stability, interval width CV.
-        ER analysis covers: criterion belief OAT sensitivity, grade threshold
-        sensitivity, aggregation weight sensitivity, utility interval widths,
-        cross-level consistency, belief entropy.
+        Evaluates model robustness, temporal stability, and decision 
+        sensitivity to perturbations in weights and feature values.
+
+        Parameters
+        ----------
+        panel_data : PanelData
+            The historical panel dataset.
+        ranking_result : HierarchicalRankingResult
+            The results from the primary ranking phase.
+        weights : Dict[str, Any]
+            The criteria weights used for ranking.
+        forecast_result : Optional[Any], optional
+            The results from the ML forecasting phase (if enabled).
+
+        Returns
+        -------
+        Dict[str, Any]
+            Dictionary containing combined sensitivity and robustness metrics.
         """
         self.logger.info("Running ML + ER sensitivity analysis")
 
@@ -1666,7 +1658,28 @@ class MLMCDMPipeline:
         ranking_result: HierarchicalRankingResult,
         forecast_result: Optional[Any] = None,
     ) -> Any:
-        """Run ML + ER validation on the full pipeline."""
+        """
+        Validate the technical and statistical integrity of the pipeline.
+
+        Performs sanity checks on rank distributions, conformal coverage, 
+        and evidential reasoning consistency.
+
+        Parameters
+        ----------
+        panel_data : PanelData
+            The panel dataset.
+        weights : Dict[str, Any]
+            The criteria weights.
+        ranking_result : HierarchicalRankingResult
+            The primary ranking results.
+        forecast_result : Optional[Any], optional
+            The ML forecasting results.
+
+        Returns
+        -------
+        Any
+            The validation result object containing status and warnings.
+        """
         from .analysis import Validator
 
         er_result = getattr(ranking_result, 'er_result', None)
@@ -1712,6 +1725,20 @@ def run_pipeline(
     data_path: Optional[str] = None,
     config: Optional[Config] = None,
 ) -> PipelineResult:
-    """Run the full pipeline. Returns PipelineResult."""
+    """
+    Standard entry point to execute the ML-MCDM pipeline.
+
+    Parameters
+    ----------
+    data_path : Optional[str], optional
+        Path to the input data directory. If None, uses config defaults.
+    config : Optional[Config], optional
+        The configuration schema. If None, uses a fresh default instance.
+
+    Returns
+    -------
+    PipelineResult
+        The complete set of analysis results and diagnostics.
+    """
     pipeline = MLMCDMPipeline(config)
     return pipeline.run(data_path)

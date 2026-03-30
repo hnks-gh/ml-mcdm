@@ -2,13 +2,15 @@
 
 ## Overview
 
-> **Note:** Evidential Reasoning (ER) aggregation is **disabled** in the current pipeline configuration (`use_evidential_reasoning = False`). The ranking phase runs 6 MCDM methods (TOPSIS, VIKOR, PROMETHEE II, COPRAS, EDAS, SAW) and reports their individual scores. The ER fusion into belief distributions is not performed.
+> **Note:** Evidential Reasoning (ER) aggregation is **disabled** in the current pipeline configuration (`use_evidential_reasoning = False`). The ranking phase runs 5 Traditional MCDM methods (TOPSIS, VIKOR, PROMETHEE II, COPRAS, EDAS) plus a **Raw Sum Baseline** and reports their individual scores. The ER fusion into belief distributions is not performed by default.
 
 This framework implements a **two-stage hierarchical ranking system** that combines:
 
-1. **Six Traditional MCDM Methods** - TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS, SAW - applied
+1. **Five Traditional MCDM Methods** - TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS - applied
    independently within each criterion group to generate per-method scores.
-2. **Evidential Reasoning (ER)** - Yang & Xu (2002) analytical algorithm for rigorous
+2. **Raw Sum Baseline** - A transparent additive baseline calculating the sum of raw sub-criteria
+   values per criterion (Stage 1) and the sum of criterion scores (Stage 2).
+3. **Evidential Reasoning (ER)** - Yang & Xu (2002) analytical algorithm for rigorous
    belief-based aggregation — **available but disabled by default** (`use_evidential_reasoning = False`).
 
 **Application:** Vietnam PAPI - 63 provinces, 8 criteria (C01-C08), 29 sub-criteria
@@ -47,11 +49,14 @@ Q_i = S+_i + (sum_k S-_k) / (S-_i * sum_k 1/S-_k) -- utility degree U_i = Q_i/Q_
 AV_j = mean(x_ij); PDA_ij = max(0, x_ij-AV_j)/AV_j; NDA_ij = max(0, AV_j-x_ij)/AV_j
 AS_i = 0.5*(SP_i/max(SP) + 1 - SN_i/max(SN)) -- higher is better
 
-### 1.6 SAW — Simple Additive Weighting (Fishburn, 1967)
+### 1.6 Raw Sum Baseline (Base)
 
-Score_i = sum_j w_j * r_ij -- weighted sum of min-max normalized values
-Serves as a transparent linear baseline; fully compensatory.
+Score_i = sum_j x_ij -- Simple sum of raw, un-normalized sub-criteria values.
+This serves as the most transparent possible baseline, requiring zero methodological 
+choices beyond the raw data. 
 Higher score is better.
+
+> **Note:** **SAW (Simple Additive Weighting)** is also implemented and available in `ranking/saw.py`, but it is not included in the standard hierarchical ranking pipeline track.
 
 ---
 
@@ -106,10 +111,11 @@ Score = (u_min + u_max) / 2
 
 **Stage 1 (x8 criterion groups):**
 1. Min-max normalize SC matrix; apply YearContext SC exclusions.
-2. Run 6 MCDM methods with Level-1 SC weights from CRITICWeightCalculator.
-3. Derive method weights via inverse-CV.
-4. Convert each method score to belief; ER-combine -> one belief per (province, criterion).
-5. Average utility -> criterion-level score in [0,1].
+2. Run 5 MCDM methods with Level-1 SC weights from `CRITICWeightingCalculator`.
+3. Run Raw Sum Baseline on raw values.
+4. Derive method weights via inverse-CV (agreement among traditional methods).
+5. Convert each method score to belief; ER-combine -> one belief per (province, criterion).
+6. Average utility -> criterion-level score in [0,1].
 
 **Stage 2 (global):**
 1. Criterion weights from CRITICWeightCalculator Level 2.
@@ -138,7 +144,7 @@ Score = (u_min + u_max) / 2
 | `ranking/promethee.py` | PROMETHEECalculator |
 | `ranking/copras.py` | COPRASCalculator |
 | `ranking/edas.py` | EDASCalculator |
-| `ranking/saw.py` | SAWCalculator |
+| `ranking/saw.py` | SAWCalculator (Available) |
 
 ---
 

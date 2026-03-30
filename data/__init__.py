@@ -1,17 +1,15 @@
 # -*- coding: utf-8 -*-
-"""Data package — CSV dataset loading and shared missing-data utilities.
+"""
+Data Management and Ingestion Package
+=====================================
 
-Directory layout::
+This package provides tools for loading hierarchical CSV datasets and 
+handling missing data (NaN) across the ML-MCDM pipeline.
 
-    data/
-    ├── csv/            ← input panel data (2011.csv … 2024.csv)
-    ├── codebook/       ← codebook_criteria.csv, codebook_subcriteria.csv
-    ├── data_loader.py  ← :class:`DataLoader`, :class:`PanelData`, …
-    └── missing_data.py ← centralised NaN-handling primitives
-
-The :mod:`data.missing_data` module provides NaN-filtering utilities shared
-across the weighting, ranking, and forecasting phases.
-The :mod:`data.data_loader` module loads the full hierarchical panel dataset.
+Key Modules:
+------------
+- :mod:`data_loader`: High-level orchestrator for dataset assembly.
+- :mod:`missing_data`: Centralized utilities for NaN filtering and imputation.
 """
 
 from .missing_data import (

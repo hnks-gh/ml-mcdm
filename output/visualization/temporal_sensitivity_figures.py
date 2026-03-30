@@ -1,19 +1,19 @@
-# -*- coding: utf-8 -*-
 """
-Publication-Ready Visualizations for Temporal Stability & Sensitivity Analysis
-================================================================================
+Temporal Stability and Sensitivity Figures.
 
-Generates high-resolution PNG figures (300 DPI, 6-8 inches) suitable for
-LaTeX paper integration. Implements:
-  - Temporal Stability Timeline: window-by-window Spearman's rho + Kendall's W
-  - Sensitivity Heatmap: criteria × tier robustness/sensitivity visualization
+This module provides the `TemporalSensitivityFigureGenerator` class, 
+which produces high-resolution illustrations for temporal stability and 
+CRITIC-based sensitivity analysis. These figures are optimized for 
+LaTeX integration and provide fine-grained diagnostics of ranking 
+robustness across time windows and perturbation tiers.
 
-Styling
--------
-- Matplotlib backend: Agg (PNG export)
-- Figure quality: 300 DPI, production-grade
-- Color palette: colorblind-friendly (Okabe-Ito + seaborn defaults)
-- Typography: LaTeX-compatible fonts
+Key Figures
+-----------
+- **Temporal Stability Timeline**: Rolling Spearman's ρ and Kendall's W 
+  consensus across time windows.
+- **Sensitivity Heatmap**: Analysis of rank disruption across criteria and 
+  perturbation tiers (conservative, moderate, aggressive).
+- **Robustness Comparison**: Tier-wise aggregate stability scores.
 """
 
 from __future__ import annotations
@@ -39,18 +39,23 @@ logger = logging.getLogger(__name__)
 
 class TemporalSensitivityFigureGenerator:
     """
-    Generate publication-ready figures for temporal stability & sensitivity analysis.
+    Generator for publication-quality temporal stability and sensitivity figures.
 
-    Parameters
-    ----------
-    output_dir : str, optional
-        Directory for PNG exports. Default: 'output/result/figures'
-    dpi : int, default=300
-        Resolution for saved PNG files (publication standard).
+    Produces high-resolution PNG exports with consistent styling for 
+    academic reporting and executive diagnostics.
     """
 
     def __init__(self, output_dir: str = 'output/result/figures', dpi: int = 300):
-        """Initialize figure generator."""
+        """
+        Initialize the figure generator.
+
+        Parameters
+        ----------
+        output_dir : str, default='output/result/figures'
+            Directory for PNG exports.
+        dpi : int, default=300
+            Resolution for saved files (dots per inch).
+        """
         if not HAS_MATPLOTLIB:
             raise ImportError(
                 'matplotlib not available; install via: pip install matplotlib seaborn'
@@ -73,23 +78,24 @@ class TemporalSensitivityFigureGenerator:
         figsize: Tuple[int, int] = (8, 5),
     ) -> str:
         """
-        Plot temporal stability timeline with rolling windows.
+        Render a timeline of temporal stability across rolling windows.
 
-        Visualizes window-by-window Spearman's rho with Kendall's W reference.
+        Visualizes pairwise Spearman's ρ between consecutive windows along 
+        with an omnibus Kendall's W reference.
 
         Parameters
         ----------
         temporal_result : TemporalStabilityResult
-            Result from WindowedTemporalStabilityAnalyzer.analyze()
+            Output from the WindowedTemporalStabilityAnalyzer.
         title : str, optional
-            Custom figure title. Default: auto-generated.
-        figsize : tuple, default=(8, 5)
-            Figure size (width, height) in inches.
+            The plot title.
+        figsize : Tuple[int, int], default=(8, 5)
+            Figure dimensions (width, height) in inches.
 
         Returns
         -------
         str
-            Path to saved PNG file (temporal_stability_timeline.png)
+            Absolute path to the saved figure.
         """
         if not temporal_result or not temporal_result.rolling_timeline:
             logger.warning('Cannot plot temporal stability: empty timeline')
@@ -162,23 +168,24 @@ class TemporalSensitivityFigureGenerator:
         figsize: Tuple[int, int] = (10, 6),
     ) -> str:
         """
-        Plot sensitivity heatmap: criteria × tier robustness/sensitivity.
+        Render a sensitivity heatmap of criteria across perturbation tiers.
 
-        Visualizes per-criterion sensitivity across conservative/moderate/aggressive tiers.
+        Visualizes the probability of rank disruption for each criterion 
+        under conservative, moderate, and aggressive weight shifts.
 
         Parameters
         ----------
         sensitivity_result : SensitivityResult
-            Result from CRITICSensitivityAnalyzer.analyze()
+            Output from the CRITICSensitivityAnalyzer.
         title : str, optional
-            Custom figure title. Default: auto-generated.
-        figsize : tuple, default=(10, 6)
-            Figure size (width, height) in inches.
+            The plot title.
+        figsize : Tuple[int, int], default=(10, 6)
+            Figure dimensions (width, height) in inches.
 
         Returns
         -------
         str
-            Path to saved PNG file (sensitivity_heatmap.png)
+            Absolute path to the saved figure.
         """
         if not sensitivity_result or not sensitivity_result.per_criterion_sensitivity:
             logger.warning('Cannot plot sensitivity: empty results')
@@ -258,23 +265,24 @@ class TemporalSensitivityFigureGenerator:
         figsize: Tuple[int, int] = (8, 5),
     ) -> str:
         """
-        Plot robustness scores across tiers as a bar chart.
+        Render a bar chart comparing robustness across perturbation tiers.
 
-        Shows tier-wise robustness with error bars (if available).
+        Provides a high-level summary of how the model performs as weight 
+        variance increases.
 
         Parameters
         ----------
         sensitivity_result : SensitivityResult
-            Result from CRITICSensitivityAnalyzer.analyze()
+            Output from the CRITICSensitivityAnalyzer.
         title : str, optional
-            Custom figure title. Default: auto-generated.
-        figsize : tuple, default=(8, 5)
-            Figure size (width, height) in inches.
+            The plot title.
+        figsize : Tuple[int, int], default=(8, 5)
+            Figure dimensions (width, height) in inches.
 
         Returns
         -------
         str
-            Path to saved PNG file (robustness_comparison.png)
+            Absolute path to the saved figure.
         """
         if not sensitivity_result or not sensitivity_result.tier_robustness:
             logger.warning('Cannot plot robustness: empty results')

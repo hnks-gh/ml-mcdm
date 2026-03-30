@@ -1,12 +1,27 @@
-# -*- coding: utf-8 -*-
 """
-Publication-Quality Markdown + LaTeX Report Writer
-===================================================
+Publication-Quality Report Generation.
 
-Generates ``output/result/reports/report.md`` — a comprehensive analysis
-report using proper Markdown headings, pipe tables, and LaTeX math
-blocks for equations.  Renderable with any Markdown viewer or
-convertible to PDF via Pandoc.
+This module provides the `ReportWriter` class, which aggregates results 
+from all pipeline phases into a comprehensive, human-readable Markdown 
+report. The report includes LaTeX math blocks for equations, GitHub-flavored 
+Markdown tables for data, and embedded references to generated 
+visualizations.
+
+Key Features
+------------
+- **Hierarchical Summaries**: Provides executive, criterion-level, and 
+  method-specific summaries.
+- **LaTeX Integration**: Uses raw LaTeX for mathematical rigor in weight 
+  derivation and aggregation formulas.
+- **Distributional Analysis**: Includes statistical moments (skewness, 
+  kurtosis) for ranking distributions.
+- **Verification Logs**: Automatically appends an internal validity 
+  checklist to the final pages.
+
+Notes
+-----
+The generated report is designed to be compatible with Pandoc for 
+conversion to PDF or HTML formats.
 """
 
 from __future__ import annotations
@@ -23,14 +38,45 @@ _logger = logging.getLogger(__name__)
 
 
 def _esc_md(text: str) -> str:
-    """Escape pipe characters in *text* so Markdown tables render correctly."""
+    """
+    Escape Markdown special characters in text.
+
+    Primarily used to prevent pipe characters ('|') from breaking table 
+    structure.
+
+    Parameters
+    ----------
+    text : str
+        The input text to escape.
+
+    Returns
+    -------
+    str
+        The escaped string.
+    """
     return str(text).replace('|', '\\|')
 
 
 class ReportWriter:
-    """Build and save a publication-quality Markdown report."""
+    """
+    Generator for publication-quality analytical reports.
+
+    Attributes
+    ----------
+    reports_dir : Path
+        The directory where reports are stored.
+    """
 
     def __init__(self, base_output_dir: str = 'result'):
+        """
+        Initialize the report writer.
+
+        Parameters
+        ----------
+        base_output_dir : str, default='result'
+            The root directory for output. A 'reports/' subdirectory 
+            will be created within it.
+        """
         from . import _sanitize_output_dir
         base = _sanitize_output_dir(base_output_dir)
         self.reports_dir = base / 'reports'
@@ -52,9 +98,36 @@ class ReportWriter:
         figure_paths: Optional[List[str]] = None,
         saved_files: Optional[List[str]] = None,
     ) -> str:
-        """Build the full report and write it to disk.
+        """
+        Construct the comprehensive Markdown report.
 
-        Returns the report text.
+        Aggregates data from panel metadata, criteria weights, MCDM 
+        rankings, ML forecasts, and sensitivity analyses into a single 
+        coherent document.
+
+        Parameters
+        ----------
+        panel_data : PanelData
+            Input data object containing temporal and geographic context.
+        weights : Dict[str, Any]
+            Dictionary containing CRITIC weighting results.
+        ranking_result : RankingResult
+            Aggregated results from the MCDM ensemble.
+        forecast_result : UnifiedForecastResult, optional
+            Results from the machine learning forecasting engine.
+        analysis_results : Dict[str, Any]
+            Dictionary containing sensitivity and validation results.
+        execution_time : float
+            Total pipeline execution time in seconds.
+        figure_paths : List[str], optional
+            Paths to generated visualization plots.
+        saved_files : List[str], optional
+            List of all structured data files persisted to disk.
+
+        Returns
+        -------
+        str
+            The full content of the generated Markdown report.
         """
         L: List[str] = []  # accumulator
 
@@ -768,6 +841,14 @@ class ReportWriter:
 
     @property
     def path(self) -> str:
+        """
+        Get the absolute path to the generated report file.
+
+        Returns
+        -------
+        str
+            Report file path.
+        """
         return str(self._path)
 
 

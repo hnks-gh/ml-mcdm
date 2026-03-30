@@ -10,22 +10,22 @@ from dataclasses import dataclass, field
 @dataclass
 class WeightResult:
     """
-    Result container for weight calculations.
+    Container for criterion weighting results and diagnostics.
 
     Attributes
     ----------
     weights : Dict[str, float]
-        Calculated weights per criterion. Sum = 1.0 (within 1e-10).
+        Mapping of criteria/sub-criteria codes to their calculated weights.
+        Weights sum to 1.0.
     method : str
-        Name of weight calculation method (e.g., 'critic').
+        The identification string of the weighting method used.
     details : Dict
-        Method-specific details and metadata.
-    temporal_stability : Optional[TemporalStabilityResult], default=None
-        Window-based temporal stability metrics (if run_temporal_stability=True).
-        Fields: spearman_rho_rolling, spearman_rho_mean, kendalls_w, etc.
-    sensitivity_analysis : Optional[SensitivityResult], default=None
-        Three-tier perturbation sensitivity metrics (if run_sensitivity_analysis=True).
-        Fields: tier_robustness, per_criterion_sensitivity, rank_disruption_stats, etc.
+        Supplemental diagnostics, including standard deviations and 
+        correlation matrices.
+    temporal_stability : Optional[Any]
+        Rolling-window stability metrics, if enabled.
+    sensitivity_analysis : Optional[Any]
+        Perturbation-based robustness metrics, if enabled.
     """
     weights: Dict[str, float]
     method: str

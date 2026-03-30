@@ -425,15 +425,35 @@ class ForecastEvaluator:
         return results
 
     def _cross_validate(
-        self, model, X: np.ndarray, y: np.ndarray,
+        self,
+        model,
+        X: np.ndarray,
+        y: np.ndarray,
         year_labels: Optional[np.ndarray] = None,
     ) -> Dict[str, Any]:
-        """Run walk-forward yearly cross-validation.
+        """
+        Run walk-forward yearly cross-validation.
 
         When *year_labels* is provided, uses ``_WalkForwardYearlySplit``
-        aligned to calendar years — identical splitter used by SuperLearner.
-        Falls back to ``TimeSeriesSplit`` when year_labels is None (e.g. when
-        called on non-panel data outside the main pipeline).
+        aligned to calendar years — identical to the splitter used by 
+        SuperLearner. Falls back to ``TimeSeriesSplit`` when year_labels 
+        is None.
+
+        Parameters
+        ----------
+        model : object
+            Forecasting model to evaluate.
+        X : np.ndarray
+            Training feature matrix.
+        y : np.ndarray
+            Training target vector or matrix.
+        year_labels : np.ndarray, optional
+            Calendar year labels for each row.
+
+        Returns
+        -------
+        dict
+            Aggregated cross-validation metrics.
         """
         if y.ndim == 1:
             y = y.reshape(-1, 1)
@@ -500,7 +520,27 @@ class ForecastEvaluator:
         X_test: np.ndarray,
         y_test: np.ndarray,
     ) -> Dict[str, float]:
-        """Evaluate on holdout test set."""
+        """
+        Evaluate on a fixed holdout test set.
+
+        Parameters
+        ----------
+        model : object
+            Forecasting model to evaluate.
+        X_train : np.ndarray
+            Training feature matrix.
+        y_train : np.ndarray
+            Training target vector or matrix.
+        X_test : np.ndarray
+            Test feature matrix.
+        y_test : np.ndarray
+            Test target vector or matrix.
+
+        Returns
+        -------
+        dict
+            Holdout evaluation metrics.
+        """
         if y_train.ndim == 1:
             y_train = y_train.reshape(-1, 1)
         if y_test.ndim == 1:
@@ -527,7 +567,10 @@ class ForecastEvaluator:
         return results
 
     def _residual_diagnostics(
-        self, model, X: np.ndarray, y: np.ndarray,
+        self,
+        model,
+        X: np.ndarray,
+        y: np.ndarray,
         entity_indices: Optional[np.ndarray] = None,
     ) -> Dict[str, Any]:
         """
@@ -541,6 +584,22 @@ class ForecastEvaluator:
             - Autocorrelation (Durbin-Watson statistic)
             - Heteroscedasticity (residual vs predicted correlation)
             - Mean zero test
+
+        Parameters
+        ----------
+        model : object
+            Forecasting model to diagnose.
+        X : np.ndarray
+            Feature matrix.
+        y : np.ndarray
+            Target vector or matrix.
+        entity_indices : np.ndarray, optional
+            Entity indices for panel-aware splitting.
+
+        Returns
+        -------
+        dict
+            Diagnostic test results and statistics.
         """
         if y.ndim == 1:
             y = y.reshape(-1, 1)
@@ -795,12 +854,18 @@ class ForecastEvaluator:
         return "\n".join(lines)
 
 
-class _SubsetEnsemble:
-    """Minimal averaging ensemble over a subset of base models.
+    """
+    Minimal averaging ensemble over a subset of base models.
 
     Used internally by ``AblationStudy`` to evaluate LOO and pairwise
-    ensembles without importing ``SuperLearner`` (avoids a circular dependency
-    and removes the overhead of OOF meta-learning for ablation purposes).
+    ensembles without importing ``SuperLearner`` (avoids a circular 
+    dependency and removes the overhead of OOF meta-learning for 
+    ablation purposes).
+
+    Parameters
+    ----------
+    models : Dict[str, Any]
+        Mapping of model names to fitted model instances.
     """
 
     def __init__(self, models: Dict[str, Any]):
@@ -858,8 +923,29 @@ class AblationStudy:
         )
         self.primary_metric = primary_metric
 
-    def _eval_subset(self, subset: Dict[str, Any], X: np.ndarray, y: np.ndarray) -> float:
-        """Evaluate a _SubsetEnsemble and return primary metric mean, or NaN."""
+    def _eval_subset(
+        self,
+        subset: Dict[str, Any],
+        X: np.ndarray,
+        y: np.ndarray,
+    ) -> float:
+        """
+        Evaluate a subset of models and return the primary metric mean.
+
+        Parameters
+        ----------
+        subset : Dict[str, Any]
+            Subset of models to evaluate.
+        X : np.ndarray
+            Feature matrix.
+        y : np.ndarray
+            Target values.
+
+        Returns
+        -------
+        float
+            Mean of the primary metric across CV folds. Returns NaN on failure.
+        """
         try:
             ens = _SubsetEnsemble(subset)
             result = self.evaluator.evaluate(ens, X, y)
@@ -1015,6 +1101,150 @@ class AblationStudy:
             lines.append("-" * 50)
             for pair_name, score in top_pairs:
                 lines.append(f"  {pair_name:40s}: {score:.4f}")
-
         lines.append("\n" + "=" * 80)
         return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# PHASE 5 Output Package Helpers
+# ---------------------------------------------------------------------------
+
+def compute_interval_width_summary(
+    intervals_lower: pd.DataFrame,
+    intervals_upper: pd.DataFrame,
+) -> pd.DataFrame:
+    """
+    Compute interval width summary metrics per criterion.
+
+    Args:
+        intervals_lower: DataFrame of lower bounds (entities x criteria)
+        intervals_upper: DataFrame of upper bounds (entities x criteria)
+        
+    Returns:
+        DataFrame with summary metrics per criterion.
+    """
+    widths = intervals_upper - intervals_lower
+    
+    summary = []
+    for col in widths.columns:
+        w_d = widths[col].dropna()
+        if len(w_d) > 0:
+            summary.append({
+                'criterion': col,
+                'mean_width': float(w_d.mean()),
+                'median_width': float(w_d.median()),
+                'min_width': float(w_d.min()),
+                'max_width': float(w_d.max()),
+            })
+        else:
+            summary.append({
+                'criterion': col,
+                'mean_width': float('nan'),
+                'median_width': float('nan'),
+                'min_width': float('nan'),
+                'max_width': float('nan'),
+            })
+            
+    return pd.DataFrame(summary)
+
+
+def compute_entity_error_summary(
+    y_true: pd.DataFrame,
+    y_pred: pd.DataFrame,
+) -> pd.DataFrame:
+    """
+    Compute error metrics per entity (averaged across criteria).
+
+    Args:
+        y_true: Ground truth targets (entities x criteria). Index must be entity names.
+        y_pred: Predicted targets (entities x criteria). Index must be entity names.
+        
+    Returns:
+        DataFrame of error metrics per entity.
+    """
+    # Align dataframes
+    common_idx = y_true.index.intersection(y_pred.index)
+    col_idx = y_true.columns.intersection(y_pred.columns)
+    
+    if len(common_idx) == 0 or len(col_idx) == 0:
+        return pd.DataFrame(columns=['entity', 'mae', 'rmse', 'mape'])
+        
+    yt = y_true.loc[common_idx, col_idx]
+    yp = y_pred.loc[common_idx, col_idx]
+    
+    err = yt - yp
+    abs_err = err.abs()
+    sq_err = err ** 2
+    
+    # Calculate percentage error safely
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore')
+        perc_err = (abs_err / yt.abs()) * 100
+        # Ignore percentage errors where yt is very close to 0
+        perc_err = perc_err.where(yt.abs() > 1e-2, np.nan)
+        
+    summary = []
+    for entity in common_idx:
+        # Get valid criterion losses for the entity
+        ae_valid = abs_err.loc[entity].dropna()
+        se_valid = sq_err.loc[entity].dropna()
+        pe_valid = perc_err.loc[entity].dropna()
+        
+        summary.append({
+            'entity': entity,
+            'mae': float(ae_valid.mean()) if len(ae_valid) > 0 else float('nan'),
+            'rmse': float(np.sqrt(se_valid.mean())) if len(se_valid) > 0 else float('nan'),
+            'mape': float(pe_valid.mean()) if len(pe_valid) > 0 else float('nan'),
+        })
+        
+    return pd.DataFrame(summary)
+
+
+def compute_worst_predictions(
+    y_true: pd.DataFrame,
+    y_pred: pd.DataFrame,
+    top_k: int = 20,
+) -> pd.DataFrame:
+    """
+    Identify the worst predictions (entity x criterion pairs) by absolute error.
+
+    Args:
+        y_true: Ground truth targets.
+        y_pred: Predicted targets.
+        top_k: Max number of pairs to return.
+        
+    Returns:
+        DataFrame sorted by absolute error descending.
+    """
+    common_idx = y_true.index.intersection(y_pred.index)
+    col_idx = y_true.columns.intersection(y_pred.columns)
+    
+    if len(common_idx) == 0 or len(col_idx) == 0:
+        return pd.DataFrame(columns=['entity', 'criterion', 'actual', 'predicted', 'abs_error'])
+        
+    yt = y_true.loc[common_idx, col_idx]
+    yp = y_pred.loc[common_idx, col_idx]
+    
+    records = []
+    for entity in common_idx:
+        for criterion in col_idx:
+            truth = yt.at[entity, criterion]
+            pred = yp.at[entity, criterion]
+            
+            if pd.notna(truth) and pd.notna(pred):
+                abs_err = abs(truth - pred)
+                records.append({
+                    'entity': entity,
+                    'criterion': criterion,
+                    'actual': float(truth),
+                    'predicted': float(pred),
+                    'abs_error': float(abs_err),
+                })
+                
+    if not records:
+        return pd.DataFrame(columns=['entity', 'criterion', 'actual', 'predicted', 'abs_error'])
+        
+    df = pd.DataFrame(records)
+    df = df.sort_values(by='abs_error', ascending=False).head(top_k)
+    return df.reset_index(drop=True)

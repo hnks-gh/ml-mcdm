@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-Logging Decorators and Context Managers
-=======================================
+Logging Decorators and Performance Monitoring Context Managers.
 
-Reusable decorators (``log_execution``, ``log_exceptions``) and context
-managers (``log_context``, ``timed_operation``) that emit to both the
-console logger and the debug logger.
+This module provides reusable utilities to automate execution logging, 
+exception tracking, and performance profiling across the ML-MCDM pipeline. 
+It supports dynamic thread-local context injection and standardized timing 
+outputs for both console and debug channels.
 """
 
 from __future__ import annotations
@@ -29,7 +29,25 @@ def log_execution(
     show_args: bool = False,
     show_result: bool = False,
 ) -> Callable:
-    """Decorator that logs function entry, exit, and timing."""
+    """
+    Decorator that logs function entry, exit, and execution time.
+
+    Parameters
+    ----------
+    logger : logging.Logger, optional
+        The logger instance to use. Defaults to the 'ml_mcdm' root logger.
+    level : int, default=logging.DEBUG
+        The logging level for entry/exit messages.
+    show_args : bool, default=False
+        If True, includes truncated function arguments in the entry log.
+    show_result : bool, default=False
+        If True, includes truncated return values in the exit log.
+
+    Returns
+    -------
+    Callable
+        The wrapped function with execution logging.
+    """
 
     def decorator(func: Callable) -> Callable:
         @wraps(func)
@@ -73,7 +91,26 @@ def log_exceptions(
     level: int = logging.ERROR,
     reraise: bool = True,
 ) -> Callable:
-    """Decorator that captures and logs unhandled exceptions."""
+    """
+    Decorator that captures and logs unhandled exceptions.
+
+    Ensures that unexpected failures are recorded in both the standard 
+    and structured debug logs with full traceback information.
+
+    Parameters
+    ----------
+    logger : logging.Logger, optional
+        The logger instance to use.
+    level : int, default=logging.ERROR
+        The logging level for the exception message.
+    reraise : bool, default=True
+        If True, re-raises the exception after logging.
+
+    Returns
+    -------
+    Callable
+        The wrapped function with automated exception logging.
+    """
 
     def decorator(func: Callable) -> Callable:
         @wraps(func)
@@ -98,7 +135,15 @@ def log_exceptions(
 
 @contextmanager
 def log_context(**kwargs: Any) -> Generator[None, None, None]:
-    """Temporarily inject key/value pairs into the thread-local log context."""
+    """
+    Temporarily inject metadata into the thread-local logging context.
+
+    Parameters
+    ----------
+    **kwargs
+        Arbitrary key/value pairs to add to the logger context 
+        (e.g., phase='DataLoading', province='Hanoi').
+    """
     for key, value in kwargs.items():
         LogContext.set(key, value)
     try:
@@ -114,7 +159,18 @@ def timed_operation(
     operation: str,
     level: int = logging.INFO,
 ) -> Generator[None, None, None]:
-    """Context manager that logs start / finish with elapsed time."""
+    """
+    Context manager that benchmarks a specific operation.
+
+    Parameters
+    ----------
+    logger : logging.Logger
+        The logger instance to use.
+    operation : str
+        A descriptive name for the timed task.
+    level : int, default=logging.INFO
+        The logging level for both start and finish messages.
+    """
     start = time.time()
     logger.log(level, f'Starting: {operation}')
     try:

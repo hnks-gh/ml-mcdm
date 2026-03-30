@@ -1,9 +1,14 @@
-\begin{thebibliography}{13}
+\begin{thebibliography}{22}
 \providecommand{\natexlab}[1]{#1}
 \providecommand{\url}[1]{\texttt{#1}}
 \expandafter\ifx\csname urlstyle\endcsname\relax
   \providecommand{\doi}[1]{doi: #1}\else
   \providecommand{\doi}{doi: \begingroup \urlstyle{rm}\Url}\fi
+
+\bibitem[Bishop(2006)]{Bishop2006}
+C.~M. Bishop.
+\newblock \emph{Pattern Recognition and Machine Learning}.
+\newblock 2006.
 
 \bibitem[Brans and Vincke(1985)]{Brans1985}
 J.~P. Brans and P.~Vincke.
@@ -25,6 +30,11 @@ L.~L. Doove, S.~van Buuren, and E.~Dusseldorp.
 \newblock Recursive partitioning for missing data imputation.
 \newblock 2014.
 
+\bibitem[Gibbs and Candes(2021)]{Gibbs2021}
+I.~Gibbs and E.~J. Candes.
+\newblock Adaptive conformal inference under distribution shift.
+\newblock 2021.
+
 \bibitem[Greco et~al.(2019)Greco, Ehrgott, and Figueira]{Greco2019}
 S.~Greco, M.~Ehrgott, and J.~Figueira.
 \newblock Multiple criteria decision analysis.
@@ -45,15 +55,36 @@ M.~Keshavarz~Ghorabaee et~al.
 \newblock Evaluation based on distance from average solution.
 \newblock 2015.
 
+\bibitem[Meinshausen(2006)]{Meinshausen2006}
+N.~Meinshausen.
+\newblock Quantile regression forests.
+\newblock \emph{Journal of Machine Learning Research}, 2006.
+
 \bibitem[Opricovic and Tzeng(2004)]{Opricovic2004}
 S.~Opricovic and G.~Tzeng.
 \newblock Compromise solution by multiple criteria methods.
 \newblock 2004.
 
+\bibitem[Prokhorenkova et~al.(2018)Prokhorenkova, Gusev, Vorobev, Dorogush, and
+  Gulin]{Prokhorenkova2018}
+L.~Prokhorenkova, G.~Gusev, A.~Vorobev, A.~V. Dorogush, and A.~Gulin.
+\newblock Catboost: Unbiased boosting with categorical features.
+\newblock \emph{Advances in Neural Information Processing Systems}, 2018.
+
+\bibitem[Romano et~al.(2019)Romano, Patterson, and Candes]{Romano2019}
+Y.~Romano, E.~Patterson, and E.~J. Candes.
+\newblock Conformalized quantile regression.
+\newblock 2019.
+
 \bibitem[Rubin(1987)]{Rubin1987}
 D.~B. Rubin.
 \newblock \emph{Multiple Imputation for Nonresponse in Surveys}.
 \newblock 1987.
+
+\bibitem[Scholkopf and Smola(2002)]{Scholkopf2002}
+B.~Scholkopf and A.~J. Smola.
+\newblock \emph{Learning with Kernels}.
+\newblock 2002.
 
 \bibitem[van Buuren(2018)]{vanBuuren2018}
 S.~van Buuren.
@@ -64,6 +95,23 @@ S.~van Buuren.
 S.~van Buuren and K.~Groothuis-Oudshoorn.
 \newblock Mice method for dealing with missing data.
 \newblock 2011.
+
+\bibitem[van~der Laan et~al.(2007)van~der Laan, Polley, and
+  Hubbard]{vanDerLaan2007}
+M.~J. van~der Laan, E.~C. Polley, and A.~E. Hubbard.
+\newblock Super learner.
+\newblock \emph{Statistical Applications in Genetics and Molecular Biology},
+  2007.
+
+\bibitem[Vapnik(1995)]{Vapnik1995}
+V.~N. Vapnik.
+\newblock \emph{The Nature of Statistical Learning Theory}.
+\newblock 1995.
+
+\bibitem[Vovk et~al.(2005)Vovk, Gammerman, and Shafer]{Vovk2005}
+V.~Vovk, A.~Gammerman, and G.~Shafer.
+\newblock \emph{Algorithmic Learning in a Random World}.
+\newblock 2005.
 
 \bibitem[Zavadskas and Kaklauskas(1994)]{Zavadskas1994}
 E.~K. Zavadskas and A.~Kaklauskas.

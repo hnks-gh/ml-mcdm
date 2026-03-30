@@ -1,18 +1,14 @@
 # -*- coding: utf-8 -*-
 """
-PROMETHEE: Preference Ranking Organization Method for Enrichment Evaluations
+PROMETHEE (Preference Ranking Organization Method for Enrichment Evaluations)
+=============================================================================
 
-An outranking method based on pairwise preference comparisons using
-preference functions to model decision maker's preferences.
+An outranking method based on pairwise preference comparisons. It uses 
+specific preference functions to model the decision maker's intensity of 
+preference between alternatives for each criterion.
 
-PROMETHEE I: Partial ranking (allows incomparability)
-PROMETHEE II: Complete ranking (net flow)
-
-Mathematical Steps:
-1. Calculate pairwise preference degrees for each criterion
-2. Calculate aggregated preference indices π(a,b)
-3. Compute positive flow Φ+(a) and negative flow Φ-(a)
-4. Calculate net flow: Φ(a) = Φ+(a) - Φ-(a)
+- PROMETHEE I: Provides a partial ranking (allows for incomparability).
+- PROMETHEE II: Provides a complete ranking based on net flows.
 """
 
 import numpy as np
@@ -36,16 +32,32 @@ class PreferenceFunction(Enum):
 
 @dataclass
 class PROMETHEEResult:
-    """Result container for PROMETHEE calculation."""
-    phi_positive: pd.Series       # Positive outranking flow (leaving flow)
-    phi_negative: pd.Series       # Negative outranking flow (entering flow)
-    phi_net: pd.Series            # Net flow (Phi+ - Phi-)
-    ranks_promethee_i: pd.DataFrame  # Partial ranking (I dominates J)
-    ranks_promethee_ii: pd.Series    # Complete ranking by net flow
-    preference_matrix: pd.DataFrame  # Aggregated preference matrix
-    partial_preorder: Dict[str, List[str]]  # PROMETHEE I partial preorder
-    weights: Dict[str, float]
-    preference_functions: Dict[str, str]
+    """
+    Container for PROMETHEE calculation results and diagnostics.
+
+    Attributes
+    ----------
+    phi_positive : pd.Series
+        The leaving flow (Φ+), representing how much an alternative 
+        dominates others.
+    phi_negative : pd.Series
+        The entering flow (Φ-), representing how much others 
+        dominate an alternative.
+    phi_net : pd.Series
+        The net flow (Φ = Φ+ - Φ-), used for complete ranking.
+    ranks_promethee_i : pd.DataFrame
+        Components for partial ranking analysis.
+    ranks_promethee_ii : pd.Series
+        Final complete rankings (1 = best).
+    preference_matrix : pd.DataFrame
+        The aggregated global preference matrix π(a,b).
+    partial_preorder : Dict[str, List[str]]
+        Adjacency list representing PROMETHEE I dominance relations.
+    weights : Dict[str, float]
+        Criteria weights applied.
+    preference_functions : Dict[str, str]
+        The maps of preference function types used per criterion.
+    """
     
     @property
     def final_ranks(self) -> pd.Series:
@@ -92,45 +104,11 @@ class PROMETHEEResult:
 
 class PROMETHEECalculator:
     """
-    PROMETHEE method calculator with multiple preference functions.
-    
-    Implements both PROMETHEE I (partial ranking) and PROMETHEE II (complete ranking).
-    
-    Parameters
-    ----------
-    preference_function : str
-        Default preference function for all criteria
-    preference_threshold : float
-        Preference threshold (p) - strict preference
-    indifference_threshold : float
-        Indifference threshold (q) - no preference
-    sigma : float
-        Standard deviation for Gaussian preference function
-    benefit_criteria : List[str], optional
-        Criteria where higher values are better
-    cost_criteria : List[str], optional
-        Criteria where lower values are better
-    
-    Examples
-    --------
-    >>> import pandas as pd
-    >>> from ranking import PROMETHEECalculator
-    >>> 
-    >>> data = pd.DataFrame({
-    ...     'Quality': [0.8, 0.6, 0.9, 0.7],
-    ...     'Price': [100, 150, 120, 80],
-    ...     'Speed': [5, 3, 4, 6]
-    ... }, index=['A', 'B', 'C', 'D'])
-    >>> 
-    >>> weights = {'Quality': 0.4, 'Price': 0.3, 'Speed': 0.3}
-    >>> calc = PROMETHEECalculator(preference_function='vshape')
-    >>> result = calc.calculate(data, weights)
-    >>> print(result.phi_net)
-    
-    References
-    ----------
-    Brans, J.P., & Vincke, P. (1985). A preference ranking organisation method.
-    Management Science.
+    Calculator for the PROMETHEE I & II outranking methods.
+
+    Enables fine-grained preference modeling via threshold-based functions 
+    (V-shape, U-shape, Level, Gaussian, etc.) to capture the transition 
+    from indifference to strict preference.
     """
     
     def __init__(self,
@@ -167,23 +145,25 @@ class PROMETHEECalculator:
             )
     
     def calculate(self,
-                 data: pd.DataFrame,
-                 weights: Union[Dict[str, float], WeightResult, None] = None
-                 ) -> PROMETHEEResult:
+                  data: pd.DataFrame,
+                  weights: Union[Dict[str, float], WeightResult, Optional[Any]] = None
+                  ) -> PROMETHEEResult:
         """
-        Calculate PROMETHEE I and II rankings.
-        
+        Execute the PROMETHEE I and II algorithms.
+
         Parameters
         ----------
         data : pd.DataFrame
-            Decision matrix (alternatives × criteria)
-        weights : Dict or WeightResult
-            Criteria weights
-        
+            The decision matrix with alternatives as rows.
+        weights : Union[Dict[str, float], WeightResult], optional
+            Weights for each criterion. If None, defaults to equal weights 
+            or pre-calculated CRITIC weights.
+
         Returns
         -------
         PROMETHEEResult
-            Complete PROMETHEE results with both partial and complete rankings
+            Object containing flows, partial relations, and complete 
+            rankings.
         """
         # Get weights
         if weights is None:

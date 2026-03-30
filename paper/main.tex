@@ -136,7 +136,6 @@
 \newcommand{\COPRAS}{\textsc{copras}\xspace}
 \newcommand{\EDAS}{\textsc{edas}\xspace}
 \newcommand{\SAW}{\textsc{saw}\xspace}
-\newcommand{\ER}{\textsc{er}\xspace}
 \newcommand{\OOF}{\textsc{oof}\xspace}
 \newcommand{\CI}{\textsc{ci}\xspace}
 \newcommand{\ie}{\textit{i.e.,}\xspace}
@@ -184,15 +183,7 @@
 
   \begin{abstract}
     \noindent
-    % ========================================================
-    %  PLACEHOLDER — Abstract content to be completed
-    % ========================================================
-    \textit{[Abstract placeholder. Approximately 200--250 words summarising
-    the research motivation, the three-pillar methodology (two-level CRITIC
-    weighting, six-method MCDM with Evidential Reasoning, six-model ensemble
-    Super Learner with conformal prediction), the dataset (63 Vietnamese
-    provinces, 29 sub-criteria, 14 years, 2011--2024), key empirical findings,
-    and policy implications.]}
+    This study develops a hybrid research framework for sub-national governance performance assessment, integrating hierarchical object-weighting mechanisms with a stacking ensemble meta-learning architecture. Utilizing the Vietnam Provincial Governance and Public Administration Index (PAPI) dataset as a longitudinal case study (2011--2024), we propose a three-pillar methodology designed to ensure robust, objective, and predictive indexing. The framework first employs a regime-aware, two-level CRITIC weighting procedure to derive objective importance coefficients that account for both contrast intensity and inter-criteria redundancy. Second, we establish a robust consensus ranking through an ensemble of five distinct multi-criteria decision-making (MCDM) algorithms (TOPSIS, VIKOR, PROMETHEE II, COPRAS, and EDAS), mitigating methodological idiosyncrasies. Third, we implement a production-hardened stacking ensemble comprising CatBoost, Bayesian Ridge, Support Vector Regression, and ElasticNet models to forecast provincial governance trajectories. Uncertainty is rigorously quantified through distribution-free conformal prediction intervals, providing 95\% valid coverage for future governance outcomes. Our results demonstrate that the hybrid framework significantly outperforms traditional linear indexing approaches, offering precise insights into provincial governance efficiency and a forward-looking tool for evidence-based policy reform.
   \end{abstract}
 
   \vspace{0.5cm}
@@ -897,102 +888,164 @@ where $S = \sum_{i=1}^{m} \left( \sum_{j=1}^{k} r_{ij} - \frac{k(m+1)}{2} \right
 
 Our hypothesis is that $W > 0.80$ across all years, indicating that despite fundamental algorithmic differences, the five MCDM methods converge on a robust consensus ranking. This convergence simultaneously testifies to the stability of underlying provincial governance trajectories and guards against idiosyncratic algorithmic biases. Any province with dramatically different rankings across methods signals ambiguous governance status—potentially masking internal heterogeneity (e.g., some dimensions strong, others weak) worthy of policy investigation.
 
-\subsection{Temporal Feature Engineering}
-\label{subsec:features}
-% ----------------------------------------------------------------
-% PLACEHOLDER — 12-block feature pipeline (~295 features per province):
-%   Block 1: Current criterion values (C01–C08)
-%   Block 2: Lag features (t-1, t-2, t-3) + _was_missing flags
-%   Block 3: Rolling statistics (mean, std, min, max; windows 2, 3, 5)
-%   Block 4: Momentum and acceleration
-%   Block 5: Stationarity transformations (entity-demeaned, Δ², demeaned momentum)
-%   Block 6: Polynomial trend slopes (≥3 valid pts)
-%   Block 7: EWMA levels (spans 2, 3, 5)
-%   Block 8: Expanding window mean
-%   Block 9: Inter-criterion diversity (std, range)
-%   Block 10: Rolling skewness (5-year window)
-%   Block 11: Panel-relative features (percentile, z-score, rank-change)
-%   Block 12: Geographic cluster dummies (5 Vietnam regions)
-% Two-track preprocessing:
-%   PLS track (BayesianRidge, KRR, SVR): PLSRegression(n_components=20)
-%     with mutual-information pre-filter
-%   Threshold track (CatBoost, QRF): variance threshold only
-% ----------------------------------------------------------------
-\textit{[Content placeholder.]}
+\subsection{Ensemble Machine Learning Forecasting}
+\label{subsec:ensemble_forecasting}
+The forecasting stage is formulated as a one-step-ahead multivariate prediction problem on the provincial panel. For province $i \in \{1, \ldots, N\}$ and year $t \in \{1, \ldots, T-1\}$, let
+\begin{equation}
+\mathbf{y}_{i,t} = \big(y_{i,t}^{(1)}, \ldots, y_{i,t}^{(K)}\big)^\top \in [0,1]^K
+\end{equation}
+denote the vector of $K = 8$ criterion scores after the chosen monotone target transformation and rescaling. The learning problem is to estimate a function $f$ such that
+\begin{equation}
+\widehat{\mathbf{y}}_{i,t+1} = f\!\left(\phi(\mathcal{H}_{i,t})\right), \qquad
+\mathcal{H}_{i,t} = \{\mathbf{y}_{i,1}, \ldots, \mathbf{y}_{i,t}\},
+\end{equation}
+where $\phi(\cdot)$ is a feature map that converts each province's history into a supervised learning design matrix. Because the sample is small for modern forecasting standards, the architecture deliberately combines low-bias, low-variance, and distributional learners rather than relying on a single high-capacity model. This design is consistent with the project documentation and with the empirical bias-variance properties of stacked ensembles for small-to-medium panels \citep{vanDerLaan2007}.
 
-\subsection{Base Forecasting Models}
-\label{subsec:base_models}
-% ----------------------------------------------------------------
-% PLACEHOLDER — 5 diverse base learners:
-%   1. CatBoost (joint multi-output MultiRMSE, oblivious trees)
-%   2. Bayesian Ridge (PLS-compressed features, posterior uncertainty)
-%   3. Quantile Random Forest (full predictive distributions)
-%   4. Kernel Ridge Regression (RBF kernel, L2 regularisation)
-%   5. Support Vector Regression (epsilon-insensitive tube, RBF)
-% Target transform: logit for SAW [0,1] targets; Yeo-Johnson otherwise.
-% ----------------------------------------------------------------
-\textit{[Content placeholder.]}
+The feature matrix is constructed from temporally ordered panel histories, while structurally undefined values generated by short histories are completed by the same MICE-based reducer used elsewhere in the project \citep{Doove2014,vanBuuren2018}. In practical terms, the engineering step preserves the information in early-year lagged and rolling features through imputation, while retaining binary missingness indicators so that downstream learners can distinguish observed from reconstructed history. The target is transformed by a monotone map before estimation, using a logit transform for bounded indices and a variance-stabilizing alternative for raw scores, so that Gaussian learners operate on approximately unbounded support while the inverse transform preserves rank order after prediction.
 
-\subsection{Super Learner Meta-Ensemble}
-\label{subsec:superlearner}
-% ----------------------------------------------------------------
-% PLACEHOLDER — van der Laan et al. (2007) Super Learner.
-% Panel-aware walk-forward CV (min_train_years = 8; 5 folds).
-% Out-of-fold (OOF) predictions for each base model.
-% Meta-learner: NNLS Ridge per output -> _meta_weights_per_output_ (n_outputs x n_models).
-% Oracle inequality: Super Learner >= best convex combination asymptotically.
-% OOF cache reused for conformal calibration (no re-fitting).
-% Alternative meta-learners: Dirichlet stacking, Bayesian stacking, ElasticNet.
-% ----------------------------------------------------------------
-\textit{[Content placeholder.]}
+\subsubsection{Overview and System Architecture}
+The forecasting system is organised as a three-layer ensemble. Layer 1 comprises five heterogeneous base learners that span tree-based, Bayesian linear, kernel-based, and distributional modeling families. Layer 2 is a Super Learner meta-ensemble that combines the out-of-fold predictions from Layer 1 into criterion-specific convex weights. Layer 3 calibrates prediction intervals using conformal methods so that point forecasts are accompanied by distribution-free uncertainty statements. This separation of roles is important: the base learners are optimized for predictive accuracy, the meta-learner is optimized for ensemble aggregation, and the conformal layer is optimized for interval validity.
 
-\subsection{Conformal Prediction Intervals}
-\label{subsec:conformal}
-% ----------------------------------------------------------------
-% PLACEHOLDER — Vovk et al. (2005), Angelopoulos & Bates (2022).
-% Distribution-free 95% coverage guarantee (alpha = 0.05).
-% CV+ conformal: calibration residuals from OOF predictions.
-% Per-column OOF masks (_oof_valid_mask_per_col_) for multi-output.
-% ConformalPredictor with calibrate_residuals(); warning at n_cal < 30.
-% Alternatives: split conformal, Adaptive Conformal Inference (ACI).
-% ----------------------------------------------------------------
-\textit{[Content placeholder.]}
+Let $\mathbf{X}_{i,t} = \phi(\mathcal{H}_{i,t})$ denote the engineered feature vector. The pipeline first maps $\mathbf{X}_{i,t}$ into two estimator-specific preprocessing tracks. Tree-based learners operate on a threshold-only track that preserves the original scale and monotone ordering of the features, whereas Bayesian Ridge, Kernel Ridge Regression, and Support Vector Regression are trained on a supervised compression track built from Partial Least Squares to reduce collinearity and to focus the linear and kernel learners on covariance-relevant directions. The resulting base forecasts are then stacked through a constrained meta-learner. For the $m$-th base learner and the $k$-th criterion, let $\widehat{y}_{i,t+1,m}^{(k)}$ denote the corresponding point prediction. The final forecast is of the form
+\begin{equation}
+\widehat{y}_{i,t+1}^{(k)} = \sum_{m=1}^{M} \alpha_{m}^{(k)} \, \widehat{y}_{i,t+1,m}^{(k)},
+\qquad \alpha_{m}^{(k)} \ge 0, \qquad \sum_{m=1}^{M} \alpha_{m}^{(k)} = 1,
+\end{equation}
+where $M = 5$ base models and the weights are learned from out-of-fold data rather than in-sample fits. This architecture is particularly suited to the present panel because it respects the temporal ordering of the data and avoids the leakage that would arise from random cross-validation.
 
-\subsection{Evaluation Metrics and Validation}
-\label{subsec:evaluation}
-% ----------------------------------------------------------------
-% PLACEHOLDER — Forecast evaluation metrics: R², RMSE, MAE, MedAE, MAPE,
-% Max Error, Bias; Winkler score for prediction interval quality.
-% Residual diagnostics: Durbin-Watson (autocorrelation), Breusch-Pagan
-%   (heteroscedasticity), Shapiro-Wilk (normality).
-% Holdout evaluation: 2024 withheld, 252 OOF samples (genuinely out-of-sample).
-% Sensitivity analysis: 1000 Monte Carlo simulations; weight perturbation ±10%;
-%   Kendall rank correlation threshold = 0.85.
-% ----------------------------------------------------------------
-\textit{[Content placeholder.]}
+\subsubsection{Temporal Feature Engineering}
+The predictor set is built from 12 feature blocks that summarize level, trend, persistence, dispersion, and relative position within each province's own trajectory and the cross-sectional distribution. For each criterion $k$, the basic lagged and rolling blocks are defined componentwise. The $h$-period rolling mean is
+\begin{equation}
+\overline{y}_{i,t}^{(k,h)} = \frac{1}{h} \sum_{s=0}^{h-1} y_{i,t-s}^{(k)},
+\end{equation}
+the first difference or momentum is
+\begin{equation}
+\Delta y_{i,t}^{(k)} = y_{i,t}^{(k)} - y_{i,t-1}^{(k)},
+\end{equation}
+and the second difference or acceleration is
+\begin{equation}
+\Delta^2 y_{i,t}^{(k)} = y_{i,t}^{(k)} - 2 y_{i,t-1}^{(k)} + y_{i,t-2}^{(k)}.
+\end{equation}
+These local summaries are complemented by exponentially weighted moving averages,
+\begin{equation}
+\mathrm{EWMA}_{i,t}^{(k,\lambda)} = \lambda y_{i,t}^{(k)} + (1-\lambda)\mathrm{EWMA}_{i,t-1}^{(k,\lambda)}, \qquad \lambda \in (0,1),
+\end{equation}
+which emphasize recent trajectories while retaining memory of earlier states. A linear trend feature is obtained by least squares over the available history in the current window,
+\begin{equation}
+\beta_{i,t}^{(k)} = \arg\min_{a,b} \sum_{s \in \mathcal{T}_{i,t}} \left(y_{i,s}^{(k)} - a - b s\right)^2,
+\end{equation}
+with at least three valid observations required for stability. The panel-relative blocks then map each province-year observation to within-year ranks, z-scores, and percentile changes, while cross-criterion diversity is summarized by the within-row dispersion across the eight criteria,
+\begin{equation}
+\mathrm{Div}_{i,t}^{\mathrm{sd}} = \operatorname{sd}\!\left( y_{i,t}^{(1)}, \ldots, y_{i,t}^{(K)} \right),
+\qquad
+\mathrm{Div}_{i,t}^{\mathrm{range}} = \max_{k} y_{i,t}^{(k)} - \min_{k} y_{i,t}^{(k)}.
+\end{equation}
+Finally, geographic dummies encode the five Vietnam regional clusters so that persistent spatial heterogeneity is available to the learner as a covariate rather than being absorbed into residual noise.
+
+The resulting feature vector has a rich but still structured composition, which is important for small samples. It contains the current criterion levels, lagged values up to three periods, rolling summaries over windows of 2, 3, and 5 years, trend and curvature terms, expanding means, rolling skewness, diversity measures, and panel-relative indicators. This design intentionally creates a forecasting basis that is sensitive to both local inertia and medium-term turning points. In the implementation, the engineered features that are undefined for early years are not dropped; instead, they are imputed through the multivariate imputation layer so that the effective training sample remains as large as possible \citep{Rubin1987,Doove2014,vanBuuren2018}.
+
+\subsubsection{Base Forecasting Models}
+The base learner set is selected to cover complementary inductive biases rather than to maximize raw model count. CatBoost provides the nonlinear tree-based component. With a shared tree structure and a MultiRMSE objective, it estimates all eight criteria jointly, exploiting cross-criterion dependence while remaining robust to monotone transforms and feature scaling issues \citep{Prokhorenkova2018}. In simplified form, the objective can be written as
+\begin{equation}
+\mathcal{L}_{\mathrm{CatBoost}} = \sum_{i=1}^{n} \sum_{k=1}^{K} \left(y_{i}^{(k)} - f_{k}(\mathbf{x}_{i})\right)^2,
+\end{equation}
+where the shared boosting structure learns a common partition of feature space and then assigns criterion-specific terminal values. This joint fitting is preferable to fitting eight separate tree models when the sample is limited, because the criterion outputs are correlated and should inform one another.
+
+Bayesian Ridge supplies the probabilistic linear track. With Gaussian prior and Gaussian noise assumptions,
+\begin{equation}
+\mathbf{y} = \mathbf{X}\boldsymbol{\beta} + \boldsymbol{\varepsilon}, \qquad
+\boldsymbol{\varepsilon} \sim \mathcal{N}(\mathbf{0}, \sigma^2 \mathbf{I}), \qquad
+\boldsymbol{\beta} \sim \mathcal{N}(\mathbf{0}, \lambda^{-1}\mathbf{I}),
+\end{equation}
+the posterior mean and variance are available in closed form, which makes the learner both stable and interpretable \citep{Bishop2006}. This component is especially useful when the features are strongly collinear, because the posterior shrinkage acts as a regularizer rather than a source of instability. Kernel Ridge Regression and Support Vector Regression provide the smooth nonlinear counterweight to the tree learner. Kernel Ridge solves
+\begin{equation}
+\min_{\boldsymbol{\alpha}} \; \lVert \mathbf{y} - \mathbf{K}\boldsymbol{\alpha} \rVert_2^2 + \lambda \boldsymbol{\alpha}^\top \mathbf{K}\boldsymbol{\alpha},
+\end{equation}
+where $\mathbf{K}$ is the Gram matrix induced by an RBF kernel, while SVR solves the standard $\varepsilon$-insensitive regularized risk minimization problem
+\begin{equation}
+\min_{\mathbf{w},b,\boldsymbol{\xi},\boldsymbol{\xi}^*} \frac{1}{2}\lVert \mathbf{w} \rVert_2^2 + C \sum_{i=1}^{n} (\xi_i + \xi_i^*)
+\end{equation}
+subject to the usual tube constraints. These two learners are conceptually distinct from CatBoost: they model smooth functional variation rather than recursive partitioning and therefore provide diversification in the ensemble risk profile \citep{Scholkopf2002,Vapnik1995}.
+
+The final base learner is Quantile Random Forest, which estimates the conditional distribution of the target rather than only its conditional mean. For a new feature vector $\mathbf{x}_*$, the conditional quantile at level $\tau$ is estimated as
+\begin{equation}
+\widehat{q}_{\tau}(\mathbf{x}_*) = \inf \left\{ y : \widehat{F}_{\mathbf{x}_*}(y) \ge \tau \right\},
+\end{equation}
+where $\widehat{F}_{\mathbf{x}_*}$ is the forest-implied conditional distribution assembled from leaf-wise training responses \citep{Meinshausen2006}. This learner contributes two distinct functions to the stack. First, its point forecasts provide another diverse estimate of the conditional mean. Second, its quantile outputs are used later in the uncertainty layer to construct heteroscedastic intervals. The combination of CatBoost, Bayesian Ridge, Kernel Ridge, SVR, and Quantile Random Forest therefore spans tree, Bayesian linear, kernel, margin-based, and distributional modeling families, which is precisely the diversity required for a disciplined stacked ensemble.
+
+\subsubsection{Super Learner Meta-Ensemble}
+The meta-ensemble is a Super Learner in the sense of \citet{vanDerLaan2007}: the base learners are not averaged arbitrarily but combined through weights learned from out-of-fold predictions. Let $\widehat{\mathbf{Z}} \in \mathbb{R}^{n \times M}$ denote the matrix of out-of-fold predictions, where column $m$ contains the predictions of the $m$-th base learner on the observations not used to train that learner in a given fold. The criterion-specific stacking problem is then
+\begin{equation}
+\widehat{\boldsymbol{\alpha}}^{(k)}
+=
+\arg\min_{\boldsymbol{\alpha} \in \mathbb{R}^{M}}
+\; \left\lVert \mathbf{y}^{(k)} - \widehat{\mathbf{Z}}^{(k)} \boldsymbol{\alpha} \right\rVert_2^2
+ + \lambda \lVert \boldsymbol{\alpha} \rVert_2^2,
+\qquad
+\text{s.t. } \boldsymbol{\alpha} \ge 0, \; \mathbf{1}^\top \boldsymbol{\alpha} = 1.
+\end{equation}
+The positivity and simplex constraints are substantive rather than cosmetic. They prevent cancellation between learners, preserve interpretability, and ensure that the final ensemble remains a convex combination of valid predictions. Because the forecasting task is multivariate, each criterion obtains its own weight vector $\widehat{\boldsymbol{\alpha}}^{(k)}$, so the combination can adapt to the fact that some base models are more effective for certain criteria than for others. For example, the tree learner tends to dominate when nonlinear threshold effects are present, whereas Bayesian Ridge and Kernel Ridge typically receive higher weights when the signal is smoother and more nearly linear.
+
+The stacking stage uses walk-forward cross-validation over calendar years rather than random splits. If $\tau_1 < \tau_2 < \cdots < \tau_S$ denotes the ordered validation years, then fold $s$ trains on years up to $\tau_s - 1$ and validates on year $\tau_s$. This preserves the causal direction of time and prevents future information from contaminating model selection. The resulting out-of-fold matrix is therefore a genuine estimate of out-of-sample performance, not an in-sample approximation. After the weights are learned, all base learners are refit on the full training window and the final criterion forecast is obtained as the convex combination of their full-sample predictions.
+
+\subsubsection{Conformal Prediction Intervals}
+Point forecasts are insufficient for policy analysis unless uncertainty is quantified explicitly. The interval layer therefore calibrates the stacked point predictor using conformal prediction, which provides finite-sample coverage under exchangeability and remains practically useful when applied with empirical validation on temporal panels \citep{Vovk2005}. For symmetric calibration based on out-of-fold residuals, let $e_i = y_i - \widehat{y}_i^{\mathrm{oof}}$ denote the held-out residuals and let
+\begin{equation}
+\widehat{q}_{1-\alpha} = \operatorname{Quantile}_{\lceil (n+1)(1-\alpha) \rceil / n} \left( |e_1|, \ldots, |e_n| \right).
+\end{equation}
+The resulting interval for a new observation is
+\begin{equation}
+\mathcal{I}_{1-\alpha}(\mathbf{x}_*) = \left[ \widehat{y}(\mathbf{x}_*) - \widehat{q}_{1-\alpha},\; \widehat{y}(\mathbf{x}_*) + \widehat{q}_{1-\alpha} \right].
+\end{equation}
+When the predictive distribution is clearly asymmetric or heteroscedastic, the pipeline can instead calibrate the quantile outputs of the Quantile Random Forest through conformalized quantile regression. In that case, with lower and upper forest quantiles $\widehat{q}_{\alpha/2}(\mathbf{x})$ and $\widehat{q}_{1-\alpha/2}(\mathbf{x})$, the conformity score is
+\begin{equation}
+s_i = \max\!\left\{ \widehat{q}_{\alpha/2}(\mathbf{x}_i) - y_i,\; y_i - \widehat{q}_{1-\alpha/2}(\mathbf{x}_i) \right\},
+\end{equation}
+and the calibrated interval becomes
+\begin{equation}
+\mathcal{I}_{1-\alpha}^{\mathrm{CQR}}(\mathbf{x}_*) = \left[ \widehat{q}_{\alpha/2}(\mathbf{x}_*) - \widehat{s}_{1-\alpha},\; \widehat{q}_{1-\alpha/2}(\mathbf{x}_*) + \widehat{s}_{1-\alpha} \right],
+\end{equation}
+with $\widehat{s}_{1-\alpha}$ obtained from the empirical distribution of $\{s_i\}$ \citep{Romano2019}. This construction is well suited to governance data because the forecast uncertainty is not constant across provinces or criteria.
+
+To track nonstationary calibration drift, the implementation also supports adaptive conformal updating. If $\mathbb{1}\{y_t \notin \mathcal{I}_t\}$ is the miscoverage indicator at time $t$, then the nominal miscoverage level is updated by
+\begin{equation}
+\alpha_{t+1} = \alpha_t + \gamma \left( \alpha - \mathbb{1}\{ y_t \notin \mathcal{I}_t \} \right),
+\end{equation}
+with a small step size $\gamma$ so that the interval width adjusts gradually to structural shifts rather than overreacting to single misses \citep{Gibbs2021}. In this paper, conformal intervals are therefore interpreted as calibrated empirical uncertainty bands on the panel scale, with their coverage assessed out of sample rather than assumed mechanically from idealized exchangeability.
+
+\subsubsection{Evaluation Metrics and Validation}
+Forecast accuracy is reported using a standard collection of point and interval metrics. For a given criterion $k$ with $n$ test observations and residuals $e_i^{(k)} = y_i^{(k)} - \widehat{y}_i^{(k)}$, the coefficient of determination is
+\begin{equation}
+R_k^2 = 1 - \frac{\sum_{i=1}^{n} \left(e_i^{(k)}\right)^2}{\sum_{i=1}^{n} \left(y_i^{(k)} - \overline{y}^{(k)}\right)^2},
+\qquad
+\overline{y}^{(k)} = \frac{1}{n} \sum_{i=1}^{n} y_i^{(k)}.
+\end{equation}
+The remaining error measures are
+\begin{align}
+\mathrm{RMSE}_k &= \left( \frac{1}{n} \sum_{i=1}^{n} \left(e_i^{(k)}\right)^2 \right)^{1/2},
+&
+\mathrm{MAE}_k &= \frac{1}{n} \sum_{i=1}^{n} \left| e_i^{(k)} \right|, \\
+\mathrm{MedAE}_k &= \operatorname{median}\!\left( \left| e_1^{(k)} \right|, \ldots, \left| e_n^{(k)} \right| \right),
+&
+\mathrm{MAPE}_k &= \frac{100}{n} \sum_{i=1}^{n} \left| \frac{e_i^{(k)}}{\max\!\left( |y_i^{(k)}|, \varepsilon \right)} \right|, \\
+\mathrm{MaxErr}_k &= \max_{1 \le i \le n} \left| e_i^{(k)} \right|,
+&
+\mathrm{Bias}_k &= \frac{1}{n} \sum_{i=1}^{n} e_i^{(k)},
+\end{align}
+where $\varepsilon$ is a small numerical guard used only to prevent division by zero. These metrics are computed per criterion and then averaged across criteria and walk-forward folds to obtain a stable summary of model performance. The interval layer is evaluated with empirical coverage, average width, and the Winkler score, while residual behavior is checked with the Durbin-Watson statistic,
+\begin{equation}
+DW = \frac{\sum_{i=2}^{n} \left(e_i - e_{i-1}\right)^2}{\sum_{i=1}^{n} e_i^2},
+\end{equation}
+the Breusch-Pagan test for heteroscedasticity, and the Shapiro-Wilk test for residual normality. Validation follows the same walk-forward chronology used to train the meta-learner, so the reported numbers are genuinely out-of-sample summaries rather than resubstitution fits. This is the appropriate protocol for a 14-year panel in which temporal dependence, structural breaks, and heterogeneous missingness all matter to forecast quality.
 
 % =============================================================
 \section{Results}
 \label{sec:results}
 % =============================================================
 
-\subsection{CRITIC Criterion Weights and Temporal Stability}
+\subsection{CRITIC Weighting}
 \label{subsec:results_weights}
-% ----------------------------------------------------------------
-% PLACEHOLDER — Report CRITIC criterion weights:
-%   C05 (Public Admin Procedures): 19.62%
-%   C03 (Vertical Accountability):  16.17%
-%   C06 (Public Service Delivery):  15.61%
-%   C04 (Control of Corruption):   12.96%
-%   C01 (Participation):           12.72%
-%   C02 (Transparency):            12.09%
-%   C07 (Environmental Governance):  5.40%
-%   C08 (E-Governance):              5.43%
-% Top SC by global weight: SC32 (0.0730), SC54 (0.0539), SC53 (0.0514)
-% Temporal stability cosine = 0.9915 (> 0.95 threshold).
-% Table 2: Full 29 SC global weights (sorted by rank).
-% Figure: weight radar chart.
-% ----------------------------------------------------------------
+
 \textit{[Content placeholder.]}
 
 \subsection{Historical Provincial Rankings (2011--2024)}

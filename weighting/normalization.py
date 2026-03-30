@@ -1,8 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-Normalization Methods for MCDM Weight Calculation
+Normalization Utilities for MCDM
+================================
 
-Provides normalization functions for preparing criteria data before weight calculation.
+Provides specialized normalization techniques for panel data. Includes 
+global min-max normalization which preserves temporal trends and relative 
+magnitudes across annual snapshots.
 """
 
 import numpy as np
@@ -14,24 +17,23 @@ def global_min_max_normalize(
     epsilon: float = 1e-10
 ) -> np.ndarray:
     """
-    Global min-max normalization with epsilon shift.
-    
-    Normalizes each column (criterion) to [0,1] scale using global min/max
-    across all observations. Adds epsilon shift to ensure strictly positive
-    values for logarithmic operations.
-    
+    Perform global min-max normalization with an epsilon shift.
+
+    Normalizes features to a [0, 1] range based on the global minimum and 
+    maximum observed across the entire panel (all entities and years).
+
     Parameters
     ----------
-    X : np.ndarray, shape (n_observations, n_criteria)
-        Input data matrix to normalize.
-    epsilon : float, default=1e-10
-        Small constant added after normalization to avoid exact zeros.
-    
+    X : np.ndarray
+        The input data matrix (samples × features).
+    epsilon : float
+        A small constant added to ensure strictly positive results.
+
     Returns
     -------
-    X_norm : np.ndarray, shape (n_observations, n_criteria)
-        Normalized matrix with values in [epsilon, 1+epsilon].
-    
+    np.ndarray
+        The normalized matrix.
+
     Notes
     -----
     **Why global normalization?**
@@ -92,11 +94,10 @@ def global_min_max_normalize(
 
 class GlobalNormalizer:
     """
-    Stateful normalizer that preserves min/max statistics for consistent
-    transformation of new data.
-    
-    Useful when you need to normalize training data, then apply the same
-    transformation to test/forecast data.
+    Stateful min-max normalizer for panel data.
+
+    Stores the global search space (min/max) during fitting to ensure 
+    consistent transformations of future or holdout data.
     
     Parameters
     ----------

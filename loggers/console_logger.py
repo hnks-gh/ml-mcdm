@@ -1,18 +1,17 @@
 # -*- coding: utf-8 -*-
 """
-Professional Console Logger for ML-MCDM Pipeline
-=================================================
+Professional Console Logger for ML-MCDM Pipeline monitoring.
 
-Provides concise, colour-coded, structured output designed specifically
-for real-time monitoring of pipeline execution.  All console output is
-routed through this single class so that monitoring is consistent.
+This module provides the `ConsoleLogger` class, designed for high-visibility, 
+color-coded output during pipeline execution. It supports nested phases, 
+structured tables, and final executive summaries.
 
-Design goals
-------------
-* One-line status per step (no wall of text)
-* Phase banners with timing
-* Compact metric / table display
-* Final run summary replacing old ``print_results()``
+Monitoring features
+-------------------
+- **Phase Banners**: Visual clearings with timing and progress indicators.
+- **Metric Tables**: Compact display of KPIs and provincial rankings.
+- **Status Indicators**: Diverging colors for info, success, warning, and error.
+- **Run Summaries**: Holistic performance overviews replacing legacy print routines.
 """
 
 from __future__ import annotations
@@ -31,15 +30,18 @@ _LINE_W = 70
 
 
 class ConsoleLogger:
-    """Structured, professional console logger for monitoring pipeline runs.
+    """
+    Structured console logger for real-time pipeline monitoring.
 
-    .. note::
+    Synchronizes output via threading locks to ensure line atomicity 
+    across multi-threaded operations.
 
-       The ``_write`` method acquires a :class:`threading.Lock` before
-       writing to ``sys.stdout``, making concurrent calls from multiple
-       threads safe.  Individual *lines* are atomic, though multi-line
-       blocks (e.g. banners) may still interleave with other thread output
-       between lines.
+    Notes
+    -----
+    The `_write` method acquires a `threading.Lock` before writing to 
+    `sys.stdout`. While individual lines are atomic, multi-line blocks 
+    may still interleave if multiple threads write simultaneously between 
+    line calls.
     """
 
     def __init__(self, use_color: Optional[bool] = None):
@@ -73,7 +75,16 @@ class ConsoleLogger:
     # ------------------------------------------------------------------
 
     def banner(self, title: str, subtitle: str = '') -> None:
-        """Print a prominent banner (e.g. at startup)."""
+        """
+        Print a prominent visual banner.
+
+        Parameters
+        ----------
+        title : str
+            The primary banner heading.
+        subtitle : str, optional
+            A secondary descriptive line.
+        """
         self._write('')
         self._write(self._c('=' * _LINE_W, Colors.BOLD, Colors.BLUE))
         self._write(self._c(f'  {title}', Colors.BOLD, Colors.BRIGHT_WHITE))
@@ -92,13 +103,25 @@ class ConsoleLogger:
     @contextmanager
     def phase(self, name: str, number: int = None,
               total_phases: int = 7) -> Generator[_PhaseCtx, None, None]:
-        """Context manager that prints phase start / end with timing.
+        """
+        Context manager for a pipeline execution phase.
 
-        Example::
+        Prints a start banner, tracks elapsed time, and prints a success/failure 
+        summary upon exit.
 
-            with console.phase('Data Loading') as p:
-                data = load(...)
-                p.detail(f'{len(data)} records loaded')
+        Parameters
+        ----------
+        name : str
+            The human-readable name of the phase.
+        number : int, optional
+            The sequence number (1-indexed). Defaults to stack size + 1.
+        total_phases : int, default=7
+            The total number of phases in the run.
+
+        Yields
+        ------
+        _PhaseCtx
+            A lightweight proxy for logging detail within the phase.
         """
         if number is None:
             number = len(self._all_phases) + 1
@@ -164,7 +187,20 @@ class ConsoleLogger:
 
     def table(self, headers: Sequence[str], rows: Sequence[Sequence[str]],
               col_widths: Optional[Sequence[int]] = None, indent: int = 6) -> None:
-        """Print a compact fixed-width table."""
+        """
+        Print a formatted fixed-width table.
+
+        Parameters
+        ----------
+        headers : Sequence[str]
+            List of column headings.
+        rows : Sequence[Sequence[str]]
+            List of data rows.
+        col_widths : Sequence[int], optional
+            Explicit widths for each column.
+        indent : int, default=6
+            Number of spaces to indent the entire table.
+        """
         if col_widths is None:
             col_widths = [max(len(h) + 2, 12) for h in headers]
         pad = ' ' * indent
@@ -202,7 +238,17 @@ class ConsoleLogger:
     # ------------------------------------------------------------------
 
     def show_run_summary(self, result: Any) -> None:
-        """Print an end-of-run summary covering every pipeline phase."""
+        """
+        Print an exhaustive end-of-run executive summary.
+
+        Covers data dimensions, top rankings, concordance metrics, 
+        sensitivity analysis, and forecasting performance.
+
+        Parameters
+        ----------
+        result : ResultPackage
+            The integrated results object from the pipeline orchestrator.
+        """
         import numpy as np
 
         self._write('')
@@ -262,7 +308,14 @@ class ConsoleLogger:
     # ------------------------------------------------------------------
 
     def show_completion(self, output_dir: str = 'outputs') -> None:
-        """Print the final 'analysis complete' box."""
+        """
+        Print the final 'Analysis Complete' success box.
+
+        Parameters
+        ----------
+        output_dir : str, default='outputs'
+            The directory where artifacts were saved.
+        """
         self._write('')
         self._write(self._c('=' * _LINE_W, Colors.BOLD, Colors.GREEN))
         self._write(self._c('  ANALYSIS COMPLETE', Colors.BOLD, Colors.BRIGHT_GREEN))
@@ -280,7 +333,12 @@ class ConsoleLogger:
 # ------------------------------------------------------------------
 
 class _PhaseCtx:
-    """Lightweight proxy for logging detail inside a phase block."""
+    """
+    Lightweight proxy for logging detail inside a phase context.
+
+    Delegates to the parent ConsoleLogger while maintaining phase-specific 
+    metric state.
+    """
 
     def __init__(self, logger: ConsoleLogger, metrics: PhaseMetrics):
         self._logger = logger

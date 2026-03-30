@@ -1,38 +1,28 @@
-# -*- coding: utf-8 -*-
 """
-Multi-Task Elastic Net Forecaster
-==================================
+Multi-Task Elastic Net and Bayesian Forecasters.
 
-Joint linear forecaster via ``MultiTaskElasticNetCV`` with automatic
-regularisation selection and ``BayesianRidge + MultiOutputRegressor`` fallback.
+This module provides linear forecasting models optimized for multi-target 
+panel data. The primary model is a `MultiTaskElasticNetCV` which enforces 
+joint sparsity across targets, with an automatic fallback to 
+`BayesianRidge` if the primary solver fails.
 
-Design rationale vs. BayesianRidge + MultiOutputRegressor
----------------------------------------------------------
-*  **Joint sparsity (Group Lasso)** — ``MultiTaskElasticNet`` enforces a
-   shared sparsity pattern across all criterion composites (C01–C08) via
-   Group Lasso penalty.  If a feature is predictive for *any* criterion,
-   it is retained for *all*, explicitly exploiting cross-criteria correlation.
-   ``MultiOutputRegressor`` trains N independent models: no feature sharing.
-
-*  **Automatic regularisation** — ``MultiTaskElasticNetCV`` selects ``alpha``
-   (regularisation strength) and ``l1_ratio`` (Elastic Net mixing) via
-   cross-validation, removing two previously hand-tuned hyperparameters.
-
-*  **Uncertainty** — ``MultiTaskElasticNet`` is a point estimator.  Per-output
-   aleatoric uncertainty is calibrated as the root-mean-squared training
-   residual per criterion (``sigma_j``), clipped at 1e-6 for strict
-   positivity.  The conformal stage in ``UnifiedForecaster`` replaces this
-   with distribution-free coverage-guaranteed intervals downstream.
-
-*  **Fallback** — when ``MultiTaskElasticNetCV`` fails (e.g. numeric issues
-   on very small folds), the model falls back to
-   ``BayesianRidge + MultiOutputRegressor``, which provides exact Bayesian
-   posterior standard deviations via ``return_std=True``.
+Key Features
+------------
+- **Joint Sparsity**: `MultiTaskElasticNetCV` uses Group Lasso to select 
+  features that are predictive across all criteria simultaneously.
+- **Automatic Regularization**: Hyperparameters are selected via internal 
+  cross-validation, reducing manual tuning requirements.
+- **Uncertainty Quantification**: Estimates aleatoric noise via training 
+  residuals (ElasticNet) or exact posterior predictive variance (Bayesian).
+- **Graceful Fallback**: Automatically switches to independent Bayesian 
+  Ridge models if multi-task optimization encounters numerical issues.
 
 References
 ----------
-Obozinski et al. (2010). "Joint covariate selection and joint subspace
-selection for multiple classification problems." *Statistics and Computing* 20.
+- Obozinski et al. (2010). "Joint covariate selection and joint subspace 
+  selection for multiple classification problems." Statistics and Computing 20.
+- Zou & Hastie (2005). "Regularization and variable selection via the 
+  elastic net." JRSSB.
 """
 
 import numpy as np
@@ -92,6 +82,30 @@ class BayesianForecaster(BaseForecaster):
         cv_folds: int = 5,
         l1_ratios: Optional[List[float]] = None,
     ):
+        """
+        Initialize the Bayesian forecaster.
+
+        Parameters
+        ----------
+        alpha_1 : float, default=1e-6
+            Shape parameter for the Gamma distribution prior over the noise 
+            precision.
+        alpha_2 : float, default=1e-6
+            Rate parameter for the Gamma distribution prior over the noise 
+            precision.
+        lambda_1 : float, default=1e-6
+            Shape parameter for the Gamma distribution prior over the weights 
+            precision.
+        lambda_2 : float, default=1e-6
+            Rate parameter for the Gamma distribution prior over the weights 
+            precision.
+        max_iter : int, default=300
+            Maximum iterations for the coordinate descent solver.
+        cv_folds : int, default=5
+            Number of folds for internal cross-validation.
+        l1_ratios : List[float], optional
+            Grid of L1 mixing parameters to search.
+        """
         self.alpha_1 = alpha_1
         self.alpha_2 = alpha_2
         self.lambda_1 = lambda_1

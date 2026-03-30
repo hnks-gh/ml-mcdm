@@ -1,66 +1,34 @@
-# -*- coding: utf-8 -*-
 """
-ML-MCDM: Machine Learning Enhanced Multi-Criteria Decision Making
-=================================================================
+ML-MCDM: Machine Learning Enhanced Multi-Criteria Decision Making.
 
-A comprehensive framework for MCDM analysis with ML-powered forecasting.
+This hierarchical framework integrates traditional MCDM methods with 
+advanced Machine Learning forecasting and Evidential Reasoning (ER) 
+aggregation. It provides a multi-stage pipeline for assessing and 
+predicting regional performance metrics (e.g., provincial rankings).
 
 Architecture
 ------------
-Traditional MCDM + Evidential Reasoning (Yang & Xu, 2002) two-stage hierarchy:
-  Stage 1: Within each of 8 criteria, combine 6 traditional method scores via ER
-  Stage 2: Combine 8 criterion beliefs via ER with criterion weights
+The framework implements a two-stage evidential reasoning hierarchy:
+1. **Stage 1**: At the subcriteria level, 6 traditional MCDM methods 
+   (TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS, SAW) are combined via ER 
+   to generate criteria-level belief distributions.
+2. **Stage 2**: At the final level, 8 criteria are aggregated via ER 
+   using specific criterion weights to produce the overall ranking.
 
-Package Structure
------------------
-ml-mcdm/
-├── weighting/          # Criterion weighting methods
-│   ├── critic.py       # CRITIC weight calculation (single-level)
-│   ├── critic_weighting.py  # Two-level deterministic CRITIC pipeline
-│   ├── adaptive.py     # NaN-aware adaptive weight utility
-│   ├── normalization.py
-│   ├── bootstrap.py
-│   └── validation.py
-│
-├── ranking/
-│   ├── hierarchical_pipeline.py  # Unified ranking orchestrator
-│   ├── topsis.py       # TOPSIS
-│   ├── vikor.py        # VIKOR
-│   ├── promethee.py    # PROMETHEE II
-│   ├── copras.py       # COPRAS
-│   ├── edas.py         # EDAS
-│   ├── saw.py          # Simple Additive Weighting (ensemble surrogate)
-│   └── evidential_reasoning/  # ER aggregation
-│       ├── base.py            # BeliefDistribution, ER engine
-│       └── hierarchical_er.py # Two-stage hierarchical ER
-│
-├── forecasting/        # ML forecasting methods
-│   ├── base.py
-│   ├── features.py        # Feature engineering
-│   ├── unified.py         # Super Learner ensemble
-│   ├── conformal.py       # Conformal prediction intervals
-│   ├── catboost_forecaster.py
-│   ├── bayesian.py
-│   └── quantile_forest.py
-│
-├── analysis/           # Validation & sensitivity
-│   ├── sensitivity.py  # Monte Carlo sensitivity analysis
-│   └── validation.py   # Cross-validation, bootstrap
-│
-└── output/             # Result export + visualization
-    ├── csv_writer.py
-    ├── report_writer.py
-    ├── orchestrator.py
-    └── visualization/  # Publication-quality figures
+Packages
+--------
+- **`weighting`**: Statistical and deterministic weight calculation (CRITIC).
+- **`ranking`**: Implementation of MCDM methods and the ER engine.
+- **`forecasting`**: ML ensemble (Super Learner) for predictive analytics.
+- **`analysis`**: Validation, bootstrap, and sensitivity diagnostics.
+- **`output`**: Result orchestration, reporting, and publication-quality 
+  visualizations.
 
-Quick Start
------------
->>> from ml_mcdm.config import Config
->>> from ml_mcdm.pipeline import run_pipeline
->>> result = run_pipeline('data/data.csv', Config())
->>> print(result.summary())
-
-For detailed usage, see individual module documentation.
+Usage
+-----
+>>> from ml_mcdm import Config, run_pipeline
+>>> result = run_pipeline('data/provinces.csv', Config())
+>>> result.summary()
 """
 
 try:

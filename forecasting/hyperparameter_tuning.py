@@ -1,10 +1,20 @@
-# -*- coding: utf-8 -*-
 """
-Hyperparameter Tuning Module
-=============================
+Hyperparameter Tuning for Ensemble Models.
 
-Provides the `EnsembleHyperparameterOptimizer` class to run Optuna TPE search
-for base models: CatBoost, KernelRidge, and QuantileRF.
+This module provides the `EnsembleHyperparameterOptimizer` class, which uses 
+Optuna to search for optimal hyperparameters for the base models in the 
+forecasting ensemble (CatBoost, KernelRidge, and QuantileRF).
+
+Key Features
+------------
+- **Bayesian Optimization**: Uses Tree-structured Parzen Estimator (TPE) 
+  samplers for efficient search space exploration.
+- **Early Pruning**: Implements Median and Hyperband pruners to stop 
+  unpromising trials early based on cross-validation performance.
+- **Temporal Integrity**: Ensures that tuning cross-validation respects the 
+  yearly panel structure of the data.
+- **Persistence**: Supports saving and loading optimized parameters to 
+  JSON for reproducible production runs.
 """
 
 import json
@@ -34,14 +44,18 @@ class EnsembleHyperparameterOptimizer:
 
     def __init__(self, config, cv_splitter, random_state: int = 42):
         """
+        Initialize the ensemble hyperparameter optimizer.
+
         Parameters
         ----------
         config : ForecastConfig
-            Configuration containing hp_tune_n_trials, hp_tune_timeout_seconds.
+            Configuration object containing tuning settings such as 
+            `hp_tune_n_trials` and `hp_tune_timeout_seconds`.
         cv_splitter : object
-            Cross-validation splitter (e.g., PanelWalkForwardCV) for evaluation.
-        random_state : int
-            Random seed for reproducibility.
+            Cross-validation splitter (e.g., `PanelWalkForwardCV`) used to 
+            evaluate candidate parameters.
+        random_state : int, default=42
+            Seed for reproducible sampling and initialization.
         """
         self.config = config
         self.cv_splitter = cv_splitter

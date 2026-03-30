@@ -1,10 +1,22 @@
-# -*- coding: utf-8 -*-
 """
-Visualization Shared Utilities
-==============================
+Visualization Infrastructure and Shared Utilities.
 
-Constants (palettes, colormaps), styling helper, and ``BasePlotter``
-base class shared by all phase-specific plotters.
+This module provides the foundational components for all visualization 
+tasks in the ML-MCDM pipeline. It defines a centralized design system 
+(colors, fonts, styles) and the `BasePlotter` abstract class to ensure 
+visual consistency across weighting, ranking, and forecasting plots.
+
+Key Features
+------------
+- **Design Tokens**: Standardized color palettes (`PALETTE`) and colormaps 
+  (`GRADIENT_CMAPS`) for categorical and sequential data.
+- **Global Styling**: The `apply_style` function configures Matplotlib 
+  rcParams for high-DPI, publication-ready outputs.
+- **Automated Watermarking**: `BasePlotter` injects execution metadata 
+  (timestamps, config hashes, git commits) into every saved figure to 
+  guarantee auditability.
+- **Robust Persistence**: Implements fail-safe figure saving with 
+  automatic DPI fallback and error logging.
 """
 
 from __future__ import annotations
@@ -12,7 +24,7 @@ from __future__ import annotations
 import logging
 import numpy as np
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict, Any
 
 try:
     import matplotlib
@@ -79,7 +91,13 @@ GRADIENT_CMAPS = {
 
 
 def apply_style() -> None:
-    """Apply a consistent publication style to all figures."""
+    """
+    Apply a consistent publication style to all figures.
+
+    Configures global `matplotlib.rcParams` to ensure high-quality, 
+    consistent font choice, grid visibility, and layout padding. 
+    Does nothing if Matplotlib is not installed.
+    """
     if not HAS_MATPLOTLIB:
         return
     plt.rcParams.update({
@@ -117,21 +135,45 @@ def apply_style() -> None:
 
 class BasePlotter:
     """
-    Shared functionality for all plotter subclasses.
+    Abstract foundation for all phase-specific plotters.
 
-    Subclasses call ``self._save(fig, name)`` and ``self._truncate(label)``
-    without duplicating logic.
+    Provides core utilities for directory management, metadata watermarking, 
+    and fail-safe figure persistence.
+
+    Attributes
+    ----------
+    output_dir : Path
+        The directory where generated figures are saved.
+    dpi : int
+        The resolution for saved PNG files.
+    figsize : Tuple[int, int]
+        Default dimensions for new figures.
+    generated_figures : List[str]
+        A running inventory of all files successfully saved to disk.
     """
 
     def __init__(self,
                  output_dir: str = 'output/result/figures',
                  dpi: int = 300,
                  figsize: Tuple[int, int] = (14, 9)):
+        """
+        Initialize the base plotter.
+
+        Parameters
+        ----------
+        output_dir : str, default='output/result/figures'
+            Target path for plot storage. Created if missing.
+        dpi : int, default=300
+            Resolution for high-quality export.
+        figsize : Tuple[int, int], default=(14, 9)
+            Default (width, height) in inches.
+        """
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.dpi = dpi
         self.figsize = figsize
         self.generated_figures: List[str] = []
+        self._metadata: Optional[Dict[str, str]] = None
 
         if HAS_MATPLOTLIB:
             apply_style()
@@ -140,9 +182,48 @@ class BasePlotter:
     # Helpers
     # ------------------------------------------------------------------
 
+    def set_metadata(self, metadata: Dict[str, str]) -> None:
+        """
+        Set execution metadata for figure watermarking.
+
+        Parameters
+        ----------
+        metadata : Dict[str, str]
+            Dictionary containing 'config_hash', 'git_commit', and 
+            other audit identifiers.
+        """
+        self._metadata = metadata
+
     def _save(self, fig, name: str) -> Optional[str]:
-        """Save *fig* to *output_dir/name*, record it, close it."""
+        """
+        Save a figure to disk with automatic watermarking.
+
+        Implements a two-tier saving strategy: first at target DPI, then 
+        at 150 DPI if the first attempt fails (e.g., due to memory 
+        constraints or complex SVG rendering).
+
+        Parameters
+        ----------
+        fig : matplotlib.figure.Figure
+            The figure object to save.
+        name : str
+            The filename (including extension, e.g., 'rank_heatmap.png').
+
+        Returns
+        -------
+        str, optional
+            The absolute path to the saved file, or None if saving failed.
+        """
         try:
+            if self._metadata and hasattr(fig, 'text'):
+                from datetime import datetime
+                ts = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                cfg_hash = self._metadata.get('config_hash', 'N/A')
+                git_commit = self._metadata.get('git_commit', 'N/A')
+                watermark = f"Timestamp: {ts} | Config: {cfg_hash} | Commit: {git_commit}"
+                fig.text(0.99, 0.01, watermark, 
+                         fontsize=6, color='gray', ha='right', va='bottom', alpha=0.6)
+                         
             path = self.output_dir / name
             fig.savefig(path, dpi=self.dpi, bbox_inches='tight',
                         facecolor='white', edgecolor='none', format='png')
@@ -166,9 +247,32 @@ class BasePlotter:
 
     @staticmethod
     def _truncate(label: str, n: int = 18) -> str:
+        """
+        Truncate long strings with an ellipsis for plotting.
+
+        Parameters
+        ----------
+        label : str
+            The input string.
+        n : int, default=18
+            The maximum number of characters.
+
+        Returns
+        -------
+        str
+            The truncated string.
+        """
         return label if len(label) <= n else label[:n - 1] + '…'
 
     def get_generated_figures(self) -> List[str]:
+        """
+        Get the list of all files saved by this plotter.
+
+        Returns
+        -------
+        List[str]
+            Absolute paths to saved figures.
+        """
         return list(self.generated_figures)
 
 

@@ -1,10 +1,9 @@
-# -*- coding: utf-8 -*-
 """
-Shared Context, Metrics, and Color Utilities for ML-MCDM Logging
-================================================================
+Logging Context, Metrics, and Terminal Styling Utilities.
 
-Thread-safe context tracking, phase-timing metrics, and ANSI color
-helpers used by both the console and debug loggers.
+This module provides shared infrastructure for the ML-MCDM logging system, 
+including thread-safe context tracking, phase-timing metrics, and ANSI 
+escape sequences for professional console output.
 """
 
 import os
@@ -21,7 +20,12 @@ from typing import Any, Dict, Optional
 # =============================================================================
 
 class Colors:
-    """ANSI escape sequences for terminal styling."""
+    """
+    ANSI escape sequences for terminal styling and color-coded output.
+
+    Provides a comprehensive set of foreground, background, and text 
+    formatting codes (bold, dim, etc.) compatible with modern terminals.
+    """
 
     RESET = "\033[0m"
     BOLD = "\033[1m"
@@ -58,15 +62,28 @@ class Colors:
 
     @classmethod
     def strip(cls, text: str) -> str:
-        """Remove all ANSI codes from *text*."""
+        """
+        Remove all ANSI escape codes from a string.
+
+        Parameters
+        ----------
+        text : str
+            The formatted string to clean.
+
+        Returns
+        -------
+        str
+            The plain text representation.
+        """
         return cls.ANSI_PATTERN.sub('', text)
 
     @classmethod
     def _enable_windows_color(cls) -> None:
-        """Enable ANSI virtual terminal processing on Windows (call once at startup).
+        """
+        Enable ANSI virtual terminal processing on Windows systems.
 
-        Separated from :meth:`supports_color` so that the query method does not
-        mutate global console state as a side effect.
+        This should be called once at application startup to ensure colors 
+        are rendered correctly in `cmd.exe` or PowerShell.
         """
         if sys.platform != "win32":
             return
@@ -79,7 +96,17 @@ class Colors:
 
     @classmethod
     def supports_color(cls) -> bool:
-        """Return ``True`` if the hosting terminal supports ANSI colours."""
+        """
+        Determine if the current environment supports ANSI colors.
+
+        Checks environment variables (`NO_COLOR`, `FORCE_COLOR`), 
+        TTY status, and OS-specific capabilities.
+
+        Returns
+        -------
+        bool
+            True if color output is supported.
+        """
         if os.getenv("NO_COLOR"):
             return False
         if os.getenv("FORCE_COLOR"):
@@ -102,7 +129,13 @@ class Colors:
 # =============================================================================
 
 class LogContext:
-    """Thread-local key/value store for contextual log annotations."""
+    """
+    Thread-local storage for contextual log annotations.
+
+    Allows the logging system to inject metadata (e.g., current phase, 
+    province, or year) into log messages without passing context 
+    explicitly through every function call.
+    """
 
     _local = threading.local()
 
@@ -131,7 +164,26 @@ class LogContext:
 
 @dataclass
 class PhaseMetrics:
-    """Timing and step-count information for a single pipeline phase."""
+    """
+    Performance and progress metrics for a single pipeline phase.
+
+    Attributes
+    ----------
+    name : str
+        The human-readable name of the phase.
+    start_time : float
+        Unix timestamp of when the phase began.
+    end_time : float, optional
+        Unix timestamp of when the phase ended.
+    status : str, default='running'
+        Current operational status ('running', 'completed', 'failed').
+    steps_total : int, default=0
+        Total number of discrete steps expected in this phase.
+    steps_completed : int, default=0
+        Number of steps completed so far.
+    sub_metrics : Dict[str, Any]
+        Arbiter store for phase-specific performance data.
+    """
 
     name: str
     start_time: float

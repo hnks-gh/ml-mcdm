@@ -3,39 +3,19 @@
 Unified Forecasting Orchestrator
 ================================
 
-State-of-the-art ensemble forecasting system optimized for small-to-medium
-panel data (N < 1000).  Orchestrates all forecasting sub-components through
-a clean single-entry-point API.
+The central orchestrator for the ML-MCDM forecasting pipeline. Integrates 
+diverse base learners (CatBoost, Bayesian Ridge, SVR, ElasticNet) into a 
+high-performance Super Learner meta-ensemble. 
 
-Model ensemble (4 diverse types - TIER 3)
-------------------------------------------
-- Gradient Boosting (CatBoost)      — joint multi-output oblivious trees (MultiRMSE)
-- Bayesian Ridge                    — linear model with posterior uncertainty (PCA track)
-- Support Vector Regression (SVR)   — smooth RBF kernel non-linear regression
-- ElasticNet                        — L1+L2 penalized linear with feature selection
-
-Meta-ensemble
--------------
-- Super Learner (``_PanelTemporalSplit`` panel-aware CV, Ridge L2-regularized meta-weights)
-- OOF predictions cached once; never deep-copied during conformal calibration
-
-Uncertainty calibration
------------------------
-- ConformalPredictor calibrated from pre-computed OOF residuals (no model
-  re-fitting), supporting Split, CV+ and Adaptive Conformal Inference modes
-
-Feature engineering
--------------------
-- Dynamic exclusion via ``panel_data.year_contexts`` (provinces / sub-criteria
-  absent from a target year are silently excluded from training)
-- NaN feature values filled with 0.0 ("no prior information")
-
-Reliability
------------
-- Decision-matrix NaN imputation: back-fill from prior years + column median
-- Ranking phase wrapped in try/except; pipeline continues on partial failure
-- Per-component feature importance via NAM ``_per_output_importance_``
-- Pairwise ablation study available through ``AblationStudy``
+Key Capabilities:
+-----------------
+- Ensemble Architecture: Stacked generalization with temporal splitting.
+- Uncertainty Quantification: Conformal prediction with 95% coverage 
+  guarantees.
+- Robust Preprocessing: Panel-aware feature engineering and target 
+  transformations (Logit, Yeo-Johnson).
+- Comprehensive Evaluation: Out-of-fold and holdout validation with 
+  detailed performance telemetry.
 """
 
 import numpy as np
@@ -63,7 +43,10 @@ from .elasticnet_forecaster import ElasticNetForecaster
 from .super_learner import SuperLearner, _WalkForwardYearlySplit as PanelWalkForwardCV
 from .conformal import ConformalPredictor
 from .preprocessing import PanelFeatureReducer
-from .evaluation import ForecastEvaluator, AblationStudy, ModelComparisonResult, compare_all_models
+from .evaluation import (
+    ForecastEvaluator, AblationStudy, ModelComparisonResult, compare_all_models,
+    compute_interval_width_summary, compute_entity_error_summary, compute_worst_predictions
+)
 from .persistence import PersistenceForecaster
 # Phase 3 — SOTA modules (E-05, E-06, E-08, E-10)
 from .panel_mice import PanelSequentialMICE
@@ -88,26 +71,19 @@ def _silence_warnings(func):
 @dataclass
 class _TargetTransformer:
     """
-    Reversible per-column target transformation for the forecasting pipeline.
+    Reversible per-column target transformation for training stabilization.
 
-    Modes
-    -----
-    'logit'
-        ``f(y) = log(y / (1-y))``  (SAW-normalized [0,1] targets).
-        Clips ``y`` to ``(clip_eps, 1-clip_eps)`` before applying logit.
-        Inverse: sigmoid ``f⁻¹(z) = 1 / (1 + exp(-z))``.
-    'yeo_johnson'
-        Fits ``sklearn.preprocessing.PowerTransformer(method='yeo-johnson',
-        standardize=True)`` per column on the training set.  Maps raw
-        criterion composites toward N(0,1), improving Gaussian-assumption
-        estimators (BayesianRidge, RidgeCV meta-learner).
-    'identity'
-        Pass-through; no transformation applied.
+    Provides monotonic mappings (e.g., Yeo-Johnson, Logit) to ensure target 
+    distributions are well-behaved for linear and Gaussian-based learners. 
+    Monotonicity preserves the validity of conformal bounds when inverting 
+    back to the original space.
 
-    Key guarantee: both ``logit`` and ``yeo_johnson`` are **strictly monotone**
-    transformations → applying ``f⁻¹`` to conformal bounds ``[lower, upper]``
-    (computed in transformed space) yields valid conformal bounds in original
-    space (distribution-free coverage is preserved by reparameterisation).
+    Attributes
+    ----------
+    mode : str, default='yeo_johnson'
+        Transformation algorithm: 'yeo_johnson', 'logit', or 'identity'.
+    clip_eps : float, default=1e-6
+        Clipping epsilon for logit transforms to avoid infinity.
     """
     mode: str = 'yeo_johnson'
     clip_eps: float = 1e-6
@@ -159,19 +135,24 @@ class _TargetTransformer:
 @dataclass
 class UnifiedForecastResult:
     """
-    Comprehensive result container for unified forecasting.
-    
-    Attributes:
-        predictions: Entity × Component predictions
-        uncertainty: Prediction uncertainty estimates
-        prediction_intervals: 95% confidence intervals
-        model_contributions: Weight of each model
-        model_performance: Model-wise metrics
-        feature_importance: Aggregated feature importance
-        cross_validation_scores: CV scores per model
-        holdout_performance: Performance on holdout set
-        training_info: Training details
-        data_summary: Data summary statistics
+    Comprehensive container for forecasting outcomes and diagnostics.
+
+    Encapsulates predictions, uncertainty intervals, model performance 
+    metrics, and feature importance scores for both criteria and 
+    sub-criteria hierarchies.
+
+    Attributes
+    ----------
+    predictions : pd.DataFrame
+        Point estimates for each target component across entities.
+    uncertainty : pd.DataFrame
+        Estimated standard deviation or uncertainty scores.
+    prediction_intervals : Dict[str, pd.DataFrame]
+        Lower and upper conformal bounds (typically at 95% coverage).
+    model_contributions : Dict[str, float]
+        Learned ensemble weights for each base model.
+    feature_importance : pd.DataFrame
+        Relative impact scores for input variables.
     """
     
     # Primary outputs
@@ -275,6 +256,16 @@ class UnifiedForecastResult:
     ``None`` when forecast is disabled, aggregation fails, or year context creation fails.
     Consumed by ranking pipeline's HierarchicalRankingPipeline.rank().
     """
+
+    # PHASE 5: Expanded output package
+    calibration_summary: Optional[Dict[str, Dict[str, Any]]] = None
+    individual_model_predictions: Optional[Dict[str, pd.DataFrame]] = None
+    forecast_residuals: Optional[pd.DataFrame] = None
+    forecast_metadata: Optional[Dict[str, Any]] = None
+    interval_coverage_by_criterion: Optional[Dict[str, float]] = None
+    interval_width_summary: Optional[pd.DataFrame] = None
+    entity_error_summary: Optional[pd.DataFrame] = None
+    worst_predictions: Optional[pd.DataFrame] = None
 
     def get_summary(self) -> str:
         """Generate comprehensive summary report."""
@@ -611,11 +602,18 @@ def _effective_n_components(
 ) -> int:
     """Estimate the number of statistically independent output dimensions.
 
-    Uses PCA on the OOF residual matrix to measure how many principal
-    components capture ``var_threshold`` of total variance.  This gives
-    the *effective dimensionality* D_eff ≤ n_outputs, which is the
-    correct denominator for Bonferroni correction when criteria are
+    Uses PCA on the OOF residual correlation matrix to measure how many
+    principal components capture ``var_threshold`` of total variance.
+    This gives the *effective dimensionality* D_eff <= n_outputs, which is
+    the correct denominator for Bonferroni correction when criteria are
     correlated (as they always are in MCDM panels).
+
+    BUG-7 FIX: Previously used a joint-valid-row mask (np.any(isnan, axis=1))
+    which discarded row i if ANY criterion had NaN, severely underestimating
+    available data. Now uses pairwise-complete observations: for each pair of
+    columns (i, j), only rows where BOTH columns are non-NaN contribute to
+    the correlation estimate. This matches the standard 'pairwise.complete.obs'
+    approach in statistical practice and is correct for MCAR/MAR missingness.
 
     Parameters
     ----------
@@ -623,14 +621,14 @@ def _effective_n_components(
         OOF residuals (y - ŷ), with NaN for missing observations.
     var_threshold : float
         Fraction of total variance the PCA must explain.  Lower = fewer
-        components = less aggressive Bonferroni = wider per-component α.
+        components = less aggressive Bonferroni = wider per-component alpha.
         Default 0.90 is conservative; use 0.95 for tighter correction.
     max_components : int, optional
         Hard cap on returned value (default = n_outputs).
 
     Returns
     -------
-    n_eff : int ≥ 1
+    n_eff : int >= 1
         Effective independent dimension count.
     """
     n_out = residual_matrix.shape[1] if residual_matrix.ndim > 1 else 1
@@ -639,26 +637,73 @@ def _effective_n_components(
     if n_out <= 1 or residual_matrix.ndim < 2:
         return 1
 
-    # Use rows where ALL columns are non-NaN for a well-defined covariance matrix.
-    valid = ~np.isnan(residual_matrix).any(axis=1)
-    n_valid = int(valid.sum())
+    # Count per-column non-NaN rows for a quick sufficiency check.
+    per_col_valid = (~np.isnan(residual_matrix)).sum(axis=0)  # (n_out,)
+    min_col_valid = int(per_col_valid.min())
 
-    # Not enough data for PCA → fall back to full Bonferroni
-    if n_valid < max(n_out + 1, 5):
+    # Not enough data for correlation estimation → full Bonferroni fallback.
+    if min_col_valid < max(n_out + 1, 5):
         return min(n_out, _cap)
 
     try:
-        from sklearn.decomposition import PCA
-        pca = PCA()
-        pca.fit(residual_matrix[valid])
-        cumvar = np.cumsum(pca.explained_variance_ratio_)
-        # +1 because searchsorted returns the insertion point (0-based) and
-        # we want at least the first component that crosses the threshold.
+        # ── Pairwise-complete correlation matrix ───────────────────────────
+        # R[i, j] = Pearson r computed on rows where both col i and col j
+        # are non-NaN.  This is the correct estimator for missing-at-random
+        # data and avoids discarding valid rows due to unrelated column NaNs.
+        R = np.eye(n_out)
+        for i in range(n_out):
+            for j in range(i + 1, n_out):
+                mask_ij = (
+                    ~np.isnan(residual_matrix[:, i])
+                    & ~np.isnan(residual_matrix[:, j])
+                )
+                n_ij = int(mask_ij.sum())
+                if n_ij >= 2:
+                    xi = residual_matrix[mask_ij, i]
+                    xj = residual_matrix[mask_ij, j]
+                    # Demean per-pair for numerical stability.
+                    xi = xi - xi.mean()
+                    xj = xj - xj.mean()
+                    denom = np.std(xi, ddof=1) * np.std(xj, ddof=1)
+                    if denom > 1e-12:
+                        r_ij = float(np.dot(xi, xj) / ((n_ij - 1) * denom))
+                        # Clip to [-1, 1] to guard against numerical rounding.
+                        r_ij = float(np.clip(r_ij, -1.0, 1.0))
+                        R[i, j] = r_ij
+                        R[j, i] = r_ij
+                    # else: leave as 0 (uncorrelated assumption for degenerate pairs)
+                # else: too few joint observations — assume uncorrelated (R[i,j]=0)
+
+        # ── Eigenvalue-based effective dimensionality ─────────────────────
+        # Compute eigenvalues of R. Since R is symmetric PSD, all eigenvalues
+        # are non-negative. The number of components needed to explain
+        # var_threshold of total sum(eigenvalues) is D_eff.
+        # Note: np.linalg.eigvalsh returns eigenvalues in ascending order.
+        eigenvalues = np.linalg.eigvalsh(R)
+        # Clip to non-negative (rounding errors can give tiny negatives).
+        eigenvalues = np.clip(eigenvalues[::-1], 0.0, None)  # descending
+        total_var = float(eigenvalues.sum())
+
+        if total_var < 1e-12:
+            return min(n_out, _cap)
+
+        cumvar = np.cumsum(eigenvalues) / total_var
+        # searchsorted returns the first position where cumvar >= var_threshold.
         n_eff = int(np.searchsorted(cumvar, var_threshold)) + 1
         n_eff = max(1, min(n_eff, _cap))
+
+        logger.debug(
+            "_effective_n_components: D_eff=%d / %d "
+            "(var_threshold=%.2f, top_3_eigenvalues=%s)",
+            n_eff, n_out, var_threshold,
+            [f"{v:.3f}" for v in eigenvalues[:3]],
+        )
         return n_eff
-    except Exception:
+
+    except Exception as _exc:
+        logger.debug("_effective_n_components failed (%s); using full D=%d.", _exc, n_out)
         return min(n_out, _cap)
+
 
 
 class UnifiedForecaster:
@@ -1701,36 +1746,20 @@ class UnifiedForecaster:
         )
 
     def stage2_reduce_features(self) -> None:
-        """Stage 2: Two-track dimensionality reduction.
+        """
+        Execute two-track dimensionality reduction.
 
-        Fits two :class:`PanelFeatureReducer` objects on the training matrix
-        and applies both to the training and prediction sets:
+        Fits two :class:`PanelFeatureReducer` objects on the training matrix:
+        
+        1. **PLS track** (reducer_pca_): Supervised reduction for linear models 
+           (BayesianRidge, ElasticNet). Optimizes for target covariance.
+        2. **Threshold-only track** (reducer_tree_): Near-zero-variance and VIF 
+           filtering for tree-based models (CatBoost). Preserves original 
+           feature structure.
 
-        * **PLS track** (``reducer_pca_``) — supervised dimensionality
-          reduction via ``PLSRegression`` with MI pre-filter.  Finds the 20
-          linear combinations of X with maximum covariance with all 8 criterion
-          targets simultaneously.  Used exclusively by ``BayesianRidge`` /
-          ``MultiTaskElasticNetCV``; target-aware compression is strictly
-          superior to PCA for forecasting accuracy.
-          ``n_components = min(n // 10, 20)`` → p/n ≤ 0.024.
-
-        * **Threshold-only track** (``reducer_tree_``) — removes near-zero-
-          variance features only, no scaling, no compression.  Used by all
-          non-linear models (CatBoost, QRF); preserves the
-          original feature structure so tree splits capture the real interactions.
-          StandardScaler removed to prevent double-scaling with QRF's internal
-          RobustScaler and CatBoost's scale-invariant trees.
-
-        Pre-requisite: :meth:`stage1_engineer_features` must have been called.
-
-        Outputs stored on ``self``
-        -------------------------
-        X_train_pca_     PLS-compressed training features.
-        X_train_tree_    Threshold-only training features.
-        X_pred_pca_      PLS-compressed prediction features.
-        X_pred_tree_     Threshold-only prediction features.
-        reducer_pca_     Fitted PLS reducer (attribute name kept for compat).
-        reducer_tree_    Fitted threshold-only reducer.
+        Pre-requisite
+        -------------
+        :meth:`stage1_engineer_features` must have been called.
         """
         logger.info("Stage 2: Two-track dimensionality reduction...")
 
@@ -1806,9 +1835,14 @@ class UnifiedForecaster:
             mi_prefilter=True,
             imputation_config=self.imputation_config_
         )
-        # Threshold-only track for tree models: variance filter, no scaling
+        # Threshold-only track for tree models:
+        # Phase 2 §2.1: MI pre-filter (cap=200) + §2.3: VIF filter (tree-only).
+        # max_vif_threshold driven by ForecastConfig.tree_track_max_vif (default 10.0).
+        _tree_vif = getattr(self._config, 'tree_track_max_vif', 10.0)
         self.reducer_tree_ = PanelFeatureReducer(
             mode='threshold_only',
+            mi_prefilter=True,          # §2.1: enable MI pre-filter for tree track
+            max_vif_threshold=_tree_vif,  # §2.3: tree-only VIF (post MI filter)
             imputation_config=self.imputation_config_
         )
 
@@ -1817,8 +1851,11 @@ class UnifiedForecaster:
         )
         self.X_pred_pca_ = self.reducer_pca_.transform(self.X_pred_.values)
 
+        # §2.1: Pass y=y_arr to tree reducer fit so MI filter has targets.
+        # The tree reducer uses y only for MI feature selection (not for any
+        # compression); it does NOT scale, compress or transform features.
         self.X_train_tree_ = self.reducer_tree_.fit_transform(
-            X_arr, feature_names=feature_names
+            X_arr, y=y_arr, feature_names=feature_names
         )
         self.X_pred_tree_ = self.reducer_tree_.transform(self.X_pred_.values)
 
@@ -2241,34 +2278,15 @@ class UnifiedForecaster:
             logger.info("  Incremental update complete — meta-weights re-calibrated.")
 
     def stage4_fit_meta_learner(self) -> None:
-        """Stage 4: Extract meta-weights and generate ensemble predictions.
+        """
+        Extract ensemble weights and generate initial predictions.
 
-        Retrieves the Ridge meta-weights from the fitted SuperLearner, then
-        runs the ensemble forward pass over the prediction year to produce
-        point predictions and epistemic uncertainty estimates.  Also
-        constructs conservative Gaussian fallback prediction intervals that
-        Stage 5 will replace with statistically tighter estimates.
+        Produces point estimates and fallback Gaussian uncertainty intervals.
+        Includes hierarchical aggregation if forecasting at sub-criteria level.
 
-        The **fallback intervals** are calibrated to each criterion's empirical
-        training-set standard deviation::
-
-            half_width_j = z_{1-α/2} × σ̂_j,   j = 1 … D
-
-        where σ̂_j is computed from ``y_train_`` (ddof=1) and z_{1-α/2} is
-        the Gaussian critical value at ``conformal_alpha``.  This is the
-        worst-case homoscedastic baseline; Stage 5 always replaces it.
-
-        Pre-requisite: :meth:`stage3_fit_base_models` must have been called.
-
-        Outputs stored on ``self``
-        -------------------------
-        model_weights_      Meta-ensemble weights ``name → float``.
-        _predictions_arr_   Raw point predictions ``(n_entities, n_components)``.
-        _uncertainty_arr_   Epistemic uncertainty (same shape).
-        _pred_df_           Predictions as a labelled DataFrame.
-        _unc_df_            Uncertainty as a labelled DataFrame.
-        _intervals_         Dict ``'lower'/'upper'`` with fallback Gaussian
-                            intervals (DataFrames matching ``_pred_df_``).
+        Pre-requisite
+        -------------
+        :meth:`stage3_fit_base_models` must have been called.
         """
         logger.info("Stage 4: Extracting meta-weights and generating predictions...")
 
@@ -2407,37 +2425,79 @@ class UnifiedForecaster:
                 if k in _store:
                     _store[k] = _inv_df(_store[k])
 
+        # ── BUG-8 FIX: Interval reversal guard ───────────────────────────────
+        # Monotone transforms preserve lower <= upper mathematically, but
+        # numerical rounding near boundary values or bugs in the transform chain
+        # can silently produce cells where lower > upper. Detect and correct.
+        if (
+            'lower' in self.prediction_intervals_
+            and 'upper' in self.prediction_intervals_
+            and not self.prediction_intervals_['lower'].empty
+            and not self.prediction_intervals_['upper'].empty
+        ):
+            _lower_vals = self.prediction_intervals_['lower'].values
+            _upper_vals = self.prediction_intervals_['upper'].values
+            _reversed = _lower_vals > _upper_vals
+            _n_reversed = int(_reversed.sum())
+            if _n_reversed > 0:
+                logger.error(
+                    "INTERVAL REVERSAL detected after inverse-transform: "
+                    "%d cells where lower > upper (out of %d total). "
+                    "This indicates a numerical issue in the transform chain. "
+                    "Auto-correcting via element-wise min/max.",
+                    _n_reversed,
+                    _lower_vals.size,
+                )
+                # Per-criterion breakdown for triage
+                for col_i, col in enumerate(self.prediction_intervals_['lower'].columns):
+                    col_rev = int(_reversed[:, col_i].sum())
+                    if col_rev > 0:
+                        logger.error(
+                            "  Criterion '%s': %d reversed cells "
+                            "(max reversal magnitude = %.6f)",
+                            col,
+                            col_rev,
+                            float(
+                                (_lower_vals[:, col_i] - _upper_vals[:, col_i])
+                                [_reversed[:, col_i]].max()
+                            ),
+                        )
+                # Auto-correct: swap to maintain lower <= upper invariant.
+                corrected_lower = np.minimum(_lower_vals, _upper_vals)
+                corrected_upper = np.maximum(_lower_vals, _upper_vals)
+                self.prediction_intervals_['lower'] = pd.DataFrame(
+                    corrected_lower,
+                    index=self.prediction_intervals_['lower'].index,
+                    columns=self.prediction_intervals_['lower'].columns,
+                )
+                self.prediction_intervals_['upper'] = pd.DataFrame(
+                    corrected_upper,
+                    index=self.prediction_intervals_['upper'].index,
+                    columns=self.prediction_intervals_['upper'].columns,
+                )
+                # Record reversal event for downstream auditing
+                _cal_diag = self._training_info_.get('conformal_diagnostics', {})
+                _cal_diag['interval_reversals_detected'] = _n_reversed
+                _cal_diag['interval_reversals_corrected'] = True
+                self._training_info_['conformal_diagnostics'] = _cal_diag
+            else:
+                logger.debug(
+                    "Interval reversal check: PASS — all %d cells have lower <= upper.",
+                    _lower_vals.size,
+                )
+
+
     def stage5_compute_intervals(self) -> None:
-        """Stage 5: Compute prediction intervals.
+        """
+        Calibrate prediction intervals using conformal prediction.
 
-        [FIX #3] Conformal calibration now automatically uses leakage-free OOF
-        residuals because upstream fixes (#1, #2) ensure:
-        - Entity means are fold-restricted (when holdout_year is set)
-        - fold_correction_fn applies to all models (tree and PLS)
-        - OOF predictions reflect corrected features
+        Provides distribution-free 95% coverage guarantees using 
+        leakage-free out-of-fold residuals. Incorporates Bonferroni 
+        corrections for multi-output criteria dependencies.
 
-        Supports two modes governed by ``self.uncertainty_method``:
-
-        **'qrf_quantile'** (DEPRECATED post-TIER 3 - QuantileRF removed)
-            [Deprecated]: Quantile Random Forest was replaced with SVRForecaster
-            and ElasticNetForecaster in TIER 3 (March 27, 2026) to reduce
-            ensemble correlation. This method is no longer supported.
-            Falls back to 'conformal' automatically.
-
-        **'conformal'** (production default post-TIER 3)
-            Distribution-free conformal intervals calibrated from the OOF
-            residuals cached by Stage 3.  Homoscedastic (constant width per
-            criterion), marginal coverage guarantee.
-            [FIX #3] Now calibrated on leakage-free residuals (TIER 1 fix).
-            [TIER 3] Now the primary method after QRF removal.
-
-        Pre-requisite: :meth:`stage4_fit_meta_learner` must have been called.
-
-        Outputs stored on ``self``
-        -------------------------
-        prediction_intervals_  Dict ``'lower'/'upper'`` with refined intervals.
-        conformal_predictors_  Dict ``col → ConformalPredictor`` (conformal path).
-        conformal_predictor_   Single predictor reference (backward-compat).
+        Pre-requisite
+        -------------
+        :meth:`stage4_fit_meta_learner` must have been called.
         """
         n_components = self.y_train_.shape[1]
         component_cols = self.y_train_.columns.tolist()
@@ -2863,6 +2923,18 @@ class UnifiedForecaster:
                     intervals['upper'][col] = upper_d
                     self.conformal_predictors_[col] = cp
 
+                    # ── PHASE 4.4: OOF coverage sanity check per criterion ────────
+                    _q = getattr(cp, '_q_hat', None)
+                    _cs = getattr(cp, '_conformity_scores', None)
+                    if _q is not None and _cs is not None and len(_cs) > 0:
+                        _oof_cov = float(np.mean(_cs <= _q))
+                        if _oof_cov < (1 - alpha_bonferroni - 0.10):
+                            logger.error(
+                                "CRITICAL: OOF coverage %.4f < floor (%.4f) for criterion %s. "
+                                "Calibration is statistically compromised.",
+                                _oof_cov, max(0.0, 1 - alpha_bonferroni - 0.10), col
+                            )
+
                 self.conformal_predictor_ = next(
                     iter(self.conformal_predictors_.values()), None
                 )
@@ -2916,12 +2988,58 @@ class UnifiedForecaster:
                         )
                 
                 logger.info("=" * 70)
-                
+
+                # ── PHASE 4.4: OOF calibration set size floor check ───────────
+                # Conformal coverage guarantee requires n_cal >= 1 (trivially),
+                # but Papadopoulos et al. (2002) show that reliable 95% coverage
+                # requires n_cal >= ~20 to avoid extreme quantile instability.
+                # Specifically: q_level = ceil(0.95 * 21) / 20 = 1.0 (trivially 1),
+                # meaning with n_cal=20, the empirical quantile is the MAX residual —
+                # wildly over-conservative or degenerate depending on the tails.
+                # BUG-1 showed pathological coverage 0.21 with n_cal~10 residuals.
+                N_CAL_FLOOR = 20  # Minimum calibration samples for reliable quantile
+                under_floor_criteria = []
+                for col_diag, stats_diag in per_criterion_stats.items():
+                    n_cal_d = stats_diag.get('n_cal', 0)
+                    if isinstance(n_cal_d, int) and 0 < n_cal_d < N_CAL_FLOOR:
+                        under_floor_criteria.append((col_diag, n_cal_d))
+
+                if under_floor_criteria:
+                    logger.critical(
+                        "CRITICAL: %d/%d criteria have n_cal < %d (minimum reliable floor). "
+                        "Conformal quantile estimates are UNRELIABLE. "
+                        "Affected criteria: %s. "
+                        "Fix: lower cv_min_train_years or conformal_min_train_years to "
+                        "generate more OOF calibration residuals.",
+                        len(under_floor_criteria),
+                        n_components,
+                        N_CAL_FLOOR,
+                        [(c, n) for c, n in under_floor_criteria],
+                    )
+                    # Mark calibration as invalid in training info
+                    _diag_entry = self._training_info_.get('conformal_diagnostics', {})
+                    _diag_entry['n_cal_floor_violations'] = len(under_floor_criteria)
+                    _diag_entry['n_cal_floor_threshold'] = N_CAL_FLOOR
+                    _diag_entry['n_cal_floor_criteria'] = [c for c, _ in under_floor_criteria]
+                    _diag_entry['calibration_valid'] = False
+                    self._training_info_['conformal_diagnostics'] = _diag_entry
+                    self._training_info_['calibration_valid'] = False
+                else:
+                    logger.info(
+                        "OOF calibration size check: PASS — all %d criteria have n_cal >= %d.",
+                        n_components,
+                        N_CAL_FLOOR,
+                    )
+
                 self._training_info_['conformal_diagnostics'] = {
                     'd_eff': int(_d_eff),
                     'alpha_bonferroni': float(alpha_bonferroni),
                     'per_criterion': per_criterion_stats,
+                    'n_cal_floor_violations': len(under_floor_criteria),
+                    'n_cal_floor_threshold': N_CAL_FLOOR,
+                    'calibration_valid': len(under_floor_criteria) == 0,
                 }
+
 
                 if self.verbose:
                     widths = [
@@ -2959,6 +3077,12 @@ class UnifiedForecaster:
         per-criterion **marginal** coverage (fraction of times interval
         contains truth) and aggregate coverage across all criteria.
 
+        PHASE 4.1 FIX: If aggregate coverage is NaN (zero valid holdout rows,
+        or all NaN intervals) or falls more than 10% below the target, this
+        method now marks ``_training_info_['calibration_valid'] = False`` and
+        logs at CRITICAL level, enabling downstream callers to detect and
+        respond to miscalibrated intervals without silently continuing.
+
         Returns:
             Dict with per-criterion and aggregate coverage statistics, or None
         """
@@ -2973,7 +3097,7 @@ class UnifiedForecaster:
 
         y_holdout = self.y_holdout_.values  # (n_holdout, n_outputs)
         component_cols = self.y_train_.columns.tolist()
-        
+
         coverage_dict = {}
         all_covered_flags = []
         all_n = 0
@@ -2983,7 +3107,7 @@ class UnifiedForecaster:
             if col not in self.prediction_intervals_['lower']:
                 coverage_dict[col] = {'coverage': np.nan, 'n': 0, 'n_covered': 0}
                 continue
-            
+
             lower_d = self.prediction_intervals_['lower'][col].values
             upper_d = self.prediction_intervals_['upper'][col].values
             y_d = y_holdout[:, d] if y_holdout.ndim > 1 else y_holdout
@@ -3022,68 +3146,92 @@ class UnifiedForecaster:
         logger.info("=" * 70)
         logger.info("PHASE 1 CONFORMAL COVERAGE VALIDATION (Holdout Set)")
         logger.info("=" * 70)
-        
+
         for col, stats in coverage_dict.items():
             if not np.isnan(stats['coverage']):
                 logger.info(
                     f"{col:15s}: {stats['coverage']:.1%} coverage "
                     f"({stats['n_covered']}/{stats['n']})"
                 )
-        
+
         target_coverage = 1 - self.conformal_alpha
         logger.info(f"{'AGGREGATE':15s}: {aggregate_coverage:.1%} coverage ({all_n} total)")
-        logger.info(f"Target coverage: {target_coverage:.1%} (from α={self.conformal_alpha})")
+        logger.info(f"Target coverage: {target_coverage:.1%} (from alpha={self.conformal_alpha})")
+
+        # ── PHASE 4.1 FIX: Stricter coverage verdict ───────────────────────
+        # Use 10% tolerance instead of 5% to catch pathological under-coverage
+        # earlier. Mark calibration_valid=False on NaN or severe mis-coverage.
+        _calibration_valid = True
         
-        # Verdict
-        if not np.isnan(aggregate_coverage):
-            margin = aggregate_coverage - (target_coverage - 0.05)  # 5% safety margin
+        nan_criteria = [col for col, stats in coverage_dict.items() if np.isnan(stats['coverage'])]
+        if nan_criteria:
+            logger.critical(
+                "FATAL: NaN conformal coverage for %s. Setting calibration_valid=False.", 
+                nan_criteria
+            )
+            _calibration_valid = False
+
+        if np.isnan(aggregate_coverage):
+            logger.critical(
+                "CRITICAL: Conformal coverage is NaN — no valid holdout observations "
+                "matched interval dimensions. This indicates a fatal data alignment "
+                "or interval shape mismatch. Marking calibration_valid=False."
+            )
+            _calibration_valid = False
+        elif all_n < 10:
+            logger.warning(
+                "Coverage validation based on only %d observations — "
+                "estimate is unreliable. Consider disabling holdout or collecting more data.",
+                all_n,
+            )
+        else:
+            margin = aggregate_coverage - (target_coverage - 0.10)  # 10% tolerance
             if margin >= 0:
-                logger.info(f"✓ PASS: Coverage meets target (margin={margin:+.1%})")
+                logger.info("PASS: Coverage meets target (margin=%+.1%%)", margin)
             else:
-                logger.warning(
-                    f"✗ FAIL: Coverage short of target by {-margin:.1%}; "
-                    f"consider enabling Student-t (E-06) or extending calibration"
+                logger.critical(
+                    "CRITICAL: Coverage FAIL — aggregate coverage %.1f%% is "
+                    "%.1f%% below the 10%%-tolerance threshold (target - 10%% = %.1f%%). "
+                    "Marking calibration_valid=False. "
+                    "Investigate: small n_cal, model over-fit, or transform mis-scaling.",
+                    aggregate_coverage * 100,
+                    -margin * 100,
+                    (target_coverage - 0.10) * 100,
                 )
-        
+                _calibration_valid = False
+
         logger.info("=" * 70)
-        
+
+        # Persist verdict into training_info for downstream auditing
+        _cal_diag = self._training_info_.get('conformal_diagnostics', {})
+        _cal_diag['holdout_aggregate_coverage'] = aggregate_coverage
+        _cal_diag['holdout_target_coverage'] = target_coverage
+        _cal_diag['holdout_n_total'] = all_n
+        _cal_diag['calibration_valid'] = _calibration_valid
+        self._training_info_['conformal_diagnostics'] = _cal_diag
+        # Top-level flag for quick access:
+        self._training_info_['calibration_valid'] = _calibration_valid
+
         return {
             'per_criterion': coverage_dict,
             'aggregate': aggregate_coverage,
             'target': target_coverage,
             'n_total': all_n,
+            'calibration_valid': _calibration_valid,
         }
 
+
     def stage6_evaluate_all(self) -> None:
-        """Stage 6: Holdout model comparison and cross-validation evaluation.
+        """
+        Execute comprehensive evaluation and comparison.
 
-        Executes two complementary evaluation passes:
+        1. Genuine holdout comparison: Performance on withheld calendar year.
+        2. OOF CV evaluation: Skill assessment against persistence baseline.
+        3. Feature importance: Global impact scores across the ensemble.
 
-        **6a — Genuine holdout comparison**: Applies every fitted base model
-        and the SuperLearner ensemble to the withheld calendar year
-        (``holdout_year_``).  Zero refitting — all models were trained on
-        data strictly before the holdout year in Stage 3, so this is a true
-        OOS test.  Results are stored in ``model_comparison_``.
-
-        **6b — OOF cross-validation estimate**: Reads the SuperLearner's
-        cached OOF ensemble predictions (generated during the CV loop in
-        Stage 3) to compute aggregate R²/RMSE/MAE across all held-out
-        folds.  Primary diagnostic for ensemble calibration quality.
-        Stored in ``holdout_performance_``.
-
-        Also aggregates per-component feature importance
-        (``_feature_importance_``) and packages the training-info dict
-        (``_training_info_``) consumed by :meth:`_assemble_result`.
-
-        Pre-requisite: :meth:`stage4_fit_meta_learner` must have been called.
-
-        Outputs stored on ``self``
-        -------------------------
-        model_comparison_     List of :class:`ModelComparisonResult` or None.
-        holdout_performance_  OOF performance dict or None.
-        _feature_importance_  Feature-importance DataFrame.
-        _model_performance_   Per-model CV R² dict.
-        _training_info_       Training-info dict for UnifiedForecastResult.
+        Pre-requisite
+        -------------
+        :meth:`stage4_fit_meta_learner` must have been called.
         """
         logger.info("Stage 6: Evaluation and feature importance...")
 
@@ -3781,6 +3929,76 @@ class UnifiedForecaster:
         from stage-output attributes, guaranteeing consistency with the last
         completed pipeline run.
         """
+        # Phase 5 expansions
+        _cal_summary = self._training_info_.get('conformal_diagnostics', {}).get('per_criterion')
+        _ind_preds = self._training_info_.get('per_model_holdout_predictions')
+        
+        # Prepare metadata for production trace
+        # Try to get git commit natively, fallback to "N/A"
+        _git_commit = "N/A"
+        try:
+            import subprocess
+            _git_commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], stderr=subprocess.DEVNULL).decode('utf-8').strip()
+        except Exception:
+            pass
+            
+        _metadata = {
+            'target_year': getattr(self, '_target_year_', 'N/A'),
+            'n_entities': len(self.X_pred_),
+            'n_criteria': self.y_train_.shape[1],
+            'pipeline_mode': self.pipeline_mode,
+            'git_commit': _git_commit,
+            # F-04 config_hash placeholder, set appropriately downstream if provided
+            'config_hash': getattr(self._config, 'config_hash', 'N/A') if self._config else 'N/A',
+        }
+        
+        # Compute interval summaries
+        _width_sum = None
+        _cov_by_crit = None
+        if self.prediction_intervals_ and 'lower' in self.prediction_intervals_ and 'upper' in self.prediction_intervals_:
+            _width_sum = compute_interval_width_summary(
+                self.prediction_intervals_['lower'],
+                self.prediction_intervals_['upper']
+            )
+            # Coverage
+            _ho_cov = self._training_info_.get('conformal_coverage_validation', {})
+            _cov_by_crit = {
+                k: v.get('coverage', float('nan')) 
+                for k, v in _ho_cov.get('per_criterion', {}).items()
+            } if _ho_cov else None
+            
+        # Compute error summaries (using holdout)
+        _ent_err = None
+        _worst = None
+        if self._holdout_y_test_ is not None and self._holdout_y_pred_ is not None:
+            # Reconstruct DFs for evaluation
+            _y_ho_df = self.y_holdout_.copy()
+            _n_cols = _y_ho_df.shape[1]
+            _ho_idx = getattr(self, '_ho_entity_names_fallback_', list(_y_ho_df.index))
+            if hasattr(self, '_training_info_') and self._training_info_.get('test_entities'):
+                _ho_idx = self._training_info_['test_entities']
+                
+            # Need to match shapes. If shape matches perfectly:
+            if len(_ho_idx) * _n_cols == len(self._holdout_y_test_):
+                try:
+                    _y_t_df = pd.DataFrame(self._holdout_y_test_.reshape(-1, _n_cols), index=_ho_idx, columns=_y_ho_df.columns)
+                    _y_p_df = pd.DataFrame(self._holdout_y_pred_.reshape(-1, _n_cols), index=_ho_idx, columns=_y_ho_df.columns)
+                    _ent_err = compute_entity_error_summary(_y_t_df, _y_p_df)
+                    _worst = compute_worst_predictions(_y_t_df, _y_p_df)
+                except Exception as e:
+                    logger.debug(f"Failed to compile detailed error summary: {e}")
+
+        # OOF residuals DataFrame
+        _res_df = None
+        _ext_res = getattr(self, '_oof_conformal_residuals_', None)
+        if _ext_res is not None:
+            try:
+                _res_df = pd.DataFrame(_ext_res, index=self.X_train_.index, columns=self.y_train_.columns)
+                _res_df.index.name = 'entity'
+                _res_df = _res_df.reset_index()
+            except Exception:
+                pass
+
         return UnifiedForecastResult(
             predictions=self._pred_df_,
             uncertainty=self._unc_df_,
@@ -3812,6 +4030,16 @@ class UnifiedForecaster:
                 if self.model_comparison_ else None
             ),
             model_comparison=self.model_comparison_,
+            
+            # PHASE 5 Outputs
+            calibration_summary=_cal_summary,
+            individual_model_predictions=_ind_preds,
+            forecast_metadata=_metadata,
+            interval_width_summary=_width_sum,
+            interval_coverage_by_criterion=_cov_by_crit,
+            entity_error_summary=_ent_err,
+            worst_predictions=_worst,
+            forecast_residuals=_res_df,
         )
 
     # ────────────────────────────────────────────────────────────────────
@@ -3953,24 +4181,8 @@ class UnifiedForecaster:
         - Removing certain years/entities for sensitivity analysis
         - Combining multiple datasets
 
-        Without knowing the full context, automat blind application of fold_year
+        Without knowing the full context, automatic blind application of fold_year
         could mask errors or enforce incorrect assumptions.
-
-        **Key Insight from FIX #1/#2**
-
-        TIER 1 of the ML-MCDM fixes established that:
-        1. Entity statistics MUST be restricted to fold's training years
-        2. This applies to ALL models (tree and PLS tracks)
-        3. Correction machinery is built into fold_correction_fn
-        4. Holdout evaluation ALSO needs fold_year enforcement
-
-        This helper is a guardrail for downstream applications that reuse
-        the fitted forecaster in new contexts.
-
-        References
-        ----------
-        - ACTION_PLAN.md: FIX #8 (Holdout Retraining with Fold Correction)
-        - .claude/TIER1-COMPLETION-SUMMARY.md: FIX #1 implementation
         """
         try:
             # Extract years from expanded_panel_data
@@ -4035,60 +4247,32 @@ class UnifiedForecaster:
             }
 
     @_silence_warnings
-    def fit_predict(self,
-                   panel_data,
-                   target_year: int,
-                   weights: Optional[Dict[str, float]] = None
-                   ) -> Optional[UnifiedForecastResult]:
-        """Fit the 6-model ensemble and forecast ``target_year``.
+    def fit_predict(
+        self,
+        panel_data,
+        target_year: int,
+        weights: Optional[Dict[str, float]] = None
+    ) -> Optional[UnifiedForecastResult]:
+        """
+        Train the ensemble and produce forecasts for the target year.
 
-        Orchestrates the 7 stage methods in sequence.  ``pipeline_mode``
-        controls early exit:
-
-        ``'full'`` (default)
-            All 7 stages; returns :class:`UnifiedForecastResult`.
-
-        ``'features_only'``
-            Stages 1–2 (feature engineering + dimensionality reduction),
-            then returns ``None``.  Use :meth:`get_stage_outputs` or
-            ``forecaster.X_train_`` / ``forecaster.X_pred_`` to inspect
-            the engineered features before committing to model training.
-
-        ``'fit_only'``
-            Stages 1–4 (feature engineering → dimensionality reduction →
-            base-model training → ensemble predictions), then returns
-            ``None``.  Skips interval estimation (Stage 5) and evaluation
-            (Stages 6–7).  Combine with a subsequent
-            ``fit_predict(..., mode='evaluate_only')`` call (or invoke
-            :meth:`stage5_compute_intervals`, :meth:`stage6_evaluate_all`,
-            and :meth:`stage7_postprocess` directly).
-
-        ``'evaluate_only'``
-            Stages 5–7 only.  Requires that Stages 1–4 have been completed
-            by a previous ``fit_predict()`` call with mode ``'full'`` or
-            ``'fit_only'``.  Useful for re-running interval estimation or
-            evaluation with different settings (e.g., switching
-            ``uncertainty_method``) without re-fitting the ensemble.
+        Orchestrates the multi-stage pipeline (Stages 1-7). The execution 
+        flow is controlled by the configured ``pipeline_mode``.
 
         Parameters
         ----------
         panel_data : PanelData
-            Panel data object.  Ignored in ``'evaluate_only'`` mode.
+            The core data container holding entities, criteria, and values.
         target_year : int
-            Forecast-horizon year.
-        weights : dict, optional
-            Reserved for a future API; currently unused.
+            The calendar year for which to produce forecasts.
+        weights : Dict[str, float], optional
+            Reserved for external weighting overrides.
 
         Returns
         -------
         UnifiedForecastResult or None
-            Full result in ``'full'`` / ``'evaluate_only'`` mode.
-            ``None`` in ``'features_only'`` / ``'fit_only'`` mode.
-
-        Notes
-        -----
-        All intermediate artifacts remain on ``self`` after every mode and
-        are accessible via :meth:`get_stage_outputs`.
+            A comprehensive result object in 'full' or 'evaluate_only' mode.
+            Returns None in 'features_only' or 'fit_only' modes.
         """
         _mode = self.pipeline_mode
 

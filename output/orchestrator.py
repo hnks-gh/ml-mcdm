@@ -1,11 +1,25 @@
-# -*- coding: utf-8 -*-
 """
-Output Orchestrator
-===================
+Centralized Output Orchestration.
 
-Central hub coordinating all output writers.  Replaces the former
-``_save_all_results()`` method in ``pipeline.py`` by delegating to
-``CsvWriter`` and ``ReportWriter``.
+This module provides the `OutputOrchestrator` class, which serves as the 
+central hub for coordinating all data persistence and reporting tasks. 
+It delegates specific writing responsibilities to `CsvWriter` (for 
+structured data) and `ReportWriter` (for human-readable summaries).
+
+Key Features
+------------
+- **Unified Entry Point**: Provides a single `save_all` method to persist 
+  all pipeline artefacts synchronously.
+- **Fail-Safe Operation**: Implements robust error handling to ensure 
+  that failure in one output component (e.g., PDF generation) does not 
+  block others.
+- **Structured Storage**: Manages the directory hierarchy for weights, 
+  rankings, forecasts, and analysis results.
+
+Notes
+-----
+The orchestrator maintains internal state of all files saved during its 
+lifecycle, accessible via `get_saved_files()`.
 """
 
 from __future__ import annotations
@@ -21,9 +35,29 @@ logger = logging.getLogger('ml_mcdm')
 
 
 class OutputOrchestrator:
-    """Coordinate saving all results in one call."""
+    """
+    Coordinator for multi-format pipeline output.
+
+    Attributes
+    ----------
+    base_dir : str
+        The root directory for all generated output files.
+    csv : CsvWriter
+        Writer instance for CSV-formatted datasets.
+    report : ReportWriter
+        Writer instance for Markdown and PDF reports.
+    """
 
     def __init__(self, base_output_dir: str = 'output/result'):
+        """
+        Initialize the output orchestrator.
+
+        Parameters
+        ----------
+        base_output_dir : str, default='output/result'
+            The directory where all results will be stored. Validated 
+            upon initialization.
+        """
         from . import _sanitize_output_dir
         _sanitize_output_dir(base_output_dir)  # validate early
         self.base_dir = base_output_dir
@@ -48,9 +82,36 @@ class OutputOrchestrator:
         weight_all_years: Optional[Dict[int, Any]] = None,
     ) -> Dict[str, Any]:
         """
-        Persist every artefact and return a summary dict.
+        Persist all pipeline artefacts and return a summary.
 
-        This replaces ``MLMCDMPipeline._save_all_results()``.
+        Parameters
+        ----------
+        panel_data : PanelData
+            The input panel data object used for labelling.
+        weights : Dict[str, Any]
+            Dictionary containing criteria weights and subcriteria metadata.
+        ranking_result : RankingResult
+            The results from the MCDM ranking engine.
+        forecast_result : UnifiedForecastResult, optional
+            The results from the ML forecasting engine.
+        analysis_results : Dict[str, Any]
+            Dictionary containing sensitivity and validation results.
+        execution_time : float
+            Total pipeline execution time in seconds.
+        figure_paths : List[str], optional
+            Paths to generated visualization plots.
+        config : Config, optional
+            The pipeline configuration object.
+        multi_year_results : Dict[int, Any], optional
+            MCDM scores mapped by year.
+        weight_all_years : Dict[int, Any], optional
+            CRITIC weights mapped by year.
+
+        Returns
+        -------
+        Dict[str, Any]
+            Summary dictionary containing 'saved_files', 'report_path', 
+            and 'total' count.
         """
         subcriteria = weights['subcriteria']
 

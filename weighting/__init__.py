@@ -1,32 +1,20 @@
 # -*- coding: utf-8 -*-
 """
-Weighting Methods Module
+Weighted Model Package
+======================
 
-Objective weight calculation methods for MCDM:
+This package provides objective weighting methods for Multi-Criteria 
+Decision Making (MCDM), focusing on the CRITIC (Criteria Importance 
+Through Inter-criteria Correlation) approach.
 
-**Primary Pipeline:**
-- CRITICWeightingCalculator: Two-level deterministic CRITIC weighting.
-  Level 1 — local SC weights per criterion group (sum to 1 within group).
-  Level 2 — criterion weights over composite matrix (sum to 1 globally).
-  Global  — global_w[SC_j] = local_w[SC_j | C_k] × criterion_w[C_k].
-
-**Individual Base Method:**
-- CRITICWeightCalculator: Contrast intensity + inter-criteria correlation
-
-**NaN-aware weighting layer** (delegates filtering to ``data.missing_data``):
-- AdaptiveWeightCalculator: NaN-aware CRITIC weight calculation (excludes
-  all-NaN rows/columns; imputes partial NaN cells with column mean).
-- WeightCalculator: Hierarchical (two-level) weight calculation built on
-  AdaptiveWeightCalculator.
-- calculate_adaptive_weights: Convenience function for adaptive weights.
-
-**Utilities:**
-- global_min_max_normalize: Global min-max normalization function
-- GlobalNormalizer: Stateful normalizer (fit/transform pattern)
-
-**Analysis utilities** live in the ``analysis`` package:
-- ``analysis.bootstrap`` — Bayesian bootstrap weight sampling
-- ``analysis.stability`` — temporal stability validation
+Key Components:
+---------------
+- :class:`CRITICWeightingCalculator`: The primary two-level hierarchical 
+  weighting engine.
+- :class:`CRITICWeightCalculator`: Base implementation of the CRITIC 
+  algorithm.
+- :mod:`normalization`: Global min-max normalization utilities.
+- :mod:`adaptive`: NaN-aware weighting wrappers.
 """
 
 from .critic_weighting import CRITICWeightingCalculator

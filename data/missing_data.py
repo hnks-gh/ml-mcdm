@@ -818,77 +818,32 @@ def gp_spatiotemporal_impute(
     verbose: bool = False,
 ) -> Dict[int, pd.DataFrame]:
     """
-    Bayesian GP imputation with spatio-temporal kernel for panel data.
-    
-    Enhancement M-06: Principled uncertainty-aware imputation exploiting
-    temporal smoothness and spatial (regional) correlation.
-    
-    Governance scores exhibit:
-    1. **Temporal smoothness**: provinces evolve gradually year-over-year
-    2. **Spatial correlation**: provinces in same region (Red River Delta,
-       Central Highlands, etc.) have correlated governance patterns
-    
-    A Gaussian Process prior encodes both via product kernel:
-    
-        k((i,t), (i',t')) = k_temporal(t, t') · k_spatial(i, i') + σ_n² δ
-    
-    where:
-        k_temporal(t, t') = exp(-|t - t'|² / (2ℓ_T²))    [RBF over years]
-        k_spatial(i, i') = exp(-d²_region(i, i') / (2ℓ_S²))  [regional kernel]
-    
-    For each subcriterion independently, the GP predicts:
-    
-        T*_{itj} | T_obs ~ N(μ*(i,t), σ²*(i,t))
-    
-    providing both point predictions (μ*) and uncertainty estimates (σ*).
-    
+    Impute panel data using a Bayesian Gaussian Process with spatio-temporal kernels.
+
+    Exploits temporal smoothness and regional correlations to provide 
+    uncertainty-aware estimates for missing values.
+
     Parameters
     ----------
-    tensor_dict : dict of {int: pd.DataFrame}
-        Panel data as year → (provinces × subcriteria) DataFrame.
-    region_mapping : dict of {str: int}, optional
-        Province name → region ID (0-4 for Vietnam's 5 regions).
-        If None, uses simplified regional structure based on province names.
+    tensor_dict : Dict[int, pd.DataFrame]
+        The panel data as a dictionary of yearly cross-sections.
+    region_mapping : Optional[Dict[str, int]]
+        Mapping of provinces to regional IDs for the spatial kernel.
     temporal_length_scale : float
-        Temporal kernel length scale ℓ_T (years). Larger = smoother over time.
-        Typical: 2-5 years for governance data.
+        Length scale for the temporal RBF kernel (years).
     spatial_length_scale : float
-        Spatial kernel length scale ℓ_S. Larger = more regional smoothing.
-        Typical: 1-3 for 5 regions.
+        Length scale for the regional spatial kernel.
     noise_level : float
-        Observation noise σ_n. Models measurement error / local variations.
-        Typical: 0.05-0.2 on normalized scale.
+        Assumed observation noise.
     n_restarts : int
-        Optimizer restarts for hyperparameter tuning. Higher = better fit
-        but slower. Default 3 is reasonable for small panel (N×Y ≈ 900).
+        Number of restarts for hyperparameter optimization.
     verbose : bool
-        If True, print per-subcriterion progress.
-    
+        Whether to print progress messages.
+
     Returns
     -------
-    completed_tensor : dict of {int: pd.DataFrame}
-        Panel tensor with NaN imputed via GP posterior mean.
-    
-    Notes
-    -----
-    - Computational cost: O((N·Y)³) per subcriterion for GP fit (Cholesky).
-      For 63×14=882 observations, ~5-10 seconds per subcriterion.
-      Total: ~3-5 minutes for 29 subcriteria (parallelizable if needed).
-    - For multiple imputation, call this function M times with different
-      random seeds, drawing from GP posterior: μ* + σ* · ε, ε ~ N(0,1).
-    - Non-stationary extensions (time-varying length scales) possible via
-      neural kernels but not implemented here.
-    
-    References
-    ----------
-    Williams, C. K., & Rasmussen, C. E. (2006). Gaussian Processes for
-    Machine Learning. MIT Press.
-    
-    Examples
-    --------
-    >>> panel = {2020: df_2020, 2021: df_2021, 2022: df_2022}
-    >>> # Use default Vietnam regional structure
-    >>> completed = gp_spatiotemporal_impute(panel, temporal_length_scale=3.0)
+    Dict[int, pd.DataFrame]
+        The panel data with missing cells filled by GP posterior means.
     """
     from sklearn.gaussian_process import GaussianProcessRegressor
     from sklearn.gaussian_process.kernels import RBF, WhiteKernel, ConstantKernel
@@ -1096,26 +1051,25 @@ def _build_default_region_mapping(provinces: List[str]) -> Dict[str, int]:
 
 @dataclass
 class MissingnessMechanismReport:
-    """Diagnostic report for missing data mechanism (MCAR/MAR/MNAR).
-    
+    """
+    Container for missing data mechanism diagnostics.
+
     Attributes
     ----------
     littles_test_pvalue : float
-        P-value from Little's MCAR test. P < 0.05 rejects MCAR hypothesis.
+        P-value from Little's MCAR test.
     mar_logistic_r2 : float
-        Pseudo-R² from logistic regression of missingness indicators on
-        observed variables. Higher values indicate stronger MAR pattern.
+        Predictive R-squared for missingness indicators.
     mar_significant_predictors : List[str]
-        Variable names significantly predicting missingness (p < 0.05).
+        Variables that significantly predict missingness.
     mnar_sensitivity_index : float
-        Divergence measure between MAR and MNAR model estimates. Higher
-        values suggest MNAR is more plausible. Range: [0, 1].
+        Measured sensitivity to non-random missingness.
     mechanism_assessment : str
-        Summary assessment: 'MCAR', 'MAR', or 'MNAR_suspected'.
+        The assessed mechanism: 'MCAR', 'MAR', or 'MNAR_suspected'.
     sample_size : int
-        Number of observations in diagnostic sample.
+        Total samples analyzed.
     missingness_rate : float
-        Overall fraction of NaN values in the dataset.
+        Overall proportion of missing cells.
     """
     littles_test_pvalue: float
     mar_logistic_r2: float
@@ -1139,45 +1093,20 @@ class MissingnessMechanismReport:
 
 
 def littles_mcar_test(X: np.ndarray, alpha: float = 0.05) -> Tuple[float, bool]:
-    """Little's MCAR test via chi-square statistic.
-    
-    Tests the null hypothesis that data are Missing Completely At Random
-    (MCAR) by comparing means across different missing-data patterns.
-    
-    Enhancement M-11: MCAR/MAR/MNAR Diagnostic Battery
-    ---------------------------------------------------
-    Little's test (1988) is the standard frequentist test for MCAR. It
-    compares the observed means for each missing-data pattern against the
-    expected means under MCAR, using a chi-square test statistic.
-    
+    """
+    Perform Little's MCAR test to detect non-random missingness patterns.
+
     Parameters
     ----------
-    X : ndarray, shape (n_samples, n_features)
-        Data matrix with NaN at missing positions.
+    X : np.ndarray
+        The data matrix with NaN values.
     alpha : float
-        Significance level. Default 0.05.
-    
+        Significance level for the chi-square test.
+
     Returns
     -------
-    pvalue : float
-        P-value from chi-square test. P < alpha rejects MCAR.
-    is_mcar : bool
-        True if p-value >= alpha (fail to reject MCAR); False otherwise.
-    
-    Notes
-    -----
-    - Requires at least 30 samples per missing-data pattern for asymptotic
-      validity. For small samples, interpret with caution.
-    - Rejection of MCAR means data are MAR or MNAR; the test cannot
-      distinguish between these two alternatives.
-    - This implementation uses a simplified approximation; for production use
-      with complex missing patterns, consider the `pyampute` library.
-    
-    References
-    ----------
-    Little, R. J. A. (1988). A test of missing completely at random for
-    multivariate data with missing values. *Journal of the American
-    Statistical Association*, 83(404), 1198-1202.
+    Tuple[float, bool]
+        p-value and a boolean indicating if MCAR is accepted.
     """
     from scipy import stats
     
@@ -1353,41 +1282,26 @@ def assess_missing_mechanism(
     alpha: float = 0.05,
     verbose: bool = False,
 ) -> MissingnessMechanismReport:
-    """Comprehensive diagnostic for missing data mechanism (MCAR/MAR/MNAR).
-    
-    Enhancement M-11: Full diagnostic battery for missing data mechanism.
-    
-    Applies three tests:
-    1. **Little's MCAR test** — tests if missingness is completely random.
-    2. **MAR logistic test** — tests if missingness depends on observed data.
-    3. **MNAR sensitivity heuristic** — estimates plausibility of MNAR.
-    
-    Decision tree for imputation strategy:
-    - MCAR confirmed (Little's p >= 0.05, MAR R² < 0.1) → mean/median/MICE
-    - MAR confirmed (Little's p < 0.05, MAR R² >= 0.1) → MICE/MissForest/SoftImpute
-    - MNAR suspected (MAR R² < 0.1, high sensitivity) → GAIN / Selection models
-    
+    """
+    Execute a diagnostic battery to identify the missing data mechanism.
+
+    Evaluates MCAR (Little's test), MAR (logistic regression), and MNAR 
+    (sensitivity indices) to recommend the most appropriate imputation 
+    strategy.
+
     Parameters
     ----------
-    X : array-like, shape (n_samples, n_features)
-        Data matrix with NaN at missing positions. Can be numpy array or
-        pandas DataFrame (column names used in report if available).
+    X : np.ndarray | pd.DataFrame
+        The dataset to analyze.
     alpha : float
-        Significance level for MCAR test. Default 0.05.
+        Significance level for statistical tests.
     verbose : bool
-        If True, print diagnostic summary to console.
-    
+        Whether to log detailed findings.
+
     Returns
     -------
-    report : MissingnessMechanismReport
-        Diagnostic report with test statistics and mechanism assessment.
-    
-    Examples
-    --------
-    >>> X = panel_tensor[2023].values  # (63 provinces × 29 subcriteria)
-    >>> report = assess_missing_mechanism(X, verbose=True)
-    >>> print(report.mechanism_assessment)  # 'MAR'
-    >>> print(report.to_dict())
+    MissingnessMechanismReport
+        A detailed summary of the detected distribution of missingness.
     """
     # Convert to numpy if DataFrame
     if isinstance(X, pd.DataFrame):
@@ -1577,25 +1491,13 @@ def _build_ml_year_contexts(
 
 
 def build_ml_panel_data(panel_data, max_linear_gap: int = 2):
-    """Build a copy of *panel_data* for the ML forecasting phase with MICE imputation.
+    """
+    Construct a MICE-imputed copy of the panel data for ML workflows.
 
-    The MCDM weighting and ranking phases deliberately use the raw observed
-    data (complete-case strategy, no imputation) to avoid introducing synthetic
-    values into MCDM decision matrices. The ML forecasting phase receives
-    a completely imputed panel view via MICE (Multivariate Imputation by 
-    Chained Equations) with rebuilt derived attributes.
-
-    This function creates a new :class:`~data.data_loader.PanelData` object
-    with **MICE-imputed** subcriteria cross-sections using ExtraTreesRegressor
-    to learn multivariate feature correlations across all years. All NaN values
-    in the subcriteria matrices are filled before downstream feature engineering.
-
-    All derived views (criteria, final scores) and the per-year
-    ``year_contexts`` are rebuilt from the imputed subcriteria so the ML
-    feature engineer sees consistent active-province sets.
-
-    The original *panel_data* is **never modified** — a deep copy of every
-    cross-section DataFrame is made and imputed before processing.
+    The ranking pipeline uses raw observations, but the ML ensemble 
+    requires a fully populated feature set. This method applies 
+    Multivariate Imputation by Chained Equations (MICE) to fill 
+    all structural gaps in the panel.
 
     Parameters
     ----------

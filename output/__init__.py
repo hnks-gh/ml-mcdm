@@ -1,30 +1,53 @@
-# -*- coding: utf-8 -*-
 """
-Output Package
-==============
+Output and Persistence Layer.
 
-Centralises all persistence logic: CSV/JSON data, Markdown reports,
-visualization figures, and orchestration thereof.
+This package centralizes all data serialization, reporting, and 
+visualization logic for the ML-MCDM pipeline. It provides a unified 
+interface for saving structured CSV/JSON data, generating publication-quality 
+Markdown reports, and rendering diagnostic plots.
 
-Quick start::
+Package Structure
+-----------------
+- `orchestrator`: Central coordination hub for all writers.
+- `csv_writer`: Structured numerical data persistence.
+- `report_writer`: Human-readable analytical summaries.
+- `visualization`: Diagnostic and result plotting engine.
 
-    from output import OutputOrchestrator
-    orch = OutputOrchestrator('output/result')
-    orch.save_all(panel_data, weights, ranking_result, ...)
+Security
+--------
+Includes directory sanitization to prevent path-traversal attacks when 
+resolving output locations.
 """
 
 from pathlib import Path as _Path
 
 
 def _sanitize_output_dir(raw: str, *, anchor: _Path | None = None) -> _Path:
-    """Resolve *raw* and guard against ``..`` path-traversal attacks.
+    """
+    Resolve and validate output directory paths.
 
-    When *raw* is a **relative** path the resolved result must stay
-    under *anchor* (default: cwd).  Absolute paths are allowed — they
-    are only rejected when ``..`` segments would cause them to escape a
-    parent they logically started under.
+    Guards against path-traversal attacks by ensuring that relative output 
+    paths do not escape the project anchor (usually CWD) and that 
+    absolute paths do not contain literal '..' components.
 
-    Raises ``ValueError`` if traversal is detected.
+    Parameters
+    ----------
+    raw : str
+        The raw path string provided by the user or config.
+    anchor : Path, optional
+        The reference directory for relative path resolution. Defaults 
+        to `Path.cwd()`.
+
+    Returns
+    -------
+    Path
+        The resolved and validated absolute Path object.
+
+    Raises
+    ------
+    ValueError
+        If path traversal is detected or if the resolved path escapes 
+        the anchor.
     """
     raw_path = _Path(raw)
 

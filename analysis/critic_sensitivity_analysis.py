@@ -1,28 +1,27 @@
-# -*- coding: utf-8 -*-
 """
-Three-Tier Perturbation Sensitivity Analysis for CRITIC Weights
-================================================================
+Perturbation Sensitivity Analysis for CRITIC Weights.
 
-Implements sensitivity assessment by perturbing weights and measuring
-rank disruption across three magnitude tiers:
-  - Conservative: ±5% perturbations (realistic measurement noise)
-  - Moderate: ±15% perturbations (policy/data revisions)
-  - Aggressive: ±50% perturbations (extreme stress test)
+This module provides tools for assessing the robustness of CRITIC weights 
+to measurement noise and data revisions. It implements a three-tier 
+perturbation strategy (conservative, moderate, aggressive) and measures 
+the resulting rank disruption in the composite criteria scores.
 
-Metrics include:
-  - Per-tier robustness: fraction of perturbations NOT causing rank change
-  - Per-criterion sensitivity: how often a criterion changes rank
-  - Rank disruption: 1 - Spearman's ρ before/after perturbation
-
-Production-hardened implementation with full docstring coverage, type hints,
-and numerical guards. Re-normalization ensures weight constraints (sum=1.0)
-are always satisfied post-perturbation.
+Key Features
+------------
+- **Three-Tier Stress Testing**: Evaluates weight stability under ±5%, 
+  ±15%, and ±50% perturbations.
+- **Rank Disruption Metric**: Quantifies sensitivity using 1 - Spearman's 
+  rho between original and perturbed rankings.
+- **Criterion-Level Sensitivity**: Identifies which specific criteria are 
+  most likely to change rank under noise.
+- **Re-normalization Integrity**: Ensures that perturbed weight vectors 
+  always satisfy the sum-to-one constraint and non-negativity.
 
 References
 ----------
-- Saltelli, A., Ratto, M., Andres, T., et al. (2008). Global Sensitivity Analysis.
-- Runge, J. (2014). Quantifying information transfer and mediation.
-- Sobol', I. M. (2001). Global sensitivity indices for nonlinear models.
+- Saltelli et al. (2008). "Global Sensitivity Analysis." Wiley.
+- Sobol' (2001). "Global sensitivity indices for nonlinear models." 
+  Mathematics and Computers in Simulation.
 """
 
 from __future__ import annotations
@@ -107,10 +106,13 @@ class SensitivityResult:
     @property
     def is_robust(self) -> bool:
         """
-        Heuristic robustness indicator.
+        Check if the weights are robust at the conservative tier.
 
-        Returns True if conservative robustness > 0.90.
-        This is a production heuristic; interpret in context.
+        Returns
+        -------
+        bool
+            True if conservative robustness > 0.90, indicating high stability 
+            under typical measurement noise.
         """
         return self.tier_robustness.get('conservative', 0.0) > 0.90
 
@@ -164,7 +166,23 @@ class CRITICSensitivityAnalyzer:
         rank_disruption_threshold: float = 0.1,
         seed: Optional[int] = None,
     ):
-        """Initialize analyzer with perturbation parameters."""
+        """
+        Initialize the CRITIC sensitivity analyzer.
+
+        Parameters
+        ----------
+        perturbation_tiers : Dict[str, float], optional
+            Tier names and their corresponding perturbation magnitudes (as 
+            fractions). Defaults to conservative (0.05), moderate (0.15), 
+            and aggressive (0.50).
+        n_replicates : int, default=50
+            Number of random perturbations to generate per year per tier.
+        rank_disruption_threshold : float, default=0.1
+            The maximum '1 - Spearman rho' value allowed for a perturbation 
+            to be considered "robust".
+        seed : int, optional
+            Seed for reproducible random perturbations.
+        """
         if perturbation_tiers is None:
             self.perturbation_tiers = {
                 'conservative': 0.05,

@@ -1,24 +1,29 @@
-# -*- coding: utf-8 -*-
 """
-Stability Analysis for ML Forecasting and Evidential Reasoning
-==============================================================
+Stability Analysis for ML Forecasting and Evidential Reasoning.
 
-Quantifies temporal and cross-sectional stability for:
+This module provides tools for quantifying the temporal and cross-sectional 
+stability of the ML-MCDM pipeline. It enables comparison between 
+different models, time periods, and parameter settings to ensure 
+consistent and reliable decision support.
 
-1. Forecast Stability
-   - Temporal fold-to-fold consistency of ML predictions
-   - Ensemble model agreement across members
-   - Prediction interval width stability
-
-2. Evidential Reasoning Stability
-   - Belief distribution cosine similarity between two results
-   - Utility ranking rank correlation
-   - Grade assignment consistency and entropy stability
+Key Features
+------------
+- **Forecast Stability**: Assesses the temporal consistency of ML 
+  predictions across CV folds and agreement among ensemble members.
+- **ER Metric Compatibility**: Compares belief distributions and utility 
+  rankings between different aggregations using cosine similarity and 
+  rank correlation.
+- **Uncertainty Volatility**: Tracks the stability of prediction interval 
+  widths and belief entropy over time.
+- **Ensemble Agreement**: Measures the consensus level among diverse base 
+  learners in the SuperLearner architecture.
 
 References
 ----------
-Hyndman & Athanasopoulos (2021). Forecasting: Principles and Practice.
-Yang & Xu (2002). Evidential reasoning under uncertainty.
+- Hyndman & Athanasopoulos (2021). "Forecasting: Principles and Practice." 
+  OTexts.
+- Yang & Xu (2002). "On the evidential reasoning algorithm for multiple 
+  attribute decision analysis under uncertainty." IEEE Transactions.
 """
 
 import numpy as np
@@ -96,6 +101,15 @@ class ForecastStabilityAnalyzer:
     """
 
     def __init__(self, threshold: float = 0.8):
+        """
+        Initialize the forecast stability analyzer.
+
+        Parameters
+        ----------
+        threshold : float, default=0.8
+            Minimum temporal consistency score (mean Spearman rho) 
+            required for the forecast to be considered "stable".
+        """
         self.threshold = threshold
 
     def analyze(
@@ -236,6 +250,15 @@ class ERStabilityAnalyzer:
     """
 
     def __init__(self, threshold: float = 0.85):
+        """
+        Initialize the ER stability analyzer.
+
+        Parameters
+        ----------
+        threshold : float, default=0.85
+            Minimum belief cosine similarity required to declare the 
+            aggregation stable.
+        """
         self.threshold = threshold
 
     def analyze(self, er_result_1, er_result_2) -> ERStabilityResult:

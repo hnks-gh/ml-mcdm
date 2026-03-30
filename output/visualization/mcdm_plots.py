@@ -1,17 +1,19 @@
-# -*- coding: utf-8 -*-
 """
-MCDM Method-Agreement Plots (fig06 – fig08)
-=============================================
+MCDM Method-Agreement and Stability Visualizations.
 
-Publication-quality figures for cross-method comparison and criterion-level
-analysis.
+This module provides the `MCDMPlotter` class, which generates 
+publication-quality figures for comparing multiple MCDM methods. It 
+focuses on rank agreement (Spearman matrices), method stability across 
+criteria groups, and discriminatory power (score distribution spread).
 
-fig06  – Spearman method-agreement heatmap (clustered)
-fig06b – Kendall's W / avg-Spearman bar chart per criterion
-fig07  – 2×4 grid of per-criterion parallel-coord panels (one per criterion)
-fig08  – Per-criterion method score panels (horizontal bar, top-N)
-fig08b – MCDM composite vs ER final score scatter / bubble comparison
-fig08c – Province × Criterion ER utility heatmap (Stage-1 belief avg utility)
+Key Figures
+-----------
+- **fig06 (Agreement Matrix)**: Clustered Spearman rank-correlation heatmap 
+  identifies groups of similar methods.
+- **fig08e (Stability Comparison)**: Evaluates how consistently a method 
+  orders alternatives across different criteria subsets.
+- **fig08f (Discriminatory Power)**: Uses score IQR to measure how 
+  effectively a method differentiates between top and bottom performers.
 """
 
 from __future__ import annotations
@@ -34,7 +36,13 @@ _logger = logging.getLogger(__name__)
 
 
 class MCDMPlotter(BasePlotter):
-    """Figures for MCDM inter-method agreement and criterion-level scores."""
+    """
+    Generator for MCDM comparative analysis visualizations.
+
+    Provides tools to assess inter-method consensus, structural stability of 
+    rankings, and the statistical resolution of different aggregation 
+    algorithms.
+    """
 
     # ==================================================================
     #  FIG 06 – MCDM Method Agreement Matrix (Spearman heatmap, clustered)
@@ -47,9 +55,24 @@ class MCDMPlotter(BasePlotter):
         save_name: str = 'fig06_method_agreement.png',
     ) -> Optional[str]:
         """
-        Spearman rank-correlation heatmap across all criterion-method pairs.
-        When scipy is available the columns/rows are reordered by hierarchical
-        clustering so groups of agreeing methods cluster together.
+        Produce a clustered Spearman rank-correlation heatmap.
+
+        Automatically applies hierarchical clustering to reorder methods, 
+        making cliques of agreeing techniques visually apparent.
+
+        Parameters
+        ----------
+        rankings_dict : Dict[str, np.ndarray]
+            Dictionary mapping method names to their ranking vectors.
+        title : str, default='MCDM Method Rank Agreement (Spearman ρ)'
+            The plot title.
+        save_name : str, default='fig06_method_agreement.png'
+            The output filename.
+
+        Returns
+        -------
+        str, optional
+            The absolute path to the saved figure, or None if failed.
         """
         if not HAS_MATPLOTLIB or not HAS_SCIPY:
             return None
@@ -145,16 +168,20 @@ class MCDMPlotter(BasePlotter):
         self, ranking_result: Any
     ) -> Dict[str, float]:
         """
-        Cross-criteria stability for each method.
+        Calculate cross-criteria ranking stability for each method.
 
-        For each traditional MCDM method: compute the average
-        pairwise Spearman ρ between that method's per-criterion rank vectors
-        across all criterion pairs.  Higher = more consistent ordering across
-        criteria groups.
+        Stablity is defined as the average pairwise Spearman ρ between 
+        a method's per-criterion rank vectors.
+
+        Parameters
+        ----------
+        ranking_result : RankingResult
+            Aggregated results containing criterion-level method rankings.
 
         Returns
         -------
-        Dict[str, float]  method → stability score ∈ [−1, 1]
+        Dict[str, float]
+            Mapping of method name to stability score in range [-1, 1].
         """
         stability: Dict[str, float] = {}
 
@@ -196,16 +223,20 @@ class MCDMPlotter(BasePlotter):
         self, ranking_result: Any
     ) -> Dict[str, float]:
         """
-        Discriminatory power for each method: IQR (Q75−Q25) of the
-        criterion-weighted composite score across all active provinces.
+        Calculate the discriminatory power (score IQR) for each method.
 
-        For each traditional method, the composite score is the weighted
-        average of normalised per-criterion scores (using
-        ``criterion_weights_used`` from the ranking result).
+        Measures the spread of composite scores to assess how well a method 
+        separates alternatives.
+
+        Parameters
+        ----------
+        ranking_result : RankingResult
+            The results containing criterion-weighted composite scores.
 
         Returns
         -------
-        Dict[str, float]  method → IQR ≥ 0
+        Dict[str, float]
+            Mapping of method name to its Inter-Quartile Range (IQR).
         """
         disc: Dict[str, float] = {}
 
@@ -267,12 +298,22 @@ class MCDMPlotter(BasePlotter):
         save_name: str = 'fig08e_method_stability.png',
     ) -> Optional[str]:
         """
-        Horizontal bar chart comparing the cross-criteria ranking stability
-        (average pairwise Spearman ρ) of Base, the 6 MCDM methods, and ER.
+        Produce a horizontal bar chart of cross-criteria ranking stability.
 
-        Bars sorted from highest to lowest stability.  Base is shown in a
-        muted gray, MCDM methods in the categorical palette, and ER in a
-        distinct accent colour.  A dashed vertical line marks the median.
+        Enables comparison of 'Base' (naive) results against traditional 
+        MCDM and fused ER rankings.
+
+        Parameters
+        ----------
+        ranking_result : RankingResult
+            The output of the aggregation engine.
+        save_name : str, default='fig08e_method_stability.png'
+            The output filename.
+
+        Returns
+        -------
+        str, optional
+            The absolute path to the saved figure, or None if failed.
         """
         if not HAS_MATPLOTLIB or not HAS_SCIPY:
             return None
@@ -385,13 +426,22 @@ class MCDMPlotter(BasePlotter):
         save_name: str = 'fig08f_method_disc_power.png',
     ) -> Optional[str]:
         """
-        Vertical bar chart comparing the discriminatory power (score IQR,
-        Q75 − Q25) of Base, the 5 MCDM methods, and ER.
+        Produce a vertical bar chart of method discriminatory power.
 
-        Methods appear in fixed order: Base → TOPSIS → VIKOR → PROMETHEE
-        → COPRAS → EDAS → ER.  A dashed horizontal line marks the ER IQR
-        as a reference target.  Bar interiors show a translucent Q10–Q90
-        band to communicate the full score spread.
+        Compares the IQR of scores across methods to identify which 
+        algorithms provide the clearest separation of performance tiers.
+
+        Parameters
+        ----------
+        ranking_result : RankingResult
+            The output of the aggregation engine.
+        save_name : str, default='fig08f_method_disc_power.png'
+            The output filename.
+
+        Returns
+        -------
+        str, optional
+            The absolute path to the saved figure, or None if failed.
         """
         if not HAS_MATPLOTLIB:
             return None

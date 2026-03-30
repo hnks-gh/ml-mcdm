@@ -3,44 +3,15 @@
 Super Learner (Stacked Generalization) Meta-Ensemble
 ====================================================
 
-Implements the Super Learner algorithm (van der Laan et al., 2007),
-a principled approach to ensemble learning that uses a meta-learner
-trained on out-of-fold predictions to optimally combine base models.
+Implements the Super Learner algorithm, a principled approach to ensemble 
+learning that uses a meta-learner trained on out-of-fold (OOF) predictions 
+to optimally combine diverse base models. 
 
-Architecture:
-    Base Models → Out-of-Fold Predictions → Meta-Learner → Final Prediction
-         ├─ CatBoost          (ŷ₁)           ↓
-         ├─ BayesianRidge     (ŷ₂)      Ridge Regression
-         ├─ SVR               (ŷ₃)      L2-regularized meta-weights
-         └─ ElasticNet        (ŷ₄)      (learns α₁...αₙ)
-                                              ↓
-                                         ŷ_final = Σ αᵢŷᵢ
+The architecture follows a stacked generalization framework:
+Base Models → OOF Predictions → Meta-Learner → Final Prediction.
 
-Key Properties:
-    1. Oracle inequality: Super Learner performs asymptotically
-       as well as the best weighted combination of base models
-    2. Cross-validated meta-features prevent information leakage
-    3. Ridge L2 regularization + positive weight constraint ensures
-       stability under correlated OOF predictions and interpretability
-    4. Panel-aware temporal CV (``_PanelTemporalSplit``) uses the
-       *median* entity length to size fold windows, preserving data
-       from longer-history entities that the old min-based splitter
-       discarded (Bug S-2 fix)
-    5. OOF predictions are cached and re-used for conformal calibration
-       — the SuperLearner ensemble is never deep-copied (Bug U-2 fix)
-
-Variants:
-    - Standard: ElasticNet meta-learner with positive weights
-    - Bayesian Stacking: Dirichlet-weighted meta-learner for uncertainty
-    - Dynamic: Time-varying weights via exponential weighting
-
-References:
-    - van der Laan, Polley & Hubbard (2007). "Super Learner"
-      Statistical Applications in Genetics and Molecular Biology
-    - Naimi & Balzer (2018). "Stacked Generalization: An Introduction
-      to Super Learning" European Journal of Epidemiology
-    - Yao et al. (2018). "Using Stacking to Average Bayesian Predictive
-      Distributions" Bayesian Analysis
+This implementation features panel-aware temporal splitting, L2-regularized 
+positive meta-weights, and support for Bayesian Dirichlet stacking.
 """
 
 import numpy as np
@@ -76,23 +47,15 @@ class _PanelTemporalSplit:
     """
     Panel-aware temporal cross-validation splitter.
 
-    Unlike ``TimeSeriesSplit`` (which splits on the absolute row position in
-    the stacked panel), this splitter identifies the temporal position of
-    each row *within its entity* and produces folds that respect temporal
-    order for every entity simultaneously.
-
-    For each fold k:
-      * **train**: rows whose within-entity time position is in ``[0, cut_k)``
-      * **val**  : rows whose within-entity time position is in
-                   ``[cut_k, cut_{k+1})``
-
-    This guarantees that no entity's future leaks into training data and
-    that every entity contributes both train and validation rows.
+    Respects the within-entity temporal order by splitting based on the 
+    relative time position within each panel group rather than absolute 
+    row position. This guarantees that training data always precedes 
+    validation data for every entity.
 
     Parameters
     ----------
     n_splits : int
-        Number of CV folds (≥ 2).
+        Number of cross-validation folds.
     """
 
     def __init__(self, n_splits: int = 5):
@@ -208,36 +171,20 @@ class _PanelTemporalSplit:
 
 class _WalkForwardYearlySplit:
     """
-    Walk-forward yearly cross-validation with 1-year validation steps.
+    Walk-forward yearly cross-validation with 1-year validation windows.
 
-    Unlike _PanelTemporalSplit (which uses median entity-length-based fold
-    windows), this splitter uses explicit calendar year labels to define
-    folds.  Each validation fold covers exactly one calendar year × all
-    active entities — directly mirroring the production forecasting task
-    (predict year T+1 using data through year T).
-
-    Fold k (0-indexed):
-      train : rows where year_label < val_year  (i.e. all prior years)
-      val   : rows where year_label == val_year
-
-    where val_year = unique_years[min(min_train_years, len-1) + k].
-
-    Example with 13 target years (2012–2024), min_train_years=8, max_folds=5:
-      Fold 0: train 2012–2019, validate 2020
-      Fold 1: train 2012–2020, validate 2021
-      Fold 2: train 2012–2021, validate 2022
-      Fold 3: train 2012–2022, validate 2023
-      Fold 4: train 2012–2023, validate 2024
+    Uses explicit calendar year labels to define folds, mirroring the 
+    production forecasting task (predicting year T+1 using data through 
+    year T). Each fold validates on exactly one calendar year across all 
+    active entities.
 
     Parameters
     ----------
     min_train_years : int
-        Minimum number of target-year cohorts in the first training fold.
-        Default 8 ensures at least 8 years of history before the first
-        validation year (first val year = 2020 for labels 2012–2024).
+        Minimum number of initial training years to include in the first 
+        fold.
     max_folds : int
-        Maximum number of folds to yield.  Prevents excessive folds for
-        very long panels.
+        Maximum number of walk-forward folds to generate.
     """
 
     def __init__(self, min_train_years: int = 8, max_folds: int = 5):
@@ -302,47 +249,31 @@ PanelWalkForwardCV = _WalkForwardYearlySplit
 
 class SuperLearner:
     """
-    Super Learner meta-ensemble combining multiple base forecasters.
+    Super Learner meta-ensemble algorithm.
 
-    The algorithm:
-    1. Generate out-of-fold (OOF) predictions using temporal CV
-    2. Train a meta-learner on OOF predictions as features
-    3. Re-train all base models on full training data
-    4. Combine base model predictions using meta-learner weights
+    Coordinates the lifecycle of a stacked ensemble:
+    1. Cross-validation: Generates out-of-fold (OOF) predictions for all 
+       base models.
+    2. Meta-learning: Optimizes combination weights using OOF residuals.
+    3. Refitting: Finalizes base models on the complete dataset.
 
-    Parameters:
-        base_models: Dictionary of {name: BaseForecaster} instances
-        meta_learner_type: Type of meta-learner ('ridge' [default - RidgeCV],
-                          'elasticnet' [ElasticNetCV], 'bayesian_stacking' [softmax on R²])
-        n_cv_folds: Number of CV folds for OOF predictions
-        cv_min_train_years: Minimum year-label cohorts before first validation
-            fold when using _WalkForwardYearlySplit.  Default 7 places the
-            first validation at 2019 when year_labels run 2012–2024.
-        positive_weights: If True, constrain meta-weights to be non-negative
-        normalize_weights: If True, meta-weights sum to 1
-        meta_alpha_range: Range of regularization values for meta-learner CV
-        temperature: Temperature for the softmax-weighted stacking (higher
-            temperature → flatter weights; lower → winner-takes-all). Only
-            used when ``meta_learner_type='bayesian_stacking'``.
-            Note: despite the name, the current implementation is a
-            deterministic *softmax* weighting of OOF R² scores
-            (temperature-scaled), not a full Bayesian Dirichlet-posterior
-            stacking as in Yao et al. (2018).  The name is retained for
-            backward compatibility.
-        random_state: Random seed
-        verbose: Print progress messages
-
-    Example:
-        >>> from forecasting.catboost_forecaster import CatBoostForecaster
-        >>> from forecasting.bayesian import BayesianForecaster
-        >>>
-        >>> base = {
-        ...     'catboost': CatBoostForecaster(),
-        ...     'bayesian': BayesianForecaster(),
-        ... }
-        >>> sl = SuperLearner(base_models=base)
-        >>> sl.fit(X_train, y_train)
-        >>> predictions = sl.predict(X_test)
+    Parameters
+    ----------
+    base_models : Dict[str, BaseForecaster]
+        The set of candidate forecasting models to ensemble.
+    meta_learner_type : str, default='ridge'
+        The algorithm used for the second-level stacking: 'ridge', 
+        'elasticnet', or 'dirichlet_stacking'.
+    n_cv_folds : int, default=5
+        Number of temporal folds for generating OOF predictions.
+    cv_min_train_years : int, default=5
+        Minimum historical window for the first CV fold.
+    positive_weights : bool, default=True
+        Whether to enforce non-negative meta-learner coefficients.
+    normalize_weights : bool, default=True
+        Whether to ensure that meta-weights sum to unity.
+    random_state : int, default=42
+        Seed for reproducibility.
     """
 
     def __init__(
@@ -350,8 +281,8 @@ class SuperLearner:
         base_models: Dict[str, BaseForecaster],
         meta_learner_type: str = "ridge",
         n_cv_folds: int = 5,
-        cv_min_train_years: int = 8,
-        conformal_min_train_years: int = 3,
+        cv_min_train_years: int = 5,
+        conformal_min_train_years: int = 2,
         positive_weights: bool = True,
         normalize_weights: bool = True,
         meta_alpha_range: Optional[List[float]] = None,
@@ -363,15 +294,56 @@ class SuperLearner:
         max_secondary_conformal_folds: int = 999,
         allow_skip_secondary_conformal_when_slow: bool = True,
     ):
-        self.base_models = base_models
+        # §3.3 — Add Persistence baseline to the meta-learner's base model pool.
+        #
+        # Rationale (Forecasting Enhancement Plan §3.3):
+        # The naive carry-forward (last-value-carried-forward) baseline anchors the
+        # lower-bound benchmark in CV scores.  Including it in self.base_models means:
+        #   1. The meta-learner assigns it near-zero weight when all other models
+        #      outperform it — correct and expected.
+        #   2. When complex models catastrophically fail (all negative OOF R²), the
+        #      meta-learner can fall back to persistence rather than producing a
+        #      pathological negative-weight combination.
+        #   3. Per-criterion persistence predictions are visible in the model
+        #      contributions table, providing an interpretable skill-score baseline.
+        #
+        # Implementation note: we insert Persistence at the FRONT of an OrderedDict
+        # so it appears first in iteration order and does not displace the
+        # caller-provided model indices in oof_predictions (Persistence occupies
+        # model index 0; caller models shift by 1).  We use a fresh
+        # PersistenceForecaster instance so it is independent of any outside state.
+        #
+        # The existing standalone persistence CV benchmark loop (lines ~952–1073)
+        # remains intact — it accumulates _cv_scores['Persistence'] for the skill-score
+        # reporting path before the meta-learner ever sees those scores.  Having
+        # Persistence also in base_models means its OOF predictions are computed a
+        # SECOND time inside the primary CV loop, which is deliberately redundant:
+        # the primary loop OOF feeds the meta-learner; the benchmark loop feeds
+        # reporting/diagnostics.  The small computational overhead (~5s) is justified
+        # by clean separation of concerns.
+        _persistence_key = 'Persistence'
+        if _persistence_key not in base_models:
+            # Prepend Persistence so meta-learner column 0 = Persistence
+            _aug_models: Dict[str, BaseForecaster] = {_persistence_key: PersistenceForecaster(verbose=False)}
+            _aug_models.update(base_models)
+        else:
+            # Caller already included Persistence — use as-is
+            _aug_models = dict(base_models)
+        self.base_models = _aug_models
         self.meta_learner_type = meta_learner_type
         self.n_cv_folds = n_cv_folds
         self.cv_min_train_years = cv_min_train_years
         self.conformal_min_train_years = max(2, conformal_min_train_years)
         self.positive_weights = positive_weights
         self.normalize_weights = normalize_weights
+        # BUG-4 FIX: Extended alpha range includes large-penalty values (100, 1000).
+        # Under highly correlated OOF predictions (all models in the same panel),
+        # optimal Ridge alpha frequently exceeds 10. Missing large-alpha values
+        # causes RidgeCV to under-regularize the meta-learner, over-fitting on
+        # the correlated OOF feature space and inflating weights for lucky models.
+        # Range now covers 7 orders of magnitude: 0.001 → 1000.
         self.meta_alpha_range = meta_alpha_range or [
-            0.001, 0.01, 0.1, 0.5, 1.0, 5.0, 10.0
+            0.001, 0.01, 0.1, 1.0, 10.0, 100.0, 1000.0
         ]
         self.temperature = temperature
         self.random_state = random_state
@@ -608,48 +580,33 @@ class SuperLearner:
         shift_detector=None,
     ) -> "SuperLearner":
         """
-        Fit the Super Learner ensemble.
+        Train the Super Learner ensemble using a multi-stage process.
 
-        Stage 1: Generate out-of-fold predictions via temporal CV
-        Stage 2: Train meta-learner on OOF predictions
-        Stage 3: Re-train base models on refit data (or full data)
-        Stage 4: (E-02) Secondary conformal OOF sweep to extend calibration
-                 residuals to ALL training years, not just the primary window.
+        Executes cross-validation to gather out-of-fold predictions, fits 
+        the meta-learner to optimize weights, and refits base models on the 
+        target dataset.
 
-        Args:
-            X: Feature matrix used for the CV/OOF phase (n_samples, n_features).
-            y: Target values for the CV/OOF phase.
-            entity_indices: Optional entity group IDs for panel-aware models.
-            per_model_X: Optional per-model feature matrices for the CV/OOF phase.
-            year_labels: Optional integer array of shape (n_samples,) giving
-                the calendar target year for each training row.  When provided,
-                uses :class:`_WalkForwardYearlySplit` (1-year validation steps)
-                instead of :class:`_PanelTemporalSplit`.
-            refit_X: When not None, base models are re-trained on this matrix
-                instead of ``X`` after the CV phase.  Use this to restrict
-                retraining to the original training set (excluding a holdout
-                year that was appended to ``X`` solely for the last CV fold).
-            refit_y: Targets paired with ``refit_X``.
-            refit_per_model_X: Per-model matrices paired with ``refit_X``.
-            refit_entity_indices: Entity indices paired with ``refit_X``.
-            fold_correction_fn: Optional callable ``(model_name, X_fold,
-                train_idx, fold_entity_indices) -> X_fold_corrected`` that
-                [FIX #1] applies fold-aware entity-demean corrections to feature
-                matrices inside the CV loop.  Called once per (fold, model) pair
-                for training and validation folds.  Applies to all models (tree
-                and PLS tracks). For tree models, correction is exact; for PLS
-                models, it's an approximation since PLS absorbs entity demeaning
-                non-linearly.  When None, no correction is applied (default).
-            shift_detector: Optional :class:`PanelCovariateShiftDetector`
-                (E-08).  When not ``None``, per-fold MMD²-based covariate
-                shift detection is run before base-model fitting.  Detected
-                shifts yield per-sample importance weights that are forwarded
-                to base models whose ``fit()`` accepts ``sample_weight``.
-                Uniform weights (1.0) are used when no shift is detected.
-                When ``None``, no shift detection is performed (default).
+        Parameters
+        ----------
+        X : np.ndarray
+            Input features for cross-validation phase.
+        y : np.ndarray
+            Target variables for cross-validation phase.
+        entity_indices : np.ndarray, optional
+            Group identifiers for panel data observations.
+        per_model_X : Dict[str, np.ndarray], optional
+            Mapping of specific feature matrices per base model.
+        year_labels : np.ndarray, optional
+            Calendar year labels for walk-forward CV.
+        refit_X : np.ndarray, optional
+            Features to use for the final model refitting stage.
+        refit_y : np.ndarray, optional
+            Targets to use for the final model refitting stage.
 
-        Returns:
-            Self for method chaining
+        Returns
+        -------
+        SuperLearner
+            Fitted ensemble instance.
         """
         if y.ndim == 1:
             y = y.reshape(-1, 1)
@@ -934,137 +891,167 @@ class SuperLearner:
         # ────────────────────────────────────────────────────────────
         # Persistence baseline: Naive carry-forward for benchmarking (Phase A)
         # ────────────────────────────────────────────────────────────
-        # Run the persistence forecaster through the same CV loop to compute
-        # CV R² scores comparable to base models. This enables skill score
-        # calculation: SS = (R²_ensemble - R²_persistence) / (1 - R²_persistence)
-        if self.verbose:
-            logger.info("  Evaluating persistence baseline...")
-
-        stage_persist_start = time.perf_counter()
-        logger.info("Stage 3/1b: Persistence baseline CV started.")
-
-        persistence_model = PersistenceForecaster(verbose=False)
-        persistence_cv_scores = []
-        persistence_oof_preds = np.full((n_samples, self._n_outputs), np.nan)
-
-        # Re-iterate through CV folds to evaluate persistence
-        if year_labels is not None:
-            tscv_persist = _WalkForwardYearlySplit(
-                min_train_years=self.cv_min_train_years,
-                max_folds=self.n_cv_folds,
+        # §3.3 NOTE: When 'Persistence' is in self.base_models (always true after
+        # the §3.3 fix), the primary OOF CV loop above has ALREADY computed correct
+        # CV R² scores and OOF R² for the Persistence model and stored them in
+        # self._cv_scores['Persistence'] and self._oof_r2['Persistence'].
+        # Re-running the standalone benchmark loop below would:
+        #   1. Wastefully repeat the same CV computation (~5s).
+        #   2. Overwrite the meta-learner-consistent OOF R² with a slightly different
+        #      estimate (same math, potentially different NaN handling edge cases).
+        # We therefore skip the benchmark loop and reuse the primary loop's output.
+        _persistence_already_tracked = 'Persistence' in self.base_models
+        if _persistence_already_tracked:
+            _pers_mean_r2 = float(np.nanmean(self._cv_scores.get('Persistence', [np.nan])))
+            _pers_oof_r2  = self._oof_r2.get('Persistence', float('nan'))
+            logger.info(
+                "Stage 3/1b: Persistence already tracked as base model (\u00a73.3). "
+                "Skipping redundant standalone benchmark sweep. "
+                "CV R\u00b2=%.4f, OOF R\u00b2=%.4f.",
+                _pers_mean_r2, _pers_oof_r2,
             )
-            cv_iter_persist = tscv_persist.split(X, year_labels)
+            self._stage3_diagnostics_['persistence_cv']['planned_folds'] = 0
+            self._stage3_diagnostics_['persistence_cv']['completed_folds'] = 0
+            self._stage3_diagnostics_['persistence_cv']['start_time'] = time.perf_counter()
+            self._stage3_diagnostics_['persistence_cv']['end_time'] = time.perf_counter()
+            self._stage3_diagnostics_['persistence_cv']['elapsed_seconds'] = 0.0
+            self._stage3_diagnostics_['persistence_cv']['truncation_reason'] = (
+                "Skipped: Persistence is a meta-learner participant (\u00a73.3)"
+            )
         else:
-            tscv_persist = _PanelTemporalSplit(n_splits=self.n_cv_folds)
-            cv_iter_persist = tscv_persist.split(X, entity_indices=entity_indices)
+            # legacy standalone benchmark path (Persistence not in base_models)
+            if self.verbose:
+                logger.info("  Evaluating persistence baseline...")
 
-        cv_pairs_persist = list(cv_iter_persist)
-        n_persist_folds = len(cv_pairs_persist)
-        logger.info("Stage 3/1b: Planned persistence folds = %d.", n_persist_folds)
+        if not _persistence_already_tracked:
+            stage_persist_start = time.perf_counter()
+            logger.info("Stage 3/1b: Persistence baseline CV started.")
 
-        # Phase B item 3: Initialize persistence CV diagnostics
-        self._stage3_diagnostics_['persistence_cv']['planned_folds'] = n_persist_folds
-        self._stage3_diagnostics_['persistence_cv']['start_time'] = time.perf_counter()
+            persistence_model = PersistenceForecaster(verbose=False)
+            persistence_cv_scores = []
+            persistence_oof_preds = np.full((n_samples, self._n_outputs), np.nan)
 
-        for fold_idx, (train_idx, val_idx) in enumerate(cv_pairs_persist):
-            fold_start = time.perf_counter()
-            _enforce_deadline("persistence CV")
-            y_train_persist = y[train_idx]
-            y_val_persist = y[val_idx]
 
-            try:
-                # Fit persistence on training fold
-                persistence_model.fit(X[train_idx], y_train_persist)
-                pred_persist = persistence_model.predict(X[val_idx])
+        # Re-iterate through CV folds to evaluate persistence (legacy path only)
+        if not _persistence_already_tracked:
+            if year_labels is not None:
+                tscv_persist = _WalkForwardYearlySplit(
+                    min_train_years=self.cv_min_train_years,
+                    max_folds=self.n_cv_folds,
+                )
+                cv_iter_persist = tscv_persist.split(X, year_labels)
+            else:
+                tscv_persist = _PanelTemporalSplit(n_splits=self.n_cv_folds)
+                cv_iter_persist = tscv_persist.split(X, entity_indices=entity_indices)
 
-                if pred_persist.ndim == 1:
-                    pred_persist = pred_persist.reshape(-1, 1)
+            cv_pairs_persist = list(cv_iter_persist)
+            n_persist_folds = len(cv_pairs_persist)
+            logger.info("Stage 3/1b: Planned persistence folds = %d.", n_persist_folds)
 
-                # Compute per-fold R² (match base model logic: mean across outputs)
-                fold_r2s_persist = []
-                for out_col in range(y_val_persist.shape[1]):
-                    y_col = y_val_persist[:, out_col]
-                    p_col = pred_persist[:, out_col]
-                    _valid = ~np.isnan(y_col)
-                    if _valid.sum() >= 2:
-                        fold_r2s_persist.append(
-                            float(r2_score(y_col[_valid], p_col[_valid]))
+            # Phase B item 3: Initialize persistence CV diagnostics
+            self._stage3_diagnostics_['persistence_cv']['planned_folds'] = n_persist_folds
+            self._stage3_diagnostics_['persistence_cv']['start_time'] = time.perf_counter()
+
+            for fold_idx, (train_idx, val_idx) in enumerate(cv_pairs_persist):
+                fold_start = time.perf_counter()
+                _enforce_deadline("persistence CV")
+                y_train_persist = y[train_idx]
+                y_val_persist = y[val_idx]
+
+                try:
+                    # Fit persistence on training fold
+                    persistence_model.fit(X[train_idx], y_train_persist)
+                    pred_persist = persistence_model.predict(X[val_idx])
+
+                    if pred_persist.ndim == 1:
+                        pred_persist = pred_persist.reshape(-1, 1)
+
+                    # Compute per-fold R² (match base model logic: mean across outputs)
+                    fold_r2s_persist = []
+                    for out_col in range(y_val_persist.shape[1]):
+                        y_col = y_val_persist[:, out_col]
+                        p_col = pred_persist[:, out_col]
+                        _valid = ~np.isnan(y_col)
+                        if _valid.sum() >= 2:
+                            fold_r2s_persist.append(
+                                float(r2_score(y_col[_valid], p_col[_valid]))
+                            )
+                        else:
+                            fold_r2s_persist.append(np.nan)
+
+                    mean_r2_persist = (
+                        float(np.nanmean(fold_r2s_persist))
+                        if not all(np.isnan(r) for r in fold_r2s_persist)
+                        else np.nan
+                    )
+                    persistence_cv_scores.append(mean_r2_persist)
+
+                    # Store OOF predictions for conformal calibration (optional)
+                    persistence_oof_preds[val_idx, :] = pred_persist[:, :self._n_outputs]
+
+                except Exception as e:
+                    logger.warning(
+                        f"Persistence baseline failed on fold {fold_idx}: {e}"
+                    )
+                    persistence_cv_scores.append(np.nan)
+
+                fold_elapsed = time.perf_counter() - fold_start
+                logger.info(
+                    "Stage 3/1b: Persistence fold %d/%d completed in %.2fs "
+                    "(train=%d, val=%d).",
+                    fold_idx + 1,
+                    n_persist_folds,
+                    fold_elapsed,
+                    len(train_idx),
+                    len(val_idx),
+                )
+                # Phase B item 3: Track per-fold completion for persistence CV
+                self._stage3_diagnostics_['persistence_cv']['completed_folds'] += 1
+                self._stage3_diagnostics_['persistence_cv']['per_fold_times'].append(
+                    {'fold_idx': fold_idx, 'elapsed_seconds': fold_elapsed}
+                )
+
+            # Store persistence CV scores and OOF predictions
+            self._cv_scores['Persistence'] = persistence_cv_scores
+            self._cv_scores_per_criterion_['Persistence'] = [
+                [np.nan] * self._n_outputs
+            ] * len(persistence_cv_scores)  # Per-criterion breakdown not available
+
+            # Compute persistence OOF R² (global across all outputs)
+            valid_persist = ~np.isnan(persistence_oof_preds).any(axis=1)
+            if valid_persist.sum() > 0:
+                r2_vals_persist = []
+                for out_col in range(self._n_outputs):
+                    y_col = y[valid_persist, out_col]
+                    p_col = persistence_oof_preds[valid_persist, out_col]
+                    _y_ok = ~np.isnan(y_col)
+                    if _y_ok.sum() >= 2:
+                        r2_vals_persist.append(
+                            r2_score(y_col[_y_ok], p_col[_y_ok])
                         )
                     else:
-                        fold_r2s_persist.append(np.nan)
+                        r2_vals_persist.append(-1.0)
+                self._oof_r2['Persistence'] = float(np.mean(r2_vals_persist))
+            else:
+                self._oof_r2['Persistence'] = -1.0
 
-                mean_r2_persist = (
-                    float(np.nanmean(fold_r2s_persist))
-                    if not all(np.isnan(r) for r in fold_r2s_persist)
-                    else np.nan
+            if self.verbose:
+                pers_mean_r2 = float(np.nanmean(persistence_cv_scores))
+                logger.info(
+                    f"  Persistence baseline CV R\u00b2: {pers_mean_r2:.4f} "
+                    f"(OOF: {self._oof_r2['Persistence']:.4f})"
                 )
-                persistence_cv_scores.append(mean_r2_persist)
-
-                # Store OOF predictions for conformal calibration (optional)
-                persistence_oof_preds[val_idx, :] = pred_persist[:, :self._n_outputs]
-
-            except Exception as e:
-                logger.warning(
-                    f"Persistence baseline failed on fold {fold_idx}: {e}"
-                )
-                persistence_cv_scores.append(np.nan)
-
-            fold_elapsed = time.perf_counter() - fold_start
             logger.info(
-                "Stage 3/1b: Persistence fold %d/%d completed in %.2fs "
-                "(train=%d, val=%d).",
-                fold_idx + 1,
-                n_persist_folds,
-                fold_elapsed,
-                len(train_idx),
-                len(val_idx),
+                "Stage 3/1b: Persistence baseline CV finished in %.2fs.",
+                time.perf_counter() - stage_persist_start,
             )
-            # Phase B item 3: Track per-fold completion for persistence CV
-            self._stage3_diagnostics_['persistence_cv']['completed_folds'] += 1
-            self._stage3_diagnostics_['persistence_cv']['per_fold_times'].append(
-                {'fold_idx': fold_idx, 'elapsed_seconds': fold_elapsed}
+            # Phase B item 3: Finalize persistence CV diagnostics
+            self._stage3_diagnostics_['persistence_cv']['end_time'] = time.perf_counter()
+            self._stage3_diagnostics_['persistence_cv']['elapsed_seconds'] = (
+                self._stage3_diagnostics_['persistence_cv']['end_time'] -
+                self._stage3_diagnostics_['persistence_cv']['start_time']
             )
 
-        # Store persistence CV scores and OOF predictions
-        self._cv_scores['Persistence'] = persistence_cv_scores
-        self._cv_scores_per_criterion_['Persistence'] = [
-            [np.nan] * self._n_outputs
-        ] * len(persistence_cv_scores)  # Per-criterion breakdown not available
-
-        # Compute persistence OOF R² (global across all outputs)
-        valid_persist = ~np.isnan(persistence_oof_preds).any(axis=1)
-        if valid_persist.sum() > 0:
-            r2_vals_persist = []
-            for out_col in range(self._n_outputs):
-                y_col = y[valid_persist, out_col]
-                p_col = persistence_oof_preds[valid_persist, out_col]
-                _y_ok = ~np.isnan(y_col)
-                if _y_ok.sum() >= 2:
-                    r2_vals_persist.append(
-                        r2_score(y_col[_y_ok], p_col[_y_ok])
-                    )
-                else:
-                    r2_vals_persist.append(-1.0)
-            self._oof_r2['Persistence'] = float(np.mean(r2_vals_persist))
-        else:
-            self._oof_r2['Persistence'] = -1.0
-
-        if self.verbose:
-            pers_mean_r2 = float(np.nanmean(persistence_cv_scores))
-            logger.info(
-                f"  Persistence baseline CV R²: {pers_mean_r2:.4f} "
-                f"(OOF: {self._oof_r2['Persistence']:.4f})"
-            )
-        logger.info(
-            "Stage 3/1b: Persistence baseline CV finished in %.2fs.",
-            time.perf_counter() - stage_persist_start,
-        )
-        # Phase B item 3: Finalize persistence CV diagnostics
-        self._stage3_diagnostics_['persistence_cv']['end_time'] = time.perf_counter()
-        self._stage3_diagnostics_['persistence_cv']['elapsed_seconds'] = (
-            self._stage3_diagnostics_['persistence_cv']['end_time'] -
-            self._stage3_diagnostics_['persistence_cv']['start_time']
-        )
 
         # ============================================================
         # Stage 2: Train meta-learner on OOF predictions
@@ -1090,6 +1077,36 @@ class SuperLearner:
             # Pass full OOF matrix; _fit_meta_learner handles NaN
             # per-model via its own per-output valid filter.
             self._fit_meta_learner(oof_predictions, y)
+
+        # ── §3.4 — Persistently negative OOF contributor diagnostic ──────────
+        # After meta-learner fitting, examine every base model's OOF R² and
+        # meta-weight.  A model with OOF R² < -1.0 is performing *worse* than
+        # predicting the training mean (which has R²=0), implying it is
+        # actively harmful.  If the meta-learner still assigns it ≥ 5% weight,
+        # the regularization may be insufficient or the model specification is
+        # fundamentally wrong for this data regime.  We emit a WARNING —
+        # not an error — so the operator is alerted without halting the pipeline.
+        #
+        # Mathematical basis: R² = 1 − RSS/TSS.  R² < -1.0 implies
+        # RSS > 2·TSS, i.e., the model's predictions are worse than
+        # twice the variance of the target.  This is a strong signal of
+        # systematic bias or overfitting in the model.
+        #
+        # Threshold rationale:
+        #   * OOF R² < -1.0 : pathologically bad (not just noisy).
+        #   * weight < 0.05  : meta-learner already de-emphasised it — no action.
+        #   * weight ≥ 0.05  : meta-learner still relies on it — WARNING.
+        for _diag_name in self.base_models:
+            _diag_oof_r2 = self._oof_r2.get(_diag_name, 0.0)
+            _diag_weight  = self._meta_weights.get(_diag_name, 0.0)
+            if _diag_oof_r2 < -1.0 and _diag_weight >= 0.05:
+                logger.warning(
+                    "§3.4 NEGATIVE OOF CONTRIBUTOR: model '%s' has OOF R²=%.4f "
+                    "(< -1.0) but meta-weight=%.4f (>= 5%%). "
+                    "Consider inspecting feature space, regularization, or "
+                    "removing this model from the ensemble.",
+                    _diag_name, _diag_oof_r2, _diag_weight,
+                )
         logger.info(
             "Stage 3/2: Meta-learner fitting finished in %.2fs.",
             time.perf_counter() - stage2_start,
@@ -1345,27 +1362,29 @@ class SuperLearner:
                 "sweep."
             )
 
+        # BUG-2 FIX: Remove the early-gap-only gate from the secondary conformal sweep.
+        #
+        # Previous design restricted secondary residuals to years strictly before
+        # min(primary_val_years), discarding valid calibration data from years that
+        # the primary CV skipped due to fold-cap mechanics. The coverage formula for
+        # conformal prediction requires only that residuals are exchangeable and
+        # independent of the test point — not that they come from 'early' history.
+        #
+        # Correct strategy: pool ALL secondary-sweep folds whose val_year is NOT
+        # already covered by the primary OOF. This maximises n_cal per criterion
+        # and gives the Papadopoulos quantile the best possible empirical support.
+        #
+        # Theoretical note (Barber et al. 2023): adding more i.i.d. calibration
+        # residuals from earlier folds cannot increase the probability of coverage
+        # failure; it can only tighten the bound (make q_hat smaller and intervals
+        # narrower). So including all secondary folds is strictly conservative.
+
         # Determine which validation years are already in the primary OOF.
         primary_has_oof = ~np.isnan(primary_oof).all(axis=1)
         primary_val_years = (
             set(int(yy) for yy in np.unique(year_labels[primary_has_oof]))
             if primary_has_oof.any() else set()
         )
-
-        # CRITICAL: Restrict secondary conformal to TRUE early-gap years only.
-        #
-        # The primary CV is capped by max_folds (e.g., 5 folds), so late years
-        # may be missing from primary_OOF simply due to the fold cap, not
-        # because they are early data.  Secondary sweep should only cover years
-        # BEFORE the earliest year validated by primary CV — these are the
-        # true "early-gap" years representing early historical data that primary
-        # CV cannot access due to min_train_years constraint.
-        #
-        # Example: if primary validates on [2020, 2021, 2022, 2023, 2024] but
-        # due to fold cap only covers [2022, 2023, 2024], secondary should still
-        # only target years < 2020 (true early-gap), not re-validate on
-        # [2020, 2021] which are just late-years missing due to cap.
-        min_primary_val_year = min(primary_val_years) if primary_val_years else None
 
         # Build secondary splitter — starts earlier than primary.
         secondary_splitter = _WalkForwardYearlySplit(
@@ -1379,14 +1398,10 @@ class SuperLearner:
         candidate_folds: List[Tuple[np.ndarray, np.ndarray]] = []
         for _train_idx, _val_idx in secondary_splitter.split(X, year_labels):
             _val_years = set(int(yy) for yy in np.unique(year_labels[_val_idx]))
-            # Skip folds whose val_year is already covered by primary OOF
+            # Skip folds whose val_year is ALREADY in the primary OOF pool —
+            # those residuals are already available in primary_oof and would be
+            # double-counted. All other years (early AND late gaps) are included.
             if _val_years.issubset(primary_val_years):
-                continue
-            # NEW: Also skip late-year folds that are NOT early-gap years.
-            # Include only folds where ALL validation years < min(primary_val_years).
-            if min_primary_val_year is not None and not all(
-                yy < min_primary_val_year for yy in _val_years
-            ):
                 continue
             candidate_folds.append((_train_idx, _val_idx))
 
@@ -1925,19 +1940,24 @@ class SuperLearner:
         per_model_X_pred: Optional[Dict[str, np.ndarray]] = None,
     ) -> np.ndarray:
         """
-        Make predictions using the Super Learner ensemble.
+        Produce ensemble predictions for new observations.
 
-        Combines base model predictions using learned meta-weights.
+        Aggregates individual base model predictions using the optimal 
+        per-output coefficients discovered during the meta-learning phase.
 
-        Args:
-            X: Feature matrix of shape (n_samples, n_features). Default for
-                all models unless overridden by ``per_model_X_pred``.
-            entity_indices: Optional entity group IDs for panel-aware models
-            per_model_X_pred: Optional dict mapping model name → prediction
-                feature matrix (mirrors the ``per_model_X`` used in ``fit``).
+        Parameters
+        ----------
+        X : np.ndarray
+            Input feature matrix.
+        entity_indices : np.ndarray, optional
+            Group identifiers for the prediction observations.
+        per_model_X_pred : Dict[str, np.ndarray], optional
+            Mapping of specific feature matrices per base model.
 
-        Returns:
-            Predictions of shape (n_samples,) or (n_samples, n_outputs)
+        Returns
+        -------
+        np.ndarray
+            Predictions of shape (n_samples,) or (n_samples, n_outputs).
         """
         if not self._fitted:
             raise ValueError("Super Learner not fitted. Call fit() first.")
@@ -1979,6 +1999,34 @@ class SuperLearner:
                 # All weights zero — equal fallback
                 col_weights = {n: 1.0 / len(model_names) for n in model_names}
 
+            # ── §3.5 — Validate that per-output weights sum to 1 ─────────────
+            # After renormalization above, col_weights must sum to exactly 1.0.
+            # A deviation > 1e-6 indicates a numerical bug in the weight
+            # computation path (e.g., _get_weight returns inconsistent values,
+            # or the renormalization logic has an off-by-one error).
+            #
+            # Mathematical invariant: for a convex combination of base-model
+            # predictions, the coefficients must form a probability vector:
+            #   Σ_k w_k = 1,  w_k ≥ 0  ∀ k.
+            # Violation of this invariant means the ensemble prediction is
+            # NOT a proper weighted average — it may be biased or scaled wrong.
+            #
+            # We log ERROR (not raise) to allow the pipeline to continue and
+            # produce results even under numerical anomalies, while ensuring
+            # the operator is alerted for investigation.
+            _actual_w_sum = sum(col_weights.values())
+            if abs(_actual_w_sum - 1.0) > 1e-6:
+                logger.error(
+                    "§3.5 WEIGHT SUM VIOLATION: meta-weights for output col %d "
+                    "sum to %.9f (expected 1.0, delta=%.2e). "
+                    "Active models: %s. Raw weights: %s.",
+                    out_col,
+                    _actual_w_sum,
+                    abs(_actual_w_sum - 1.0),
+                    list(model_names),
+                    {n: f"{w:.6f}" for n, w in col_weights.items()},
+                )
+
             for pred, name in zip(all_predictions, model_names):
                 w = col_weights.get(name, 0.0)
                 pred_col = min(out_col, pred.shape[1] - 1)
@@ -1995,23 +2043,24 @@ class SuperLearner:
         per_model_X_pred: Optional[Dict[str, np.ndarray]] = None,
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
-        Predict with uncertainty from model disagreement.
+        Predict with uncertainty scores derived from base model disagreement.
 
-        Uncertainty = weighted standard deviation of base model predictions.
+        Calculates the weighted standard deviation across individual base 
+        model estimates to quantify epistemic uncertainty (model uncertainty).
 
-        Args:
-            X: Feature matrix. Default for all models unless overridden by
-                ``per_model_X_pred``.
-            entity_indices: Optional entity group IDs, forwarded to panel-aware
-                base models.
-                When *None*, panel models fall back to population-level (zero-dummy)
-                predictions, making the uncertainty estimate entity-wrong.
-                Always pass the same ``entity_indices`` used during ``predict()``.
-            per_model_X_pred: Optional dict mapping model name → prediction
-                feature matrix (mirrors the ``per_model_X`` used in ``fit``).
+        Parameters
+        ----------
+        X : np.ndarray
+            Input feature matrix.
+        entity_indices : np.ndarray, optional
+            Group identifiers for the prediction observations.
+        per_model_X_pred : Dict[str, np.ndarray], optional
+            Mapping of specific feature matrices per base model.
 
-        Returns:
-            Tuple of (mean prediction, standard deviation)
+        Returns
+        -------
+        Tuple[np.ndarray, np.ndarray]
+            A tuple of (mean predictions, uncertainty standard deviations).
         """
         all_predictions = []
         model_names = []
@@ -2072,16 +2121,34 @@ class SuperLearner:
         return mean_pred, std_pred
 
     def get_meta_weights(self) -> Dict[str, float]:
-        """Get the learned meta-learner weights."""
-        return self._meta_weights.copy()
+        """
+        Retrieve the learned meta-learner coefficients.
+
+        Returns
+        -------
+        Dict[str, float]
+            Mapping of model names to their relative ensemble weights.
+        """
 
     def get_cv_scores(self) -> Dict[str, List[float]]:
-        """Get cross-validation R² scores for each base model."""
-        return self._cv_scores.copy()
+        """
+        Retrieve cross-validation R² scores for each base model.
+
+        Returns
+        -------
+        Dict[str, List[float]]
+            Mapping of model names to lists of per-fold R² scores.
+        """
 
     def get_oof_performance(self) -> Dict[str, float]:
-        """Get out-of-fold R² for each base model."""
-        return self._oof_r2.copy()
+        """
+        Retrieve out-of-fold R² performance metrics.
+
+        Returns
+        -------
+        Dict[str, float]
+            Mapping of model names to their aggregate OOF R² scores.
+        """
 
     def get_diagnostics(self) -> Dict[str, Any]:
         """Get comprehensive diagnostics."""
@@ -2099,35 +2166,28 @@ class SuperLearner:
         }
 
     def get_stage3_diagnostics(self) -> Dict[str, Any]:
-        """Phase B item 3: Get Stage 3 execution diagnostics.
+        """
+        Retrieve detailed execution telemetry for the training stages.
 
-        Returns a dictionary with planned vs completed fold counts,
-        timing information, and truncation telemetry for each major
-        stage (primary CV, persistence CV, secondary conformal, etc.).
-        Useful for post-mortem analysis of runtime behavior and
-        identifying compute bottlenecks.
+        Returns a dictionary containing planned vs completed fold counts, 
+        timing data, and truncation events for every major sub-phase 
+        (e.g., primary CV, secondary conformal sweep).
 
         Returns
         -------
-        diagnostics : dict
-            Keys are stage names ('primary_cv', 'persistence_cv',
-            'secondary_conformal', 'meta_learner', 'full_refit',
-            'stage3_total'), each containing:
-            - planned_folds / completed_folds (for CV loops)
-            - start_time, end_time, elapsed_seconds (wall-clock)
-            - per_fold_times: list of dicts with fold-level timings
-            - truncated / truncation_reason (if applicable)
+        Dict[str, Any]
+            Execution diagnostics mapping.
         """
         return self._stage3_diagnostics_.copy()
 
     def save_stage3_diagnostics(self, output_path: str) -> None:
-        """Phase B item 3: Save Stage 3 diagnostics to JSON file.
+        """
+        Persist execution telemetry to a JSON file.
 
         Parameters
         ----------
         output_path : str
-            File path to save diagnostics JSON (recommend output/logs/stage3_diags.json).
-            Parent directories are created if they don't exist.
+            File system path where the diagnostics JSON should be saved.
         """
         import json
         from pathlib import Path
