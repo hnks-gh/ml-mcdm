@@ -248,7 +248,7 @@ class ForecastConfig:
     (MI/VIF), MICE imputation strategies, and conformal uncertainty 
     calibration techniques (CQR, Mondrian, LWCP).
     """
-    enabled: bool = True
+    enabled: bool = False
     """Enable/disable ensemble ML forecasting (Phase 4).
 
     Set to True to run the 2025 ensemble forecasting phase.

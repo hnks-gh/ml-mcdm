@@ -11,7 +11,7 @@ Phases
 ------
 1. **Data Loading**: Import multi-year provincial panel data.
 2. **Weighting**: Compute criteria importance via adaptive CRITIC.
-3. **Ranking**: Hierarchical MCDM (TOPSIS, VIKOR, etc.) with ER aggregation.
+3. **Ranking**: Hierarchical MCDM (TOPSIS, VIKOR, etc.).
 4. **Forecasting**: SOTA ML ensemble predictions with conformal intervals.
 5. **Sensitivity**: Robustness testing and model validation.
 6. **Visualization**: High-resolution performance and stability plots.
@@ -239,9 +239,7 @@ class MLMCDMPipeline:
 
             # Phase 2: Weight Calculation
             with self.console.phase('CRITIC Weight Calculation') as ph:
-                weights = self._calculate_weights(panel_data)
-
-                # Per-year weights (cross-section, independent per year)
+                # Compute per-year weights FIRST (independent per year)
                 weight_all_years: Dict[int, Any] = {}
                 try:
                     weight_all_years = self._calculate_weights_all_years(panel_data)
@@ -252,6 +250,9 @@ class MLMCDMPipeline:
                 except Exception as _wt_exc:
                     self.logger.warning(
                         'Per-year CRITIC weights failed (non-fatal): %s', _wt_exc)
+
+                # Compute main weights, passing per-year weights for temporal stability/sensitivity
+                weights = self._calculate_weights(panel_data, weight_all_years=weight_all_years)
 
             # Phase 3: Hierarchical Ranking (6 MCDM methods)
             multi_year_results: Dict[int, Any] = {}
@@ -478,7 +479,11 @@ class MLMCDMPipeline:
     # Phase 2: Weight Calculation
     # -----------------------------------------------------------------
 
-    def _calculate_weights(self, panel_data: PanelData) -> Dict[str, Any]:
+    def _calculate_weights(
+        self, 
+        panel_data: PanelData,
+        weight_all_years: Optional[Dict[int, Dict[str, Any]]] = None,
+    ) -> Dict[str, Any]:
         """
         Execute two-level deterministic CRITIC weighting on the full panel.
 
@@ -493,12 +498,16 @@ class MLMCDMPipeline:
         ----------
         panel_data : PanelData
             The input dataset containing historical observations.
+        weight_all_years : Optional[Dict[int, Dict[str, Any]]], optional
+            Per-year weight results for temporal stability and sensitivity analysis.
+            If provided, triggers CRITIC temporal stability and sensitivity analyses.
 
         Returns
         -------
         Dict[str, Any]
             Dictionary containing global SC weights, criterion-group weights, 
-            and calculation details.
+            and calculation details. Also includes temporal_stability and 
+            sensitivity_analysis if weight_all_years was provided.
         """
         from .weighting import CRITICWeightingCalculator
 
@@ -569,12 +578,41 @@ class MLMCDMPipeline:
             len(panel_df), len(subcriteria), len(active_groups),
         )
 
+        # ── Prepare weight_all_years in proper format for CRITIC calculator ──
+        # The CRITIC calculator expects criterion weights from each year,
+        # not the full result dictionary
+        weight_all_years_for_calc: Optional[Dict[int, Dict[str, float]]] = None
+        if weight_all_years is not None:
+            weight_all_years_for_calc = {}
+            for year, year_result in weight_all_years.items():
+                if isinstance(year_result, dict) and 'criterion_weights' in year_result:
+                    weight_all_years_for_calc[year] = year_result['criterion_weights']
+            
+            self.logger.info(
+                "Prepared weight_all_years for temporal/sensitivity analysis: "
+                "%d years × criteria",
+                len(weight_all_years_for_calc)
+            )
+            
+            # Verify data integrity: all years should have same criteria
+            if weight_all_years_for_calc:
+                first_year_keys = set(
+                    weight_all_years_for_calc[min(weight_all_years_for_calc.keys())].keys()
+                )
+                self.logger.info(
+                    "Criteria in weight analysis: %s",
+                    ', '.join(sorted(first_year_keys))
+                )
+
         calc   = CRITICWeightingCalculator(config=self.config.weighting)
         result = calc.calculate(
             panel_df        = panel_df,
             criteria_groups = active_groups,
             entity_col      = 'Province',
             time_col        = 'Year',
+            run_temporal_stability  = True,
+            run_sensitivity_analysis = True,
+            weight_all_years        = weight_all_years_for_calc,
         )
 
         # ── Extract weights ───────────────────────────────────────────────
@@ -592,6 +630,18 @@ class MLMCDMPipeline:
             ', '.join(f"{k}={v:.3f}" for k, v in sorted(criterion_weights.items())),
         )
 
+        # Log temporal stability and sensitivity analysis results if computed
+        if hasattr(result, 'temporal_stability') and result.temporal_stability is not None:
+            self.logger.info(
+                "  Temporal stability (Spearman's ρ mean): %.3f",
+                result.temporal_stability.spearman_rho_mean
+            )
+        if hasattr(result, 'sensitivity_analysis') and result.sensitivity_analysis is not None:
+            self.logger.info(
+                "  Sensitivity analysis (conservative robustness): %.3f",
+                result.sensitivity_analysis.tier_robustness.get('conservative', 0.0)
+            )
+
         return {
             'global_sc_weights':        global_sc_weights,
             'critic_sc_weights':        critic_sc_weights,
@@ -601,6 +651,8 @@ class MLMCDMPipeline:
             'subcriteria':              subcriteria,
             'criteria_groups':          active_groups,
             'details':                  result.details,
+            'temporal_stability':       getattr(result, 'temporal_stability', None),
+            'sensitivity_analysis':     getattr(result, 'sensitivity_analysis', None),
         }
 
     def _calculate_weights_all_years(
@@ -634,6 +686,8 @@ class MLMCDMPipeline:
             try:
                 # ── Slice to this year only ───────────────────────────────
                 yr_df = panel_long[panel_long['Year'] == year].copy()
+                initial_row_count = len(yr_df)
+                
                 if yr_df.empty:
                     self.logger.warning(
                         '  Per-year weights: year %d — no rows, skipped', year)
@@ -654,11 +708,14 @@ class MLMCDMPipeline:
                     continue
 
                 # ── Drop rows missing any active SC ───────────────────────
-                yr_df = yr_df[yr_df[active_scs].notna().all(axis=1)].copy()
-                if yr_df.empty:
+                yr_df_valid = yr_df[yr_df[active_scs].notna().all(axis=1)].copy()
+                valid_row_count = len(yr_df_valid)
+                if yr_df_valid.empty:
                     self.logger.warning(
                         '  Per-year weights: year %d — all rows dropped, skipped', year)
                     continue
+
+                yr_df = yr_df_valid
 
                 # ── Build active criteria groups for this year ─────────────
                 active_groups: Dict[str, Any] = {}
@@ -666,6 +723,11 @@ class MLMCDMPipeline:
                     active = [sc for sc in sc_list if sc in active_scs]
                     if active:
                         active_groups[crit_id] = active
+
+                self.logger.info(
+                    "  Year %d: %d valid rows from %d initial, %d active SCs, %d active criteria",
+                    year, valid_row_count, initial_row_count, len(active_scs), len(active_groups)
+                )
 
                 # ── Run two-level CRITIC on the year slice ─────────────────
                 calc = CRITICWeightingCalculator(config=self.config.weighting)
@@ -681,10 +743,24 @@ class MLMCDMPipeline:
                 critic_crit_w = res.details.get('critic_criterion_weights', {})
                 sc_arr = np.array([global_sc_w.get(sc, 0.0) for sc in active_scs])
 
+                # ── Ensure all criteria appear in criterion_w, even if inactive ──
+                # This is CRITICAL for temporal stability/sensitivity analysis
+                # which requires consistent criterion keys across all years.
+                # For inactive criteria in this year, assign 0.0 weight.
+                all_criteria = list(panel_data.hierarchy.criteria_to_subcriteria.keys())
+                criterion_w_full = {}
+                for crit in all_criteria:
+                    criterion_w_full[crit] = criterion_w.get(crit, 0.0)
+                
+                # Re-normalize so weights sum to 1.0 if any criterion has data
+                if sum(criterion_w_full.values()) > 0:
+                    total = sum(criterion_w_full.values())
+                    criterion_w_full = {k: v / total for k, v in criterion_w_full.items()}
+                
                 results[year] = {
                     'global_sc_weights':        global_sc_w,
                     'critic_sc_weights':        global_sc_w,
-                    'criterion_weights':        criterion_w,
+                    'criterion_weights':        criterion_w_full,  # Use full 8-criteria version
                     'critic_criterion_weights': critic_crit_w,
                     'sc_array':                 sc_arr,
                     'subcriteria':              active_scs,
@@ -696,10 +772,42 @@ class MLMCDMPipeline:
                 self.logger.warning(
                     '  Per-year weights: year %d failed — %s', year, _exc)
 
+        # ── Summary statistics ──────────────────────────────────────
         self.logger.info(
-            'Per-year CRITIC weights: %d/%d years computed',
+            'Per-year CRITIC weights: %d/%d years computed successfully',
             len(results), len(panel_data.years),
         )
+        
+        # Log which years computed successfully
+        if results:
+            computed_years = sorted(results.keys())
+            self.logger.debug(
+                'Years with computed weights: %s',
+                ', '.join(str(y) for y in computed_years)
+            )
+            
+            # Verify consistency: all years should have same set of criteria
+            first_year_criteria = set(results[computed_years[0]]['criterion_weights'].keys())
+            inconsistent = []
+            for year in computed_years[1:]:
+                year_criteria = set(results[year]['criterion_weights'].keys())
+                if year_criteria != first_year_criteria:
+                    inconsistent.append((year, year_criteria))
+            
+            if inconsistent:
+                self.logger.warning(
+                    'Criterion inconsistency detected: some years have different criteria sets'
+                )
+                for year, criteria in inconsistent:
+                    self.logger.warning(
+                        '  Year %d: %s', year, criteria
+                    )
+            else:
+                self.logger.info(
+                    'Criterion set consistency verified: all %d years have same criteria',
+                    len(results)
+                )
+        
         return results
 
     # -----------------------------------------------------------------

@@ -29,7 +29,7 @@ from .base import (
 )
 
 # Six traditional MCDM methods used in this project (includes SAW as baseline)
-_METHODS = ['TOPSIS', 'VIKOR', 'PROMETHEE', 'COPRAS', 'EDAS', 'SAW']
+_METHODS = ['TOPSIS', 'VIKOR', 'PROMETHEE', 'COPRAS', 'EDAS', 'SAW', 'Base']
 _METHOD_COLORS = {m: CATEGORICAL_COLORS[i] for i, m in enumerate(_METHODS)}
 
 _logger = logging.getLogger(__name__)
@@ -162,7 +162,26 @@ class MCDMPlotter(BasePlotter):
     #  Helpers — method comparison metrics
     # ==================================================================
 
-    _TRAD_METHODS = ['TOPSIS', 'VIKOR', 'PROMETHEE', 'COPRAS', 'EDAS', 'SAW']
+    _TRAD_METHODS = ['TOPSIS', 'VIKOR', 'PROMETHEE', 'COPRAS', 'EDAS', 'SAW', 'Base']
+    _MCDM_PALETTE = ['#2E86AB', '#A23B72', '#F18F01', '#17B169', '#C73E1D', '#7B68EE']
+    _ER_COLOUR    = '#1A6B3C'  # deep green
+    _BASE_COLOUR  = '#9E9E9E'  # neutral gray
+
+    def _get_method_color(self, method: str) -> str:
+        """Get a consistent color for the given method name."""
+        if method == 'ER':
+            return self._ER_COLOUR
+        if method in ('SAW', 'Base'):
+            return self._BASE_COLOUR
+        
+        # Consistent mapping for traditional methods
+        trad_methods = ['TOPSIS', 'VIKOR', 'PROMETHEE', 'COPRAS', 'EDAS']
+        try:
+            idx = trad_methods.index(method)
+            return self._MCDM_PALETTE[idx % len(self._MCDM_PALETTE)]
+        except ValueError:
+            return self._MCDM_PALETTE[0]
+
 
     def _compute_method_stability(
         self, ranking_result: Any
@@ -323,31 +342,19 @@ class MCDMPlotter(BasePlotter):
             if len(stability) < 2:
                 return None
 
-            # Map 'SAW' to 'Base' for display
-            display_stability = {('Base' if m == 'SAW' else m): v for m, v in stability.items()}
+            # Map 'SAW' to 'Base' for display if needed, but ensure 'Base' is present
+            display_stability = {m: v for m, v in stability.items()}
+            if 'SAW' in display_stability and 'Base' not in display_stability:
+                 display_stability['Base'] = display_stability.pop('SAW')
+
             
             # Sort by value descending
             labels = sorted(display_stability, key=display_stability.get, reverse=True)
             values = [display_stability[m] for m in labels]
             n = len(labels)
 
-            # Colour assignment
-            _ER_COLOUR   = '#1A6B3C'   # deep green — ER stands out
-            _SAW_COLOUR  = '#9E9E9E'   # neutral gray — SAW baseline
-            _PALETTE = [
-                '#2E86AB', '#A23B72', '#F18F01',
-                '#17B169', '#C73E1D', '#7B68EE',
-            ]
-            trad_idx = 0
-            bar_colours = []
-            for m in labels:
-                if m == 'ER':
-                    bar_colours.append(_ER_COLOUR)
-                elif m == 'SAW':
-                    bar_colours.append(_SAW_COLOUR)
-                else:
-                    bar_colours.append(_PALETTE[trad_idx % len(_PALETTE)])
-                    trad_idx += 1
+            bar_colours = [self._get_method_color(m) for m in labels]
+
 
             fig, ax = plt.subplots(figsize=(12, max(5, n * 0.70 + 1.5)))
 
@@ -381,14 +388,10 @@ class MCDMPlotter(BasePlotter):
             ax.set_xlabel('Cross-Criteria Spearman ρ  (avg pairwise)', fontsize=11)
 
             # Legend patches
-            from matplotlib.patches import Patch
-            legend_handles = [
-                Patch(facecolor=_PALETTE[0],  label='MCDM Methods'),
-            ]
             ax.legend(
-                handles=legend_handles, fontsize=9.5,
-                loc='lower right', framealpha=0.85,
+                fontsize=9.5, loc='lower right', framealpha=0.85,
             )
+
 
             ax.set_title(
                 'Ranking Stability by Method',
@@ -402,13 +405,7 @@ class MCDMPlotter(BasePlotter):
                 style='italic',
             )
 
-            # Right-side rank badge
-            for i, m in enumerate(labels):
-                ax.text(
-                    -0.001, i, f'#{i+1}',
-                    va='center', ha='right', fontsize=8,
-                    color='#888888', transform=ax.get_yaxis_transform(),
-                )
+
 
             ax.set_xlim(left=min(0, min(values) - 0.05),
                         right=x_max + x_max * 0.14)
@@ -454,18 +451,15 @@ class MCDMPlotter(BasePlotter):
             if len(disc) < 2:
                 return None
 
-            # Fixed display order  — map 'SAW' to 'Base' for display
-            _ORDER = ['TOPSIS', 'VIKOR', 'PROMETHEE', 'COPRAS', 'EDAS', 'SAW']
-            display_order = [('Base' if m == 'SAW' else m) for m in _ORDER]
-            labels = [m for m in display_order if (m.replace('Base', 'SAW')) in disc]
-            values = [disc[m.replace('Base', 'SAW')] for m in labels]
+            # Fixed display order
+            _ORDER = ['TOPSIS', 'VIKOR', 'PROMETHEE', 'COPRAS', 'EDAS', 'SAW', 'Base']
+            labels = [m for m in _ORDER if m in disc]
+            values = [disc[m] for m in labels]
+
             n = len(labels)
 
-            _PALETTE = [
-                '#2E86AB', '#A23B72', '#F18F01',
-                '#17B169', '#C73E1D', '#7B68EE',
-            ]
-            bar_colours = [_PALETTE[i % len(_PALETTE)] for i in range(n)]
+            bar_colours = [self._get_method_color(m) for m in labels]
+
 
             x = np.arange(n)
             bar_width = 0.55

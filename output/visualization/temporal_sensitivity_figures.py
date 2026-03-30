@@ -224,12 +224,13 @@ class TemporalSensitivityFigureGenerator:
         for i in range(len(criteria)):
             for j in range(len(tiers)):
                 value = sensitivity_matrix[i, j]
-                # Text color based on background
-                text_color = 'white' if value > 0.5 else 'black'
+                # Use consistent black text with white outline for better contrast
+                # This ensures readability regardless of background color
                 ax.text(
                     j, i, f'{value:.2f}',
                     ha='center', va='center',
-                    color=text_color, fontsize=9, fontweight='bold'
+                    color='black', fontsize=9, fontweight='bold',
+                    bbox=dict(boxstyle='none', facecolor='white', alpha=0.3, pad=0)
                 )
 
         # Colorbar

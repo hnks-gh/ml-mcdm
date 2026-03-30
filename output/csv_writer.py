@@ -1859,7 +1859,7 @@ class CsvWriter:
                     float(temporal_result.kendalls_w),
                     temporal_result.year_range[0],
                     temporal_result.year_range[1],
-                    len(set().union(*[w for _ in temporal_result.rolling_timeline])) if temporal_result.rolling_timeline else 0,
+                    len(temporal_result.rolling_timeline) if temporal_result.rolling_timeline else 0,
                     len(temporal_result.spearman_rho_rolling),
                 ],
             }

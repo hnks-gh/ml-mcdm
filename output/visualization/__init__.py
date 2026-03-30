@@ -136,8 +136,6 @@ class VisualizationOrchestrator:
     def plot_weight_radar_grouped(self, *a, **kw):
         return self.weighting.plot_weight_radar_grouped(*a, **kw)
 
-    def plot_weight_hierarchical_rose(self, *a, **kw):
-        return self.weighting.plot_weight_hierarchical_rose(*a, **kw)
 
     # MCDM
     def plot_method_agreement_matrix(self, *a, **kw):
@@ -404,13 +402,35 @@ class VisualizationOrchestrator:
         _safe(self.weighting.plot_weight_radar, w_dict, subcriteria,
               weight_all_years=weight_all_years)
 
-        # fig04c — Hierarchical rose: 14-panel all-years grid, or single-year fallback
-        _safe(self.weighting.plot_weight_hierarchical_rose, w_dict, subcriteria,
-              weight_all_years=weight_all_years)
 
         # fig05 — Weight heatmap: years × sub-criteria (14 years), or single-year fallback
         _safe(self.weighting.plot_weight_heatmap, w_dict, subcriteria,
               weight_all_years=weight_all_years)
+
+        # ── CRITIC Temporal Stability & Sensitivity Analysis ────────────
+        from .temporal_sensitivity_figures import TemporalSensitivityFigureGenerator
+
+        temporal_stability = weights.get('temporal_stability')
+        sensitivity_analysis = weights.get('sensitivity_analysis')
+
+        if temporal_stability is not None or sensitivity_analysis is not None:
+            try:
+                ts_generator = TemporalSensitivityFigureGenerator(
+                    output_dir=f'{self.output_dir}/weighting',
+                    dpi=300
+                )
+                
+                # fig05a — Temporal stability timeline
+                if temporal_stability is not None:
+                    _safe(ts_generator.plot_temporal_stability_timeline,
+                          temporal_stability)
+                
+                # fig05b — Sensitivity heatmap
+                if sensitivity_analysis is not None:
+                    _safe(ts_generator.plot_sensitivity_heatmap,
+                          sensitivity_analysis)
+            except Exception as _exc:
+                _logger.warning(f'CRITIC temporal/sensitivity figures skipped: {_exc}')
 
         # ── MCDM agreement ───────────────────────────────────────
         all_method_ranks: Dict[str, np.ndarray] = {}

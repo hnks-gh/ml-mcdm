@@ -201,18 +201,18 @@ class OutputOrchestrator:
                 logger.warning(f'save_weights_all_years failed: {_exc}')
 
         # 14. Temporal stability analysis (window-based, per-year metrics)
-        if hasattr(weights, 'temporal_stability') and weights.temporal_stability is not None:
+        if 'temporal_stability' in weights and weights['temporal_stability'] is not None:
             try:
-                path_ts = self.csv.save_temporal_stability(weights.temporal_stability)
+                path_ts = self.csv.save_temporal_stability(weights['temporal_stability'])
                 if path_ts:
                     logger.info(f'Saved: {Path(path_ts).name}')
             except Exception as _exc:
                 logger.warning(f'save_temporal_stability failed: {_exc}')
 
         # 15. Sensitivity analysis (three-tier perturbation results)
-        if hasattr(weights, 'sensitivity_analysis') and weights.sensitivity_analysis is not None:
+        if 'sensitivity_analysis' in weights and weights['sensitivity_analysis'] is not None:
             try:
-                path_sa = self.csv.save_sensitivity_analysis(weights.sensitivity_analysis)
+                path_sa = self.csv.save_sensitivity_analysis(weights['sensitivity_analysis'])
                 if path_sa:
                     logger.info(f'Saved: {Path(path_sa).name}')
             except Exception as _exc:

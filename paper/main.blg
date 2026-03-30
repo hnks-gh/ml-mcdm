@@ -1,0 +1,31 @@
+[0] Config.pm:328> INFO - This is Biber 2.21
+[0] Config.pm:331> INFO - Logfile is 'main.blg'
+[185] biber-MSWIN64:342> INFO - === 
+[247] Biber.pm:421> INFO - Reading 'main.bcf'
+[481] Biber.pm:1002> INFO - Found 37 citekeys in bib section 0
+[532] Biber.pm:4487> INFO - Processing section 0
+[548] Biber.pm:4678> INFO - Looking for bibtex file 'main.bib' for section 0
+[627] bibtex.pm:1713> INFO - LaTeX decoding ...
+[693] bibtex.pm:1519> INFO - Found BibTeX data source 'main.bib'
+[1038] UCollate.pm:68> INFO - Overriding locale 'en-US' defaults 'normalization = NFD' with 'normalization = prenormalized'
+[1038] UCollate.pm:68> INFO - Overriding locale 'en-US' defaults 'variable = shifted' with 'variable = non-ignorable'
+[1040] Biber.pm:4307> INFO - Sorting list 'apa/apasortcite//global/global/global' of type 'entry' with template 'apa' and locale 'en-US'
+[1040] Biber.pm:4313> INFO - No sort tailoring available for locale 'en-US'
+[1161] UCollate.pm:68> INFO - Overriding locale 'en-US' defaults 'variable = shifted' with 'variable = non-ignorable'
+[1161] UCollate.pm:68> INFO - Overriding locale 'en-US' defaults 'normalization = NFD' with 'normalization = prenormalized'
+[1161] Biber.pm:4307> INFO - Sorting list 'apa/global//global/global/global' of type 'entry' with template 'apa' and locale 'en-US'
+[1161] Biber.pm:4313> INFO - No sort tailoring available for locale 'en-US'
+[1266] bbl.pm:676> INFO - Writing 'main.bbl' with encoding 'UTF-8'
+[1332] bbl.pm:779> INFO - Output to main.bbl
+[1333] Biber.pm:132> WARN - I didn't find a database entry for 'Acemoglu2012' (section 0)
+[1333] Biber.pm:132> WARN - I didn't find a database entry for 'Kaufmann2011' (section 0)
+[1333] Biber.pm:132> WARN - I didn't find a database entry for 'Abramo2018' (section 0)
+[1333] Biber.pm:132> WARN - I didn't find a database entry for 'VCCI2023' (section 0)
+[1333] Biber.pm:132> WARN - I didn't find a database entry for 'Tran2020' (section 0)
+[1333] Biber.pm:132> WARN - I didn't find a database entry for 'Arndt2016' (section 0)
+[1333] Biber.pm:132> WARN - I didn't find a database entry for 'Arndt2012' (section 0)
+[1334] Biber.pm:132> WARN - I didn't find a database entry for 'Arrow1951' (section 0)
+[1334] Biber.pm:132> WARN - I didn't find a database entry for 'Bouyssou2000' (section 0)
+[1334] Biber.pm:132> WARN - I didn't find a database entry for 'Wang2009' (section 0)
+[1334] Biber.pm:132> WARN - I didn't find a database entry for 'Hastie2009' (section 0)
+[1334] Biber.pm:134> INFO - WARNINGS: 11
