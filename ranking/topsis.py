@@ -11,7 +11,7 @@ anti-ideal receive higher scores.
 
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 from dataclasses import dataclass, field
 
 from weighting import WeightResult, CRITICWeightCalculator
