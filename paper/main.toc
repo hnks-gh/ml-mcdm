@@ -1,48 +1,44 @@
 \contentsline {section}{\numberline {1}Introduction}{3}{section.1}%
-\contentsline {subsection}{\numberline {1.1}Limitations of existing composite indexing approaches}{3}{subsection.1.1}%
-\contentsline {subsection}{\numberline {1.2}Research gaps and motivation}{3}{subsection.1.2}%
-\contentsline {subsection}{\numberline {1.3}Contributions}{3}{subsection.1.3}%
-\contentsline {subsection}{\numberline {1.4}Scope and data}{3}{subsection.1.4}%
-\contentsline {subsection}{\numberline {1.5}Paper organization}{3}{subsection.1.5}%
-\contentsline {section}{\numberline {2}Methods and Data}{3}{section.2}%
-\contentsline {subsection}{\numberline {2.1}Data Description}{3}{subsection.2.1}%
-\contentsline {subsubsection}{\numberline {2.1.1}Panel Structure and Dimensionality}{4}{subsubsection.2.1.1}%
-\contentsline {subsubsection}{\numberline {2.1.2}Measurement Framework and Indicator Definitions}{5}{subsubsection.2.1.2}%
-\contentsline {subsection}{\numberline {2.2}Missing Data Structure and Data Imputation}{7}{subsection.2.2}%
-\contentsline {subsubsection}{\numberline {2.2.1}Missing Data Characterization and Quantification}{7}{subsubsection.2.2.1}%
-\contentsline {subsubsection}{\numberline {2.2.2}Multivariate Imputation by Chained Equations}{9}{subsubsection.2.2.2}%
-\contentsline {subsubsection}{\numberline {2.2.3}Post-Imputation Data Quality}{12}{subsubsection.2.2.3}%
-\contentsline {subsection}{\numberline {2.3}CRiteria Importance Through Inter-criteria Correlation}{14}{subsection.2.3}%
-\contentsline {subsubsection}{\numberline {2.3.1}Two-Level CRITIC: Hierarchical Weight Derivation}{14}{subsubsection.2.3.1}%
-\contentsline {subsubsection}{\numberline {2.3.2}Weighting Analysis}{19}{subsubsection.2.3.2}%
-\contentsline {subsection}{\numberline {2.4}MCDM Ranking Methods}{23}{subsection.2.4}%
-\contentsline {subsubsection}{\numberline {2.4.1}TOPSIS}{24}{subsubsection.2.4.1}%
-\contentsline {subsubsection}{\numberline {2.4.2}VIKOR}{24}{subsubsection.2.4.2}%
-\contentsline {subsubsection}{\numberline {2.4.3}PROMETHEE II}{25}{subsubsection.2.4.3}%
-\contentsline {subsubsection}{\numberline {2.4.4}COPRAS}{26}{subsubsection.2.4.4}%
-\contentsline {subsubsection}{\numberline {2.4.5}EDAS}{26}{subsubsection.2.4.5}%
-\contentsline {subsubsection}{\numberline {2.4.6}Comparative Analysis of MCDM Methodologies}{27}{subsubsection.2.4.6}%
-\contentsline {subsubsection}{\numberline {2.4.7}Consensus and Ranking Stability}{28}{subsubsection.2.4.7}%
-\contentsline {subsection}{\numberline {2.5}Ensemble Machine Learning Forecasting}{29}{subsection.2.5}%
-\contentsline {subsubsection}{\numberline {2.5.1}Overview and System Architecture}{29}{subsubsection.2.5.1}%
-\contentsline {subsubsection}{\numberline {2.5.2}Temporal Feature Engineering}{30}{subsubsection.2.5.2}%
-\contentsline {subsubsection}{\numberline {2.5.3}Base Forecasting Models}{31}{subsubsection.2.5.3}%
-\contentsline {subsubsection}{\numberline {2.5.4}Super Learner Meta-Ensemble}{32}{subsubsection.2.5.4}%
-\contentsline {subsubsection}{\numberline {2.5.5}Conformal Prediction Intervals}{33}{subsubsection.2.5.5}%
-\contentsline {subsubsection}{\numberline {2.5.6}Evaluation Metrics and Validation}{34}{subsubsection.2.5.6}%
-\contentsline {section}{\numberline {3}Results}{35}{section.3}%
-\contentsline {subsection}{\numberline {3.1}CRITIC Weighting}{35}{subsection.3.1}%
-\contentsline {subsection}{\numberline {3.2}Historical Provincial Rankings (2011--2024)}{35}{subsection.3.2}%
-\contentsline {subsection}{\numberline {3.3}Inter-Method Concordance and Robustness}{35}{subsection.3.3}%
-\contentsline {subsection}{\numberline {3.4}Forecasting Model Performance}{35}{subsection.3.4}%
-\contentsline {subsection}{\numberline {3.5}2025 Provincial Governance Forecasts and Prediction Intervals}{35}{subsection.3.5}%
-\contentsline {subsection}{\numberline {3.6}Integrated MCDM Ranking of 2025 Forecasts}{35}{subsection.3.6}%
-\contentsline {section}{\numberline {4}Discussion}{36}{section.4}%
-\contentsline {subsection}{\numberline {4.1}Interpretation of CRITIC Weights}{36}{subsection.4.1}%
-\contentsline {subsection}{\numberline {4.2}MCDM Method Convergence and Governance Interpretation}{36}{subsection.4.2}%
-\contentsline {subsection}{\numberline {4.3}Forecasting Performance in Small-Panel Contexts}{36}{subsection.4.3}%
-\contentsline {subsection}{\numberline {4.4}Conformal Prediction Interval Quality}{36}{subsection.4.4}%
-\contentsline {subsection}{\numberline {4.5}Policy Implications for Vietnam's Governance Reform}{36}{subsection.4.5}%
-\contentsline {subsection}{\numberline {4.6}Comparison with Related Approaches}{36}{subsection.4.6}%
-\contentsline {subsection}{\numberline {4.7}Limitations}{36}{subsection.4.7}%
-\contentsline {section}{\numberline {5}Conclusion}{36}{section.5}%
+\contentsline {section}{\numberline {2}Methods and Data}{7}{section.2}%
+\contentsline {subsection}{\numberline {2.1}Data Description}{7}{subsection.2.1}%
+\contentsline {subsubsection}{\numberline {2.1.1}Panel Structure and Dimensionality}{7}{subsubsection.2.1.1}%
+\contentsline {subsubsection}{\numberline {2.1.2}Measurement Framework and Indicator Definitions}{8}{subsubsection.2.1.2}%
+\contentsline {subsection}{\numberline {2.2}Missing Data Structure and Data Imputation}{10}{subsection.2.2}%
+\contentsline {subsubsection}{\numberline {2.2.1}Missing Data Characterization and Quantification}{10}{subsubsection.2.2.1}%
+\contentsline {subsubsection}{\numberline {2.2.2}Multivariate Imputation by Chained Equations}{12}{subsubsection.2.2.2}%
+\contentsline {subsubsection}{\numberline {2.2.3}Post-Imputation Data Quality}{15}{subsubsection.2.2.3}%
+\contentsline {subsection}{\numberline {2.3}CRiteria Importance Through Inter-criteria Correlation}{17}{subsection.2.3}%
+\contentsline {subsubsection}{\numberline {2.3.1}Two-Level CRITIC: Hierarchical Weight Derivation}{17}{subsubsection.2.3.1}%
+\contentsline {subsubsection}{\numberline {2.3.2}Weighting Analysis}{22}{subsubsection.2.3.2}%
+\contentsline {subsection}{\numberline {2.4}MCDM Ranking Methods}{26}{subsection.2.4}%
+\contentsline {subsubsection}{\numberline {2.4.1}TOPSIS}{27}{subsubsection.2.4.1}%
+\contentsline {subsubsection}{\numberline {2.4.2}VIKOR}{27}{subsubsection.2.4.2}%
+\contentsline {subsubsection}{\numberline {2.4.3}PROMETHEE II}{28}{subsubsection.2.4.3}%
+\contentsline {subsubsection}{\numberline {2.4.4}COPRAS}{29}{subsubsection.2.4.4}%
+\contentsline {subsubsection}{\numberline {2.4.5}EDAS}{29}{subsubsection.2.4.5}%
+\contentsline {subsubsection}{\numberline {2.4.6}Multi-Method Consensus, Ranking Stability, and Discriminatory Power}{30}{subsubsection.2.4.6}%
+\contentsline {paragraph}{Ranking Stability via Cross-Criteria Spearman Correlation.}{30}{section*.6}%
+\contentsline {paragraph}{Method Discriminatory Power via Score Inter-Quartile Range.}{31}{section*.7}%
+\contentsline {paragraph}{Pairwise Method Agreement via Spearman Rank Correlation Matrix.}{32}{section*.8}%
+\contentsline {paragraph}{Interpretation Framework and Methodological Implications.}{32}{section*.9}%
+\contentsline {subsection}{\numberline {2.5}Ensemble Machine Learning Forecasting}{33}{subsection.2.5}%
+\contentsline {subsubsection}{\numberline {2.5.1}Temporal Feature Engineering}{34}{subsubsection.2.5.1}%
+\contentsline {subsubsection}{\numberline {2.5.2}Target Transformation and Preprocessing}{36}{subsubsection.2.5.2}%
+\contentsline {subsubsection}{\numberline {2.5.3}Base Learner Ensemble}{37}{subsubsection.2.5.3}%
+\contentsline {subsubsection}{\numberline {2.5.4}Super Learner Meta-Ensemble}{38}{subsubsection.2.5.4}%
+\contentsline {subsubsection}{\numberline {2.5.5}Conformal Prediction Intervals}{39}{subsubsection.2.5.5}%
+\contentsline {subsubsection}{\numberline {2.5.6}Evaluation Protocol and Metrics}{40}{subsubsection.2.5.6}%
+\contentsline {section}{\numberline {3}Results}{41}{section.3}%
+\contentsline {subsection}{\numberline {3.1}CRITIC Weighting}{41}{subsection.3.1}%
+\contentsline {subsection}{\numberline {3.2}MCDM Rankings}{41}{subsection.3.2}%
+\contentsline {subsection}{\numberline {3.3}Forecasting Model Performance}{41}{subsection.3.3}%
+\contentsline {subsection}{\numberline {3.4}2025 Provincial Governance Forecasts and Prediction Intervals}{41}{subsection.3.4}%
+\contentsline {section}{\numberline {4}Discussion}{41}{section.4}%
+\contentsline {subsection}{\numberline {4.1}Interpretation of CRITIC Weights}{41}{subsection.4.1}%
+\contentsline {subsection}{\numberline {4.2}MCDM Method Convergence and Governance Interpretation}{42}{subsection.4.2}%
+\contentsline {subsection}{\numberline {4.3}Forecasting Performance in Small-Panel Contexts}{42}{subsection.4.3}%
+\contentsline {subsection}{\numberline {4.4}Conformal Prediction Interval Quality}{42}{subsection.4.4}%
+\contentsline {subsection}{\numberline {4.5}Policy Implications for Vietnam's Governance Reform}{42}{subsection.4.5}%
+\contentsline {subsection}{\numberline {4.6}Comparison with Related Approaches}{42}{subsection.4.6}%
+\contentsline {subsection}{\numberline {4.7}Limitations}{42}{subsection.4.7}%
+\contentsline {section}{\numberline {5}Conclusion}{42}{section.5}%

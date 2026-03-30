@@ -468,6 +468,37 @@
       \field{title}{Solving Least Squares Problems}
       \field{year}{1974}
     \endentry
+    \entry{Meinshausen2006}{article}{}{}
+      \name{author}{1}{}{%
+        {{un=0,uniquepart=base,hash=ab9469dddb5d18ec039f709e2d7c4e00}{%
+           family={Meinshausen},
+           familyi={M\bibinitperiod},
+           given={Nicolai},
+           giveni={N\bibinitperiod},
+           givenun=0}}%
+      }
+      \strng{namehash}{ab9469dddb5d18ec039f709e2d7c4e00}
+      \strng{fullhash}{ab9469dddb5d18ec039f709e2d7c4e00}
+      \strng{fullhashraw}{ab9469dddb5d18ec039f709e2d7c4e00}
+      \strng{bibnamehash}{ab9469dddb5d18ec039f709e2d7c4e00}
+      \strng{authorbibnamehash}{ab9469dddb5d18ec039f709e2d7c4e00}
+      \strng{authornamehash}{ab9469dddb5d18ec039f709e2d7c4e00}
+      \strng{authorfullhash}{ab9469dddb5d18ec039f709e2d7c4e00}
+      \strng{authorfullhashraw}{ab9469dddb5d18ec039f709e2d7c4e00}
+      \field{sortinit}{M}
+      \field{sortinithash}{4625c616857f13d17ce56f7d4f97d451}
+      \field{extradatescope}{labelyear}
+      \field{labeldatesource}{}
+      \true{uniqueprimaryauthor}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{journaltitle}{Journal of Machine Learning Research}
+      \field{title}{Quantile regression forests}
+      \field{volume}{7}
+      \field{year}{2006}
+      \field{pages}{983\bibrangedash 999}
+      \range{pages}{17}
+    \endentry
     \entry{Opricovic2004}{article}{}{}
       \name{author}{2}{}{%
         {{un=0,uniquepart=base,hash=a3b47410010298906abc527623205ed0}{%
@@ -800,6 +831,45 @@
       \verb{doi}
       \verb 10.1002/9780470316696
       \endverb
+    \endentry
+    \entry{Scholkopf2001}{book}{}{}
+      \name{author}{2}{}{%
+        {{un=0,uniquepart=base,hash=ca31cc11ec9370460148c3a9c48fce45}{%
+           family={Schölkopf},
+           familyi={S\bibinitperiod},
+           given={Bernhard},
+           giveni={B\bibinitperiod},
+           givenun=0}}%
+        {{un=0,uniquepart=base,hash=82d61e31b4f7f82ad59ff887349bdfe3}{%
+           family={Smola},
+           familyi={S\bibinitperiod},
+           given={Alexander\bibnamedelima J.},
+           giveni={A\bibinitperiod\bibinitdelim J\bibinitperiod},
+           givenun=0}}%
+      }
+      \list{location}{1}{%
+        {Cambridge, MA}%
+      }
+      \list{publisher}{1}{%
+        {MIT Press}%
+      }
+      \strng{namehash}{396e53e44a4a0219aecd575e2eb0f37f}
+      \strng{fullhash}{396e53e44a4a0219aecd575e2eb0f37f}
+      \strng{fullhashraw}{396e53e44a4a0219aecd575e2eb0f37f}
+      \strng{bibnamehash}{396e53e44a4a0219aecd575e2eb0f37f}
+      \strng{authorbibnamehash}{396e53e44a4a0219aecd575e2eb0f37f}
+      \strng{authornamehash}{396e53e44a4a0219aecd575e2eb0f37f}
+      \strng{authorfullhash}{396e53e44a4a0219aecd575e2eb0f37f}
+      \strng{authorfullhashraw}{396e53e44a4a0219aecd575e2eb0f37f}
+      \field{sortinit}{S}
+      \field{sortinithash}{b164b07b29984b41daf1e85279fbc5ab}
+      \field{extradatescope}{labelyear}
+      \field{labeldatesource}{}
+      \true{uniqueprimaryauthor}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{title}{Learning with Kernels: Support Vector Machines, Regularization, Optimization, and Beyond}
+      \field{year}{2001}
     \endentry
     \entry{Spearman1904}{article}{}{}
       \name{author}{1}{}{%
@@ -1614,6 +1684,37 @@
       \field{title}{Solving Least Squares Problems}
       \field{year}{1974}
     \endentry
+    \entry{Meinshausen2006}{article}{}{}
+      \name{author}{1}{}{%
+        {{un=0,uniquepart=base,hash=ab9469dddb5d18ec039f709e2d7c4e00}{%
+           family={Meinshausen},
+           familyi={M\bibinitperiod},
+           given={Nicolai},
+           giveni={N\bibinitperiod},
+           givenun=0}}%
+      }
+      \strng{namehash}{ab9469dddb5d18ec039f709e2d7c4e00}
+      \strng{fullhash}{ab9469dddb5d18ec039f709e2d7c4e00}
+      \strng{fullhashraw}{ab9469dddb5d18ec039f709e2d7c4e00}
+      \strng{bibnamehash}{ab9469dddb5d18ec039f709e2d7c4e00}
+      \strng{authorbibnamehash}{ab9469dddb5d18ec039f709e2d7c4e00}
+      \strng{authornamehash}{ab9469dddb5d18ec039f709e2d7c4e00}
+      \strng{authorfullhash}{ab9469dddb5d18ec039f709e2d7c4e00}
+      \strng{authorfullhashraw}{ab9469dddb5d18ec039f709e2d7c4e00}
+      \field{sortinit}{M}
+      \field{sortinithash}{4625c616857f13d17ce56f7d4f97d451}
+      \field{extradatescope}{labelyear}
+      \field{labeldatesource}{}
+      \true{uniqueprimaryauthor}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{journaltitle}{Journal of Machine Learning Research}
+      \field{title}{Quantile regression forests}
+      \field{volume}{7}
+      \field{year}{2006}
+      \field{pages}{983\bibrangedash 999}
+      \range{pages}{17}
+    \endentry
     \entry{Opricovic2004}{article}{}{}
       \name{author}{2}{}{%
         {{un=0,uniquepart=base,hash=a3b47410010298906abc527623205ed0}{%
@@ -1946,6 +2047,45 @@
       \verb{doi}
       \verb 10.1002/9780470316696
       \endverb
+    \endentry
+    \entry{Scholkopf2001}{book}{}{}
+      \name{author}{2}{}{%
+        {{un=0,uniquepart=base,hash=ca31cc11ec9370460148c3a9c48fce45}{%
+           family={Schölkopf},
+           familyi={S\bibinitperiod},
+           given={Bernhard},
+           giveni={B\bibinitperiod},
+           givenun=0}}%
+        {{un=0,uniquepart=base,hash=82d61e31b4f7f82ad59ff887349bdfe3}{%
+           family={Smola},
+           familyi={S\bibinitperiod},
+           given={Alexander\bibnamedelima J.},
+           giveni={A\bibinitperiod\bibinitdelim J\bibinitperiod},
+           givenun=0}}%
+      }
+      \list{location}{1}{%
+        {Cambridge, MA}%
+      }
+      \list{publisher}{1}{%
+        {MIT Press}%
+      }
+      \strng{namehash}{396e53e44a4a0219aecd575e2eb0f37f}
+      \strng{fullhash}{396e53e44a4a0219aecd575e2eb0f37f}
+      \strng{fullhashraw}{396e53e44a4a0219aecd575e2eb0f37f}
+      \strng{bibnamehash}{396e53e44a4a0219aecd575e2eb0f37f}
+      \strng{authorbibnamehash}{396e53e44a4a0219aecd575e2eb0f37f}
+      \strng{authornamehash}{396e53e44a4a0219aecd575e2eb0f37f}
+      \strng{authorfullhash}{396e53e44a4a0219aecd575e2eb0f37f}
+      \strng{authorfullhashraw}{396e53e44a4a0219aecd575e2eb0f37f}
+      \field{sortinit}{S}
+      \field{sortinithash}{b164b07b29984b41daf1e85279fbc5ab}
+      \field{extradatescope}{labelyear}
+      \field{labeldatesource}{}
+      \true{uniqueprimaryauthor}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{title}{Learning with Kernels: Support Vector Machines, Regularization, Optimization, and Beyond}
+      \field{year}{2001}
     \endentry
     \entry{Spearman1904}{article}{}{}
       \name{author}{1}{}{%

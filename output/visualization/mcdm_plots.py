@@ -28,8 +28,8 @@ from .base import (
     PALETTE, CATEGORICAL_COLORS, GRADIENT_CMAPS, plt, sp_stats,
 )
 
-# Five traditional MCDM methods used in this project
-_METHODS = ['TOPSIS', 'VIKOR', 'PROMETHEE', 'COPRAS', 'EDAS']
+# Six traditional MCDM methods used in this project (includes SAW as baseline)
+_METHODS = ['TOPSIS', 'VIKOR', 'PROMETHEE', 'COPRAS', 'EDAS', 'SAW']
 _METHOD_COLORS = {m: CATEGORICAL_COLORS[i] for i, m in enumerate(_METHODS)}
 
 _logger = logging.getLogger(__name__)
@@ -323,25 +323,28 @@ class MCDMPlotter(BasePlotter):
             if len(stability) < 2:
                 return None
 
+            # Map 'SAW' to 'Base' for display
+            display_stability = {('Base' if m == 'SAW' else m): v for m, v in stability.items()}
+            
             # Sort by value descending
-            labels = sorted(stability, key=stability.get, reverse=True)
-            values = [stability[m] for m in labels]
+            labels = sorted(display_stability, key=display_stability.get, reverse=True)
+            values = [display_stability[m] for m in labels]
             n = len(labels)
 
             # Colour assignment
             _ER_COLOUR   = '#1A6B3C'   # deep green — ER stands out
-            _BASE_COLOUR = '#9E9E9E'   # neutral gray — naive baseline
+            _SAW_COLOUR  = '#9E9E9E'   # neutral gray — SAW baseline
             _PALETTE = [
-                '#2E86AB', '#E84855', '#F4A100',
-                '#6A4C93', '#3BB273', '#FF6B35',
+                '#2E86AB', '#A23B72', '#F18F01',
+                '#17B169', '#C73E1D', '#7B68EE',
             ]
             trad_idx = 0
             bar_colours = []
             for m in labels:
                 if m == 'ER':
                     bar_colours.append(_ER_COLOUR)
-                elif m == 'Base':
-                    bar_colours.append(_BASE_COLOUR)
+                elif m == 'SAW':
+                    bar_colours.append(_SAW_COLOUR)
                 else:
                     bar_colours.append(_PALETTE[trad_idx % len(_PALETTE)])
                     trad_idx += 1
@@ -451,10 +454,11 @@ class MCDMPlotter(BasePlotter):
             if len(disc) < 2:
                 return None
 
-            # Fixed display order — only include methods that have a value
+            # Fixed display order  — map 'SAW' to 'Base' for display
             _ORDER = ['TOPSIS', 'VIKOR', 'PROMETHEE', 'COPRAS', 'EDAS', 'SAW']
-            labels = [m for m in _ORDER if m in disc]
-            values = [disc[m] for m in labels]
+            display_order = [('Base' if m == 'SAW' else m) for m in _ORDER]
+            labels = [m for m in display_order if (m.replace('Base', 'SAW')) in disc]
+            values = [disc[m.replace('Base', 'SAW')] for m in labels]
             n = len(labels)
 
             _PALETTE = [
