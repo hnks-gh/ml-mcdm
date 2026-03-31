@@ -1,17 +1,17 @@
 # Fdb version 4
-["biber main"] 1774956208.43075 "main.bcf" "main.bbl" "main" 1774959338.73621 0
-  "main.bcf" 1774959325 137915 18db6099d06359af9f7aebce94fead8a "xelatex"
+["biber main"] 1774975850.34935 "main.bcf" "main.bbl" "main" 1774978857.32711 0
+  "main.bcf" 1774978839 137915 18db6099d06359af9f7aebce94fead8a "xelatex"
   "main.bib" 1774896141 8979 e6cf992cd760ca31a9c180d8c72241c6 ""
   (generated)
   "main.bbl"
   "main.blg"
   (rewritten before read)
-["xdvipdfmx"] 1774959326.54521 "main.xdv" "main.pdf" "main" 1774959338.749 0
-  "main.xdv" 1774959325 1310332 a3a54432e9b9fe10796e61c7f60a0a21 "xelatex"
+["xdvipdfmx"] 1774978840.34573 "main.xdv" "main.pdf" "main" 1774978857.34415 0
+  "main.xdv" 1774978839 1324756 0eebb3e38bc2552b8aefce77730ad5b4 "xelatex"
   (generated)
   "main.pdf"
   (rewritten before read)
-["xelatex"] 1774959318.57113 "c:/Users/hoang/Documents/ml-mcdm/paper/main.tex" "main.xdv" "main" 1774959338.73653 0
+["xelatex"] 1774978829.98261 "c:/Users/hoang/Documents/ml-mcdm/paper/main.tex" "main.xdv" "main" 1774978857.32769 0
   "C:/Users/hoang/AppData/Local/MiKTeX/miktex/data/le/xetex/xelatex.fmt" 1770539978 27177150 f2d2fea298ef75e28c9bfcc972e18743 ""
   "C:/Users/hoang/AppData/Local/Programs/MiKTeX/fonts/tfm/adobe/zapfding/pzdr.tfm" 1136747054 1528 7e12f4c0fcf5a072cebdcfbfc610f54c ""
   "C:/Users/hoang/AppData/Local/Programs/MiKTeX/fonts/tfm/public/amsfonts/cmextra/cmbsy6.tfm" 1233951848 1124 14ccf5552bc7f77ca02a8a402bea8bfb ""
@@ -150,19 +150,21 @@
   "C:/Users/hoang/AppData/Local/Programs/MiKTeX/tex/latex/translations/translations.sty" 1644048522 44247 2188b95d0ee74e31eca4d316263c58a7 ""
   "C:/Users/hoang/AppData/Local/Programs/MiKTeX/tex/latex/url/url.sty" 1388490452 12796 8edb7d69a20b857904dd0ea757c14ec9 ""
   "C:/Users/hoang/AppData/Local/Programs/MiKTeX/tex/latex/xcolor/xcolor.sty" 1729265222 55384 b454dec21c2d9f45ec0b793f0995b992 ""
-  "c:/Users/hoang/Documents/ml-mcdm/paper/main.tex" 1774958902 146934 5625faf83c687d7414bdb3296d0b14c9 ""
+  "c:/Users/hoang/Documents/ml-mcdm/paper/main.tex" 1774978815 143796 83d19f6cd4a51d9e7ae946d217fc14f6 ""
   "figure/ranking/agreement.png" 1774903049 354680 68adc8a6d2fc7efe501fd4594a34a673 ""
   "figure/ranking/discriminatory.png" 1774900737 250657 a420ed79e86209cd8ac65ec7618debb3 ""
   "figure/ranking/distribution.png" 1774902953 5592128 0b541910593ddbaf207eb76c8830f077 ""
   "figure/ranking/rank-stability.png" 1774901350 143884 afede442e5e81357cdf34e50e963fca0 ""
+  "figure/ranking/rank_profiles_2024.png" 1774950396 513640 a176314788472d122d680f0c0980b4ba ""
+  "figure/ranking/ranking_pairwise.png" 1774903084 1744265 420d8b61e319107d011e0b7c6b1cc6c4 ""
   "figure/weighting/weight-heatmap.png" 1774898856 1572535 3852f71ae80599c4d1a6fdbc1ac70650 ""
   "figure/weighting/weight-radar.png" 1774899714 1084002 cfb07d40c9e09d4cfeb2674258d6dea5 ""
-  "main.aux" 1774959325 33259 19b2bdf69e3d1facdf9c1ca289cc9f91 "xelatex"
-  "main.bbl" 1774956213 96328 a6d6b3cd998194a417ee2141e026b6f8 "biber main"
-  "main.out" 1774959325 8705 4e1caf8d7a2e89bd37820a561d0582c8 "xelatex"
-  "main.run.xml" 1774959325 2490 a167ee0ed88d49aa3901f3986c12b44d "xelatex"
-  "main.tex" 1774958902 146934 5625faf83c687d7414bdb3296d0b14c9 ""
-  "main.toc" 1774959325 4485 56cd1208bd7d981520003fcaffe1a73d "xelatex"
+  "main.aux" 1774978839 32879 b273d16f088a7cf80677c489ae320e45 "xelatex"
+  "main.bbl" 1774975859 96328 a6d6b3cd998194a417ee2141e026b6f8 "biber main"
+  "main.out" 1774978839 6667 6a0d9e0842bf93b9567b38a334c55f15 "xelatex"
+  "main.run.xml" 1774978839 2490 a167ee0ed88d49aa3901f3986c12b44d "xelatex"
+  "main.tex" 1774978815 143796 83d19f6cd4a51d9e7ae946d217fc14f6 ""
+  "main.toc" 1774978839 3703 6cfb6177fda03b698dcad2d995a28166 "xelatex"
   "table/weighting/criterion_weight_table.tex" 1774959316 1735 0f9d7b52b7e726f0bb36fb96082bb274 ""
   (generated)
   "main.aux"

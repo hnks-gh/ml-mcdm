@@ -318,9 +318,15 @@ INPUT .\figure\weighting\weight-radar.png
 INPUT .\figure\weighting\weight-heatmap.png
 INPUT .\figure\weighting\weight-heatmap.png
 INPUT .\figure\weighting\weight-heatmap.png
+INPUT .\figure\ranking\rank_profiles_2024.png
+INPUT .\figure\ranking\rank_profiles_2024.png
+INPUT .\figure\ranking\rank_profiles_2024.png
 INPUT .\figure\ranking\agreement.png
 INPUT .\figure\ranking\agreement.png
 INPUT .\figure\ranking\agreement.png
+INPUT .\figure\ranking\ranking_pairwise.png
+INPUT .\figure\ranking\ranking_pairwise.png
+INPUT .\figure\ranking\ranking_pairwise.png
 INPUT .\figure\ranking\discriminatory.png
 INPUT .\figure\ranking\discriminatory.png
 INPUT .\figure\ranking\discriminatory.png

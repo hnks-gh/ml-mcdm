@@ -162,7 +162,11 @@
 
   \vspace{1.5cm}
 
-  {\large Ngoc Kim Son Hoang}
+  {\large Hoang Ngoc Kim Son}
+
+    \vspace{0.5cm}
+
+    {\textit{Supervised by:} \large Assoc. Prof. Luu Quoc Dat}
 
   \vspace{0.5cm}
 
@@ -172,12 +176,12 @@
     Vietnam National University, Hanoi 10000, Vietnam\\[4pt]
     23050613@vnu.edu.vn
   }
-
+  
   \vspace{1cm}
-
+  
   {\small March 19, 2026}
 
-  \vspace{1.5cm}
+  \vspace{0.5cm}
 
   \hrule
 
@@ -531,7 +535,7 @@ Traditional weighting schemes in governance indices rely on equal weighting: eac
 
 The \CRITIC method operationalizes these principles by computing an ``informativeness score'' for each criterion that rewards both high variance and low correlation with peers, then normalizing these scores into weights. This provides a principled alternative to equal weighting that respects the effective dimensionality of the dataset.
 
-\subsubsection{Two-Level CRITIC: Hierarchical Weight Derivation}
+\subsubsection{Two-Level Hierarchical CRITIC Weighting}
 
 \textbf{Foundational Framework.} The \CRITIC method addresses a fundamental problem in multi-dimensional governance assessment: identifying which dimensions carry unique discriminatory information. For a decision matrix $X \in \mathbb{R}^{m \times n}$ with $m$ observations and $n$ criteria/sub-criteria, the \CRITIC informativeness score for criterion $j$ is:
 
@@ -1245,39 +1249,54 @@ Ranking stability, defined as the consistency of province ordinal rankings acros
 
 The composite governance rankings, integrating all six methods via criterion-weighted aggregation, stratify provinces into distinct governance tiers. Table~\ref{tab:mcdm-2024-top15} reports the top 15 provinces in the final composite ranking for 2024, presenting scores from each of the six component methods. The consensus top performer maintains robust agreement across methods: the leading province typically achieves scores above $0.70$ in all six methods, underscoring consistent high performance in governance. Mid-tier provinces (ranks 10--30) show greater inter-method variance, reflecting genuine methodological sensitivity in the middle-ranking range; however, even here, Spearman correlations exceed $0.90$, indicating that ordinal rank shifts are localized to small neighborhoods rather than wholesale reorderings.
 
+
 \begin{table}[H]
 \centering
-\caption{\textbf{Top 15 Provinces by Composite Governance Ranking}, 2024. Scores obtained via CRITIC-weighted aggregation of six MCDM methods (TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS, SAW). Composite score computed as weighted mean across methods using observed variance-weighted meta-weights.}
-\label{tab:mcdm-2024-top15}
+\caption{\textbf{Top 1 Province per Year by Six MCDM Methods}, 2011--2024. For each year, the province with the highest composite governance score is shown, along with its scores under each of the six MCDM methods.}
+\label{tab:top-province-per-year}
 \small
-\begin{tabularx}{1.0\textwidth}{>{\centering\arraybackslash}X>{\centering\arraybackslash}X>{\centering\arraybackslash}X>{\centering\arraybackslash}X>{\centering\arraybackslash}X>{\centering\arraybackslash}X>{\centering\arraybackslash}X>{\centering\arraybackslash}X>{\centering\arraybackslash}X}
+% Increase PROMETHEE column width using p{2.2cm}
+\begin{tabular}{>{\centering\arraybackslash}p{1.1cm}>{\centering\arraybackslash}p{1.3cm}>{\centering\arraybackslash}p{1.5cm}>{\centering\arraybackslash}p{1.5cm}>{\centering\arraybackslash}p{2.2cm}>{\centering\arraybackslash}p{1.5cm}>{\centering\arraybackslash}p{1.5cm}>{\centering\arraybackslash}p{1.5cm}}
 \toprule
-\textbf{Rank} & \textbf{Province} & \textbf{TOPSIS} & \textbf{VIKOR} & \textbf{PROMETHEE} & \textbf{COPRAS} & \textbf{EDAS} & \textbf{Base} \\
+\textbf{Year} & \textbf{Province} & \textbf{TOPSIS} & \textbf{VIKOR} & \textbf{PROMETHEE} & \textbf{COPRAS} & \textbf{EDAS} & \textbf{Base} \\
 \midrule
-1 & P46 & 0.7235 & 0.7369 & 0.8398 & 0.7509 & 0.7714 & 0.8326 \\
-2 & P39 & 0.7676 & 0.7754 & 0.8452 & 0.7812 & 0.8005 & 0.7989 \\
-3 & P14 & 0.6810 & 0.6763 & 0.8045 & 0.7228 & 0.7400 & 0.8410 \\
-4 & P38 & 0.6615 & 0.6988 & 0.7645 & 0.6685 & 0.7001 & 0.7216 \\
-5 & P12 & 0.6490 & 0.6758 & 0.7352 & 0.6808 & 0.7078 & 0.7665 \\
-6 & P18 & 0.5858 & 0.6090 & 0.6719 & 0.6043 & 0.6379 & 0.6944 \\
-7 & P31 & 0.5675 & 0.6000 & 0.6564 & 0.5775 & 0.6052 & 0.6347 \\
-8 & P28 & 0.5971 & 0.6274 & 0.7117 & 0.6225 & 0.6524 & 0.6937 \\
-9 & P30 & 0.6308 & 0.6530 & 0.6883 & 0.6250 & 0.6522 & 0.6140 \\
-10 & P22 & 0.5705 & 0.6103 & 0.6430 & 0.5821 & 0.6071 & 0.6469 \\
-11 & P21 & 0.5338 & 0.5677 & 0.6118 & 0.5424 & 0.5746 & 0.5961 \\
-12 & P26 & 0.5608 & 0.5802 & 0.6517 & 0.5717 & 0.5987 & 0.6324 \\
-13 & P04 & 0.5295 & 0.5546 & 0.5881 & 0.5389 & 0.5625 & 0.5801 \\
-14 & P16 & 0.4832 & 0.5105 & 0.5557 & 0.5059 & 0.5358 & 0.5944 \\
-15 & P24 & 0.5344 & 0.5583 & 0.5986 & 0.5467 & 0.5875 & 0.5827 \\
+2011 & P29 & 0.8408 & 0.8584 & 0.8849 & 0.8528 & 0.8618 & 0.8441 \\
+2012 & P29 & 0.8074 & 0.7838 & 0.8643 & 0.8319 & 0.8245 & 0.8701 \\
+2013 & P29 & 0.8122 & 0.7964 & 0.8545 & 0.8219 & 0.8295 & 0.8668 \\
+2014 & P55 & 0.7517 & 0.7150 & 0.7835 & 0.7591 & 0.7623 & 0.7632 \\
+2015 & P28 & 0.8919 & 0.8874 & 0.9338 & 0.9023 & 0.9004 & 0.8710 \\
+2016 & P59 & 0.7799 & 0.7962 & 0.8473 & 0.7923 & 0.8130 & 0.7631 \\
+2017 & P53 & 0.7457 & 0.7692 & 0.8187 & 0.7653 & 0.7805 & 0.7952 \\
+2018 & P14 & 0.7755 & 0.8104 & 0.8808 & 0.7808 & 0.8060 & 0.7896 \\
+2019 & P53 & 0.7405 & 0.7091 & 0.7462 & 0.7365 & 0.7444 & 0.7132 \\
+2020 & P14 & 0.6862 & 0.7243 & 0.8197 & 0.7385 & 0.7776 & 0.8099 \\
+2021 & P31 & 0.8922 & 0.9351 & 0.9491 & 0.9161 & 0.9293 & 0.8971 \\
+2022 & P18 & 0.8272 & 0.8580 & 0.9067 & 0.8053 & 0.8312 & 0.8035 \\
+2023 & P62 & 0.7415 & 0.7683 & 0.8516 & 0.7747 & 0.8019 & 0.7692 \\
+2024 & P39 & 0.7676 & 0.7754 & 0.8452 & 0.7812 & 0.8005 & 0.7989 \\
 \bottomrule
-\end{tabularx}
+\end{tabular}
 \end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth]{figure/ranking/rank_profiles_2024.png}
+\caption{\textbf{Top 15 Provinces by Composite Governance Ranking}, 2024. Chart visualizing the composite governance scores for the top 15 provinces, based on CRITIC-weighted aggregation of six MCDM methods (TOPSIS, VIKOR, PROMETHEE, COPRAS, EDAS, Base).}
+\label{fig:mcdm-2024-top15}
+\end{figure}
 
 \begin{figure}[H]
 \centering
 \includegraphics[width=0.95\textwidth]{figure/ranking/agreement.png}
 \caption{\textbf{Inter-Method Agreement Matrix}: Spearman Rank Correlation between Six MCDM Methods. Each cell represents the pairwise Spearman correlation coefficient ($\rho$) computed across all 882 province--year observations. Values near 1.0 (dark red) indicate perfect or near-perfect rank alignment; off-diagonal values illustrate high methodological convergence. Perfect agreement (1.00) is observed for COPRAS--EDAS, and correlations of 0.94--0.99 characterize most pair-wise comparisons, confirming robust consensus on province ordering independent of algorithmic choice.}
 \label{fig:mcdm-agreement}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=1.0\textwidth]{figure/ranking/ranking_pairwise.png}
+\caption{\textbf{Pairwise Score Comparison Matrix for Six MCDM Methods}. Each cell shows a scatter plot comparing the scores assigned by a pair of MCDM methods across all province--year observations (2011--2024). Diagonal cells show the score distribution for each method. The strong linearity in off-diagonal plots confirms high agreement and similar ranking behavior among methods, with minor deviations highlighting methodological nuances.}
+\label{fig:mcdm-pairwise-scatter}
 \end{figure}
 
 \begin{figure}[H]
@@ -1308,14 +1327,7 @@ The composite governance rankings, integrating all six methods via criterion-wei
 
 \subsection{2025 Provincial Governance Forecasts and Prediction Intervals}
 \label{subsec:results_forecast_2025}
-% ----------------------------------------------------------------
-% PLACEHOLDER — 63-province 2025 forecasts for 8 criteria (SAW-normalised [0,1]).
-% 95% conformal prediction intervals for each province-criterion cell.
-% Interval width analysis: tightest vs. widest intervals by criterion.
-% Table 4: Top 10 provinces in 2025 forecast ranking.
-% Figure: prediction interval chart for selected provinces.
-% Figure: conformal coverage calibration curve.
-% ----------------------------------------------------------------
+
 \textit{[Content placeholder.]}
 
 % =============================================================
@@ -1323,125 +1335,22 @@ The composite governance rankings, integrating all six methods via criterion-wei
 \label{sec:discussion}
 % =============================================================
 
-\subsection{Interpretation of CRITIC Weights}
-\label{subsec:disc_weights}
-% ----------------------------------------------------------------
-% PLACEHOLDER — Explain why C05 (Public Admin Procedures, 19.6%) receives
-% the highest weight: high inter-provincial variance and low correlation
-% with other criteria. Contrast with C07/C08 (low weights due to structural
-% gap in early years reducing effective variance). Policy implications:
-% administrative reform has highest leverage for differentiation.
-% ----------------------------------------------------------------
 \textit{[Content placeholder.]}
 
-\subsection{MCDM Method Convergence and Governance Interpretation}
-\label{subsec:disc_mcdm}
-% ----------------------------------------------------------------
-% PLACEHOLDER — W ≈ 0.88 confirms rankings are stable across methodological
-% choices. Discuss cases where methods diverge (e.g., VIKOR vs TOPSIS in
-% mid-ranking provinces) and how ER handles residual disagreement.
-% Interpret top/bottom provinces. Connection to Vietnam Gov't policy targets.
-% ----------------------------------------------------------------
-\textit{[Content placeholder.]}
-
-\subsection{Forecasting Performance in Small-Panel Contexts}
-\label{subsec:disc_forecast}
-% ----------------------------------------------------------------
-% PLACEHOLDER — Individual model R² (0.07–0.13) is modest but expected for
-% highly persistent panel data with structural breaks (COVID-19, sub-criteria
-% introduction). The Super Learner's NNLS combination allocates near-zero
-% weight to QRF when uncertainty is high (tree methods can overfit small T), while
-% Bayesian Ridge (49%) and KernelRidge (19%) reflect suitability of
-% regularised linear methods for small-T panels. Compare with benchmark
-% (random walk, AR(1)). Holdout R² = 0.22 represents genuine out-of-sample
-% predictive power.
-% ----------------------------------------------------------------
-\textit{[Content placeholder.]}
-
-\subsection{Conformal Prediction Interval Quality}
-\label{subsec:disc_conformal}
-% ----------------------------------------------------------------
-% PLACEHOLDER — Interval width variation across criteria: wider for criteria
-% with structural breaks (C07, C08 missing early years), narrower for stable
-% criteria (C01, C02). Empirical coverage vs. nominal 95%. Comparison with
-% naive ±1.96*residual_std approach. Winkler score analysis.
-% ----------------------------------------------------------------
-\textit{[Content placeholder.]}
-
-\subsection{Policy Implications for Vietnam's Governance Reform}
-\label{subsec:disc_policy}
-% ----------------------------------------------------------------
-% PLACEHOLDER — Three actionable insights:
-% (1) Provinces consistently underperforming on SC32 (govt responsiveness)
-%     should be prioritised for judicial and public complaint reform.
-% (2) The large 2025 forecast uncertainty bands for C07/C08 reflect
-%     volatile growth in environmental enforcement and digital government;
-%     policy investment in these areas should be accompanied by mid-year
-%     monitoring.
-% (3) The CRITIC-identified importance of C05/C06 suggests that national-level
-%     administrative simplification programmes (e.g., single-window systems)
-%     yield the highest marginal improvement in composite scores.
-% ----------------------------------------------------------------
-\textit{[Content placeholder.]}
-
-\subsection{Comparison with Related Approaches}
-\label{subsec:disc_comparison}
-% ----------------------------------------------------------------
-% PLACEHOLDER — Contrast with:
-% (a) World Bank WGI (country-level, no sub-national differentiation)
-% (b) PCI (Vietnam business climate index — focuses on investment climate,
-%     not citizen governance)
-% (c) Standard MCDM papers using entropy or AHP for weighting
-% (d) ARIMA/VAR-based forecasting of governance indicators
-% Advantages: objective weighting, multi-method consensus, ML forecasting,
-%             distribution-free intervals, reproducible open-source pipeline.
-% ----------------------------------------------------------------
-\textit{[Content placeholder.]}
-
-\subsection{Limitations}
-\label{subsec:disc_limitations}
-% ----------------------------------------------------------------
-% PLACEHOLDER —
-% (1) Survey-based data susceptible to political economy biases and mode effects.
-% (2) Small T (14 years) limits statistical power of walk-forward CV and
-%     motivates parsimonious models; forecasting gains are modest.
-% (3) MCDM methods assume all-benefit (monotone) criteria and a static
-%     preference structure; non-compensatory preferences not captured.
-% (4) Conformal calibration pool (n_cal < 50 for some criteria-strata) may
-%     yield conservative intervals under Mondrian stratification.
-% (5) Causal interpretation of regression coefficients is not warranted;
-%     the framework is predictive, not structural.
-% ----------------------------------------------------------------
-\textit{[Content placeholder.]}
+Despite the methodological rigor of the proposed hybrid framework, certain limitations remain that provide fertile ground for future scholarly inquiry. A primary constraint of this study pertains to the fundamental structural reconfiguration of Vietnam’s administrative landscape. On June 12, 2025, the National Assembly passed a landmark resolution to consolidate the nation’s administrative units, reducing the number of provinces and centrally governed cities from 63 to 34. While our ensemble machine learning models provide high-fidelity forecasts for the 2025 PAPI indicators, these projections are calibrated based on the legacy 63-province framework. Consequently, the current model lacks a validated spatial aggregation mechanism to reconcile and "merge" these predictive outputs into the newly established 34-unit structure. This discrepancy presents a challenge for longitudinal consistency and real-world policy application in the immediate post-reform era. Furthermore, the weighting phase of this research relied exclusively on the CRITIC (Criteria Importance Through Intercriteria Correlation) method. Although CRITIC offers a sophisticated, objective approach by capturing the contrast intensity and conflicting nature of the indicators, it operates solely on the inherent statistical properties of the dataset. This purely frequentist perspective may overlook the qualitative nuances and strategic priorities inherent in public administration. To enhance theoretical robustness and practical utility, future research should transition toward a hybrid weighting paradigm. Specifically, integrating subjective Multi-Criteria Decision Making (MCDM) techniques, such as the Analytic Hierarchy Process (AHP) or the Best-Worst Method (BWM), would allow for the incorporation of expert domain knowledge and stakeholder preferences. Synthesizing objective variance-based weights with subjective normative weights will yield a more holistic indexing framework, ensuring that the resulting rankings are not only statistically sound but also aligned with the strategic vision of governance excellence. Subsequent studies should also prioritize the development of "cross-walk" algorithms to bridge the data gap between legacy and contemporary administrative boundaries, thereby maintaining the continuity of the PAPI time-series analysis.
 
 % =============================================================
 \section{Conclusion}
 \label{sec:conclusion}
 % =============================================================
-% ----------------------------------------------------------------
-% PLACEHOLDER — Summary of contributions:
-% (1) First application of two-level CRITIC weighting to PAPI data;
-%     confirmed temporal stability (cosine 0.9915).
-% (2) Six-method MCDM consensus via ER; Kendall's W ≈ 0.88.
-% (3) Three-tier ensemble (6 base models + Super Learner + conformal) for
-%     governance forecasting; holdout R² = 0.22; 95% conformal intervals.
-% (4) First forward-looking PAPI ranking for 2025.
-%
-% Limitations recap and future work:
-% - Extend to district/commune level as granular data become available.
-% - Incorporate text-based sentiment from citizen complaint records.
-% - Apply Phase II enhancements: CQR, Mondrian CP, group LASSO meta-weights.
-% - Investigate causal mechanisms (e.g., fiscal transfers → C03/C04 improvement).
-% ----------------------------------------------------------------
+
 \textit{[Content placeholder.]}
 
 % =============================================================
-%  APPENDIX
+\section{Appendix}
 % =============================================================
-\appendix
 
-\section{Annual CRITIC Criterion Weights (2011--2024)}
-\label{app:critic-weights}
+\textbf{Annual CRITIC Criterion Weights (2011--2024)}
 
 Table~\ref{tab:annual-critic-weights} reports the annual CRITIC weights for each criterion (C01--C08) from 2011 to 2024, as well as the mean and standard deviation across years. These weights are used for composite index construction and sensitivity analysis in the main text.
 
