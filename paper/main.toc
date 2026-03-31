@@ -30,15 +30,16 @@
 \contentsline {subsubsection}{\numberline {2.5.6}Evaluation Protocol and Metrics}{40}{subsubsection.2.5.6}%
 \contentsline {section}{\numberline {3}Results}{41}{section.3}%
 \contentsline {subsection}{\numberline {3.1}CRITIC Weighting}{41}{subsection.3.1}%
-\contentsline {subsection}{\numberline {3.2}MCDM Rankings}{41}{subsection.3.2}%
-\contentsline {subsection}{\numberline {3.3}Forecasting Model Performance}{41}{subsection.3.3}%
-\contentsline {subsection}{\numberline {3.4}2025 Provincial Governance Forecasts and Prediction Intervals}{41}{subsection.3.4}%
-\contentsline {section}{\numberline {4}Discussion}{41}{section.4}%
-\contentsline {subsection}{\numberline {4.1}Interpretation of CRITIC Weights}{41}{subsection.4.1}%
-\contentsline {subsection}{\numberline {4.2}MCDM Method Convergence and Governance Interpretation}{42}{subsection.4.2}%
-\contentsline {subsection}{\numberline {4.3}Forecasting Performance in Small-Panel Contexts}{42}{subsection.4.3}%
-\contentsline {subsection}{\numberline {4.4}Conformal Prediction Interval Quality}{42}{subsection.4.4}%
-\contentsline {subsection}{\numberline {4.5}Policy Implications for Vietnam's Governance Reform}{42}{subsection.4.5}%
-\contentsline {subsection}{\numberline {4.6}Comparison with Related Approaches}{42}{subsection.4.6}%
-\contentsline {subsection}{\numberline {4.7}Limitations}{42}{subsection.4.7}%
-\contentsline {section}{\numberline {5}Conclusion}{42}{section.5}%
+\contentsline {subsection}{\numberline {3.2}MCDM Rankings}{44}{subsection.3.2}%
+\contentsline {subsection}{\numberline {3.3}Forecasting Model Performance}{49}{subsection.3.3}%
+\contentsline {subsection}{\numberline {3.4}2025 Provincial Governance Forecasts and Prediction Intervals}{49}{subsection.3.4}%
+\contentsline {section}{\numberline {4}Discussion}{49}{section.4}%
+\contentsline {subsection}{\numberline {4.1}Interpretation of CRITIC Weights}{49}{subsection.4.1}%
+\contentsline {subsection}{\numberline {4.2}MCDM Method Convergence and Governance Interpretation}{49}{subsection.4.2}%
+\contentsline {subsection}{\numberline {4.3}Forecasting Performance in Small-Panel Contexts}{49}{subsection.4.3}%
+\contentsline {subsection}{\numberline {4.4}Conformal Prediction Interval Quality}{50}{subsection.4.4}%
+\contentsline {subsection}{\numberline {4.5}Policy Implications for Vietnam's Governance Reform}{50}{subsection.4.5}%
+\contentsline {subsection}{\numberline {4.6}Comparison with Related Approaches}{50}{subsection.4.6}%
+\contentsline {subsection}{\numberline {4.7}Limitations}{50}{subsection.4.7}%
+\contentsline {section}{\numberline {5}Conclusion}{50}{section.5}%
+\contentsline {section}{\numberline {A}Annual CRITIC Criterion Weights (2011--2024)}{50}{appendix.A}%

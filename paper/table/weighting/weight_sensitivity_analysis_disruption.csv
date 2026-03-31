@@ -1,0 +1,4 @@
+,Tier,Mean_Disruption,Std_Disruption,Max_Disruption,Q95_Disruption
+0,aggressive,0.556361,0.309127,1,1
+1,conservative,0.200374,0.262738,1,0.785714
+2,moderate,0.409728,0.323569,1,1

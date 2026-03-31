@@ -1,0 +1,8 @@
+,Metric,Value
+0,Spearman_Rho_Mean,0.861723
+1,Spearman_Rho_Std,0.176584
+2,Kendalls_W,0.380476
+3,Year_Min,2011
+4,Year_Max,2024
+5,N_Windows,10
+6,N_Pairs,9
