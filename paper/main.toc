@@ -1,37 +1,41 @@
-\contentsline {section}{\numberline {1}Introduction}{2}{section.1}%
-\contentsline {section}{\numberline {2}Methods and Data}{6}{section.2}%
-\contentsline {subsection}{\numberline {2.1}Data Description}{6}{subsection.2.1}%
-\contentsline {subsubsection}{\numberline {2.1.1}Panel Structure and Dimensionality}{6}{subsubsection.2.1.1}%
-\contentsline {subsubsection}{\numberline {2.1.2}Measurement Framework and Indicator Definitions}{7}{subsubsection.2.1.2}%
-\contentsline {subsection}{\numberline {2.2}Missing Data Structure and Data Imputation}{9}{subsection.2.2}%
-\contentsline {subsubsection}{\numberline {2.2.1}Missing Data Characterization and Quantification}{9}{subsubsection.2.2.1}%
-\contentsline {subsubsection}{\numberline {2.2.2}Multivariate Imputation by Chained Equations}{11}{subsubsection.2.2.2}%
-\contentsline {subsubsection}{\numberline {2.2.3}Post-Imputation Data Quality}{14}{subsubsection.2.2.3}%
-\contentsline {subsection}{\numberline {2.3}CRiteria Importance Through Inter-criteria Correlation}{16}{subsection.2.3}%
-\contentsline {subsubsection}{\numberline {2.3.1}Two-Level Hierarchical CRITIC Weighting}{16}{subsubsection.2.3.1}%
-\contentsline {subsubsection}{\numberline {2.3.2}Weighting Analysis}{21}{subsubsection.2.3.2}%
-\contentsline {subsection}{\numberline {2.4}MCDM Ranking Methods}{25}{subsection.2.4}%
-\contentsline {subsubsection}{\numberline {2.4.1}TOPSIS}{26}{subsubsection.2.4.1}%
-\contentsline {subsubsection}{\numberline {2.4.2}VIKOR}{26}{subsubsection.2.4.2}%
-\contentsline {subsubsection}{\numberline {2.4.3}PROMETHEE II}{27}{subsubsection.2.4.3}%
-\contentsline {subsubsection}{\numberline {2.4.4}COPRAS}{28}{subsubsection.2.4.4}%
-\contentsline {subsubsection}{\numberline {2.4.5}EDAS}{28}{subsubsection.2.4.5}%
-\contentsline {subsubsection}{\numberline {2.4.6}Multi-Method Consensus, Ranking Stability, and Discriminatory Power}{29}{subsubsection.2.4.6}%
-\contentsline {paragraph}{Ranking Stability via Cross-Criteria Spearman Correlation.}{29}{section*.6}%
-\contentsline {paragraph}{Method Discriminatory Power via Score Inter-Quartile Range.}{30}{section*.7}%
-\contentsline {paragraph}{Pairwise Method Agreement via Spearman Rank Correlation Matrix.}{31}{section*.8}%
-\contentsline {paragraph}{Interpretation Framework and Methodological Implications.}{31}{section*.9}%
-\contentsline {subsection}{\numberline {2.5}Ensemble Machine Learning Forecasting}{32}{subsection.2.5}%
-\contentsline {subsubsection}{\numberline {2.5.1}Temporal Feature Engineering}{33}{subsubsection.2.5.1}%
-\contentsline {subsubsection}{\numberline {2.5.2}Target Transformation and Preprocessing}{35}{subsubsection.2.5.2}%
-\contentsline {subsubsection}{\numberline {2.5.3}Base Learner Ensemble}{36}{subsubsection.2.5.3}%
-\contentsline {subsubsection}{\numberline {2.5.4}Super Learner Meta-Ensemble}{37}{subsubsection.2.5.4}%
-\contentsline {subsubsection}{\numberline {2.5.5}Conformal Prediction Intervals}{38}{subsubsection.2.5.5}%
-\contentsline {subsubsection}{\numberline {2.5.6}Evaluation Protocol and Metrics}{39}{subsubsection.2.5.6}%
-\contentsline {section}{\numberline {3}Results}{40}{section.3}%
-\contentsline {subsection}{\numberline {3.1}CRITIC Weighting}{40}{subsection.3.1}%
-\contentsline {subsection}{\numberline {3.2}MCDM Rankings}{48}{subsection.3.2}%
-\contentsline {subsection}{\numberline {3.3}Ensemble Learning Forecasting}{55}{subsection.3.3}%
-\contentsline {section}{\numberline {4}Discussion}{64}{section.4}%
-\contentsline {section}{\numberline {5}Conclusion}{67}{section.5}%
-\contentsline {section}{\numberline {6}Appendix}{68}{section.6}%
+\contentsline {section}{\numberline {1}Introduction}{3}{section.1}%
+\contentsline {section}{\numberline {2}Methods and Data}{7}{section.2}%
+\contentsline {subsection}{\numberline {2.1}Data Description}{7}{subsection.2.1}%
+\contentsline {subsubsection}{\numberline {2.1.1}Panel Structure and Dimensionality}{7}{subsubsection.2.1.1}%
+\contentsline {subsubsection}{\numberline {2.1.2}Measurement Framework and Indicator Definitions}{8}{subsubsection.2.1.2}%
+\contentsline {subsection}{\numberline {2.2}Missing Data Structure and Data Imputation}{10}{subsection.2.2}%
+\contentsline {subsubsection}{\numberline {2.2.1}Missing Data Characterization and Quantification}{10}{subsubsection.2.2.1}%
+\contentsline {subsubsection}{\numberline {2.2.2}Multivariate Imputation by Chained Equations}{12}{subsubsection.2.2.2}%
+\contentsline {subsubsection}{\numberline {2.2.3}Post-Imputation Data Quality}{15}{subsubsection.2.2.3}%
+\contentsline {subsection}{\numberline {2.3}Criteria Importance Through Intercriteria Correlation}{16}{subsection.2.3}%
+\contentsline {subsubsection}{\numberline {2.3.1}Two-Level Hierarchical CRITIC Weighting}{17}{subsubsection.2.3.1}%
+\contentsline {subsubsection}{\numberline {2.3.2}Weighting Analysis and Validation}{22}{subsubsection.2.3.2}%
+\contentsline {subsection}{\numberline {2.4}Multi-Method MCDM Ranking Approaches}{26}{subsection.2.4}%
+\contentsline {subsubsection}{\numberline {2.4.1}TOPSIS}{27}{subsubsection.2.4.1}%
+\contentsline {subsubsection}{\numberline {2.4.2}VIKOR}{27}{subsubsection.2.4.2}%
+\contentsline {subsubsection}{\numberline {2.4.3}PROMETHEE II}{28}{subsubsection.2.4.3}%
+\contentsline {subsubsection}{\numberline {2.4.4}COPRAS}{29}{subsubsection.2.4.4}%
+\contentsline {subsubsection}{\numberline {2.4.5}EDAS}{29}{subsubsection.2.4.5}%
+\contentsline {subsubsection}{\numberline {2.4.6}Ranking Analysis and Validation}{30}{subsubsection.2.4.6}%
+\contentsline {paragraph}{Ranking Stability via Cross-Criteria Spearman Correlation.}{30}{section*.6}%
+\contentsline {paragraph}{Method Discriminatory Power via Score Inter-Quartile Range.}{31}{section*.7}%
+\contentsline {paragraph}{Pairwise Method Agreement via Spearman Rank Correlation Matrix.}{32}{section*.8}%
+\contentsline {paragraph}{Interpretation Framework and Methodological Implications.}{32}{section*.9}%
+\contentsline {subsection}{\numberline {2.5}Ensemble Machine Learning Forecasting}{33}{subsection.2.5}%
+\contentsline {subsubsection}{\numberline {2.5.1}Temporal Feature Engineering}{34}{subsubsection.2.5.1}%
+\contentsline {subsubsection}{\numberline {2.5.2}Target Transformation and Preprocessing}{36}{subsubsection.2.5.2}%
+\contentsline {subsubsection}{\numberline {2.5.3}Base Learner Ensemble}{37}{subsubsection.2.5.3}%
+\contentsline {subsubsection}{\numberline {2.5.4}Super Learner Meta-Ensemble}{38}{subsubsection.2.5.4}%
+\contentsline {subsubsection}{\numberline {2.5.5}Conformal Prediction Intervals}{39}{subsubsection.2.5.5}%
+\contentsline {subsubsection}{\numberline {2.5.6}Evaluation Protocol and Metrics}{40}{subsubsection.2.5.6}%
+\contentsline {section}{\numberline {3}Results}{41}{section.3}%
+\contentsline {subsection}{\numberline {3.1}Weighting Results}{41}{subsection.3.1}%
+\contentsline {subsubsection}{\numberline {3.1.1}CRITIC Weights Results}{41}{subsubsection.3.1.1}%
+\contentsline {subsubsection}{\numberline {3.1.2}Weighting Result Analysis and Validation}{46}{subsubsection.3.1.2}%
+\contentsline {subsection}{\numberline {3.2}Rankings Results}{49}{subsection.3.2}%
+\contentsline {subsubsection}{\numberline {3.2.1}Multi-Method MCDM Ranking Results}{49}{subsubsection.3.2.1}%
+\contentsline {subsubsection}{\numberline {3.2.2}Ranking Result Analysis and Validation}{51}{subsubsection.3.2.2}%
+\contentsline {subsection}{\numberline {3.3}Ensemble Learning Forecasting}{57}{subsection.3.3}%
+\contentsline {section}{\numberline {4}Discussion}{66}{section.4}%
+\contentsline {section}{\numberline {5}Conclusion}{68}{section.5}%
+\contentsline {section}{\numberline {6}Appendix}{69}{section.6}%
