@@ -31,8 +31,7 @@
 \contentsline {section}{\numberline {3}Results}{40}{section.3}%
 \contentsline {subsection}{\numberline {3.1}CRITIC Weighting}{40}{subsection.3.1}%
 \contentsline {subsection}{\numberline {3.2}MCDM Rankings}{48}{subsection.3.2}%
-\contentsline {subsection}{\numberline {3.3}Forecasting Model Performance}{55}{subsection.3.3}%
-\contentsline {subsection}{\numberline {3.4}2025 Provincial Governance Forecasts and Prediction Intervals}{56}{subsection.3.4}%
-\contentsline {section}{\numberline {4}Discussion}{56}{section.4}%
-\contentsline {section}{\numberline {5}Conclusion}{56}{section.5}%
-\contentsline {section}{\numberline {6}Appendix}{57}{section.6}%
+\contentsline {subsection}{\numberline {3.3}Ensemble Learning Forecasting}{55}{subsection.3.3}%
+\contentsline {section}{\numberline {4}Discussion}{64}{section.4}%
+\contentsline {section}{\numberline {5}Conclusion}{67}{section.5}%
+\contentsline {section}{\numberline {6}Appendix}{68}{section.6}%

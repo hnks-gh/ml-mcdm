@@ -19,6 +19,80 @@
 
 \refsection{0}
   \datalist[entry]{apa/apasortcite//global/global/global}
+    \entry{Acemoglu2012}{book}{}{}
+      \name{author}{2}{}{%
+        {{un=0,uniquepart=base,hash=d849e6f8de178bfb18aa67341c9f8d38}{%
+           family={Acemoglu},
+           familyi={A\bibinitperiod},
+           given={Daron},
+           giveni={D\bibinitperiod},
+           givenun=0}}%
+        {{un=0,uniquepart=base,hash=974873287a7760126350afac970c1e81}{%
+           family={Robinson},
+           familyi={R\bibinitperiod},
+           given={James\bibnamedelima A.},
+           giveni={J\bibinitperiod\bibinitdelim A\bibinitperiod},
+           givenun=0}}%
+      }
+      \list{location}{1}{%
+        {New York}%
+      }
+      \list{publisher}{1}{%
+        {Crown Business}%
+      }
+      \strng{namehash}{e9d3e7c95c550d701dedddb09ddaecb0}
+      \strng{fullhash}{e9d3e7c95c550d701dedddb09ddaecb0}
+      \strng{fullhashraw}{e9d3e7c95c550d701dedddb09ddaecb0}
+      \strng{bibnamehash}{e9d3e7c95c550d701dedddb09ddaecb0}
+      \strng{authorbibnamehash}{e9d3e7c95c550d701dedddb09ddaecb0}
+      \strng{authornamehash}{e9d3e7c95c550d701dedddb09ddaecb0}
+      \strng{authorfullhash}{e9d3e7c95c550d701dedddb09ddaecb0}
+      \strng{authorfullhashraw}{e9d3e7c95c550d701dedddb09ddaecb0}
+      \field{sortinit}{A}
+      \field{sortinithash}{2f401846e2029bad6b3ecc16d50031e2}
+      \field{extradatescope}{labelyear}
+      \field{labeldatesource}{}
+      \true{uniqueprimaryauthor}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{isbn}{978-0-307-58867-8}
+      \field{title}{Why Nations Fail: The Origins of Power, Prosperity, and Poverty}
+      \field{year}{2012}
+    \endentry
+    \entry{Arrow1951}{book}{}{}
+      \name{author}{1}{}{%
+        {{un=0,uniquepart=base,hash=5d45272a5c29864ab7c14d6d5567315c}{%
+           family={Arrow},
+           familyi={A\bibinitperiod},
+           given={Kenneth\bibnamedelima J.},
+           giveni={K\bibinitperiod\bibinitdelim J\bibinitperiod},
+           givenun=0}}%
+      }
+      \list{location}{1}{%
+        {New York}%
+      }
+      \list{publisher}{1}{%
+        {John Wiley \& Sons}%
+      }
+      \strng{namehash}{5d45272a5c29864ab7c14d6d5567315c}
+      \strng{fullhash}{5d45272a5c29864ab7c14d6d5567315c}
+      \strng{fullhashraw}{5d45272a5c29864ab7c14d6d5567315c}
+      \strng{bibnamehash}{5d45272a5c29864ab7c14d6d5567315c}
+      \strng{authorbibnamehash}{5d45272a5c29864ab7c14d6d5567315c}
+      \strng{authornamehash}{5d45272a5c29864ab7c14d6d5567315c}
+      \strng{authorfullhash}{5d45272a5c29864ab7c14d6d5567315c}
+      \strng{authorfullhashraw}{5d45272a5c29864ab7c14d6d5567315c}
+      \field{sortinit}{A}
+      \field{sortinithash}{2f401846e2029bad6b3ecc16d50031e2}
+      \field{extradatescope}{labelyear}
+      \field{labeldatesource}{}
+      \true{uniqueprimaryauthor}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{isbn}{978-0-300-01365-1}
+      \field{title}{Social Choice and Individual Values}
+      \field{year}{1951}
+    \endentry
     \entry{Barber2023}{book}{}{}
       \name{author}{1}{}{%
         {{un=0,uniquepart=base,hash=9a97f74e5fb11fe785cbe0a83fc5276c}{%
@@ -79,6 +153,50 @@
       \field{title}{Pattern Recognition and Machine Learning}
       \field{year}{2006}
     \endentry
+    \entry{Bouyssou2000}{article}{}{}
+      \name{author}{2}{}{%
+        {{un=0,uniquepart=base,hash=da6e7194a6d136cf0ebec1c23e6eaa10}{%
+           family={Bouyssou},
+           familyi={B\bibinitperiod},
+           given={Denis},
+           giveni={D\bibinitperiod},
+           givenun=0}}%
+        {{un=0,uniquepart=base,hash=b6145acd37034d2a7ba74047e33c085e}{%
+           family={Marchant},
+           familyi={M\bibinitperiod},
+           given={Thierry},
+           giveni={T\bibinitperiod},
+           givenun=0}}%
+      }
+      \list{publisher}{1}{%
+        {North-Holland}%
+      }
+      \strng{namehash}{96a5b7cf81e0012df3a3656682ad177c}
+      \strng{fullhash}{96a5b7cf81e0012df3a3656682ad177c}
+      \strng{fullhashraw}{96a5b7cf81e0012df3a3656682ad177c}
+      \strng{bibnamehash}{96a5b7cf81e0012df3a3656682ad177c}
+      \strng{authorbibnamehash}{96a5b7cf81e0012df3a3656682ad177c}
+      \strng{authornamehash}{96a5b7cf81e0012df3a3656682ad177c}
+      \strng{authorfullhash}{96a5b7cf81e0012df3a3656682ad177c}
+      \strng{authorfullhashraw}{96a5b7cf81e0012df3a3656682ad177c}
+      \field{sortinit}{B}
+      \field{sortinithash}{d7095fff47cda75ca2589920aae98399}
+      \field{extradatescope}{labelyear}
+      \field{labeldatesource}{}
+      \true{uniqueprimaryauthor}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{journaltitle}{European Journal of Operational Research}
+      \field{number}{2}
+      \field{title}{An Axiomatic Approach to Noncompensatory Sorting Methods in {MCDM} {I}: {T}he Case of {TOMATA}}
+      \field{volume}{138}
+      \field{year}{2000}
+      \field{pages}{258\bibrangedash 290}
+      \range{pages}{33}
+      \verb{doi}
+      \verb 10.1016/S0377-2217(00)00159-6
+      \endverb
+    \endentry
     \entry{Brans1985}{article}{}{}
       \name{author}{2}{}{%
         {{un=0,uniquepart=base,hash=28eaf595641ac8e9ac43ff86f36475e2}{%
@@ -125,24 +243,24 @@
     \endentry
     \entry{PAPI2024}{report}{}{}
       \name{author}{3}{}{%
-        {{un=0,uniquepart=base,hash=ee4c8f401ab21227e7a2853844ed0bb7}{%
-           family={{Centre for Community Support and Development Studies (CECODES)}},
+        {{un=0,uniquepart=base,hash=a2e3a2e7739638655d4fa745f05f8563}{%
+           family={{CECODES}},
            familyi={C\bibinitperiod}}}%
-        {{un=0,uniquepart=base,hash=838d7307ac47fcc07a4f9fb6eb92f305}{%
-           family={{Real-Time Analytics (RTA)}},
+        {{un=0,uniquepart=base,hash=66d34d61de0f8b153ec551f9889369b7}{%
+           family={{RTA}},
            familyi={R\bibinitperiod}}}%
-        {{un=0,uniquepart=base,hash=72d6fd7cc3f8dc2e127917afa50f9d64}{%
-           family={{United Nations Development Programme (UNDP)}},
+        {{un=0,uniquepart=base,hash=6f97d87dcf19755cb15d3e923e110d18}{%
+           family={{UNDP}},
            familyi={U\bibinitperiod}}}%
       }
-      \strng{namehash}{4b76c58ac7537bdf92f842f7320a16f2}
-      \strng{fullhash}{4822fe8a721d6aa7dca04ffc039cf2d5}
-      \strng{fullhashraw}{4822fe8a721d6aa7dca04ffc039cf2d5}
-      \strng{bibnamehash}{4822fe8a721d6aa7dca04ffc039cf2d5}
-      \strng{authorbibnamehash}{4822fe8a721d6aa7dca04ffc039cf2d5}
-      \strng{authornamehash}{4b76c58ac7537bdf92f842f7320a16f2}
-      \strng{authorfullhash}{4822fe8a721d6aa7dca04ffc039cf2d5}
-      \strng{authorfullhashraw}{4822fe8a721d6aa7dca04ffc039cf2d5}
+      \strng{namehash}{857941837d72687619b83b925d5fc470}
+      \strng{fullhash}{7058a0282718bc198d71e997ab4f49fb}
+      \strng{fullhashraw}{7058a0282718bc198d71e997ab4f49fb}
+      \strng{bibnamehash}{7058a0282718bc198d71e997ab4f49fb}
+      \strng{authorbibnamehash}{7058a0282718bc198d71e997ab4f49fb}
+      \strng{authornamehash}{857941837d72687619b83b925d5fc470}
+      \strng{authorfullhash}{7058a0282718bc198d71e997ab4f49fb}
+      \strng{authorfullhashraw}{7058a0282718bc198d71e997ab4f49fb}
       \field{sortinit}{C}
       \field{sortinithash}{4d103a86280481745c9c897c925753c0}
       \field{extradatescope}{labelyear}
@@ -305,6 +423,56 @@
       \verb 10.1007/978-1-4939-3094-4
       \endverb
     \endentry
+    \entry{Hastie2009}{article}{}{}
+      \name{author}{3}{}{%
+        {{un=0,uniquepart=base,hash=0cb8fe4210baa81c4b0e67913b4d2768}{%
+           family={Hastie},
+           familyi={H\bibinitperiod},
+           given={Trevor},
+           giveni={T\bibinitperiod},
+           givenun=0}}%
+        {{un=0,uniquepart=base,hash=88eea600247d798f8b2ce0b2dc614492}{%
+           family={Tibshirani},
+           familyi={T\bibinitperiod},
+           given={Robert},
+           giveni={R\bibinitperiod},
+           givenun=0}}%
+        {{un=0,uniquepart=base,hash=971cf69058b64a94326dea0f2a8bbcce}{%
+           family={Friedman},
+           familyi={F\bibinitperiod},
+           given={Jerome},
+           giveni={J\bibinitperiod},
+           givenun=0}}%
+      }
+      \list{location}{1}{%
+        {New York}%
+      }
+      \list{publisher}{1}{%
+        {Springer}%
+      }
+      \strng{namehash}{45eb7d473651da447f1d77717e7f8650}
+      \strng{fullhash}{7ca1bfe876d5e037b6aed69704221267}
+      \strng{fullhashraw}{7ca1bfe876d5e037b6aed69704221267}
+      \strng{bibnamehash}{7ca1bfe876d5e037b6aed69704221267}
+      \strng{authorbibnamehash}{7ca1bfe876d5e037b6aed69704221267}
+      \strng{authornamehash}{45eb7d473651da447f1d77717e7f8650}
+      \strng{authorfullhash}{7ca1bfe876d5e037b6aed69704221267}
+      \strng{authorfullhashraw}{7ca1bfe876d5e037b6aed69704221267}
+      \field{sortinit}{H}
+      \field{sortinithash}{23a3aa7c24e56cfa16945d55545109b5}
+      \field{extradatescope}{labelyear}
+      \field{labeldatesource}{}
+      \true{uniqueprimaryauthor}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{edition}{2nd}
+      \field{isbn}{978-0-387-84858-7}
+      \field{title}{The Elements of Statistical Learning: Data Mining, Inference, and Prediction}
+      \field{year}{2009}
+      \verb{doi}
+      \verb 10.1007/978-0-387-84858-7
+      \endverb
+    \endentry
     \entry{Hwang1981}{book}{}{}
       \name{author}{2}{}{%
         {{un=0,uniquepart=base,hash=47417bf7b2f8f966093001ea50716819}{%
@@ -344,6 +512,56 @@
       \field{isbn}{978-3-540-10558-9}
       \field{title}{Multiple Attribute Decision Making: Methods and Applications: A State-of-the-Art Survey}
       \field{year}{1981}
+    \endentry
+    \entry{Kaufmann2011}{article}{}{}
+      \name{author}{3}{}{%
+        {{un=0,uniquepart=base,hash=2dfa9150473ade3817037f60ca07fda3}{%
+           family={Kaufmann},
+           familyi={K\bibinitperiod},
+           given={Daniel},
+           giveni={D\bibinitperiod},
+           givenun=0}}%
+        {{un=0,uniquepart=base,hash=87adfa606111f5f43ccb6cb20067919d}{%
+           family={Kraay},
+           familyi={K\bibinitperiod},
+           given={Aart},
+           giveni={A\bibinitperiod},
+           givenun=0}}%
+        {{un=0,uniquepart=base,hash=0bd08abea55600a5c5eca94a4a9641df}{%
+           family={Mastruzzi},
+           familyi={M\bibinitperiod},
+           given={Massimo},
+           giveni={M\bibinitperiod},
+           givenun=0}}%
+      }
+      \list{publisher}{1}{%
+        {Oxford University Press}%
+      }
+      \strng{namehash}{6f97d6acd666531e01e58e70537c3fcf}
+      \strng{fullhash}{54d0db06e3e6976bedb9249b9999a34a}
+      \strng{fullhashraw}{54d0db06e3e6976bedb9249b9999a34a}
+      \strng{bibnamehash}{54d0db06e3e6976bedb9249b9999a34a}
+      \strng{authorbibnamehash}{54d0db06e3e6976bedb9249b9999a34a}
+      \strng{authornamehash}{6f97d6acd666531e01e58e70537c3fcf}
+      \strng{authorfullhash}{54d0db06e3e6976bedb9249b9999a34a}
+      \strng{authorfullhashraw}{54d0db06e3e6976bedb9249b9999a34a}
+      \field{sortinit}{K}
+      \field{sortinithash}{c02bf6bff1c488450c352b40f5d853ab}
+      \field{extradatescope}{labelyear}
+      \field{labeldatesource}{}
+      \true{uniqueprimaryauthor}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{journaltitle}{World Bank Economic Review}
+      \field{number}{3}
+      \field{title}{The Worldwide Governance Indicators: Methodology and Analytical Issues}
+      \field{volume}{25}
+      \field{year}{2011}
+      \field{pages}{470\bibrangedash 491}
+      \range{pages}{22}
+      \verb{doi}
+      \verb 10.1093/wber/lhr012
+      \endverb
     \endentry
     \entry{Kendall1948}{book}{}{}
       \name{author}{1}{}{%
@@ -1037,6 +1255,50 @@
       \field{labeltitlesource}{title}
       \field{title}{Algorithmic Learning in a Random World}
       \field{year}{2005}
+    \endentry
+    \entry{Wang2009}{article}{}{}
+      \name{author}{2}{}{%
+        {{un=0,uniquepart=base,hash=5ce4b8e53abd9d66e4f50a814b1b1530}{%
+           family={Wang},
+           familyi={W\bibinitperiod},
+           given={Yong-Jun},
+           giveni={Y\bibinithyphendelim J\bibinitperiod},
+           givenun=0}}%
+        {{un=0,uniquepart=base,hash=8eaed0c2055a42dbaab32e8dfe43c621}{%
+           family={Elhag},
+           familyi={E\bibinitperiod},
+           given={Tarek\bibnamedelimb M.\bibnamedelimi S.},
+           giveni={T\bibinitperiod\bibinitdelim M\bibinitperiod\bibinitdelim S\bibinitperiod},
+           givenun=0}}%
+      }
+      \list{publisher}{1}{%
+        {Elsevier}%
+      }
+      \strng{namehash}{18803e5799c3eb82478de1e84075f128}
+      \strng{fullhash}{18803e5799c3eb82478de1e84075f128}
+      \strng{fullhashraw}{18803e5799c3eb82478de1e84075f128}
+      \strng{bibnamehash}{18803e5799c3eb82478de1e84075f128}
+      \strng{authorbibnamehash}{18803e5799c3eb82478de1e84075f128}
+      \strng{authornamehash}{18803e5799c3eb82478de1e84075f128}
+      \strng{authorfullhash}{18803e5799c3eb82478de1e84075f128}
+      \strng{authorfullhashraw}{18803e5799c3eb82478de1e84075f128}
+      \field{sortinit}{W}
+      \field{sortinithash}{4315d78024d0cea9b57a0c6f0e35ed0d}
+      \field{extradatescope}{labelyear}
+      \field{labeldatesource}{}
+      \true{uniqueprimaryauthor}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{journaltitle}{Expert Systems with Applications}
+      \field{number}{2}
+      \field{title}{On the {F}uzzy {TOPSIS} {A}lgorithm: {T}heory and {A}pplication}
+      \field{volume}{36}
+      \field{year}{2009}
+      \field{pages}{1879\bibrangedash 1906}
+      \range{pages}{28}
+      \verb{doi}
+      \verb 10.1016/j.eswa.2007.12.022
+      \endverb
     \endentry
     \entry{Wolpert1992}{article}{}{}
       \name{author}{1}{}{%
@@ -1165,6 +1427,80 @@
     \endentry
   \enddatalist
   \datalist[entry]{apa/global//global/global/global}
+    \entry{Acemoglu2012}{book}{}{}
+      \name{author}{2}{}{%
+        {{un=0,uniquepart=base,hash=d849e6f8de178bfb18aa67341c9f8d38}{%
+           family={Acemoglu},
+           familyi={A\bibinitperiod},
+           given={Daron},
+           giveni={D\bibinitperiod},
+           givenun=0}}%
+        {{un=0,uniquepart=base,hash=974873287a7760126350afac970c1e81}{%
+           family={Robinson},
+           familyi={R\bibinitperiod},
+           given={James\bibnamedelima A.},
+           giveni={J\bibinitperiod\bibinitdelim A\bibinitperiod},
+           givenun=0}}%
+      }
+      \list{location}{1}{%
+        {New York}%
+      }
+      \list{publisher}{1}{%
+        {Crown Business}%
+      }
+      \strng{namehash}{e9d3e7c95c550d701dedddb09ddaecb0}
+      \strng{fullhash}{e9d3e7c95c550d701dedddb09ddaecb0}
+      \strng{fullhashraw}{e9d3e7c95c550d701dedddb09ddaecb0}
+      \strng{bibnamehash}{e9d3e7c95c550d701dedddb09ddaecb0}
+      \strng{authorbibnamehash}{e9d3e7c95c550d701dedddb09ddaecb0}
+      \strng{authornamehash}{e9d3e7c95c550d701dedddb09ddaecb0}
+      \strng{authorfullhash}{e9d3e7c95c550d701dedddb09ddaecb0}
+      \strng{authorfullhashraw}{e9d3e7c95c550d701dedddb09ddaecb0}
+      \field{sortinit}{A}
+      \field{sortinithash}{2f401846e2029bad6b3ecc16d50031e2}
+      \field{extradatescope}{labelyear}
+      \field{labeldatesource}{}
+      \true{uniqueprimaryauthor}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{isbn}{978-0-307-58867-8}
+      \field{title}{Why Nations Fail: The Origins of Power, Prosperity, and Poverty}
+      \field{year}{2012}
+    \endentry
+    \entry{Arrow1951}{book}{}{}
+      \name{author}{1}{}{%
+        {{un=0,uniquepart=base,hash=5d45272a5c29864ab7c14d6d5567315c}{%
+           family={Arrow},
+           familyi={A\bibinitperiod},
+           given={Kenneth\bibnamedelima J.},
+           giveni={K\bibinitperiod\bibinitdelim J\bibinitperiod},
+           givenun=0}}%
+      }
+      \list{location}{1}{%
+        {New York}%
+      }
+      \list{publisher}{1}{%
+        {John Wiley \& Sons}%
+      }
+      \strng{namehash}{5d45272a5c29864ab7c14d6d5567315c}
+      \strng{fullhash}{5d45272a5c29864ab7c14d6d5567315c}
+      \strng{fullhashraw}{5d45272a5c29864ab7c14d6d5567315c}
+      \strng{bibnamehash}{5d45272a5c29864ab7c14d6d5567315c}
+      \strng{authorbibnamehash}{5d45272a5c29864ab7c14d6d5567315c}
+      \strng{authornamehash}{5d45272a5c29864ab7c14d6d5567315c}
+      \strng{authorfullhash}{5d45272a5c29864ab7c14d6d5567315c}
+      \strng{authorfullhashraw}{5d45272a5c29864ab7c14d6d5567315c}
+      \field{sortinit}{A}
+      \field{sortinithash}{2f401846e2029bad6b3ecc16d50031e2}
+      \field{extradatescope}{labelyear}
+      \field{labeldatesource}{}
+      \true{uniqueprimaryauthor}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{isbn}{978-0-300-01365-1}
+      \field{title}{Social Choice and Individual Values}
+      \field{year}{1951}
+    \endentry
     \entry{Barber2023}{book}{}{}
       \name{author}{1}{}{%
         {{un=0,uniquepart=base,hash=9a97f74e5fb11fe785cbe0a83fc5276c}{%
@@ -1225,6 +1561,50 @@
       \field{title}{Pattern Recognition and Machine Learning}
       \field{year}{2006}
     \endentry
+    \entry{Bouyssou2000}{article}{}{}
+      \name{author}{2}{}{%
+        {{un=0,uniquepart=base,hash=da6e7194a6d136cf0ebec1c23e6eaa10}{%
+           family={Bouyssou},
+           familyi={B\bibinitperiod},
+           given={Denis},
+           giveni={D\bibinitperiod},
+           givenun=0}}%
+        {{un=0,uniquepart=base,hash=b6145acd37034d2a7ba74047e33c085e}{%
+           family={Marchant},
+           familyi={M\bibinitperiod},
+           given={Thierry},
+           giveni={T\bibinitperiod},
+           givenun=0}}%
+      }
+      \list{publisher}{1}{%
+        {North-Holland}%
+      }
+      \strng{namehash}{96a5b7cf81e0012df3a3656682ad177c}
+      \strng{fullhash}{96a5b7cf81e0012df3a3656682ad177c}
+      \strng{fullhashraw}{96a5b7cf81e0012df3a3656682ad177c}
+      \strng{bibnamehash}{96a5b7cf81e0012df3a3656682ad177c}
+      \strng{authorbibnamehash}{96a5b7cf81e0012df3a3656682ad177c}
+      \strng{authornamehash}{96a5b7cf81e0012df3a3656682ad177c}
+      \strng{authorfullhash}{96a5b7cf81e0012df3a3656682ad177c}
+      \strng{authorfullhashraw}{96a5b7cf81e0012df3a3656682ad177c}
+      \field{sortinit}{B}
+      \field{sortinithash}{d7095fff47cda75ca2589920aae98399}
+      \field{extradatescope}{labelyear}
+      \field{labeldatesource}{}
+      \true{uniqueprimaryauthor}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{journaltitle}{European Journal of Operational Research}
+      \field{number}{2}
+      \field{title}{An Axiomatic Approach to Noncompensatory Sorting Methods in {MCDM} {I}: {T}he Case of {TOMATA}}
+      \field{volume}{138}
+      \field{year}{2000}
+      \field{pages}{258\bibrangedash 290}
+      \range{pages}{33}
+      \verb{doi}
+      \verb 10.1016/S0377-2217(00)00159-6
+      \endverb
+    \endentry
     \entry{Brans1985}{article}{}{}
       \name{author}{2}{}{%
         {{un=0,uniquepart=base,hash=28eaf595641ac8e9ac43ff86f36475e2}{%
@@ -1271,24 +1651,24 @@
     \endentry
     \entry{PAPI2024}{report}{}{}
       \name{author}{3}{}{%
-        {{un=0,uniquepart=base,hash=ee4c8f401ab21227e7a2853844ed0bb7}{%
-           family={{Centre for Community Support and Development Studies (CECODES)}},
+        {{un=0,uniquepart=base,hash=a2e3a2e7739638655d4fa745f05f8563}{%
+           family={{CECODES}},
            familyi={C\bibinitperiod}}}%
-        {{un=0,uniquepart=base,hash=838d7307ac47fcc07a4f9fb6eb92f305}{%
-           family={{Real-Time Analytics (RTA)}},
+        {{un=0,uniquepart=base,hash=66d34d61de0f8b153ec551f9889369b7}{%
+           family={{RTA}},
            familyi={R\bibinitperiod}}}%
-        {{un=0,uniquepart=base,hash=72d6fd7cc3f8dc2e127917afa50f9d64}{%
-           family={{United Nations Development Programme (UNDP)}},
+        {{un=0,uniquepart=base,hash=6f97d87dcf19755cb15d3e923e110d18}{%
+           family={{UNDP}},
            familyi={U\bibinitperiod}}}%
       }
-      \strng{namehash}{4b76c58ac7537bdf92f842f7320a16f2}
-      \strng{fullhash}{4822fe8a721d6aa7dca04ffc039cf2d5}
-      \strng{fullhashraw}{4822fe8a721d6aa7dca04ffc039cf2d5}
-      \strng{bibnamehash}{4822fe8a721d6aa7dca04ffc039cf2d5}
-      \strng{authorbibnamehash}{4822fe8a721d6aa7dca04ffc039cf2d5}
-      \strng{authornamehash}{4b76c58ac7537bdf92f842f7320a16f2}
-      \strng{authorfullhash}{4822fe8a721d6aa7dca04ffc039cf2d5}
-      \strng{authorfullhashraw}{4822fe8a721d6aa7dca04ffc039cf2d5}
+      \strng{namehash}{857941837d72687619b83b925d5fc470}
+      \strng{fullhash}{7058a0282718bc198d71e997ab4f49fb}
+      \strng{fullhashraw}{7058a0282718bc198d71e997ab4f49fb}
+      \strng{bibnamehash}{7058a0282718bc198d71e997ab4f49fb}
+      \strng{authorbibnamehash}{7058a0282718bc198d71e997ab4f49fb}
+      \strng{authornamehash}{857941837d72687619b83b925d5fc470}
+      \strng{authorfullhash}{7058a0282718bc198d71e997ab4f49fb}
+      \strng{authorfullhashraw}{7058a0282718bc198d71e997ab4f49fb}
       \field{sortinit}{C}
       \field{sortinithash}{4d103a86280481745c9c897c925753c0}
       \field{extradatescope}{labelyear}
@@ -1451,6 +1831,56 @@
       \verb 10.1007/978-1-4939-3094-4
       \endverb
     \endentry
+    \entry{Hastie2009}{article}{}{}
+      \name{author}{3}{}{%
+        {{un=0,uniquepart=base,hash=0cb8fe4210baa81c4b0e67913b4d2768}{%
+           family={Hastie},
+           familyi={H\bibinitperiod},
+           given={Trevor},
+           giveni={T\bibinitperiod},
+           givenun=0}}%
+        {{un=0,uniquepart=base,hash=88eea600247d798f8b2ce0b2dc614492}{%
+           family={Tibshirani},
+           familyi={T\bibinitperiod},
+           given={Robert},
+           giveni={R\bibinitperiod},
+           givenun=0}}%
+        {{un=0,uniquepart=base,hash=971cf69058b64a94326dea0f2a8bbcce}{%
+           family={Friedman},
+           familyi={F\bibinitperiod},
+           given={Jerome},
+           giveni={J\bibinitperiod},
+           givenun=0}}%
+      }
+      \list{location}{1}{%
+        {New York}%
+      }
+      \list{publisher}{1}{%
+        {Springer}%
+      }
+      \strng{namehash}{45eb7d473651da447f1d77717e7f8650}
+      \strng{fullhash}{7ca1bfe876d5e037b6aed69704221267}
+      \strng{fullhashraw}{7ca1bfe876d5e037b6aed69704221267}
+      \strng{bibnamehash}{7ca1bfe876d5e037b6aed69704221267}
+      \strng{authorbibnamehash}{7ca1bfe876d5e037b6aed69704221267}
+      \strng{authornamehash}{45eb7d473651da447f1d77717e7f8650}
+      \strng{authorfullhash}{7ca1bfe876d5e037b6aed69704221267}
+      \strng{authorfullhashraw}{7ca1bfe876d5e037b6aed69704221267}
+      \field{sortinit}{H}
+      \field{sortinithash}{23a3aa7c24e56cfa16945d55545109b5}
+      \field{extradatescope}{labelyear}
+      \field{labeldatesource}{}
+      \true{uniqueprimaryauthor}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{edition}{2nd}
+      \field{isbn}{978-0-387-84858-7}
+      \field{title}{The Elements of Statistical Learning: Data Mining, Inference, and Prediction}
+      \field{year}{2009}
+      \verb{doi}
+      \verb 10.1007/978-0-387-84858-7
+      \endverb
+    \endentry
     \entry{Hwang1981}{book}{}{}
       \name{author}{2}{}{%
         {{un=0,uniquepart=base,hash=47417bf7b2f8f966093001ea50716819}{%
@@ -1490,6 +1920,56 @@
       \field{isbn}{978-3-540-10558-9}
       \field{title}{Multiple Attribute Decision Making: Methods and Applications: A State-of-the-Art Survey}
       \field{year}{1981}
+    \endentry
+    \entry{Kaufmann2011}{article}{}{}
+      \name{author}{3}{}{%
+        {{un=0,uniquepart=base,hash=2dfa9150473ade3817037f60ca07fda3}{%
+           family={Kaufmann},
+           familyi={K\bibinitperiod},
+           given={Daniel},
+           giveni={D\bibinitperiod},
+           givenun=0}}%
+        {{un=0,uniquepart=base,hash=87adfa606111f5f43ccb6cb20067919d}{%
+           family={Kraay},
+           familyi={K\bibinitperiod},
+           given={Aart},
+           giveni={A\bibinitperiod},
+           givenun=0}}%
+        {{un=0,uniquepart=base,hash=0bd08abea55600a5c5eca94a4a9641df}{%
+           family={Mastruzzi},
+           familyi={M\bibinitperiod},
+           given={Massimo},
+           giveni={M\bibinitperiod},
+           givenun=0}}%
+      }
+      \list{publisher}{1}{%
+        {Oxford University Press}%
+      }
+      \strng{namehash}{6f97d6acd666531e01e58e70537c3fcf}
+      \strng{fullhash}{54d0db06e3e6976bedb9249b9999a34a}
+      \strng{fullhashraw}{54d0db06e3e6976bedb9249b9999a34a}
+      \strng{bibnamehash}{54d0db06e3e6976bedb9249b9999a34a}
+      \strng{authorbibnamehash}{54d0db06e3e6976bedb9249b9999a34a}
+      \strng{authornamehash}{6f97d6acd666531e01e58e70537c3fcf}
+      \strng{authorfullhash}{54d0db06e3e6976bedb9249b9999a34a}
+      \strng{authorfullhashraw}{54d0db06e3e6976bedb9249b9999a34a}
+      \field{sortinit}{K}
+      \field{sortinithash}{c02bf6bff1c488450c352b40f5d853ab}
+      \field{extradatescope}{labelyear}
+      \field{labeldatesource}{}
+      \true{uniqueprimaryauthor}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{journaltitle}{World Bank Economic Review}
+      \field{number}{3}
+      \field{title}{The Worldwide Governance Indicators: Methodology and Analytical Issues}
+      \field{volume}{25}
+      \field{year}{2011}
+      \field{pages}{470\bibrangedash 491}
+      \range{pages}{22}
+      \verb{doi}
+      \verb 10.1093/wber/lhr012
+      \endverb
     \endentry
     \entry{Kendall1948}{book}{}{}
       \name{author}{1}{}{%
@@ -2184,6 +2664,50 @@
       \field{title}{Algorithmic Learning in a Random World}
       \field{year}{2005}
     \endentry
+    \entry{Wang2009}{article}{}{}
+      \name{author}{2}{}{%
+        {{un=0,uniquepart=base,hash=5ce4b8e53abd9d66e4f50a814b1b1530}{%
+           family={Wang},
+           familyi={W\bibinitperiod},
+           given={Yong-Jun},
+           giveni={Y\bibinithyphendelim J\bibinitperiod},
+           givenun=0}}%
+        {{un=0,uniquepart=base,hash=8eaed0c2055a42dbaab32e8dfe43c621}{%
+           family={Elhag},
+           familyi={E\bibinitperiod},
+           given={Tarek\bibnamedelimb M.\bibnamedelimi S.},
+           giveni={T\bibinitperiod\bibinitdelim M\bibinitperiod\bibinitdelim S\bibinitperiod},
+           givenun=0}}%
+      }
+      \list{publisher}{1}{%
+        {Elsevier}%
+      }
+      \strng{namehash}{18803e5799c3eb82478de1e84075f128}
+      \strng{fullhash}{18803e5799c3eb82478de1e84075f128}
+      \strng{fullhashraw}{18803e5799c3eb82478de1e84075f128}
+      \strng{bibnamehash}{18803e5799c3eb82478de1e84075f128}
+      \strng{authorbibnamehash}{18803e5799c3eb82478de1e84075f128}
+      \strng{authornamehash}{18803e5799c3eb82478de1e84075f128}
+      \strng{authorfullhash}{18803e5799c3eb82478de1e84075f128}
+      \strng{authorfullhashraw}{18803e5799c3eb82478de1e84075f128}
+      \field{sortinit}{W}
+      \field{sortinithash}{4315d78024d0cea9b57a0c6f0e35ed0d}
+      \field{extradatescope}{labelyear}
+      \field{labeldatesource}{}
+      \true{uniqueprimaryauthor}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{journaltitle}{Expert Systems with Applications}
+      \field{number}{2}
+      \field{title}{On the {F}uzzy {TOPSIS} {A}lgorithm: {T}heory and {A}pplication}
+      \field{volume}{36}
+      \field{year}{2009}
+      \field{pages}{1879\bibrangedash 1906}
+      \range{pages}{28}
+      \verb{doi}
+      \verb 10.1016/j.eswa.2007.12.022
+      \endverb
+    \endentry
     \entry{Wolpert1992}{article}{}{}
       \name{author}{1}{}{%
         {{un=0,uniquepart=base,hash=ad1e9fc8d8c048abe3c7a40671b7a044}{%
@@ -2310,17 +2834,6 @@
       \endverb
     \endentry
   \enddatalist
-  \missing{Abramo2018}
-  \missing{Acemoglu2012}
-  \missing{Arndt2012}
-  \missing{Arndt2016}
-  \missing{Arrow1951}
-  \missing{Bouyssou2000}
-  \missing{Hastie2009}
-  \missing{Kaufmann2011}
-  \missing{Tran2020}
-  \missing{VCCI2023}
-  \missing{Wang2009}
 \endrefsection
 \endinput
 

@@ -88,7 +88,7 @@ class QuickPreviewConfig:
     
     # Cross-validation setup
     n_cv_folds: int = 5
-    n_base_models: int = 5
+    n_base_models: int = 4
     base_model_names: List[str] = None
     
     def __post_init__(self):
@@ -96,7 +96,6 @@ class QuickPreviewConfig:
             self.base_model_names = [
                 'CatBoost',
                 'BayesianRidge',
-                'KernelRidge',
                 'SVR',
                 'ElasticNet'
             ]
@@ -256,7 +255,13 @@ class QuickPreviewGenerator:
     # =====================================================================
     
     def _generate_predictions_and_uncertainty(self) -> None:
-        """Generate point estimates and uncertainty."""
+        """Generate point estimates and uncertainty for moderate-high/good results.
+        
+        For R² ≈ 0.70-0.75 with residual std ≈ 0.09-0.11, we need:
+        - Predictions centered around 0.65 with reasonable spread
+        - Residuals with controlled variance and zero mean
+        - Uncertainty matching actual residual magnitude
+        """
         # Generate realistic predictions in [0, 1] range (SAW-like scale)
         # with slight mean shift to simulate good performance (mean ≈ 0.65)
         base = self.rng.normal(
@@ -274,15 +279,16 @@ class QuickPreviewGenerator:
             columns=self.component_names
         )
         
-        # Uncertainty: realistic std relative to prediction magnitude
-        uncertainty = np.abs(
-            self.rng.normal(
-                loc=self.config.uncertainty_std_ratio,
-                scale=0.03,
-                size=(self.n_entities, self.n_components)
-            )
+        # Uncertainty: should match residual magnitude for consistency
+        # For good forecasts (R²≈0.70), residual std ≈ 0.10-0.11
+        # Generate realistic uncertainty that varies slightly per prediction
+        uncertainty = self.rng.normal(
+            loc=0.10,  # Base uncertainty (residual std)
+            scale=0.01,  # Small variation in uncertainty
+            size=(self.n_entities, self.n_components)
         )
-        uncertainty = np.minimum(uncertainty, 0.25)  # Cap unrealistic values
+        uncertainty = np.abs(uncertainty)
+        uncertainty = np.clip(uncertainty, 0.08, 0.13)  # Realistic bounds
         
         self._uncertainty = pd.DataFrame(
             uncertainty,
@@ -342,10 +348,21 @@ class QuickPreviewGenerator:
         return base_model_oof, base_model_holdout
     
     def _generate_model_weights(self) -> None:
-        """Generate ensemble meta-learner weights (sum to 1.0)."""
-        # Random weights that sum to 1
-        raw_weights = self.rng.exponential(1.0, size=len(self.config.base_model_names))
-        weights = raw_weights / raw_weights.sum()
+        """Generate ensemble meta-learner weights (sum to 1.0) - realistic, unbalanced.
+        
+        Realistic stacking ensembles have unbalanced weights where the best model
+        (usually tree-based) dominates, and weaker models contribute less but still
+        provide diversity benefit.
+        """
+        # Realistic weight distribution: strongest model ~45%, others decreasing
+        # CatBoost typically strongest (tree-based on this data), others contribute diversity
+        weights = np.array([0.45, 0.25, 0.18, 0.12], dtype=float)
+        
+        # Add small random perturbation for realism (not perfectly fixed)
+        perturbation = self.rng.normal(0, 0.02, size=len(weights))
+        weights = weights + perturbation
+        weights = np.clip(weights, 0.08, 0.50)  # Keep in realistic range
+        weights = weights / weights.sum()  # Normalize to sum to 1.0
         
         self._model_weights = {
             name: float(w)
@@ -418,7 +435,12 @@ class QuickPreviewGenerator:
         base_model_oof: Dict[str, np.ndarray],
         base_model_holdout: Dict[str, pd.DataFrame],
     ) -> Dict[str, Any]:
-        """Build comprehensive training metadata."""
+        """Build comprehensive training metadata with proper actual vs predicted."""
+        # For the residuals plot to work correctly:
+        # - y_test (actual) = predictions + residuals (simulated true values)
+        # - y_pred (predicted) = the forecast predictions
+        actual_values = self._predictions.values + self._generate_residuals().values
+        
         return {
             'n_samples': int(self.n_entities * 10),
             'n_entities': self.n_entities,
@@ -426,8 +448,8 @@ class QuickPreviewGenerator:
             'n_features': 50,
             'target_year': self.target_year,
             'cv_folds': self.config.n_cv_folds,
-            'y_test': self._predictions.values,
-            'y_pred': self._predictions.values,  # No residuals in preview
+            'y_test': actual_values,  # True values (predictions + residuals)
+            'y_pred': self._predictions.values,  # Ensemble predictions
             'test_entities': self.entity_names,
             'per_model_oof_predictions': base_model_oof,
             'per_model_holdout_predictions': base_model_holdout,
@@ -459,10 +481,28 @@ class QuickPreviewGenerator:
         }
     
     def _generate_residuals(self) -> pd.DataFrame:
-        """Generate synthetic residuals with zero mean."""
+        """Generate synthetic residuals for a good-quality forecast.
+        
+        For moderate-high/good results (R² ≈ 0.70-0.75):
+        - Residuals centered at exactly zero (no bias)
+        - Standard deviation ≈ 0.09-0.10 (matches good forecast quality)
+        - Approximately normal distribution
+        - No systematic patterns (random scatter)
+        """
+        # Generate truly random, balanced residuals
+        # Base std of 0.093 creates residuals that produce R² ~0.70-0.75
         residuals = self.rng.normal(
-            0, 0.08, size=(self.n_entities, self.n_components)
+            loc=0,      # Centered at zero (no bias)
+            scale=0.093,  # Good forecast quality std
+            size=(self.n_entities, self.n_components)
         )
+        
+        # Optional: Add subtle heteroscedasticity (realistic but minimal)
+        # Slightly larger errors for extreme predictions
+        pred_abs = np.abs(self._predictions.values - 0.5)  # Distance from middle
+        het_factor = 1.0 + 0.05 * pred_abs  # Up to 5% increase for extremes
+        residuals = residuals * het_factor
+        
         return pd.DataFrame(
             residuals,
             index=self.entity_names,
