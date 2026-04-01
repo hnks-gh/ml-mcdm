@@ -1,0 +1,21 @@
+[0] Config.pm:328> INFO - This is Biber 2.21
+[0] Config.pm:331> INFO - Logfile is 'main.blg'
+[226] biber-MSWIN64:342> INFO - === 
+[316] Biber.pm:421> INFO - Reading 'main.bcf'
+[721] Biber.pm:1002> INFO - Found 31 citekeys in bib section 0
+[811] Biber.pm:4487> INFO - Processing section 0
+[837] Biber.pm:4678> INFO - Looking for bibtex file 'main.bib' for section 0
+[949] bibtex.pm:1713> INFO - LaTeX decoding ...
+[1128] bibtex.pm:1519> INFO - Found BibTeX data source 'main.bib'
+[1775] UCollate.pm:68> INFO - Overriding locale 'en-US' defaults 'normalization = NFD' with 'normalization = prenormalized'
+[1776] UCollate.pm:68> INFO - Overriding locale 'en-US' defaults 'variable = shifted' with 'variable = non-ignorable'
+[1778] Biber.pm:4307> INFO - Sorting list 'apa/apasortcite//global/global/global' of type 'entry' with template 'apa' and locale 'en-US'
+[1778] Biber.pm:4313> INFO - No sort tailoring available for locale 'en-US'
+[2005] UCollate.pm:68> INFO - Overriding locale 'en-US' defaults 'variable = shifted' with 'variable = non-ignorable'
+[2005] UCollate.pm:68> INFO - Overriding locale 'en-US' defaults 'normalization = NFD' with 'normalization = prenormalized'
+[2005] Biber.pm:4307> INFO - Sorting list 'apa/global//global/global/global' of type 'entry' with template 'apa' and locale 'en-US'
+[2005] Biber.pm:4313> INFO - No sort tailoring available for locale 'en-US'
+[2122] bbl.pm:676> INFO - Writing 'main.bbl' with encoding 'UTF-8'
+[2228] bbl.pm:779> INFO - Output to main.bbl
+[2228] Biber.pm:132> WARN - ISBN '978-0-300-01365-1' in entry 'Arrow1951' is invalid - run biber with '--validate_datamodel' for details.
+[2232] Biber.pm:134> INFO - WARNINGS: 1

@@ -1480,7 +1480,11 @@ The annual top-province rankings reveal both consistency and temporal variation.
 
 The ensemble forecasting system produces accurate, well-calibrated predictions of the Vietnam Provincial Governance and Public Administration Index (PAPI) across all 49 provinces and six governance criteria to 2025. The three-tier architecture integrates base model diversity, optimal stacking weights, and distribution-free uncertainty quantification into a unified predictive framework. This section reports point estimate performance, meta-learning weights, comparative base model contributions, and calibration diagnostics.
 
-\subsubsection*{Individual Base Learner Performance}
+\subsubsection{Architecture and Base Learner Performance}
+
+The ensemble employs stacked generalization, combining four heterogeneous base learners (CatBoost, Bayesian Ridge, Support Vector Regression, and ElasticNet) via meta-learning. Meta-weights are estimated through cross-validated ridge regression on base model predictions, optimizing the linear combination for out-of-fold generalization. This architecture balances individual learner strengths while mitigating model-specific weaknesses through diversity and regularization.
+
+\paragraph{Individual Base Learner Performance}
 
 Four heterogeneous base learners span complementary algorithmic families: tree-boosting (CatBoost), Bayesian linear regression, kernel-based regression (Support Vector Regression), and regularized linear regression (ElasticNet). Table~\ref{tab:base_learners} reports their cross-validated performance on held-out folds ($n=630$ observations across five temporal folds). Elastic Net achieves the highest individual coefficient of determination ($R^2 = 0.7323$), demonstrating superior generalization via joint L1--L2 regularization. Support Vector Regression follows closely ($R^2 = 0.7153$), leveraging its margin-based, kernel-induced objective. Bayesian Ridge ($R^2 = 0.6843$) and CatBoost ($R^2 = 0.6778$) trail the linear methods, reflecting the dominance of stationary, lower-order polynomial relationships within the governance dynamics. This apparent advantage of linear over tree-based methods on the PAPI domain is notable: governance institutions exhibit inertia, and lagged criterion values predict current levels through near-linear AR(1)--AR(2) structures rather than complex threshold effects.
 
@@ -1548,7 +1552,9 @@ Bayesian Ridge shows higher variability ($\sigma = 0.0566$), suggesting sensitiv
 
 \FloatBarrier
 
-\subsubsection*{Meta-Learner Weighting and Ensemble Combination}
+\subsubsection{Ensemble Combination and Holdout Performance}
+
+\paragraph{Meta-Learner Weighting}
 
 The Super Learner meta-ensemble optimizes non-negative, unit-sum weights via ridge-regularized Ordinary Least Squares applied to the out-of-fold (OOF) base model predictions. These criterion-agnostic weights reflect each base model's relative contribution to the final weighted combination. Table~\ref{tab:meta_weights} reports the learned meta-weights: CatBoost dominates with $45.2\%$, followed by Bayesian Ridge ($29.9\%$), Support Vector Regression ($14.5\%$), and ElasticNet ($10.3\%$). The substantial weight assigned to CatBoost, despite its slightly lower individual $R^2$, reflects the algorithm's complementary role in the ensemble. CatBoost captures joint multi-criterion correlations through its multi-output tree structure; the meta-learner learns that this diversity, even if individually suboptimal, significantly enhances the combined prediction. Conversely, ElasticNet's modest $10.3\%$ weight is consistent with its high individual performance: the remaining models already capture much of the linear signal that ElasticNet exploits, reducing its marginal contribution in the weighted combination.
 
@@ -1593,7 +1599,7 @@ Figure~\ref{fig:forecast_meta_weights} visualizes these meta-weights as a donut 
 
 \FloatBarrier
 
-\subsubsection*{Super Learner Holdout Performance and Generalization}
+\paragraph{Super Learner Holdout Performance and Generalization}
 
 The holdout test set---temporally held out, never seen during base model training, meta-weight estimation, or hyperparameter tuning---provides a gold-standard evaluation of true generalization. Table~\ref{tab:holdout_performance} reports the Super Learner's out-of-sample metrics: $R^2 = 0.7788$, Mean Absolute Error (MAE) $= 0.0892$, Root Mean Squared Error (RMSE) $= 0.1333$, and Mean Absolute Percentage Error (MAPE) $= 18.47\%$. The holdout $R^2$ of $0.7788$ exceeds the cross-validation mean ($0.7078$), a counterintuitive but welcome outcome indicating absence of overfitting and robust generalization. The low MAE of $0.0892$ on the $[0,1]$ governance index scale corresponds to typical errors of approximately $8.9\%$ in absolute magnitude, acceptable for strategic governance planning and inter-provincial comparison. The $18.47\%$ MAPE further validates prediction accuracy on a relative percentage basis, meaning the ensemble's percentage-level errors remain within typical forecast tolerances for macro-institutional panels.
 
@@ -1625,7 +1631,9 @@ Low MAPE ($18.47\%$) demonstrates accurate percentage-level predictions across t
 
 \FloatBarrier
 
-\subsubsection*{Residual Diagnostics and Model Calibration}
+\subsubsection{Model Validation and Interpretation}
+
+\paragraph{Residual Diagnostics and Model Calibration}
 
 Figure~\ref{fig:forecast_residuals} presents three-panel residual diagnostics: (1) scatter plot of residuals versus predicted values, (2) histogram of residual distribution with kernel density estimate overlay, and (3) normal Q-Q plot. The scatter plot reveals randomly distributed residuals around zero with symmetric bands of approximately $\pm 0.2$ on the $[0,1]$ scale, indicating homoscedastic prediction errors and absence of systematic bias across the prediction range. The histogram exhibits a near-symmetric, unimodal distribution centered at zero, closely tracked by the normal density overlay. The Q-Q plot shows empirical quantiles aligning with the theoretical normal line across the central $95\%$ of the distribution, with minor deviation in the extreme tails---a typical artifact of finite-sample estimation and robust to impact on inference for practical governance applications. These diagnostics collectively support the statistical validity of the meta-learner's assumptions and the reliability of downstream confidence intervals.
 
@@ -1638,7 +1646,7 @@ Figure~\ref{fig:forecast_residuals} presents three-panel residual diagnostics: (
 
 \FloatBarrier
 
-\subsubsection*{Conformal Prediction Uncertainty Quantification}
+\paragraph{Conformal Prediction Uncertainty Quantification}
 
 Table~\ref{tab:conformal_coverage} documents conformal prediction interval coverage and width statistics across all 29 subcriteria (SC01--SC29). The empirical coverage rate, targeting $90\%$ nominal coverage, ranges from $94.0\%$ to $97.9\%$ with a population mean of $96.0\%$. This slight over-coverage (observed $> $ nominal) is excellent and reflects conservative, distribution-free interval construction: no probabilistic distributional assumptions are made beyond exchangeability. The mean interval width is $\overline{w} = 0.393$ on the $[0,1]$ scale, providing a $\pm 0.197$ margin around point predictions. This width is interpretable and actionable for policy: the ensemble asserts that the true governance index falls within an $\approx 39\%$-width band centered on the point forecast with valid statistical guarantees. Width variability across subcritereria ($\sigma_w = 0.038$) remains low, indicating homogeneous predictability across governance dimensions. Subcriterion SC05 achieves the narrowest prediction (nominal $90\%$, empirical $97.8\%$, width $0.397$), suggesting particularly stable, forecastable dynamics for that dimension.
 
@@ -1683,7 +1691,7 @@ Mean interval width $\overline{w} = 0.393$ provides precise, interpretable bound
 
 \FloatBarrier
 
-\subsubsection*{Feature Importance and Predictor Contribution}
+\paragraph{Feature Importance and Predictor Contribution}
 
 Table~\ref{tab:feature_importance} ranks the top 15 most important features in the ensemble's predictive decomposition. Feature\_04 leads with $8.39\%$ importance, followed by Feature\_47 ($7.64\%$) and Feature\_26 ($7.44\%$). The top 15 features cumulatively account for $70.34\%$ of predictive power, with the remaining $\approx 30\%$ distributed across the feature tail. This concentration illustrates an important principle: governance dynamics, albeit complex, are sufficiently parsimonious in their essential drivers. The ensemble does not rely on a single dominant signal but rather on a diversified feature portfolio where the top three contributors provide roughly one-quarter of the total information. Importance aggregation across base models (permutation-based for CatBoost, coefficient magnitude for linear models) synthesizes diverse feature value notions into a unified ranking, reflecting each feature's average marginal predictive contribution across the full base model ensemble.
 
