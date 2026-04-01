@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import logging
 import numpy as np
+import pandas as pd
 from typing import Any, Dict, List, Optional
 
 _logger = logging.getLogger(__name__)
@@ -89,9 +90,10 @@ class VisualizationOrchestrator:
         self.weighting = WeightingPlotter(f'{output_dir}/weighting', dpi)
         self.mcdm = MCDMPlotter(f'{output_dir}/ranking', dpi)  # fig06, fig08e, fig08f → ranking
         self.forecast = ForecastPlotter(f'{output_dir}/forecasting', dpi)
+        self.summary = SummaryPlotter(f'{output_dir}/summary', dpi)
         self._plotters = [
             self.ranking, self.mcdm_ranking, self.weighting, self.mcdm,
-            self.forecast,
+            self.forecast, self.summary,
         ]
 
     # ------------------------------------------------------------------
@@ -286,6 +288,39 @@ class VisualizationOrchestrator:
             out.extend(p.get_generated_figures())
         return out
 
+    def _build_method_agreement_matrix(self, ranking_result: Any) -> Optional[np.ndarray]:
+        """Build a method-level Spearman agreement matrix from criterion ranks."""
+        method_order = ['TOPSIS', 'VIKOR', 'PROMETHEE', 'COPRAS', 'EDAS', 'Base']
+        frames: List[pd.DataFrame] = []
+
+        for method_ranks in getattr(ranking_result, 'criterion_method_ranks', {}).values():
+            columns: Dict[str, pd.Series] = {}
+            for method in method_order:
+                series = method_ranks.get(method)
+                if series is None:
+                    continue
+                cleaned = pd.to_numeric(series, errors='coerce')
+                if not isinstance(cleaned, pd.Series):
+                    cleaned = pd.Series(cleaned)
+                columns[method] = cleaned.reset_index(drop=True)
+            if columns:
+                frames.append(pd.DataFrame(columns))
+
+        if not frames:
+            return None
+
+        stacked = pd.concat(frames, ignore_index=True)
+        available = [method for method in method_order if method in stacked.columns]
+        if len(available) < 2:
+            return None
+
+        corr = stacked[available].corr(method='spearman')
+        corr = corr.reindex(index=method_order, columns=method_order)
+        matrix = corr.to_numpy(dtype=float)
+        matrix = np.nan_to_num(matrix, nan=0.0)
+        np.fill_diagonal(matrix, 1.0)
+        return matrix
+
     # ------------------------------------------------------------------
     # generate_all – single entry point
     # ------------------------------------------------------------------
@@ -384,6 +419,17 @@ class VisualizationOrchestrator:
         mc_stats = weights.get('mc_province_stats', {})
         if mc_stats:
             _safe(self.ranking.plot_mc_rank_uncertainty, mc_stats)
+
+        # fig01 — final ranking summary (publication-facing ranking table view)
+        _safe(
+            self.ranking.plot_final_ranking_summary,
+            provinces,
+            scores,
+            ranks,
+            top_n=getattr(self, '_ranking_top_n', 20),
+            kendall_w=getattr(ranking_result, 'kendall_w', None),
+            save_name='fig01_final_ranking_summary.png',
+        )
 
         # ── Weights ───────────────────────────────────────────────
         sc_arr = weights['sc_array']
@@ -569,8 +615,8 @@ class VisualizationOrchestrator:
 
             # fig16b — ensemble architecture flowchart (data-driven model list)
             _safe(self.forecast.plot_ensemble_architecture,
-                  model_names=list(_contribs.keys()) if _contribs else None,
-                  model_contributions=_contribs or None)
+                model_names=list(_contribs.keys()) if _contribs else None,
+                model_contributions=_contribs or None)
 
             # fig16 / fig17 / fig22b / fig16c — require actual vs predicted data
             if _actual is not None and _predicted is not None:
@@ -717,6 +763,59 @@ class VisualizationOrchestrator:
             if _per_model_oof and len(_per_model_oof) > 1:
                 _safe(self.forecast.plot_prediction_scatter_matrix,
                       _per_model_oof)
+
+        # ── Executive dashboard ───────────────────────────────────────
+        kendall_w_value = getattr(ranking_result, 'kendall_w', float('nan'))
+        kendall_w_text = f'{float(kendall_w_value):.3f}' if isinstance(kendall_w_value, (int, float)) and np.isfinite(kendall_w_value) else 'N/A'
+        rank_order = np.argsort(
+            np.where(np.isfinite(ranks.astype(float)), ranks.astype(float), np.inf)
+        )
+
+        summary_results: Dict[str, Any] = {
+            'kpis': {
+                'Provinces': f'{len(provinces)}',
+                'Years': f'{len(panel_data.years)}',
+                "Kendall's W": kendall_w_text,
+            },
+            'top_10': [
+                (provinces[idx], float(scores[idx]))
+                for idx in rank_order[: min(10, len(rank_order))]
+            ],
+            'fused_weights': sc_arr,
+            'subcriteria_names': subcriteria,
+            'robustness_text': f"Kendall's W: {kendall_w_text}",
+        }
+
+        forecast_holdout = getattr(forecast_result, 'holdout_performance', None) if forecast_result is not None else None
+        forecast_r2 = None
+        forecast_rmse = None
+        if isinstance(forecast_holdout, dict):
+            r2_value = forecast_holdout.get('r2')
+            rmse_value = forecast_holdout.get('rmse')
+            if isinstance(r2_value, (int, float)) and np.isfinite(r2_value):
+                forecast_r2 = float(r2_value)
+            if isinstance(rmse_value, (int, float)) and np.isfinite(rmse_value):
+                forecast_rmse = float(rmse_value)
+
+        if forecast_r2 is not None:
+            summary_results['kpis']['Forecast R²'] = f'{forecast_r2:.3f}'
+            summary_results['robustness_text'] += f'\nForecast holdout R²: {forecast_r2:.3f}'
+            if forecast_rmse is not None:
+                summary_results['robustness_text'] += f'\nForecast holdout RMSE: {forecast_rmse:.3f}'
+        else:
+            sens = analysis_results.get('sensitivity')
+            overall_robustness = getattr(sens, 'overall_robustness', None) if sens is not None else None
+            if isinstance(overall_robustness, (int, float)) and np.isfinite(overall_robustness):
+                summary_results['kpis']['Overall Robustness'] = f'{float(overall_robustness):.3f}'
+                summary_results['robustness_text'] += f'\nOverall robustness: {float(overall_robustness):.3f}'
+            else:
+                summary_results['kpis']['Top Province'] = str(provinces[rank_order[0]]) if len(rank_order) else 'N/A'
+
+        agreement_matrix = self._build_method_agreement_matrix(ranking_result)
+        if agreement_matrix is not None:
+            summary_results['agreement_matrix'] = agreement_matrix
+
+        _safe(self.summary.plot_executive_dashboard, summary_results)
 
         return count
 

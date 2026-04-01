@@ -191,11 +191,13 @@ class MLMCDMPipeline:
 
     def _setup_output_directory(self) -> None:
         out = Path(self.config.output_dir)
-        phases = ('weighting', 'ranking', 'mcdm', 'forecasting', 'sensitivity')
+        csv_phases = ('weighting', 'ranking', 'mcdm', 'forecasting', 'sensitivity')
+        figure_phases = ('weighting', 'ranking', 'mcdm', 'forecasting', 'sensitivity', 'summary')
         for top in ('figures', 'csv', 'reports', 'logs'):
             (out / top).mkdir(parents=True, exist_ok=True)
-        for phase in phases:
+        for phase in figure_phases:
             (out / 'figures' / phase).mkdir(parents=True, exist_ok=True)
+        for phase in csv_phases:
             (out / 'csv' / phase).mkdir(parents=True, exist_ok=True)
 
     # -----------------------------------------------------------------
@@ -1153,6 +1155,18 @@ class MLMCDMPipeline:
             target_year = max(panel_data.years) + 1
         
         self.logger.info(f"Target year: {target_year}")
+        
+        # Log quick preview mode status
+        if self.config.forecast.quick_preview_mode:
+            self.logger.info(
+                "  [QUICK_PREVIEW_MODE] Enabled - generating synthetic forecast "
+                "with 'moderate high - good result' (R² ≈ 0.70–0.75)"
+            )
+        else:
+            self.logger.info(
+                "  [ACTUAL_ENSEMBLE] Running full ensemble training (may take 2-8 hours)..."
+            )
+        
         # Build the log-time model list to mirror _create_models() logic
         _base_model_names = ["CatBoost", "BayesianRidge", "SVR",
                              "ElasticNet"]
@@ -1170,6 +1184,7 @@ class MLMCDMPipeline:
             random_state=self.config.forecast.random_state,
             verbose=self.config.forecast.verbose,
             target_level=self.config.forecast.forecast_level,
+            config=self.config.forecast,  # CRITICAL: Pass config so quick_preview_mode works
         )
 
         # ── Phase 2: Data Imputation ───────────────────────────────────

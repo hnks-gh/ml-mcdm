@@ -30,9 +30,9 @@
 \contentsline {subsubsection}{\numberline {2.5.6}Evaluation Protocol and Metrics}{39}{subsubsection.2.5.6}%
 \contentsline {section}{\numberline {3}Results}{40}{section.3}%
 \contentsline {subsection}{\numberline {3.1}CRITIC Weighting}{40}{subsection.3.1}%
-\contentsline {subsection}{\numberline {3.2}MCDM Rankings}{43}{subsection.3.2}%
-\contentsline {subsection}{\numberline {3.3}Forecasting Model Performance}{49}{subsection.3.3}%
-\contentsline {subsection}{\numberline {3.4}2025 Provincial Governance Forecasts and Prediction Intervals}{49}{subsection.3.4}%
-\contentsline {section}{\numberline {4}Discussion}{49}{section.4}%
-\contentsline {section}{\numberline {5}Conclusion}{50}{section.5}%
-\contentsline {section}{\numberline {6}Appendix}{50}{section.6}%
+\contentsline {subsection}{\numberline {3.2}MCDM Rankings}{48}{subsection.3.2}%
+\contentsline {subsection}{\numberline {3.3}Forecasting Model Performance}{55}{subsection.3.3}%
+\contentsline {subsection}{\numberline {3.4}2025 Provincial Governance Forecasts and Prediction Intervals}{56}{subsection.3.4}%
+\contentsline {section}{\numberline {4}Discussion}{56}{section.4}%
+\contentsline {section}{\numberline {5}Conclusion}{56}{section.5}%
+\contentsline {section}{\numberline {6}Appendix}{57}{section.6}%

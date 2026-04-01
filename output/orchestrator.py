@@ -251,12 +251,14 @@ class OutputOrchestrator:
         except Exception as exc:
             logger.warning(f'Report generation failed: {exc}')
 
-        total = len(self.csv.get_saved_files()) + 1  # +1 for report
-        logger.info(f'Total output files: {total}')
+        figure_count = len(figure_paths or [])
+        total = len(self.csv.get_saved_files()) + figure_count + 1  # +1 for report
+        logger.info(f'Total output files: {total} (CSV={len(self.csv.get_saved_files())}, figures={figure_count}, report=1)')
         logger.info(f'All results saved to {self.base_dir}')
 
         return {
             'saved_files': self.csv.get_saved_files(),
+            'figure_paths': list(figure_paths or []),
             'report_path': self.report.path,
             'total': total,
         }

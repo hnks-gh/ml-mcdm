@@ -230,7 +230,12 @@ class TemporalSensitivityFigureGenerator:
                     j, i, f'{value:.2f}',
                     ha='center', va='center',
                     color='black', fontsize=9, fontweight='bold',
-                    bbox=dict(boxstyle='none', facecolor='white', alpha=0.3, pad=0)
+                    bbox=dict(
+                        boxstyle='round,pad=0.15',
+                        facecolor='white',
+                        edgecolor='none',
+                        alpha=0.35,
+                    )
                 )
 
         # Colorbar

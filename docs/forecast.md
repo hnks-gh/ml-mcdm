@@ -11,20 +11,23 @@ This framework implements a **statistically-principled 3-tier ensemble learning 
 - **Guaranteed coverage**: Conformal prediction provides 95% valid intervals
 - **No redundancy**: Each model captures different patterns (gradient boosting, Bayesian linear, SVR, ElasticNet)
 
+
 **Key Features:**
 - **4 Model Types**: CatBoost (joint multi-output), Bayesian linear, SVR (RBF), and ElasticNet
-- **Super Learner**: Automatic optimal weighting via meta-learning (`PanelWalkForwardCV`)
+- **Super Learner**: Automatic optimal weighting via meta-learning (`PanelWalkForwardCV`, Ridge regression)
 - **Conformal Prediction**: Distribution-free 95% prediction intervals
 - **Baseline Comparison**: Optional Persistence forecaster baseline
 - **Enhanced Feature Engineering**: 12 feature blocks — lag, rolling, stationarity, EWMA, diversity, region dummies (Phase 1)
 - **Target Transformation**: Yeo-Johnson reversible transform for improved Gaussianity (Phase 5)
-- **HP Optimisation**: Optional Optuna one-time search for CatBoost (Phase 4)
-
+**HP Optimisation**: (Disabled) Optuna hyperparameter optimization is not available in this version.
 ---
 
 ## System Architecture
 
 ### Three-Tier Architecture
+**Rationale:** For ~882 training rows (63 provinces × 14 usable year pairs, 2011–2024), four complementary models with Super Learner per-output Ridge weighting provide a robust bias-variance tradeoff.
+
+**Note:** Optuna-based hyperparameter optimization is disabled in this version. All model hyperparameters are set to recommended defaults.
 
 ```
 Input: Panel Data (N entities × p components × T years)
@@ -89,13 +92,12 @@ Calibrated Prediction Intervals
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Output: Predictions + Calibrated Intervals + Diagnostics
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  ├── Point predictions (Super Learner weighted)
-  ├── Calibrated 95% prediction intervals (conformal)
-  ├── Distributional forecasts (quantiles from QRF)
-  ├── Feature importance (aggregated across models)
-  ├── Model contributions (meta-weights)
-  ├── CV performance metrics
-  └── Residual diagnostics
+   ├── Point predictions (Super Learner weighted)
+   ├── Calibrated 95% prediction intervals (conformal)
+   ├── Feature importance (aggregated across models)
+   ├── Model contributions (meta-weights)
+   ├── CV performance metrics
+   └── Residual diagnostics
 ```
 
 ### Configuration
@@ -108,7 +110,7 @@ The system uses a **single optimized configuration** designed for small-to-mediu
 - Support Vector Regression (ε-insensitive tube, RBF kernel)
 - ElasticNet (regularized linear, L1+L2)
 
-**Meta-Ensemble:** Super Learner (`PanelWalkForwardCV` panel-aware CV, NNLS meta-weights)
+**Meta-Ensemble:** Super Learner (`PanelWalkForwardCV` panel-aware CV, Ridge regression meta-weights)
 
 **Calibration:** Conformal Prediction (95% coverage guarantee, OOF residuals)
 
@@ -118,7 +120,7 @@ The system uses a **single optimized configuration** designed for small-to-mediu
 
 **HP Optimisation:** One-time Optuna TPE search for CatBoost when `auto_tune_gb=True` (Phase 4)
 
-**Rationale:** For ~882 training rows (63 provinces × 14 usable year pairs, 2011–2024), four complementary models with Super Learner per-output weighting provide a robust bias-variance tradeoff.
+**Rationale:** For ~882 training rows (63 provinces × 14 usable year pairs, 2011–2024), four complementary models with Super Learner per-output Ridge weighting provide a robust bias-variance tradeoff.
 
 ---
 
@@ -345,61 +347,35 @@ gamma   = 'scale' # RBF bandwidth (ForecastConfig.svr_gamma)
 
 ---
 
-### 1.3 Distributional Models
-
-#### Quantile Random Forest Forecaster
-
-**Algorithm:** Quantile estimation via leaf-based conditional distribution  
-**Library:** Custom implementation on `sklearn.ensemble.RandomForestRegressor`
-
-**Description:**  
-Standard Random Forest provides point predictions, but QRF provides **full predictive distributions** by analyzing the distribution of training samples in each leaf node.
-
-**Quantile Prediction Method:**
-1. Train standard Random Forest on training data
-2. For prediction sample $x_*$, find which leaf node it falls into for each tree
-3. Extract all training labels from those leaf nodes
-4. Compute weighted quantiles using leaf co-occurrence frequencies
-
-**Quantile Formula:**
-$$
-\hat{q}_\tau(x_*) = \text{WeightedQuantile}_\tau(\{y_i : x_i \in \text{Leaf}(x_*)\})
-$$
-
-**Prediction Intervals:**
-$$
-[L, U] = [\hat{q}_{\alpha/2}(x_*), \hat{q}_{1-\alpha/2}(x_*)]
-$$
-
-**Advantages:**
-- Non-parametric distributional forecasts
-- Adaptive to heteroscedasticity
-- No distributional assumptions needed
-- Captures asymmetric uncertainty
-
-**Key Parameters:**
-```python
-n_estimators = 200        # Number of trees
-max_depth = None          # Full tree depth
-min_samples_leaf = 5      # Minimum samples per leaf
-quantiles = [0.025, 0.5, 0.975]  # Default quantiles
-```
-
-**Methods:**
-- `predict()`: Point prediction (conditional mean — MSE-compatible, used by Super Learner meta-learner)
-- `predict_median()`: Conditional median (MAE-optimal; routes through `predict_quantiles([0.5])`)
-- `predict_mean()`: Conditional mean (standard RF average; same as `predict()`)
-- `predict_quantiles(quantiles)`: Multiple quantile predictions
-- `predict_uncertainty()`: IQR-based uncertainty
-- `get_prediction_distribution()`: Full distributional summary (median, mean, IQR, all quantiles)
-
-> **Note (Bug Q-1 fix):** `get_prediction_distribution()["median"]` previously called `predict_mean()`,
 > causing the median and mean keys to be identical. It now routes through `predict_median()` (leaf-weight
 > weighted quantile at q=0.5), which correctly differs from the RF mean on asymmetric distributions.
+
 
 ---
 
 ## Part II: Meta-Ensemble Methods
+
+### 2.1 Super Learner (Stacked Generalization)
+
+**File:** `forecasting/super_learner.py`  
+**Algorithm:** Van der Laan et al. (2007), "Super Learner"
+
+**Description:**  
+Optimal weighted combination of base models via **nested cross-validation**. Instead of simple weighting, trains a meta-learner on out-of-fold predictions.
+
+**Three-Stage Algorithm:**
+
+**Stage 1: Generate Out-of-Fold Predictions**
+```
+For each CV fold k:
+  Train each base model on folds ≠ k
+  Predict on fold k
+  Store predictions as meta-features
+Result: Z = [ŷ₁_OOF, ŷ₂_OOF, ..., ŷₘ_OOF]
+```
+
+---
+
 
 ### 2.1 Super Learner (Stacked Generalization)
 
@@ -433,44 +409,28 @@ Train all base models on full training data
 Final prediction: ŷ = Σ α_i × ŷ_i
 ```
 
-**Meta-Learner Types:**
+**Meta-Learner Type:**
 
-1. **Ridge Regression** (default)
+- **Ridge Regression** (default)
    $$
    \min_\alpha ||y - Z\alpha||^2 + \lambda ||\alpha||^2
    $$
    Subject to: $\alpha \geq 0$, $\sum \alpha_i = 1$
 
-2. **ElasticNet**
-   $$
-   \min_\alpha ||y - Z\alpha||^2 + \lambda_1 ||\alpha||_1 + \lambda_2 ||\alpha||^2
-   $$
-
-3. **Dirichlet Stacking** (`dirichlet_stacking`)
-   Optimizes the Dirichlet negative log-likelihood over logit-parameterized weights
-   using analytical gradients ($\partial\text{NLL}/\partial\text{logit}_j = n w_j - \sum_n r_{nj}$).
-   Per-output weights (`_meta_weights_per_output_`) are stored so each criterion gets
-   its own optimal combination. Entity-block bootstrap provides UQ on those weights.
-
-4. **Bayesian Stacking** (`bayesian_stacking`)
-   Softmax-of-R² temperature-scaled weighting; simpler than full Dirichlet posterior but
-   fast and useful as a baseline.
-
 **Advantages:**
 - Optimal weights (oracle inequality guarantees)
 - Prevents overfitting via out-of-fold predictions
-- Flexible meta-learner choice
 - Theoretically principled
 
 **Cross-Validation Strategy:**
 Uses `PanelWalkForwardCV` (public alias of `_WalkForwardYearlySplit`) — a panel-aware
 walk-forward splitter that creates annual validation folds in sorted year order.
 `min_train_years` (default 5) ensures every fold has a minimum number of training
-years before validation; `max_folds` (default 5) caps the total number of folds to
-prevent excessive runtime on long panels.  Each entity contributes its rows for each
-year-fold independently; entities absent from a fold's validation year simply
-contribute zero validation rows for that fold.  Falls back to `TimeSeriesSplit` when
-year labels are not provided.
+
+**Three Methods:**
+
+#### Method 1: Split Conformal
+
 
 **Phase 4: Per-criterion RMSE tracking:**  
 In addition to the fold-level mean R² stored in `_cv_scores_`, the SuperLearner
@@ -479,13 +439,12 @@ List[List[float]]]`).  Stage 6 exposes these as `per_criterion_rmse_mean` and
 `per_criterion_rmse_std` arrays in each model's `model_performance` entry.
 
 > **Note (Bug S-2 fix):** The previous implementation used `T = min(entity lengths)`,
-> which discarded up to 9 years of data for longer-history provinces when any province
-> had a short history. The walk-forward splitter recovers that data.
+**Algorithm:**
+1. Split data: (train, calibration)
 
 **Key Parameters:**
 ```python
-meta_learner_type = 'ridge'     # 'ridge', 'elasticnet', 'dirichlet_stacking',
-                                # 'bayesian_stacking'
+meta_learner_type = 'ridge'     # 'ridge' only
 n_cv_folds = 5                  # OOF folds
 positive_weights = True         # α ≥ 0 constraint
 normalize_weights = True        # Σα = 1 constraint
@@ -497,32 +456,6 @@ normalize_weights = True        # Σα = 1 constraint
 - `predict_with_uncertainty(X)`: Predictions + model disagreement
 - `get_meta_weights()`: Learned α values
 - `get_cv_scores()`: Base model CV performance
-
----
-
-## Part III: Uncertainty Calibration
-
-### 3.1 Conformal Prediction
-
-**File:** `forecasting/conformal.py`  
-**Paper:** Vovk et al. (2005), "Algorithmic Learning in a Random World"
-
-**Description:**  
-Provides **distribution-free prediction intervals** with guaranteed finite-sample coverage, regardless of model correctness or data distribution.
-
-**Coverage Guarantee:**
-$$
-\mathbb{P}(y_{n+1} \in C(X_{n+1})) \geq 1 - \alpha
-$$
-
-For any distribution $P$, any model, any finite sample size.
-
-**Three Methods:**
-
-#### Method 1: Split Conformal
-
-**Algorithm:**
-1. Split data: (train, calibration)
 2. Train model on train set
 3. Compute residuals on calibration set: $R_i = |y_i - \hat{y}_i|$
 4. Find quantile: $q = \text{Quantile}_{1-\alpha}(R_1, \ldots, R_m)$
@@ -813,17 +746,19 @@ pip install -e .[forecasting]
 ### 6.1 State-of-the-Art Advantages
 
 1. **Multi-Tier Architecture**
-   - 6 diverse base models capturing different patterns (tree ×2, kernel ×2, linear ×1, distributional ×1)
-   - Super Learner meta-learning with automatic optimal weighting
+
+   - 5 diverse base models capturing different patterns (tree, kernel ×2, linear ×1)
+   - Super Learner meta-learning with automatic optimal weighting (Ridge regression)
    - Distribution-free calibrated uncertainty (conformal prediction)
    - Full 3-tier pipeline optimized for small-to-medium panel data (N < 1000)
 
 2. **Distributional & Kernel Methods**
-   - **Quantile RF**: Full distributional forecasts (not just point estimates)
+
    - **Kernel Ridge / SVR**: Non-parametric kernel regression complementing linear track
 
 3. **Optimal Ensemble Learning**
-   - **Super Learner**: Walk-forward meta-learning (`PanelWalkForwardCV`, panel-aware)
+
+   - **Super Learner**: Walk-forward meta-learning (`PanelWalkForwardCV`, panel-aware, Ridge regression)
    - **Positive Constraints**: Ensures monotonic relationships and stability
    - **Out-of-Fold Training**: Prevents overfitting in meta-learner
    - **Diversity-First**: 5 diverse models outperform larger correlated sets
@@ -831,7 +766,7 @@ pip install -e .[forecasting]
 4. **Calibrated Uncertainty Quantification**
    - **Conformal Prediction**: Guaranteed finite-sample coverage (≥ 1-α)
    - **Adaptive Conformal**: Tracks non-stationarity online
-   - **Distributional Forecasts**: Full quantile predictions from QRF
+
    - **Multi-Source Uncertainty**: Observation noise + parameter variance
 
 5. **Comprehensive Evaluation**
@@ -879,19 +814,20 @@ pip install -e .[forecasting]
    - Adaptive Conformal (ACI) partially mitigates drift but assumes gradual changes
 
 6. **Meta-Learning Requirements**
+
    - Super Learner needs ≥3 base models for meaningful weights
-   - Model diversity more important than quantity (5 diverse > many correlated)
+   - Model diversity more important than quantity (4 diverse > many correlated)
    - Very high correlation between base models reduces ensemble gains
-   - For N≈756: 5 diverse models (tree, kernel×2, linear, distributional) without redundancy
+   - For N≈756: 4 diverse models (tree, kernel×2, linear) without redundancy
 
 ### 6.3 Current Capabilities vs. Future Enhancements
 
+
 #### ✅ Currently Implemented
 
-- ✅ Quantile Random Forest (distributional forecasts)
 - ✅ Kernel Ridge Regression (RBF kernel, L2 regularised)
 - ✅ Support Vector Regression (ε-insensitive tube, RBF kernel)
-- ✅ Super Learner (stacked generalization, `PanelWalkForwardCV`, per-output meta-weights `_meta_weights_per_output_`)
+- ✅ Super Learner (stacked generalization, `PanelWalkForwardCV`, per-output meta-weights `_meta_weights_per_output_`, Ridge regression)
 - ✅ Conformal Prediction (split, CV+, adaptive; OOF residuals, per-column masks `_oof_valid_mask_per_col_`)
 - ✅ Comprehensive evaluation suite (7 metrics, per-criterion RMSE tracking)
 - ✅ **Phase 1**: 12-block temporal & panel feature engineering (D-01/02/03 fixes, G-01–G-08 new features)
@@ -899,7 +835,7 @@ pip install -e .[forecasting]
 - ✅ **Phase 3**: CatBoost-only gradient boosting track integrated with the ensemble
 - ✅ **Phase 4**: Per-criterion RMSE CV tracking; optional Optuna one-time HP search for CatBoost
 - ✅ **Phase 5**: Reversible target transformation (logit/Yeo-Johnson); inverse-transform of all pipeline outputs
-- ✅ **Phase I (correctness)**: F-01 per-column OOF masks; F-02 per-output meta-weights + `_get_weight()`; F-03 entity-block bootstrap; F-04 analytical Dirichlet gradient; F-05 `cv_min_train_years=5`; F-06 PCA Bonferroni + QRF lower-q floor; F-07 conformal n_cal warning
+- ✅ **Phase I (correctness)**: F-01 per-column OOF masks; F-02 per-output meta-weights + `_get_weight()`; F-03 entity-block bootstrap; F-04 analytical Dirichlet gradient; F-05 `cv_min_train_years=5`; F-06 PCA Bonferroni; F-07 conformal n_cal warning
 - ✅ **ML panel imputation**: `build_ml_panel_data()` supplies a 3-stage imputed copy to the forecaster; MCDM phases remain on raw observed data
 - ✅ **Province fallback**: provinces absent from last-year active set fall back to most-recent valid year for prediction
 
@@ -956,10 +892,6 @@ pip install -e .[forecasting]
 8. **Gelman, A., & Hill, J.** (2006). *Data analysis using regression and multilevel/hierarchical models*. Cambridge University Press.
 
 ### Advanced Forecasting
-
-9. **Meinshausen, N.** (2006). Quantile regression forests. *Journal of Machine Learning Research*, 7, 983-999.
-
-10. **Agarwal, R., et al.** (2021). Neural additive models: Interpretable machine learning with neural nets. *NeurIPS 2021*.
 
 11. **Van der Laan, M.J., Polley, E.C., & Hubbard, A.E.** (2007). Super Learner. *Statistical Applications in Genetics and Molecular Biology*, 6(1).
 

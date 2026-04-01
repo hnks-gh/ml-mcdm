@@ -321,6 +321,9 @@ INPUT .\figure\weighting\weight-heatmap.png
 INPUT .\figure\ranking\rank_profiles_2024.png
 INPUT .\figure\ranking\rank_profiles_2024.png
 INPUT .\figure\ranking\rank_profiles_2024.png
+INPUT .\figure\ranking\distribution.png
+INPUT .\figure\ranking\distribution.png
+INPUT .\figure\ranking\distribution.png
 INPUT .\figure\ranking\agreement.png
 INPUT .\figure\ranking\agreement.png
 INPUT .\figure\ranking\agreement.png
@@ -333,9 +336,6 @@ INPUT .\figure\ranking\discriminatory.png
 INPUT .\figure\ranking\rank-stability.png
 INPUT .\figure\ranking\rank-stability.png
 INPUT .\figure\ranking\rank-stability.png
-INPUT .\figure\ranking\distribution.png
-INPUT .\figure\ranking\distribution.png
-INPUT .\figure\ranking\distribution.png
 INPUT .\table\weighting\criterion_weight_table.tex
 INPUT .\table\weighting\criterion_weight_table.tex
 INPUT table\weighting\criterion_weight_table.tex

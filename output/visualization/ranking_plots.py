@@ -51,9 +51,91 @@ class RankingPlotter(BasePlotter):
 
         Returns
         -------
-        None
+        str, optional
         """
-        return None
+        if not HAS_MATPLOTLIB:
+            return None
+
+        save_name = kw.get('save_name', 'fig01_final_ranking_summary.png')
+        top_n = max(1, int(kw.get('top_n', 20)))
+        kendall_w = kw.get('kendall_w', None)
+
+        provinces_list = list(provinces)
+        scores_arr = pd.to_numeric(pd.Series(scores), errors='coerce').to_numpy(dtype=float)
+        ranks_arr = pd.to_numeric(pd.Series(ranks), errors='coerce').to_numpy(dtype=float)
+
+        n = min(len(provinces_list), len(scores_arr), len(ranks_arr))
+        if n == 0:
+            return None
+
+        provinces_list = provinces_list[:n]
+        scores_arr = scores_arr[:n]
+        ranks_arr = ranks_arr[:n]
+
+        finite_mask = np.isfinite(scores_arr) & np.isfinite(ranks_arr)
+        if not np.any(finite_mask):
+            return None
+
+        provinces_list = [p for p, keep in zip(provinces_list, finite_mask) if keep]
+        scores_arr = scores_arr[finite_mask]
+        ranks_arr = ranks_arr[finite_mask]
+
+        order = np.argsort(ranks_arr)
+        selected = order[:min(top_n, len(order))]
+        if len(selected) == 0:
+            return None
+
+        selected_provinces = [provinces_list[i] for i in selected]
+        selected_scores = scores_arr[selected]
+        selected_ranks = ranks_arr[selected].astype(int)
+
+        fig, ax = plt.subplots(figsize=(12, max(7, len(selected) * 0.38)))
+        colors = plt.colormaps[GRADIENT_CMAPS['ranking']](
+            np.linspace(0.20, 0.85, len(selected))
+        )
+        bars = ax.barh(
+            range(len(selected)),
+            selected_scores,
+            color=colors,
+            edgecolor='white',
+            linewidth=0.8,
+        )
+
+        ax.set_yticks(range(len(selected)))
+        ax.set_yticklabels(
+            [f'{rank}. {self._truncate(prov, 28)}' for prov, rank in zip(selected_provinces, selected_ranks)],
+            fontsize=9,
+        )
+        ax.invert_yaxis()
+        ax.set_xlabel('Composite Score', fontsize=11, fontweight='bold')
+
+        title = f'Final Composite Ranking Summary — Top {len(selected)} Provinces'
+        if kendall_w is not None:
+            try:
+                kendall_value = float(kendall_w)
+            except (TypeError, ValueError):
+                kendall_value = float('nan')
+            if np.isfinite(kendall_value):
+                title += f' (Kendall W = {kendall_value:.3f})'
+        ax.set_title(title, fontsize=13, fontweight='bold', pad=12)
+
+        max_score = float(np.nanmax(selected_scores))
+        x_pad = max(0.01, max_score * 0.02)
+        for bar, score in zip(bars, selected_scores):
+            ax.text(
+                score + x_pad,
+                bar.get_y() + bar.get_height() / 2,
+                f'{score:.4f}',
+                va='center',
+                ha='left',
+                fontsize=8.5,
+                color=PALETTE['deep_blue'],
+            )
+
+        ax.set_xlim(0, max_score + x_pad * 8)
+        ax.grid(axis='x', linestyle='--', alpha=0.3)
+        fig.tight_layout()
+        return self._save(fig, save_name)
 
     # ==================================================================
     #  FIG 01c – Multi-Year Slope Graph (Top-N Bumpchart)
@@ -122,17 +204,26 @@ class RankingPlotter(BasePlotter):
                                         max(9, n_prov * 0.35)))
 
         for i, prov in enumerate(top_provinces):
-            vals = df_top.loc[prov, years].values.astype(float)
-            col  = colors[i]
-            ax.plot(years, vals, '-o', color=col, lw=2, markersize=6,
+            vals = pd.to_numeric(pd.Series(df_top.loc[prov, years]), errors='coerce').to_numpy(dtype=float)
+            finite_mask = np.isfinite(vals)
+            if finite_mask.sum() < 2:
+                continue
+
+            x_vals = np.asarray(years, dtype=float)[finite_mask]
+            y_vals = vals[finite_mask]
+            col = colors[i]
+
+            ax.plot(x_vals, y_vals, '-o', color=col, lw=2, markersize=6,
                     alpha=0.85, zorder=3)
             # Left label
-            ax.text(years[0] - 0.15, vals[0], prov,
+            ax.text(x_vals[0] - 0.15, y_vals[0], prov,
                     va='center', ha='right', fontsize=7.5,
                     color=col, fontweight='bold')
             # Right label with final rank
-            ax.text(years[-1] + 0.15, vals[-1],
-                    f'{prov} (#{int(vals[-1])})',
+            final_rank = y_vals[-1]
+            label = f'{prov} (#{int(round(final_rank))})' if np.isfinite(final_rank) else prov
+            ax.text(x_vals[-1] + 0.15, y_vals[-1],
+                    label,
                     va='center', ha='left', fontsize=7.5, color=col)
 
         ax.set_xticks(years)

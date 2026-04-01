@@ -1,0 +1,90 @@
+{
+  "primary_cv": {
+    "planned_folds": 5,
+    "completed_folds": 5,
+    "start_time": 81825.3675504,
+    "end_time": 82041.6270057,
+    "elapsed_seconds": 216.25945529999444,
+    "per_fold_times": [
+      {
+        "fold_idx": 0,
+        "elapsed_seconds": 17.922445300006075
+      },
+      {
+        "fold_idx": 1,
+        "elapsed_seconds": 19.82248790000449
+      },
+      {
+        "fold_idx": 2,
+        "elapsed_seconds": 57.58678319999308
+      },
+      {
+        "fold_idx": 3,
+        "elapsed_seconds": 60.58102810000128
+      },
+      {
+        "fold_idx": 4,
+        "elapsed_seconds": 60.34623530000681
+      }
+    ],
+    "truncated": false,
+    "truncation_reason": null
+  },
+  "persistence_cv": {
+    "planned_folds": 0,
+    "completed_folds": 0,
+    "start_time": 82041.6809443,
+    "end_time": 82041.680945,
+    "elapsed_seconds": 0.0,
+    "per_fold_times": [],
+    "truncated": false,
+    "truncation_reason": "Skipped: Persistence is a meta-learner participant (\u00a73.3)"
+  },
+  "secondary_conformal": {
+    "planned_folds": 5,
+    "completed_folds": 5,
+    "start_time": 82042.6266812,
+    "end_time": 82662.8564466,
+    "elapsed_seconds": 620.2297653999995,
+    "per_fold_times": [
+      {
+        "fold_idx": 0,
+        "elapsed_seconds": 26.592751100004534
+      },
+      {
+        "fold_idx": 1,
+        "elapsed_seconds": 28.243188500011456
+      },
+      {
+        "fold_idx": 2,
+        "elapsed_seconds": 115.84975409999606
+      },
+      {
+        "fold_idx": 3,
+        "elapsed_seconds": 224.3780812999903
+      },
+      {
+        "fold_idx": 4,
+        "elapsed_seconds": 225.16556890000356
+      }
+    ],
+    "truncated": false,
+    "truncation_reason": null
+  },
+  "meta_learner": {
+    "start_time": null,
+    "end_time": null,
+    "elapsed_seconds": null
+  },
+  "full_refit": {
+    "start_time": null,
+    "end_time": null,
+    "elapsed_seconds": null
+  },
+  "stage3_total": {
+    "start_time": 81825.3670998,
+    "end_time": 82884.6450793,
+    "elapsed_seconds": 1059.2779369000054,
+    "target_budget_seconds": null
+  }
+}

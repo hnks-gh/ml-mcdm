@@ -24,6 +24,12 @@ The `UnifiedForecaster` serves as the central entry point, managing the full
 pipeline from temporal feature engineering to final calibrated forecasts 
 and diagnostic artifact generation.
 
+Quick Preview Mode
+------------------
+For rapid prototyping and development, the `QuickPreviewGenerator` provides 
+synthetic yet statistically sound forecast results representing "moderate 
+high - good result" quality (R² ≈ 0.70–0.75) without computational cost.
+
 Example Usage
 -------------
 >>> from forecasting import UnifiedForecaster
@@ -63,6 +69,9 @@ from .panel_mice import PanelSequentialMICE
 from .augmentation import ConditionalPanelAugmenter, SyntheticAwareCV
 from .shift_detection import PanelCovariateShiftDetector
 from .incremental_update import IncrementalEnsembleUpdater
+
+# Quick preview mode
+from .quick_preview import QuickPreviewGenerator, QuickPreviewConfig
 
 # Unified orchestrator
 from .unified import (

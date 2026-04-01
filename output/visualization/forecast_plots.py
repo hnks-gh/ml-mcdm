@@ -63,6 +63,7 @@ def _build_payload(**kwargs) -> ForecastVizPayload:
         provinces=kwargs.get('provinces'),
         prediction_year=kwargs.get('prediction_year'),
         cv_fold_val_years=kwargs.get('cv_fold_val_years'),
+        model_names=kwargs.get('model_names'),
     )
 
 
@@ -242,11 +243,30 @@ class ForecastPlotter(BasePlotter):
     def plot_ensemble_architecture(
         self,
         model_names: Optional[List[str]] = None,
+        model_contributions: Optional[Dict[str, float]] = None,
         save_name: str = 'fig22_ensemble_architecture.png',
     ) -> Optional[str]:
         """F-22: Ensemble pipeline architecture flowchart."""
-        payload = _build_payload()
+        payload = _build_payload(
+            model_names=model_names,
+            model_contributions=model_contributions,
+        )
         return self._ensemble.plot_ensemble_architecture(payload, save_name=save_name)
+
+    def get_generated_figures(self) -> List[str]:
+        """Aggregate generated figure paths from all delegated sub-plotters."""
+        out = list(super().get_generated_figures())
+        for plotter in (
+            self._accuracy,
+            self._ensemble,
+            self._uncertainty,
+            self._interpretability,
+            self._impact,
+            self._diversity,
+            self._temporal,
+        ):
+            out.extend(plotter.get_generated_figures())
+        return out
 
     def plot_model_contribution_dots(
         self,
