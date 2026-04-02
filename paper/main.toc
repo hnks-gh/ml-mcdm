@@ -11,7 +11,7 @@
 \contentsline {subsubsection}{\numberline {2.3.1}Two-Level Hierarchical CRITIC Weighting}{17}{subsubsection.2.3.1}%
 \contentsline {subsubsection}{\numberline {2.3.2}Weighting Analysis and Validation}{22}{subsubsection.2.3.2}%
 \contentsline {subsection}{\numberline {2.4}Multi-Method MCDM Ranking Approaches}{26}{subsection.2.4}%
-\contentsline {subsubsection}{\numberline {2.4.1}TOPSIS}{27}{subsubsection.2.4.1}%
+\contentsline {subsubsection}{\numberline {2.4.1}TOPSIS}{26}{subsubsection.2.4.1}%
 \contentsline {subsubsection}{\numberline {2.4.2}VIKOR}{27}{subsubsection.2.4.2}%
 \contentsline {subsubsection}{\numberline {2.4.3}PROMETHEE II}{28}{subsubsection.2.4.3}%
 \contentsline {subsubsection}{\numberline {2.4.4}COPRAS}{29}{subsubsection.2.4.4}%
