@@ -3115,11 +3115,10 @@
     <bcf:citekey order="30" intorder="1">Vapnik1995</bcf:citekey>
     <bcf:citekey order="31" intorder="1">Zou2005</bcf:citekey>
     <bcf:citekey order="32" intorder="1">vanDerLaan2007</bcf:citekey>
-    <bcf:citekey order="33" intorder="1">Lawson1974</bcf:citekey>
-    <bcf:citekey order="34" intorder="1">Vovk2005</bcf:citekey>
-    <bcf:citekey order="34" intorder="2">Barber2023</bcf:citekey>
-    <bcf:citekey order="35" intorder="1">Barber2023</bcf:citekey>
-    <bcf:citekey order="36" intorder="1">Romano2019</bcf:citekey>
+    <bcf:citekey order="33" intorder="1">Vovk2005</bcf:citekey>
+    <bcf:citekey order="33" intorder="2">Barber2023</bcf:citekey>
+    <bcf:citekey order="34" intorder="1">Barber2023</bcf:citekey>
+    <bcf:citekey order="35" intorder="1">Romano2019</bcf:citekey>
   </bcf:section>
   <!-- SORTING TEMPLATES -->
   <bcf:sortingtemplate name="apa">

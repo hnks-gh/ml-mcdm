@@ -17,10 +17,6 @@
 \contentsline {subsubsection}{\numberline {2.4.4}COPRAS}{29}{subsubsection.2.4.4}%
 \contentsline {subsubsection}{\numberline {2.4.5}EDAS}{29}{subsubsection.2.4.5}%
 \contentsline {subsubsection}{\numberline {2.4.6}Ranking Analysis and Validation}{30}{subsubsection.2.4.6}%
-\contentsline {paragraph}{Ranking Stability via Cross-Criteria Spearman Correlation.}{30}{section*.6}%
-\contentsline {paragraph}{Method Discriminatory Power via Score Inter-Quartile Range.}{31}{section*.7}%
-\contentsline {paragraph}{Pairwise Method Agreement via Spearman Rank Correlation Matrix.}{32}{section*.8}%
-\contentsline {paragraph}{Interpretation Framework and Methodological Implications.}{32}{section*.9}%
 \contentsline {subsection}{\numberline {2.5}Ensemble Machine Learning Forecasting}{33}{subsection.2.5}%
 \contentsline {subsubsection}{\numberline {2.5.1}Temporal Feature Engineering}{34}{subsubsection.2.5.1}%
 \contentsline {subsubsection}{\numberline {2.5.2}Target Transformation and Preprocessing}{36}{subsubsection.2.5.2}%
@@ -37,14 +33,14 @@
 \contentsline {subsubsection}{\numberline {3.2.2}Ranking Result Analysis and Validation}{51}{subsubsection.3.2.2}%
 \contentsline {subsection}{\numberline {3.3}Ensemble Learning Forecasting}{57}{subsection.3.3}%
 \contentsline {subsubsection}{\numberline {3.3.1}Architecture and Base Learner Performance}{58}{subsubsection.3.3.1}%
-\contentsline {paragraph}{Individual Base Learner Performance}{58}{section*.23}%
+\contentsline {paragraph}{Individual Base Learner Performance}{58}{section*.19}%
 \contentsline {subsubsection}{\numberline {3.3.2}Ensemble Combination and Holdout Performance}{59}{subsubsection.3.3.2}%
-\contentsline {paragraph}{Meta-Learner Weighting}{59}{section*.26}%
-\contentsline {paragraph}{Super Learner Holdout Performance and Generalization}{61}{section*.29}%
+\contentsline {paragraph}{Meta-Learner Weighting}{59}{section*.22}%
+\contentsline {paragraph}{Super Learner Holdout Performance and Generalization}{61}{section*.25}%
 \contentsline {subsubsection}{\numberline {3.3.3}Model Validation and Interpretation}{62}{subsubsection.3.3.3}%
-\contentsline {paragraph}{Residual Diagnostics and Model Calibration}{62}{section*.31}%
-\contentsline {paragraph}{Conformal Prediction Uncertainty Quantification}{63}{section*.33}%
-\contentsline {paragraph}{Feature Importance and Predictor Contribution}{64}{section*.35}%
+\contentsline {paragraph}{Residual Diagnostics and Model Calibration}{62}{section*.27}%
+\contentsline {paragraph}{Conformal Prediction Uncertainty Quantification}{63}{section*.29}%
+\contentsline {paragraph}{Feature Importance and Predictor Contribution}{64}{section*.31}%
 \contentsline {section}{\numberline {4}Discussion}{67}{section.4}%
 \contentsline {section}{\numberline {5}Conclusion}{69}{section.5}%
 \contentsline {section}{\numberline {6}Appendix}{70}{section.6}%
