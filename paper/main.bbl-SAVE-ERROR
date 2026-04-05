@@ -647,45 +647,6 @@
       \verb 10.15388/Informatica.2015.57
       \endverb
     \endentry
-    \entry{Lawson1974}{book}{}{}
-      \name{author}{2}{}{%
-        {{un=0,uniquepart=base,hash=9c3e7d5db5cc7daa4cd8997a66915ae4}{%
-           family={Lawson},
-           familyi={L\bibinitperiod},
-           given={Charles\bibnamedelima L.},
-           giveni={C\bibinitperiod\bibinitdelim L\bibinitperiod},
-           givenun=0}}%
-        {{un=0,uniquepart=base,hash=c98f1633d999d4df5bcda559be3494f6}{%
-           family={Hanson},
-           familyi={H\bibinitperiod},
-           given={Richard\bibnamedelima J.},
-           giveni={R\bibinitperiod\bibinitdelim J\bibinitperiod},
-           givenun=0}}%
-      }
-      \list{location}{1}{%
-        {Englewood Cliffs, NJ}%
-      }
-      \list{publisher}{1}{%
-        {Prentice-Hall}%
-      }
-      \strng{namehash}{7222297b4fc9b0faa5a5ce00b50af5d6}
-      \strng{fullhash}{7222297b4fc9b0faa5a5ce00b50af5d6}
-      \strng{fullhashraw}{7222297b4fc9b0faa5a5ce00b50af5d6}
-      \strng{bibnamehash}{7222297b4fc9b0faa5a5ce00b50af5d6}
-      \strng{authorbibnamehash}{7222297b4fc9b0faa5a5ce00b50af5d6}
-      \strng{authornamehash}{7222297b4fc9b0faa5a5ce00b50af5d6}
-      \strng{authorfullhash}{7222297b4fc9b0faa5a5ce00b50af5d6}
-      \strng{authorfullhashraw}{7222297b4fc9b0faa5a5ce00b50af5d6}
-      \field{sortinit}{L}
-      \field{sortinithash}{7c47d417cecb1f4bd38d1825c427a61a}
-      \field{extradatescope}{labelyear}
-      \field{labeldatesource}{}
-      \true{uniqueprimaryauthor}
-      \field{labelnamesource}{author}
-      \field{labeltitlesource}{title}
-      \field{title}{Solving Least Squares Problems}
-      \field{year}{1974}
-    \endentry
     \entry{Opricovic2004}{article}{}{}
       \name{author}{2}{}{%
         {{un=0,uniquepart=base,hash=a3b47410010298906abc527623205ed0}{%
@@ -2010,45 +1971,6 @@
       \verb{doi}
       \verb 10.15388/Informatica.2015.57
       \endverb
-    \endentry
-    \entry{Lawson1974}{book}{}{}
-      \name{author}{2}{}{%
-        {{un=0,uniquepart=base,hash=9c3e7d5db5cc7daa4cd8997a66915ae4}{%
-           family={Lawson},
-           familyi={L\bibinitperiod},
-           given={Charles\bibnamedelima L.},
-           giveni={C\bibinitperiod\bibinitdelim L\bibinitperiod},
-           givenun=0}}%
-        {{un=0,uniquepart=base,hash=c98f1633d999d4df5bcda559be3494f6}{%
-           family={Hanson},
-           familyi={H\bibinitperiod},
-           given={Richard\bibnamedelima J.},
-           giveni={R\bibinitperiod\bibinitdelim J\bibinitperiod},
-           givenun=0}}%
-      }
-      \list{location}{1}{%
-        {Englewood Cliffs, NJ}%
-      }
-      \list{publisher}{1}{%
-        {Prentice-Hall}%
-      }
-      \strng{namehash}{7222297b4fc9b0faa5a5ce00b50af5d6}
-      \strng{fullhash}{7222297b4fc9b0faa5a5ce00b50af5d6}
-      \strng{fullhashraw}{7222297b4fc9b0faa5a5ce00b50af5d6}
-      \strng{bibnamehash}{7222297b4fc9b0faa5a5ce00b50af5d6}
-      \strng{authorbibnamehash}{7222297b4fc9b0faa5a5ce00b50af5d6}
-      \strng{authornamehash}{7222297b4fc9b0faa5a5ce00b50af5d6}
-      \strng{authorfullhash}{7222297b4fc9b0faa5a5ce00b50af5d6}
-      \strng{authorfullhashraw}{7222297b4fc9b0faa5a5ce00b50af5d6}
-      \field{sortinit}{L}
-      \field{sortinithash}{7c47d417cecb1f4bd38d1825c427a61a}
-      \field{extradatescope}{labelyear}
-      \field{labeldatesource}{}
-      \true{uniqueprimaryauthor}
-      \field{labelnamesource}{author}
-      \field{labeltitlesource}{title}
-      \field{title}{Solving Least Squares Problems}
-      \field{year}{1974}
     \endentry
     \entry{Opricovic2004}{article}{}{}
       \name{author}{2}{}{%
