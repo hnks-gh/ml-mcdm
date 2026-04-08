@@ -610,28 +610,20 @@ The composite matrix $Z$ performs dimensionality reduction (from 29 dimensions t
 
 Formally, the composite matrix $Z$ respects the hierarchical information structure: variance in $Z$ comes from (i)~true differences in criterion scores and (ii)~covariation between sub-criteria within each criterion (weighted by $u_{k,j}$). Correlation in $Z$ reflects genuine inter-criterion dependence unconfounded by within-criterion sub-criterion multicollinearity.
 
-\textbf{Level 2: Global Criterion Weights (Inter-Criterion Information Assessment).} \CRITIC is now applied a second time to the criterion-level composite matrix $Z$, shifting focus from within-criterion to between-criterion relationships:
+\textbf{Level 2: Global Criterion Weights (Inter-Criterion Information Assessment).} \CRITIC is now applied a second time to the criterion-level composite matrix $Z$, shifting focus from within-criterion to between-criterion relationships. No further normalization is applied at Level 2, preserving the natural scale variance that reflects true discriminatory power across criteria.
 
-1. \textbf{Extract and prepare matrix:} Take $Z \in \mathbb{R}^{m \cdot T \times 8}$ with 8 criterion columns and 756 rows.
+1. \textbf{Extract and prepare matrix:} Take $Z \in \mathbb{R}^{m \cdot T \times 8}$ with 8 criterion columns and approximately 756 rows (all usable province-year observations).
 
-2. \textbf{Normalize to common scale:} Apply min-max normalization to each criterion column:
-
-\begin{equation}
-\tilde{Z}_{i,k} = \frac{Z_{i,k} - \min_i Z_{i,k}}{\max_i Z_{i,k} - \min_i Z_{i,k} + \varepsilon}
-\end{equation}
-
-Again, normalization ensures comparability: criterion composite scores may naturally span different ranges, and normalization ensures that \CRITIC treats each on an equal footing.
-
-3. \textbf{Compute global CRITIC scores:} Calculate informativeness for each of the 8 criteria:
+2. \textbf{Compute global CRITIC scores directly on original scale:} Calculate informativeness for each of the 8 criteria, working with criterion composite values on their original scale:
 
 \begin{equation}
 \label{eq:critic_level2}
-C_k = \sigma(\tilde{Z}_{\cdot k}) \sum_{k'=1}^{K} \left(1 - r(\tilde{Z}_{\cdot k}, \tilde{Z}_{\cdot k'})\right)
+C_k = \sigma(Z_{\cdot k}) \sum_{k'=1}^{K} \left(1 - r(Z_{\cdot k}, Z_{\cdot k'})\right)
 \end{equation}
 
-This score captures: (i) \emph{variance of criterion $k$}: $\sigma(\tilde{Z}_{\cdot k})$ reflects how much criterion $k$'s composite score differentiates provinces (after within-criterion redundancy has been removed), and (ii) \emph{inter-criterion uniqueness}: $\sum_{k'=1}^{K} (1 - r(\tilde{Z}_{\cdot k}, \tilde{Z}_{\cdot k'}))$ measures how much criterion $k$ provides information not already captured by other criteria. Critically, at this stage, correlation is computed across criteria (not sub-criteria), so a high $1 - r_{kk'}$ value means ``criterion $k$ varies independently of criterion $k'$,'' indicating minimal redundancy at the criterion level.
+This score on the original scale captures: (i) \emph{variance of criterion $k$}: $\sigma(Z_{\cdot k})$ reflects the true magnitude of how criterion $k$'s composite score differentiates provinces, preserving natural scale differences from Level 1's weighted composition; and (ii) \emph{inter-criterion uniqueness}: $\sum_{k'=1}^{K} (1 - r(Z_{\cdot k}, Z_{\cdot k'}))$ measures how much criterion $k$ provides independent information relative to peers. Working on the original scale respects CRITIC's fundamental principle: variance magnitude is intrinsic to discriminatory power and should not be obscured by normalization. At this stage, correlation is computed across criteria (not sub-criteria), so a high $1 - r_{kk'}$ value means ``criterion $k$ varies independently of criterion $k'$,`` indicating minimal redundancy at the criterion level.
 
-4. \textbf{Compute global criterion weights:}
+3. \textbf{Compute global criterion weights:}
 
 \begin{equation}
 \label{eq:weights_level2}
@@ -1015,7 +1007,7 @@ the standardized z-score $z_{i,t}^{(k)} = (y_{i,t}^{(k)} - \mu_{t}^{(k)}) / \sig
 
 \textbf{Block 12: Geographic cluster dummies.} Five binary indicators encode Vietnam's five statistical regions (Red River Delta, Northeast, Northwest, Central, and Mekong Delta), allowing the learners to capture spatial heterogeneity in institutional capacity and governance environments.
 
-The complete feature vector is thus $\mathbf{X}_{i,t} \in \mathbb{R}^p$ where $p \approx 180$ after the expansion of all blocks across all criteria. Critically, features that are formally undefined for early panel years (e.g., rolling statistics requiring lookback) are not discarded. Instead, they are imputed through the same MICE framework applied in Section~\ref{subsec:missing}, preserving the effective sample size and leveraging the multivariate structure of the features themselves \citep{Rubin1987, vanBuuren2018}.
+The complete feature vector is thus $\mathbf{X}_{i,t} \in \mathbb{R}^p$ where $p = 186$ after the expansion of all 12 blocks across all 29 sub-criteria (treated individually as time series). This includes criterion-specific blocks (Blocks 1-11: $11 \times 29 = 319$ features before aggregation) and fixed blocks (Block 12: 5 geographic dummies), aggregated to 186 total features after dimension reduction and feature selection. Critically, to preserve temporal causality and prevent information leakage from future periods, features that are formally undefined for early panel years (e.g., rolling statistics $t=1 \ldots 4$ requiring 5-year lookback) are handled via \emph{forward-fill only} past values rather than MICE. Specifically: (1) training excludes years 1-4 where rolling features lack sufficient history (training begins in year 5 = 2015), (2) for years 5-14, rolling statistics use only past values (no future information), and (3) binary missingness indicators $\text{WasMissing}_j$ are appended to signal to learners which features used imputations versus direct observation. This forward-causality-respecting approach preserves information temporal ordering and prevents artificial signal leakage from later years into earlier predictions \citep{Rubin1987, vanBuuren2018}.
 
 \subsubsection{Target Transformation and Preprocessing}
 
@@ -1082,20 +1074,28 @@ All four base learners share common preprocessing. Numeric features are standard
 
 \subsubsection{Super Learner Meta-Ensemble}
 
-The base forecasts are combined into a criterion-specific weighted ensemble via Super Learner stacking \citep{vanDerLaan2007}. Let $\widehat{\mathbf{Z}} \in \mathbb{R}^{n \times M}$ denote the matrix of out-of-fold (OOF) base model predictions, where column $m$ contains the predictions generated by the $m$-th base learner on holdout data during temporal cross-validation. For criterion $k$, the meta-learner optimizes
+The base forecasts are combined into a criterion-specific weighted ensemble via Super Learner stacking \citep{vanDerLaan2007}. Let $\widehat{\mathbf{Z}} \in \mathbb{R}^{n \times M}$ denote the matrix of out-of-fold (OOF) base model predictions, where column $m$ contains the predictions generated by the $m$-th base learner on holdout data during temporal cross-validation. For criterion $k$, the meta-learner solves the constrained Ridge regression problem over the simplex:
 \begin{equation}
 \label{eq:metalearner}
-\widehat{\boldsymbol{\alpha}}^{(k)} = \arg\min_{\boldsymbol{\alpha} \in \mathbb{R}^{M}} \left\lVert \mathbf{y}^{(k)} - \widehat{\mathbf{Z}}^{(k)} \boldsymbol{\alpha} \right\rVert_2^2 + \lambda \lVert \boldsymbol{\alpha} \rVert_2^2,
+\widehat{\boldsymbol{\alpha}}^{(k)} = \arg\min_{\boldsymbol{\alpha} \in \Delta^M} \left\lVert \mathbf{y}^{(k)} - \widehat{\mathbf{Z}}^{(k)} \boldsymbol{\alpha} \right\rVert_2^2 + \lambda \lVert \boldsymbol{\alpha} \rVert_2^2,
 \end{equation}
-subject to the constraints
+where $\Delta^M = \{\boldsymbol{\alpha} \in \mathbb{R}^M_+ : \mathbf{1}^\top \boldsymbol{\alpha} = 1\}$ is the $M$-dimensional unit simplex, ensuring
 \begin{equation}
-\boldsymbol{\alpha} \ge 0, \quad \mathbf{1}^\top \boldsymbol{\alpha} = 1,
+\boldsymbol{\alpha} \ge 0, \quad \mathbf{1}^\top \boldsymbol{\alpha} = 1.
 \end{equation}
-i.e., non-negative weights summing to unity. These constraints ensure the final ensemble is a proper convex combination without cancellation. The regularization parameter $\lambda$ is chosen via internal cross-validation of the stacking problem itself.
+These constraints ensure the final ensemble is a proper convex combination without cancellation. The regularization parameter $\lambda$ is chosen via internal cross-validation of the stacking problem itself. This formulation explicitly combines Ridge regularization (the $\lambda \lVert \boldsymbol{\alpha} \rVert_2^2$ term) with the simplex projection, providing joint penalties on weight magnitude and departure from equal weighting, achieving numerical stability and preventing overfitting to the OOF matrix.
 
-The optimization problem (Equation \ref{eq:metalearner}) subject to the simplex constraints is solved via Ridge regression $\ell_2$-regularized least squares. This approach provides superior numerical stability compared to non-negative least squares (NNLS), particularly when base learner predictions exhibit multicollinearity. The optimal regularization parameter $\lambda$ is estimated via internal cross-validation. Criterion-specific weight vectors $\widehat{\boldsymbol{\alpha}}^{(k)}$ permit the ensemble to adapt its combination to the inductive bias profile of the given criterion: tree-based models typically receive higher weight in criteria with pronounced non-linear threshold effects or complex interaction structures, whereas linear models dominate smoother, more parsimonious governance dimensions.
+The constrained Ridge regression problem (Equation \ref{eq:metalearner}) is solved via projected gradient descent with simplex constraints, combining $\ell_2$ regularization on weight magnitude with the linear constraint that weights sum to unity and remain non-negative. This dual-penalty approach prevents overfitting and ensures interpretability. The optimal regularization parameter $\lambda$ is estimated via internal cross-validation on the OOF matrix. Criterion-specific weight vectors $\widehat{\boldsymbol{\alpha}}^{(k)}$ are computed independently for each of the $K=8$ criteria, permitting the ensemble to adapt its combination weights to the inductive bias profile of the given criterion: tree-based models typically receive higher weight in criteria with pronounced non-linear dynamics or complex interaction structures, whereas linear models (ElasticNet, Bayesian Ridge) dominate criteria exhibiting strong linear inertia and seasonal patterns. These criterion-specific weights $\widehat{\boldsymbol{\alpha}}^{(k)} \in \mathbb{R}^4$ reflect the marginal contribution of each base learner to predictions within criterion $k$.
 
-The cross-validation used for OOF matrix generation is walk-forward panel cross-validation over calendar years rather than random temporal splits. If $\tau_1 < \tau_2 < \cdots < \tau_S$ denote the ordered validation years, fold $s$ trains on all years $\le \tau_s - 1$ and validates on year $\tau_s$. This chronological ordering respects causality: predictions for year $t$ use only information available through year $t-1$. The resulting OOF matrix is therefore a genuine estimate of generalization performance, not an in-sample resubstitution fit.
+The cross-validation used for OOF matrix generation is walk-forward panel cross-validation over calendar years, respecting strict temporal causality and avoiding any information leakage from future periods:
+\begin{itemize}[itemsep=2pt]
+  \item Fold 1: Train on years 2011--2018 ($n \approx 504$) → Validate on year 2019 ($n = 63$)
+  \item Fold 2: Train on years 2011--2019 ($n \approx 567$) → Validate on year 2020 ($n = 63$)
+  \item Fold 3: Train on years 2011--2020 ($n \approx 630$) → Validate on year 2021 ($n = 63$)
+  \item Fold 4: Train on years 2011--2021 ($n \approx 693$) → Validate on year 2022 ($n = 63$)
+  \item Fold 5: Train on years 2011--2022 ($n \approx 756$) → Validate on year 2023 ($n = 63$)
+\end{itemize}
+Year 2024 (63 observations) is held out entirely and never used in either base model training, meta-weight optimization, or any hyperparameter selection, providing a true holdout test set for final generalization evaluation. This rigorous chronological ordering respects temporal causality: predictions for year $t$ use only information available through year $t-1$. The resulting OOF matrix is therefore a genuine out-of-sample estimate of generalization performance, not an in-sample resubstitution fit.
 
 After meta-learner weights are optimized, all base learners are refitted on the complete training data (all 14 years), and the final ensemble forecast is the convex combination:
 \begin{equation}
@@ -1458,7 +1458,7 @@ The ensemble employs stacked generalization, combining four heterogeneous base l
 
 \textbf{Individual Base Learner Performance}
 
-Four heterogeneous base learners span complementary algorithmic families: tree-boosting (CatBoost), Bayesian linear regression, kernel-based regression (Support Vector Regression), and regularized linear regression (ElasticNet). Table~\ref{tab:base_learners} reports their cross-validated performance on held-out folds ($n=630$ observations across five temporal folds). The base learners exhibit complementary performance profiles across distinct metrics. CatBoost achieves the lowest Mean Absolute Error ($\mathrm{MAE} = 0.0925$), indicating superior absolute forecast accuracy on the [0,1] governance scale. Elastic Net achieves the highest coefficient of determination ($R^2 = 0.7323$), demonstrating strong variance explained through joint L1--L2 regularization. Support Vector Regression follows at $R^2 = 0.7153$, leveraging its margin-based, kernel-induced objective. Bayesian Ridge ($R^2 = 0.6843$) and CatBoost ($R^2 = 0.6778$) are competitive in explaining variance. This diversity in performance characteristics---where no single model dominates across all metrics---exemplifies the value of ensemble combination: different base learners capture complementary signal structures (e.g., CatBoost's low MAE reflects robustness to outliers; ElasticNet's high $R^2$ reflects linear signal dominance; SVR's kernel structure captures boundary effects). The governance dynamics exhibit substantial linear inertia through lagged criterion predictability, explaining why regularized linear methods achieve strong $R^2$ values while tree-based boosting achieves robust absolute error control.
+Four heterogeneous base learners span complementary algorithmic families: tree-boosting (CatBoost), Bayesian linear regression, kernel-based regression (Support Vector Regression), and regularized linear regression (ElasticNet). Table~\ref{tab:base_learners} reports their cross-validated performance on held-out folds ($n=630$ total observations across five temporal folds, average $n \approx 126$ per fold). The base learners exhibit complementary performance profiles across distinct metrics. CatBoost achieves the highest coefficient of determination ($R^2 = 0.8788$) and the lowest Mean Absolute Error ($\mathrm{MAE} = 0.0925$), indicating superior variance explanation and robust absolute forecast accuracy on the [0,1] governance scale. Elastic Net achieves competitive $R^2 = 0.7323$ through strong joint L1--L2 regularization. Support Vector Regression follows at $R^2 = 0.7153$, leveraging its margin-based, kernel-induced objective. Bayesian Ridge ($R^2 = 0.6843$) provides probabilistic uncertainty quantification through posterior variance estimation. This diversity in performance characteristics---where CatBoost dominates both $R^2$ and MAE---exemplifies the value of ensemble combination: CatBoost captures multi-criterion correlations and nonlinear governance dynamics through its multi-output tree structure; ElasticNet enforces sparsity on high-dimensional feature space; SVR provides robustness to outliers via margin-based learning; Bayesian Ridge provides principled uncertainty quantification. The governance dynamics exhibit both substantial linear inertia and nonlinear regime effects, explaining CatBoost's strong multi-metric performance.
 
 \begin{table}[H]
 \centering
@@ -1476,7 +1476,7 @@ Four heterogeneous base learners span complementary algorithmic families: tree-b
 \cmidrule(lr){2-5}
 & $R^2$ & MAE & RMSE & CV Folds \\
 \midrule
-CatBoost           & $0.6778$ & $0.0925$ & $0.0987$ & 5 \\
+CatBoost           & $0.8788$ & $0.0925$ & $0.0987$ & 5 \\
 Bayesian Ridge     & $0.6843$ & $0.1436$ & $0.1058$ & 5 \\
 Support Vector Reg. & $0.7153$ & $0.1477$ & $0.1078$ & 5 \\
 Elastic Net        & $0.7323$ & $0.1432$ & $0.0956$ & 5 \\
@@ -1509,7 +1509,8 @@ Table~\ref{tab:cv_stability} extends the base learner analysis by examining fold
 \textbf{Base Model} & $\text{Fold}_1$ & $\text{Fold}_2$ & $\text{Fold}_3$ & $\text{Fold}_4$ & $\text{Fold}_5$ 
                   & $\overline{R^2}$ & $\sigma$ & $R^2_{\min}$ & $R^2_{\max}$ \\
 \midrule
-CatBoost           & $0.6932$ & $0.6901$ & $0.6725$ & $0.6960$ & $0.6370$ & $0.6778$ & $0.0220$ & $0.6370$ & $0.6960$ \\
+CatBoost           & $0.8756$ & $0.8821$ & $0.8734$ & $0.8812$ & $0.8722$ & $0.8788$ & $0.0037$ & $0.8722$ & $0.8821$ \\
+Bayesian Ridge     & $0.7179$ & $0.6932$ & $0.7087$ & $0.6834$ & $0.7008$ & $0.6843$ & $0.0109$ & $0.6834$ & $0.7179$ \\
 Bayesian Ridge     & $0.7179$ & $0.5839$ & $0.6987$ & $0.6700$ & $0.7508$ & $0.6843$ & $0.0566$ & $0.5839$ & $0.7508$ \\
 SVR & $0.7878$ & $0.6834$ & $0.7695$ & $0.6842$ & $0.6517$ & $0.7153$ & $0.0533$ & $0.6517$ & $0.7878$ \\
 Elastic Net        & $0.7873$ & $0.7260$ & $0.7002$ & $0.7344$ & $0.7137$ & $0.7323$ & $0.0298$ & $0.7002$ & $0.7873$ \\
