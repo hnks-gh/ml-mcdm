@@ -563,37 +563,6 @@
       \verb 10.1093/wber/lhr012
       \endverb
     \endentry
-    \entry{Kendall1948}{book}{}{}
-      \name{author}{1}{}{%
-        {{un=0,uniquepart=base,hash=3e3f1b33a435412f1db707ec82b8ed41}{%
-           family={Kendall},
-           familyi={K\bibinitperiod},
-           given={Maurice\bibnamedelima G.},
-           giveni={M\bibinitperiod\bibinitdelim G\bibinitperiod},
-           givenun=0}}%
-      }
-      \list{publisher}{2}{%
-        {Charles Griffin}%
-        {Co.}%
-      }
-      \strng{namehash}{3e3f1b33a435412f1db707ec82b8ed41}
-      \strng{fullhash}{3e3f1b33a435412f1db707ec82b8ed41}
-      \strng{fullhashraw}{3e3f1b33a435412f1db707ec82b8ed41}
-      \strng{bibnamehash}{3e3f1b33a435412f1db707ec82b8ed41}
-      \strng{authorbibnamehash}{3e3f1b33a435412f1db707ec82b8ed41}
-      \strng{authornamehash}{3e3f1b33a435412f1db707ec82b8ed41}
-      \strng{authorfullhash}{3e3f1b33a435412f1db707ec82b8ed41}
-      \strng{authorfullhashraw}{3e3f1b33a435412f1db707ec82b8ed41}
-      \field{sortinit}{K}
-      \field{sortinithash}{c02bf6bff1c488450c352b40f5d853ab}
-      \field{extradatescope}{labelyear}
-      \field{labeldatesource}{}
-      \true{uniqueprimaryauthor}
-      \field{labelnamesource}{author}
-      \field{labeltitlesource}{title}
-      \field{title}{Rank Correlation Methods}
-      \field{year}{1948}
-    \endentry
     \entry{Keshavarz2015}{article}{}{}
       \name{author}{4}{}{%
         {{un=0,uniquepart=base,hash=6dbc771841c075d72c6c8009e83f136e}{%
@@ -978,41 +947,6 @@
       \field{year}{1987}
       \verb{doi}
       \verb 10.1002/9780470316696
-      \endverb
-    \endentry
-    \entry{Spearman1904}{article}{}{}
-      \name{author}{1}{}{%
-        {{un=0,uniquepart=base,hash=ed852c40e9206ab5c99b48c4b9f2ab38}{%
-           family={Spearman},
-           familyi={S\bibinitperiod},
-           given={Charles},
-           giveni={C\bibinitperiod},
-           givenun=0}}%
-      }
-      \strng{namehash}{ed852c40e9206ab5c99b48c4b9f2ab38}
-      \strng{fullhash}{ed852c40e9206ab5c99b48c4b9f2ab38}
-      \strng{fullhashraw}{ed852c40e9206ab5c99b48c4b9f2ab38}
-      \strng{bibnamehash}{ed852c40e9206ab5c99b48c4b9f2ab38}
-      \strng{authorbibnamehash}{ed852c40e9206ab5c99b48c4b9f2ab38}
-      \strng{authornamehash}{ed852c40e9206ab5c99b48c4b9f2ab38}
-      \strng{authorfullhash}{ed852c40e9206ab5c99b48c4b9f2ab38}
-      \strng{authorfullhashraw}{ed852c40e9206ab5c99b48c4b9f2ab38}
-      \field{sortinit}{S}
-      \field{sortinithash}{b164b07b29984b41daf1e85279fbc5ab}
-      \field{extradatescope}{labelyear}
-      \field{labeldatesource}{}
-      \true{uniqueprimaryauthor}
-      \field{labelnamesource}{author}
-      \field{labeltitlesource}{title}
-      \field{journaltitle}{American Journal of Psychology}
-      \field{number}{1}
-      \field{title}{The Proof and Measurement of Association between Two Things}
-      \field{volume}{15}
-      \field{year}{1904}
-      \field{pages}{72\bibrangedash 101}
-      \range{pages}{30}
-      \verb{doi}
-      \verb 10.2307/1412159
       \endverb
     \endentry
     \entry{vanBuuren2018}{book}{}{}
@@ -1888,37 +1822,6 @@
       \verb 10.1093/wber/lhr012
       \endverb
     \endentry
-    \entry{Kendall1948}{book}{}{}
-      \name{author}{1}{}{%
-        {{un=0,uniquepart=base,hash=3e3f1b33a435412f1db707ec82b8ed41}{%
-           family={Kendall},
-           familyi={K\bibinitperiod},
-           given={Maurice\bibnamedelima G.},
-           giveni={M\bibinitperiod\bibinitdelim G\bibinitperiod},
-           givenun=0}}%
-      }
-      \list{publisher}{2}{%
-        {Charles Griffin}%
-        {Co.}%
-      }
-      \strng{namehash}{3e3f1b33a435412f1db707ec82b8ed41}
-      \strng{fullhash}{3e3f1b33a435412f1db707ec82b8ed41}
-      \strng{fullhashraw}{3e3f1b33a435412f1db707ec82b8ed41}
-      \strng{bibnamehash}{3e3f1b33a435412f1db707ec82b8ed41}
-      \strng{authorbibnamehash}{3e3f1b33a435412f1db707ec82b8ed41}
-      \strng{authornamehash}{3e3f1b33a435412f1db707ec82b8ed41}
-      \strng{authorfullhash}{3e3f1b33a435412f1db707ec82b8ed41}
-      \strng{authorfullhashraw}{3e3f1b33a435412f1db707ec82b8ed41}
-      \field{sortinit}{K}
-      \field{sortinithash}{c02bf6bff1c488450c352b40f5d853ab}
-      \field{extradatescope}{labelyear}
-      \field{labeldatesource}{}
-      \true{uniqueprimaryauthor}
-      \field{labelnamesource}{author}
-      \field{labeltitlesource}{title}
-      \field{title}{Rank Correlation Methods}
-      \field{year}{1948}
-    \endentry
     \entry{Keshavarz2015}{article}{}{}
       \name{author}{4}{}{%
         {{un=0,uniquepart=base,hash=6dbc771841c075d72c6c8009e83f136e}{%
@@ -2303,41 +2206,6 @@
       \field{year}{1987}
       \verb{doi}
       \verb 10.1002/9780470316696
-      \endverb
-    \endentry
-    \entry{Spearman1904}{article}{}{}
-      \name{author}{1}{}{%
-        {{un=0,uniquepart=base,hash=ed852c40e9206ab5c99b48c4b9f2ab38}{%
-           family={Spearman},
-           familyi={S\bibinitperiod},
-           given={Charles},
-           giveni={C\bibinitperiod},
-           givenun=0}}%
-      }
-      \strng{namehash}{ed852c40e9206ab5c99b48c4b9f2ab38}
-      \strng{fullhash}{ed852c40e9206ab5c99b48c4b9f2ab38}
-      \strng{fullhashraw}{ed852c40e9206ab5c99b48c4b9f2ab38}
-      \strng{bibnamehash}{ed852c40e9206ab5c99b48c4b9f2ab38}
-      \strng{authorbibnamehash}{ed852c40e9206ab5c99b48c4b9f2ab38}
-      \strng{authornamehash}{ed852c40e9206ab5c99b48c4b9f2ab38}
-      \strng{authorfullhash}{ed852c40e9206ab5c99b48c4b9f2ab38}
-      \strng{authorfullhashraw}{ed852c40e9206ab5c99b48c4b9f2ab38}
-      \field{sortinit}{S}
-      \field{sortinithash}{b164b07b29984b41daf1e85279fbc5ab}
-      \field{extradatescope}{labelyear}
-      \field{labeldatesource}{}
-      \true{uniqueprimaryauthor}
-      \field{labelnamesource}{author}
-      \field{labeltitlesource}{title}
-      \field{journaltitle}{American Journal of Psychology}
-      \field{number}{1}
-      \field{title}{The Proof and Measurement of Association between Two Things}
-      \field{volume}{15}
-      \field{year}{1904}
-      \field{pages}{72\bibrangedash 101}
-      \range{pages}{30}
-      \verb{doi}
-      \verb 10.2307/1412159
       \endverb
     \endentry
     \entry{vanBuuren2018}{book}{}{}

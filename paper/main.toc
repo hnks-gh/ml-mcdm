@@ -13,10 +13,10 @@
 \contentsline {subsection}{\numberline {2.4}Multi-Method MCDM Ranking Approaches}{25}{subsection.2.4}%
 \contentsline {subsubsection}{\numberline {2.4.1}TOPSIS}{26}{subsubsection.2.4.1}%
 \contentsline {subsubsection}{\numberline {2.4.2}VIKOR}{27}{subsubsection.2.4.2}%
-\contentsline {subsubsection}{\numberline {2.4.3}PROMETHEE II}{27}{subsubsection.2.4.3}%
+\contentsline {subsubsection}{\numberline {2.4.3}PROMETHEE II}{28}{subsubsection.2.4.3}%
 \contentsline {subsubsection}{\numberline {2.4.4}COPRAS}{28}{subsubsection.2.4.4}%
 \contentsline {subsubsection}{\numberline {2.4.5}EDAS}{29}{subsubsection.2.4.5}%
-\contentsline {subsubsection}{\numberline {2.4.6}Ranking Analysis and Validation}{29}{subsubsection.2.4.6}%
+\contentsline {subsubsection}{\numberline {2.4.6}Ranking Analysis and Validation}{30}{subsubsection.2.4.6}%
 \contentsline {subsection}{\numberline {2.5}Ensemble Machine Learning Forecasting}{32}{subsection.2.5}%
 \contentsline {subsubsection}{\numberline {2.5.1}Temporal Feature Engineering}{33}{subsubsection.2.5.1}%
 \contentsline {subsubsection}{\numberline {2.5.2}Target Transformation and Preprocessing}{36}{subsubsection.2.5.2}%
@@ -27,14 +27,14 @@
 \contentsline {section}{\numberline {3}Results}{41}{section.3}%
 \contentsline {subsection}{\numberline {3.1}Weighting Results}{41}{subsection.3.1}%
 \contentsline {subsubsection}{\numberline {3.1.1}CRITIC Weights Results}{41}{subsubsection.3.1.1}%
-\contentsline {subsubsection}{\numberline {3.1.2}Weighting Result Analysis and Validation}{46}{subsubsection.3.1.2}%
-\contentsline {subsection}{\numberline {3.2}Rankings Results}{49}{subsection.3.2}%
-\contentsline {subsubsection}{\numberline {3.2.1}Multi-Method MCDM Ranking Results}{49}{subsubsection.3.2.1}%
-\contentsline {subsubsection}{\numberline {3.2.2}Ranking Result Analysis and Validation}{51}{subsubsection.3.2.2}%
+\contentsline {subsubsection}{\numberline {3.1.2}Weighting Result Analysis and Validation}{45}{subsubsection.3.1.2}%
+\contentsline {subsection}{\numberline {3.2}Rankings Results}{48}{subsection.3.2}%
+\contentsline {subsubsection}{\numberline {3.2.1}Multi-Method MCDM Ranking Results}{48}{subsubsection.3.2.1}%
+\contentsline {subsubsection}{\numberline {3.2.2}Ranking Result Analysis and Validation}{50}{subsubsection.3.2.2}%
 \contentsline {subsection}{\numberline {3.3}Ensemble Learning Forecasting}{57}{subsection.3.3}%
-\contentsline {subsubsection}{\numberline {3.3.1}Architecture and Base Learner Performance}{58}{subsubsection.3.3.1}%
+\contentsline {subsubsection}{\numberline {3.3.1}Architecture and Base Learner Performance}{57}{subsubsection.3.3.1}%
 \contentsline {subsubsection}{\numberline {3.3.2}Ensemble Combination and Holdout Performance}{59}{subsubsection.3.3.2}%
-\contentsline {subsubsection}{\numberline {3.3.3}Model Validation and Interpretation}{62}{subsubsection.3.3.3}%
-\contentsline {section}{\numberline {4}Discussion}{67}{section.4}%
-\contentsline {section}{\numberline {5}Conclusion}{69}{section.5}%
-\contentsline {section}{\numberline {6}Appendix}{70}{section.6}%
+\contentsline {subsubsection}{\numberline {3.3.3}Model Validation and Interpretation}{61}{subsubsection.3.3.3}%
+\contentsline {section}{\numberline {4}Discussion}{66}{section.4}%
+\contentsline {section}{\numberline {5}Conclusion}{68}{section.5}%
+\contentsline {section}{\numberline {6}Appendix}{69}{section.6}%

@@ -238,6 +238,114 @@ class MCDMPlotter(BasePlotter):
 
         return stability
 
+    def _compute_temporal_ranking_persistence(
+        self, multi_year_results: Dict[int, Any]
+    ) -> Dict[str, float]:
+        """
+        Calculate temporal ranking persistence for each method.
+
+        Persistence is defined as the average Spearman ρ between a method's
+        final rankings across consecutive years. This measures rank stability
+        year-to-year.
+
+        Formula: Stab_j = (1/(T-1)) * Σ ρ_s(R_j^(t), R_j^(t+1)) for t=1 to T-1
+
+        Parameters
+        ----------
+        multi_year_results : Dict[int, Any]
+            Dictionary mapping year to HierarchicalRankingResult objects.
+
+        Returns
+        -------
+        Dict[str, float]
+            Mapping of method name to temporal persistence score in range [-1, 1].
+        """
+        persistence: Dict[str, float] = {}
+
+        if not multi_year_results or len(multi_year_results) < 2:
+            _logger.warning('Temporal persistence requires at least 2 years of data')
+            return persistence
+
+        if not HAS_SCIPY:
+            _logger.warning('scipy required for Spearman correlation; skipping temporal persistence')
+            return persistence
+
+        # Sort years chronologically
+        sorted_years = sorted(multi_year_results.keys())
+
+        # For each method, collect rankings across years
+        method_rankings: Dict[str, List[np.ndarray]] = {method: [] for method in self._TRAD_METHODS}
+
+        for year in sorted_years:
+            ranking_result = multi_year_results[year]
+            final_ranks = getattr(ranking_result, 'final_ranking', None)
+            if final_ranks is None:
+                _logger.warning(f'No final_ranking for year {year}; skipping')
+                continue
+
+            # Convert to numpy array if needed
+            ranks_array = np.asarray(
+                final_ranks.values if hasattr(final_ranks, 'values') else final_ranks,
+                dtype=float
+            )
+
+            # Extract per-method rankings from criterion_method_ranks
+            crit_method_ranks = getattr(ranking_result, 'criterion_method_ranks', {})
+            for method in self._TRAD_METHODS:
+                # Try to find method in first criterion to get a composite ranking
+                # (or could use final_scores if available)
+                method_found = False
+                for crit_id in crit_method_ranks:
+                    if method in crit_method_ranks[crit_id]:
+                        method_ranks = crit_method_ranks[crit_id][method]
+                        method_array = np.asarray(
+                            method_ranks.values if hasattr(method_ranks, 'values') else method_ranks,
+                            dtype=float
+                        )
+                        method_rankings[method].append(method_array)
+                        method_found = True
+                        break
+
+                # If not found in criterion_method_ranks, we could use final_ranking
+                # as a fallback for the composite ranking
+                if not method_found and year == sorted_years[0]:
+                    # For bootstrap or envelope methods, use the composite final_ranking
+                    # This assumes all methods produce identical final_ranking in HierarchicalRankingResult
+                    pass
+
+        # Compute temporal persistence for each method
+        for method in self._TRAD_METHODS:
+            rank_series = method_rankings[method]
+            if len(rank_series) < 2:
+                _logger.debug(f'Method {method} has < 2 years; skipping')
+                continue
+
+            # Compute pairwise Spearman ρ for consecutive years
+            rho_vals: List[float] = []
+            for t in range(len(rank_series) - 1):
+                rank_t = rank_series[t]
+                rank_t1 = rank_series[t + 1]
+
+                # Align by minimum shared length
+                min_len = min(len(rank_t), len(rank_t1))
+                if min_len < 2:
+                    continue
+
+                try:
+                    rho, _ = sp_stats.spearmanr(rank_t[:min_len], rank_t1[:min_len])
+                    if not np.isnan(rho):
+                        rho_vals.append(float(rho))
+                except Exception as e:
+                    _logger.debug(f'Spearman computation failed for {method}: {e}')
+                    continue
+
+            if rho_vals:
+                # Average across all consecutive year pairs
+                persistence[method] = float(np.mean(rho_vals))
+                _logger.debug(f'{method} temporal persistence: {persistence[method]:.3f} ({len(rho_vals)} pairs)')
+
+        return persistence
+
     def _compute_method_disc_power(
         self, ranking_result: Any
     ) -> Dict[str, float]:
@@ -313,19 +421,23 @@ class MCDMPlotter(BasePlotter):
 
     def plot_method_stability_comparison(
         self,
-        ranking_result: Any,
+        ranking_result: Any = None,
+        multi_year_results: Optional[Dict[int, Any]] = None,
         save_name: str = 'fig08e_method_stability.png',
     ) -> Optional[str]:
         """
-        Produce a horizontal bar chart of cross-criteria ranking stability.
+        Produce a horizontal bar chart of ranking stability or temporal persistence.
 
-        Enables comparison of 'Base' (naive) results against traditional 
-        MCDM and fused ER rankings.
+        When multi_year_results is provided, computes temporal rank persistence
+        (average Spearman ρ between consecutive years). Otherwise, computes 
+        cross-criteria ranking stability.
 
         Parameters
         ----------
-        ranking_result : RankingResult
-            The output of the aggregation engine.
+        ranking_result : RankingResult, optional
+            The single-year aggregation result (used for cross-criteria metric).
+        multi_year_results : Dict[int, Any], optional
+            Dictionary mapping year to RankingResult (used for temporal metric).
         save_name : str, default='fig08e_method_stability.png'
             The output filename.
 
@@ -338,8 +450,22 @@ class MCDMPlotter(BasePlotter):
             return None
 
         try:
-            stability = self._compute_method_stability(ranking_result)
+            # Determine which metric to compute
+            use_temporal = multi_year_results is not None and len(multi_year_results) >= 2
+            
+            if use_temporal:
+                stability = self._compute_temporal_ranking_persistence(multi_year_results)
+                metric_label = 'Year-to-Year Spearman ρ'
+                subtitle = '↑  Higher = more consistent governance rankings across years'
+            else:
+                if ranking_result is None:
+                    return None
+                stability = self._compute_method_stability(ranking_result)
+                metric_label = 'Cross-Criteria Spearman ρ  (avg pairwise)'
+                subtitle = '↑  Higher = more consistent ranking across criteria groups'
+            
             if len(stability) < 2:
+                _logger.warning('Insufficient stability scores (<2 methods)')
                 return None
 
             # Map 'SAW' to 'Base' for display if needed, but ensure 'Base' is present
@@ -385,7 +511,7 @@ class MCDMPlotter(BasePlotter):
             ax.set_yticks(range(n))
             ax.set_yticklabels(labels, fontsize=10.5)
             ax.invert_yaxis()
-            ax.set_xlabel('Cross-Criteria Spearman ρ  (avg pairwise)', fontsize=11)
+            ax.set_xlabel(metric_label, fontsize=11)
 
             # Legend patches
             ax.legend(
@@ -393,20 +519,18 @@ class MCDMPlotter(BasePlotter):
             )
 
 
+            title_suffix = 'Temporal Persistence' if use_temporal else 'Stability'
             ax.set_title(
-                'Ranking Stability by Method',
+                f'Ranking {title_suffix} by Method',
                 fontsize=14, fontweight='bold', pad=14,
             )
             ax.text(
                 0.5, 1.01,
-                '↑  Higher = more consistent ranking across criteria groups',
+                subtitle,
                 transform=ax.transAxes,
                 ha='center', va='bottom', fontsize=9.5, color='#555555',
                 style='italic',
             )
-
-
-
             ax.set_xlim(left=min(0, min(values) - 0.05),
                         right=x_max + x_max * 0.14)
             fig.tight_layout()

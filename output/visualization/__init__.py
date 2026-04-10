@@ -493,8 +493,10 @@ class VisualizationOrchestrator:
         if all_method_ranks:
             _safe(self.mcdm.plot_method_agreement_matrix, all_method_ranks)
 
-        # fig08e — Method stability comparison (cross-criteria Spearman ρ)
-        _safe(self.mcdm.plot_method_stability_comparison, ranking_result)
+        # fig08e — Method stability comparison (temporal persistence when multi-year data available)
+        _safe(self.mcdm.plot_method_stability_comparison, 
+              ranking_result=ranking_result, 
+              multi_year_results=multi_year_results)
 
         # fig08f — Method discriminatory power comparison (score IQR)
         _safe(self.mcdm.plot_method_disc_power_comparison, ranking_result)
